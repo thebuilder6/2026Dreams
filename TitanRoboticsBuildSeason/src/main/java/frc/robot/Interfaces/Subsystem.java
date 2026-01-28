@@ -9,5 +9,8 @@ public interface Subsystem {
 
     public boolean isEnabled();
 
+    public default void simulationUpdate() {
+    }
+
     public String getName();
 }

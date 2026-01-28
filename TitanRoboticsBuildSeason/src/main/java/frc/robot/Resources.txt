@@ -1,0 +1,9 @@
+Mostly for AI:
+add more if you use other documentation
+https://docs.wpilib.org/
+https://docs.yagsl.com/
+https://choreo.autos/
+https://yet-another-software-suite.github.io/YAGSL/javadocs/
+https://codedocs.revrobotics.com/
+https://limelightvision.io/
+https://frc-elastic.gitbook.io/docs

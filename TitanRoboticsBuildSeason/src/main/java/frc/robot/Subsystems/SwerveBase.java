@@ -1,20 +1,25 @@
 package frc.robot.Subsystems;
 
+import static edu.wpi.first.units.Units.Degrees;
+import static edu.wpi.first.units.Units.DegreesPerSecond;
 import static edu.wpi.first.units.Units.Meter;
 
 import java.io.File;
 
+import edu.wpi.first.math.VecBuilder;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import edu.wpi.first.math.kinematics.SwerveDriveKinematics;
 import edu.wpi.first.math.trajectory.Trajectory;
+import edu.wpi.first.units.AngularVelocityUnit;
 import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.Filesystem;
 import edu.wpi.first.wpilibj.Timer;
 import frc.robot.Data.Constants;
 import frc.robot.Interfaces.Subsystem;
+import frc.robot.ThirdParty.LimelightHelpers;
 import swervelib.SwerveController;
 import swervelib.SwerveDrive;
 import swervelib.math.SwerveMath;
@@ -27,6 +32,9 @@ import edu.wpi.first.wpilibj.smartdashboard.*;
 public class SwerveBase implements Subsystem {
 
     private static SwerveBase instance = null;
+
+    private final Field2d field = new Field2d();
+
     /**
      * Swerve drive object.
      */
@@ -58,7 +66,10 @@ public class SwerveBase implements Subsystem {
 
     public SwerveBase() {
         SubsystemManager.registerSubsystem(this);
-        boolean blueAlliance = false;
+        // Dynamically determine alliance - defaults to Red if not available
+        boolean blueAlliance = DriverStation.getAlliance()
+                .map(alliance -> alliance == DriverStation.Alliance.Blue)
+                .orElse(false);
         Pose2d startingPose = blueAlliance ? new Pose2d(new Translation2d(Meter.of(1),
                 Meter.of(4)),
                 Rotation2d.fromDegrees(0))
@@ -80,8 +91,9 @@ public class SwerveBase implements Subsystem {
         }
         swerveDrive.setHeadingCorrection(false); // Heading correction should only be used while controlling the robot
                                                  // via angle.
-        swerveDrive.setCosineCompensator(true);// !SwerveDriveTelemetry.isSimulation); // Disables cosine compensation
-                                                // for simulations since it causes discrepancies not seen in real life.
+        swerveDrive.setCosineCompensator(!SwerveDriveTelemetry.isSimulation); // Disables cosine compensation
+                                                                              // for simulations since it causes
+                                                                              // discrepancies not seen in real life.
         swerveDrive.setAngularVelocityCompensation(true,
                 true,
                 0.1); // Correct for skew that gets worse as angular velocity increases. Start with a
@@ -93,6 +105,7 @@ public class SwerveBase implements Subsystem {
         // over the internal encoder and push the offsets onto it. Throws warning if not
         // possible
 
+        SmartDashboard.putData("Field", field);
     }
 
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -633,35 +646,64 @@ public class SwerveBase implements Subsystem {
         swerveDrive.driveFieldOriented(velocity);
     }
 
+    public void LimelightOdometryUpdate() {
+        LimelightHelpers.SetRobotOrientation("limelight", getPose().getRotation().getDegrees(), 0, 0, 0, 0, 0);
+        LimelightHelpers.PoseEstimate mt2 = LimelightHelpers.getBotPoseEstimate_wpiBlue_MegaTag2("limelight");
+
+        if (mt2 == null) {
+            return;
+        }
+
+        boolean doRejectUpdate = false;
+        // if our angular velocity is greater than 360 degrees per second, ignore vision
+        // updates
+        if (Math.abs(swerveDrive.getGyro().getYawAngularVelocity().in(DegreesPerSecond)) > 360) {
+            doRejectUpdate = true;
+        }
+        if (mt2.tagCount == 0) {
+            doRejectUpdate = true;
+        }
+        if (!doRejectUpdate) {
+            swerveDrive.addVisionMeasurement(
+                    mt2.pose,
+                    mt2.timestampSeconds);
+            field.getObject("Limelight").setPose(mt2.pose);
+        }
+    }
+
     @Override
     public void update() {
         swerveDrive.updateOdometry();
-        // TODO Auto-generated method stub
+        if (!SwerveDriveTelemetry.isSimulation) {
+            LimelightOdometryUpdate();
+        }
+        field.setRobotPose(getPose());
     }
 
     @Override
     public void initialize() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'initialize'");
+        zeroGyroWithAlliance();
     }
 
     @Override
     public void log() {
-        // TODO Auto-generated method stub
-        SmartDashboard.updateValues();
-        throw new UnsupportedOperationException("Unimplemented method 'log'");
+        SmartDashboard.putNumber("Swerve/Heading", getHeading().getDegrees());
+        SmartDashboard.putNumber("Swerve/Pose X", getPose().getX());
+        SmartDashboard.putNumber("Swerve/Pose Y", getPose().getY());
     }
 
     @Override
     public boolean isEnabled() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'isEnabled'");
+        return true;
     }
 
     @Override
     public String getName() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'getName'");
+        return "SwerveBase";
+    }
+
+    public Field2d getField() {
+        return field;
     }
 
 }

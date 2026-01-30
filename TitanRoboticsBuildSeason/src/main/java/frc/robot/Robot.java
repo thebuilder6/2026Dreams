@@ -7,15 +7,15 @@ package frc.robot;
 import edu.wpi.first.wpilibj.DataLogManager;
 import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.TimedRobot;
+import frc.robot.Auto.AutoMissionExecutor;
+import frc.robot.Auto.Missions.MissionBase;
 import frc.robot.Subsystems.Climber;
 import frc.robot.Subsystems.Dashboard;
+import frc.robot.Subsystems.GameSim;
 import frc.robot.Subsystems.Intake;
 import frc.robot.Subsystems.Shooter;
 import frc.robot.Subsystems.SubsystemManager;
 import frc.robot.Subsystems.SwerveBase;
-import frc.robot.Auto.AutoMissionExecutor;
-import frc.robot.Auto.Missions.BlueLeftShootClimbMission;
-import frc.robot.Auto.Missions.MissionBase;
 
 /**
  * The methods in this class are called automatically corresponding to each
@@ -46,8 +46,9 @@ public class Robot extends TimedRobot {
     Intake.getInstance();
     Climber.getInstance();
     Dashboard.getInstance();
+    GameSim.getInstance();
     teleop = new Teleop();
-
+    SubsystemManager.initializeSubsystems();
     swerveBase.update();
   }
 
@@ -103,16 +104,7 @@ public class Robot extends TimedRobot {
     mAutoMissionExecutor.stop();
     mAutoMissionExecutor.reset();
 
-    MissionBase mission = null;
-    switch (m_autoSelected) {
-      case "Blue Left Shoot Climb":
-        mission = new BlueLeftShootClimbMission();
-        break;
-      case "Do Nothing":
-      default:
-        mission = null;
-        break;
-    }
+    MissionBase mission = Dashboard.getInstance().getAutoChooser().getAutoMissionForParams(m_autoSelected).orElse(null);
 
     if (mission != null) {
       mAutoMissionExecutor.setAutoMission(mission);
@@ -128,7 +120,7 @@ public class Robot extends TimedRobot {
   /** This function is called once when teleop is enabled. */
   @Override
   public void teleopInit() {
-    swerveBase.zeroGyro();
+    swerveBase.zeroGyroWithAlliance();
   }
 
   /** This function is called periodically during operator control. */

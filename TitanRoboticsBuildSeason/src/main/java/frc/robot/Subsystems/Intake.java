@@ -186,4 +186,8 @@ public class Intake implements Subsystem {
     public String getName() {
         return "Intake";
     }
+
+    public double getArmPosition() {
+        return armMotor.getPosition();
+    }
 }

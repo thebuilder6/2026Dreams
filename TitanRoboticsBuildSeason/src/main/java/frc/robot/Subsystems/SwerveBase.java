@@ -1,10 +1,12 @@
 package frc.robot.Subsystems;
 
-import static edu.wpi.first.units.Units.Degrees;
 import static edu.wpi.first.units.Units.DegreesPerSecond;
 import static edu.wpi.first.units.Units.Meter;
 
 import java.io.File;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
 
 import edu.wpi.first.math.VecBuilder;
 import edu.wpi.first.math.geometry.Pose2d;
@@ -13,50 +15,43 @@ import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import edu.wpi.first.math.kinematics.SwerveDriveKinematics;
 import edu.wpi.first.math.trajectory.Trajectory;
-import edu.wpi.first.units.AngularVelocityUnit;
 import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.Filesystem;
 import edu.wpi.first.wpilibj.Timer;
+import edu.wpi.first.wpilibj.smartdashboard.Field2d;
+import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import frc.robot.Data.Constants;
+import frc.robot.Data.GlideConstants;
 import frc.robot.Interfaces.Subsystem;
 import frc.robot.ThirdParty.LimelightHelpers;
 import swervelib.SwerveController;
 import swervelib.SwerveDrive;
-import swervelib.math.SwerveMath;
 import swervelib.parser.SwerveDriveConfiguration;
 import swervelib.parser.SwerveParser;
 import swervelib.telemetry.SwerveDriveTelemetry;
 import swervelib.telemetry.SwerveDriveTelemetry.TelemetryVerbosity;
-import edu.wpi.first.wpilibj.smartdashboard.*;
 
 public class SwerveBase implements Subsystem {
 
     private static SwerveBase instance = null;
 
-    private final Field2d field = new Field2d();
+    // Unified field object from YAGSL
+    private Field2d field;
+
+    private final ArrayList<String> lastGlideFieldObjectNames = new ArrayList<>();
 
     /**
      * Swerve drive object.
      */
     private final SwerveDrive swerveDrive;
 
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    //
-    // Function: SwerveBase
-    //
-    // Author: Austin :)
-    //
-    // Use: This function configures the subsystem. It configures it's starting pose
-    // based on which allience it is on (set to red alliance by
-    // default because blue is false). Logs details about swerve operation, and
-    // reads the swerve file for data about physical components like
-    // moters and encoders. turns off heading corrections bacause it is mainly for
-    // autonomous. cosine compensator set to false but should
-    // be changed when running outside of simmulator. angular velocity compensation
-    // for smoother direction changes. auto syncronize turned
-    // off (may need to turn back on later to compensate for drift).
-    //
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    private static final Pose2d OFF_FIELD_POSE = new Pose2d(-999, -999, new Rotation2d());
+
+    /**
+     * Gets the singleton instance of SwerveBase.
+     * 
+     * @return The instance of SwerveBase.
+     */
     public static SwerveBase getInstance() {
         if (instance == null) {
             instance = new SwerveBase();
@@ -66,6 +61,7 @@ public class SwerveBase implements Subsystem {
 
     public SwerveBase() {
         SubsystemManager.registerSubsystem(this);
+        System.out.println("SwerveBase: Simulation Mode is " + SwerveDriveTelemetry.isSimulation);
         // Dynamically determine alliance - defaults to Red if not available
         boolean blueAlliance = DriverStation.getAlliance()
                 .map(alliance -> alliance == DriverStation.Alliance.Blue)
@@ -89,8 +85,8 @@ public class SwerveBase implements Subsystem {
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
-        swerveDrive.setHeadingCorrection(false); // Heading correction should only be used while controlling the robot
-                                                 // via angle.
+        swerveDrive.setHeadingCorrection(true); // Heading correction should only be used while controlling the robot
+                                                // via angle.
         swerveDrive.setCosineCompensator(!SwerveDriveTelemetry.isSimulation); // Disables cosine compensation
                                                                               // for simulations since it causes
                                                                               // discrepancies not seen in real life.
@@ -105,22 +101,10 @@ public class SwerveBase implements Subsystem {
         // over the internal encoder and push the offsets onto it. Throws warning if not
         // possible
 
+        field = swerveDrive.field;
         SmartDashboard.putData("Field", field);
     }
 
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    //
-    // Function: drive
-    //
-    // Author: Austin :)
-    //
-    // Use: taking driver inputs and making them into movements in the moters.
-    // solves what speed and velocity are needed for each of the four
-    // wheels Than it takes the angles speed and velocity and gives the commands to
-    // the motors. IsOpenLoop tells motors to try to get to the
-    // right velocity but is turned off.
-    //
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     /**
      * The primary method for controlling the drivebase. Takes a
      * {@link Translation2d} and a rotation rate, and
@@ -151,15 +135,6 @@ public class SwerveBase implements Subsystem {
                 false); // Open loop is disabled since it shouldn't be used most of the time.
     }
 
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    //
-    // Function: drive
-    //
-    // Author: Austin :)
-    //
-    // Use: Control velocity in autonomous and teleop.
-    //
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     /**
      * Drive according to the chassis robot o
      * riented velocity.
@@ -170,17 +145,6 @@ public class SwerveBase implements Subsystem {
         swerveDrive.drive(velocity);
     }
 
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    //
-    // Function: getKinematics
-    //
-    // Author: Austin :)
-    //
-    // Use: Gets geometry of the robot. Takes velocity of all four moters. Takes
-    // actual velocity of moters. Tracks position on feild based on
-    // moter movements. can be used for autonomous.
-    //
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     /**
      * Get the swerve drive kinematics object.
      *
@@ -233,15 +197,6 @@ public class SwerveBase implements Subsystem {
         return swerveDrive.getPose();
     }
 
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    //
-    // Function: setChassisSpeeds
-    //
-    // Author: Austin :)
-    //
-    // Use: Takes the speed we want to send to be calculated into movements.
-    //
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     /**
      * Set chassis speeds with closed-loop velocity control.
      *
@@ -251,19 +206,6 @@ public class SwerveBase implements Subsystem {
         swerveDrive.setChassisSpeeds(chassisSpeeds);
     }
 
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    //
-    // Function: postTrajectory
-    //
-    // Author: Austin :)
-    //
-    // Use: collects the trajectory information and sends it to be processed in the
-    // driver station software. Driver station visualizes trajectory.
-    // Can be used in auto and can be used to tell if the robot is drifting based on
-    // whether the robot is following the set path or if it is off of the path, and
-    // by how much.
-    //
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     /**
      * Post the trajectory to the field.
      *
@@ -273,15 +215,6 @@ public class SwerveBase implements Subsystem {
         swerveDrive.postTrajectory(trajectory);
     }
 
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    //
-    // Function: zeroGyro
-    //
-    // Author: Austin :)
-    //
-    // Use: Resets the Gyro and the Odometry to zero so they are the same.
-    //
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     /**
      * Resets the gyro angle to zero and resets odometry to the same position, but
      * facing toward 0.
@@ -290,15 +223,6 @@ public class SwerveBase implements Subsystem {
         swerveDrive.zeroGyro();
     }
 
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    //
-    // Function: isRedAlliance
-    //
-    // Author: Austin :)
-    //
-    // Use: Checks if the alliance is red or not. If not specified red is false.
-    //
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     /**
      * Checks if the alliance is red, defaults to false if alliance isn't available.
      *
@@ -310,15 +234,6 @@ public class SwerveBase implements Subsystem {
         return alliance.isPresent() ? alliance.get() == DriverStation.Alliance.Red : false;
     }
 
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    //
-    // Function: zeroGyroWithAlliance
-    //
-    // Author: Austin :)
-    //
-    // Use: makes the robot zero for whatever alliance it is on.
-    //
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     /**
      * This will zero (calibrate) the robot to assume the current position is facing
      * forward
@@ -335,18 +250,115 @@ public class SwerveBase implements Subsystem {
         }
     }
 
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    //
-    // Function: setMotorBrake
-    //
-    // Author: Austin :)
-    //
-    // Use: Brake mode (true) makes motors stop completely and "lock up". Coast mode
-    // (false) makes motors roll with no power but not lock. Brake is used primarily
-    // for auto for predictable movements. Coast is for teleop for driver
-    // convenience.
-    //
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    public GlideConstants.GlidePoint getNearestGlidePoint() {
+        List<GlideConstants.GlidePoint> glidePoints = isRedAlliance()
+                ? GlideConstants.RED_GLIDE_POINTS
+                : GlideConstants.BLUE_GLIDE_POINTS;
+
+        if (glidePoints == null || glidePoints.isEmpty()) {
+            return null;
+        }
+
+        Pose2d currentPose = getPose();
+        GlideConstants.GlidePoint nearest = null;
+        double nearestDistance = Double.POSITIVE_INFINITY;
+
+        for (GlideConstants.GlidePoint p : glidePoints) {
+            if (p == null || p.pose == null) {
+                continue;
+            }
+            double d = currentPose.getTranslation().getDistance(p.pose.getTranslation());
+            if (d < nearestDistance) {
+                nearestDistance = d;
+                nearest = p;
+            }
+
+            if (p.isTunnelEntrance && p.tunnelExitPose != null) {
+                double exitD = currentPose.getTranslation().getDistance(p.tunnelExitPose.getTranslation());
+                if (exitD < nearestDistance) {
+                    nearestDistance = exitD;
+                    Pose2d reverseStartPose = new Pose2d(
+                            p.tunnelExitPose.getTranslation(),
+                            p.tunnelExitPose.getRotation().plus(Rotation2d.fromDegrees(180)));
+                    Pose2d reverseEndPose = new Pose2d(
+                            p.pose.getTranslation(),
+                            p.pose.getRotation().plus(Rotation2d.fromDegrees(180)));
+
+                    nearest = new GlideConstants.GlidePoint(
+                            p.name,
+                            reverseStartPose,
+                            true,
+                            reverseEndPose);
+                }
+            }
+        }
+
+        return nearest;
+    }
+
+    public void drawGlidePointsOnField() {
+        List<GlideConstants.GlidePoint> glidePoints = isRedAlliance()
+                ? GlideConstants.RED_GLIDE_POINTS
+                : GlideConstants.BLUE_GLIDE_POINTS;
+
+        field.getObject("GlidePoints").setPoses(new ArrayList<>());
+
+        HashSet<String> currentNames = new HashSet<>();
+        if (glidePoints != null) {
+            for (GlideConstants.GlidePoint p : glidePoints) {
+                if (p == null || p.pose == null) {
+                    continue;
+                }
+
+                String baseName = "GlidePoint/" + sanitizeFieldObjectName(p.name);
+                currentNames.add(baseName);
+                field.getObject(baseName).setPose(p.pose);
+
+                if (p.isTunnelEntrance && p.tunnelExitPose != null) {
+                    String exitName = baseName + "/Exit";
+                    currentNames.add(exitName);
+                    field.getObject(exitName).setPose(p.tunnelExitPose);
+                }
+            }
+        }
+
+        for (String old : lastGlideFieldObjectNames) {
+            if (!currentNames.contains(old)) {
+                field.getObject(old).setPose(OFF_FIELD_POSE);
+            }
+        }
+
+        lastGlideFieldObjectNames.clear();
+        lastGlideFieldObjectNames.addAll(currentNames);
+    }
+
+    private void highlightNearestGlidePointOnField(GlideConstants.GlidePoint nearest) {
+        int segments = 12;
+        double radiusMeters = 0.35;
+        ArrayList<Pose2d> ringPoses = new ArrayList<>();
+        if (nearest != null && nearest.pose != null) {
+            for (int i = 0; i < segments; i++) {
+                double angleRad = (2.0 * Math.PI * i) / segments;
+                double x = nearest.pose.getX() + (radiusMeters * Math.cos(angleRad));
+                double y = nearest.pose.getY() + (radiusMeters * Math.sin(angleRad));
+                ringPoses.add(new Pose2d(x, y, new Rotation2d()));
+            }
+        }
+
+        field.getObject("NearestGlidePoint").setPoses(ringPoses);
+
+        for (int i = 0; i < segments; i++) {
+            field.getObject("NearestGlideRing/" + i).setPose(OFF_FIELD_POSE);
+        }
+    }
+
+    private static String sanitizeFieldObjectName(String name) {
+        if (name == null) {
+            return "";
+        }
+        return name.replaceAll("[^A-Za-z0-9_/.-]", "_");
+    }
+
     /**
      * Sets the drive motors to brake/coast mode.
      *
@@ -356,15 +368,6 @@ public class SwerveBase implements Subsystem {
         swerveDrive.setMotorIdleMode(brake);
     }
 
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    //
-    // Function: getHeading
-    //
-    // Author: Austin :)
-    //
-    // Use: find the rotation and tell which direction the robot is facing. for auto
-    //
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     /**
      * Gets the current yaw angle of the robot, as reported by the swerve pose
      * estimator in the underlying drivebase.
@@ -377,20 +380,6 @@ public class SwerveBase implements Subsystem {
         return getPose().getRotation();
     }
 
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    //
-    // Function: getTargetSpeeds
-    //
-    // Author: Austin :)
-    //
-    // Use: This function resets the robot's internal localization (odometry) by
-    // forcing its current estimated position (Pose2d which includes X,Y, and
-    // heading θ) to the exact pose provided. It is critically used to initialize
-    // the robot's position and orientation before an Autonomous match starts, or to
-    // immediately correct the robot's pose mid-match based on accurate feedback
-    // from a vision system or AprilTag detection.
-    //
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     /**
      * Get the chassis speeds based on controller input of 2 joysticks. One for
      * speeds in which direction. The other for
@@ -403,29 +392,14 @@ public class SwerveBase implements Subsystem {
      * @return {@link ChassisSpeeds} which can be sent to the Swerve Drive.
      */
     public ChassisSpeeds getTargetSpeeds(double xInput, double yInput, double headingX, double headingY) {
-        Translation2d scaledInputs = SwerveMath.cubeTranslation(new Translation2d(xInput, yInput));
-        return swerveDrive.swerveController.getTargetSpeeds(scaledInputs.getX(),
-                scaledInputs.getY(),
+        return swerveDrive.swerveController.getTargetSpeeds(xInput,
+                yInput,
                 headingX,
                 headingY,
                 getHeading().getRadians(),
                 Constants.MAX_SPEED);
     }
 
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    //
-    // Function: getTargetSpeeds
-    //
-    // Author: Austin :)
-    //
-    // Use: This function defines an alternative Field-Centric control mode for the
-    // robot, taking linear velocity inputs ($\text{X}$ and $\text{Y}$) and an
-    // explicit target angle ($\text{Rotation2d}$). It primarily translates the
-    // driver's scaled movement command while calculating the angular velocity
-    // needed to turn the robot from its current heading toward the commanded fixed
-    // angle.
-    //
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     /**
      * Get the chassis speeds based on controller input of 1 joystick and one angle.
      * Control the robot at an offset of
@@ -437,10 +411,8 @@ public class SwerveBase implements Subsystem {
      * @return {@link ChassisSpeeds} which can be sent to the Swerve Drive.
      */
     public ChassisSpeeds getTargetSpeeds(double xInput, double yInput, Rotation2d angle) {
-        Translation2d scaledInputs = SwerveMath.cubeTranslation(new Translation2d(xInput, yInput));
-
-        return swerveDrive.swerveController.getTargetSpeeds(scaledInputs.getX(),
-                scaledInputs.getY(),
+        return swerveDrive.swerveController.getTargetSpeeds(xInput,
+                yInput,
                 angle.getRadians(),
                 getHeading().getRadians(),
                 Constants.MAX_SPEED);
@@ -536,20 +508,6 @@ public class SwerveBase implements Subsystem {
         return swerveDrive.swerveDriveConfiguration;
     }
 
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    //
-    // Function: lock
-    //
-    // Author: Austin :)
-    //
-    // Use: This function provides a critical safety and control feature for an FRC
-    // swerve drive, commanding all four swerve modules to enter "X-lock" mode.
-    //
-    // This mode sets the angles of the four modules to form a stationary 'X' shape
-    // relative to the robot's center, which passively resists external forces and
-    // prevents the robot from being pushed or rolling.
-    //
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     /**
      * Lock the swerve drive to prevent it from moving.
      */
@@ -557,19 +515,6 @@ public class SwerveBase implements Subsystem {
         swerveDrive.lockPose();
     }
 
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    //
-    // Function: getPitch
-    //
-    // Author: Austin :)
-    //
-    // Use: This function retrieves the robot's current Pitch angle directly from
-    // the Inertial Measurement Unit (IMU). This angle represents the rotation
-    // around the robot's lateral axis (side-to-side) and is critical for detecting
-    // when the robot is climbing, descending, or tipping over, which is essential
-    // for balance control and preventing fouls.
-    //
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     /**
      * Gets the current pitch angle of the robot, as reported by the imu.
      *
@@ -579,22 +524,6 @@ public class SwerveBase implements Subsystem {
         return swerveDrive.getPitch();
     }
 
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    //
-    // Function: addFakeVisionReading
-    //
-    // Author: Austin :)
-    //
-    // Use: This function is a utility designed specifically for debugging and
-    // testing the robot's localization system, rather than for actual match play.
-    //
-    // It manually injects a fake vision measurement into the pose estimator,
-    // telling the robot's software that its position has been accurately confirmed
-    // as X=3 meters, Y=3 meters, and heading θ=65∘ at the current time. This allows
-    // programmers to test how their robot's odometry reacts to corrections without
-    // needing a physical camera or field setup.
-    //
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     /**
      * Add a fake vision reading for testing purposes.
      */
@@ -602,19 +531,6 @@ public class SwerveBase implements Subsystem {
         swerveDrive.addVisionMeasurement(new Pose2d(3, 3, Rotation2d.fromDegrees(65)), Timer.getFPGATimestamp());
     }
 
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    //
-    // Function: getSwerveDrive
-    //
-    // Author: Austin :)
-    //
-    // Use: This function serves as a basic accessor to retrieve the SwerveDrive
-    // object itself, which is the main, encompassing object representing the entire
-    // physical drive base and its core control logic. Returning this object grants
-    // full access to all low-level functions, motors, sensors, and configuration
-    // within the drivetrain system.
-    //
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     /**
      * Gets the swerve drive object.
      *
@@ -624,19 +540,6 @@ public class SwerveBase implements Subsystem {
         return swerveDrive;
     }
 
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    //
-    // Function: driveFieldOriented
-    //
-    // Author: Austin :)
-    //
-    // Use: This function commands the FRC Swerve Drive robot to move using a
-    // ChassisSpeeds object that is interpreted relative to the Field's coordinate
-    // system. It allows the robot to drive consistently along the field's axes
-    // (e.g., straight toward the opponent's alliance wall) regardless of the
-    // direction the robot's chassis is facing.
-    //
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     /**
      * Drive the robot given a chassis field oriented velocity.
      *
@@ -651,23 +554,59 @@ public class SwerveBase implements Subsystem {
         LimelightHelpers.PoseEstimate mt2 = LimelightHelpers.getBotPoseEstimate_wpiBlue_MegaTag2("limelight");
 
         if (mt2 == null) {
+            // Un-comment this for aggressive debugging
+            // System.out.println("Limelight: mt2 is NULL - No data received from NT");
+            return;
+        }
+
+        if (mt2.tagCount == 0) {
+            // We have data, but no tags seen
             return;
         }
 
         boolean doRejectUpdate = false;
-        // if our angular velocity is greater than 360 degrees per second, ignore vision
-        // updates
+
+        // 1. Angular Velocity Rejection
         if (Math.abs(swerveDrive.getGyro().getYawAngularVelocity().in(DegreesPerSecond)) > 360) {
             doRejectUpdate = true;
         }
-        if (mt2.tagCount == 0) {
+
+        // 2. Tag Count & Distance Rejection
+        if (mt2.tagCount == 0 || mt2.avgTagDist > 4.0) {
             doRejectUpdate = true;
         }
+
+        // 3. Single Tag Rejection at distance
+        if (mt2.tagCount == 1 && mt2.avgTagDist > 3.0) {
+            doRejectUpdate = true;
+        }
+
+        // Calculate dynamic trust (Standard Deviation)
+        // Base SD: 0.1m (very trusted)
+        // Penalty for single tag: +0.4m
+        // Penalty for distance: distance^2 / 20
+        double stdDev = 0.1;
+        if (mt2.tagCount == 1) {
+            stdDev += 0.4;
+        }
+        stdDev += (mt2.avgTagDist * mt2.avgTagDist) / 20.0;
+
+        // Logging & Visualization
+        SmartDashboard.putNumber("Limelight/TagCount", mt2.tagCount);
+        SmartDashboard.putNumber("Limelight/AvgDist", mt2.avgTagDist);
+        SmartDashboard.putNumber("Limelight/TrustLevel (SD)", stdDev);
+        SmartDashboard.putBoolean("Limelight/IsAccepted", !doRejectUpdate);
+        field.getObject("LimelightGhost").setPose(mt2.pose);
+
         if (!doRejectUpdate) {
+            System.out.println("Limelight: Applying Update - Tags: " + mt2.tagCount + " Dist: "
+                    + String.format("%.2f", mt2.avgTagDist) + " Trust: " + String.format("%.2f", stdDev));
+            // Apply measurement with dynamic standard deviation
+            // High SD for rotation (999999) to trust gyro over vision
             swerveDrive.addVisionMeasurement(
                     mt2.pose,
-                    mt2.timestampSeconds);
-            field.getObject("Limelight").setPose(mt2.pose);
+                    mt2.timestampSeconds,
+                    VecBuilder.fill(stdDev, stdDev, 999999));
         }
     }
 
@@ -677,7 +616,10 @@ public class SwerveBase implements Subsystem {
         if (!SwerveDriveTelemetry.isSimulation) {
             LimelightOdometryUpdate();
         }
-        field.setRobotPose(getPose());
+        drawGlidePointsOnField();
+        highlightNearestGlidePointOnField(getNearestGlidePoint());
+        // No manual field.setRobotPose call needed here; YAGSL handles it internally
+        // for the unified field
     }
 
     @Override

@@ -6,8 +6,6 @@ import frc.robot.Auto.Missions.*;
 
 import java.util.Optional;
 
-import com.fasterxml.jackson.databind.deser.NullValueProvider;
-
 import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.smartdashboard.SendableChooser;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
@@ -21,16 +19,13 @@ import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 
 public class AutoMissionChooser {
     enum DesiredMission {
-        //these are the options you will see in smart dashboard.
+        doNothing,
         DoSomething,
         exampleMission,
-        // general missions that use alliance to determine the actual missions
-        ScoringL4Mission,
-        // actual missions
         MoveAcrossLineMission,
-        doNothing,
-        RedScoreL4,
-        BlueScoreL4,
+        ScoringL4Mission,
+        LeftShootClimb,
+        AdvancedChoreoMission,
     }
 
     private DesiredMission cachedDesiredMission = DesiredMission.doNothing;
@@ -51,6 +46,8 @@ public class AutoMissionChooser {
         missionChooser.addOption("Do Something", DesiredMission.DoSomething);
         missionChooser.addOption("Leave Community", DesiredMission.MoveAcrossLineMission);
         missionChooser.addOption("Scoring L4", DesiredMission.ScoringL4Mission);
+        missionChooser.addOption("Left Shoot Climb", DesiredMission.LeftShootClimb);
+        missionChooser.addOption("Advanced Choreo Shot", DesiredMission.AdvancedChoreoMission);
 
         SmartDashboard.putNumber("Auto Delay (seconds)", 0);
 
@@ -59,8 +56,7 @@ public class AutoMissionChooser {
 
         try {
             alliance = DriverStation.getAlliance().orElseThrow(() -> new Exception("No alliance")).toString();
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             // Handle the exception, for example:
             System.out.println("Exception occurred: " + e.getMessage());
         }
@@ -69,9 +65,8 @@ public class AutoMissionChooser {
     public void updateMissionCreator() {
         try {
             alliance = DriverStation.getAlliance().orElseThrow(() -> new Exception("No alliance")).toString();
-        }
-        catch (Exception e) {
-            
+        } catch (Exception e) {
+
         }
         delay = SmartDashboard.getNumber("Auto Delay", 0);
         DesiredMission desiredMission = missionChooser.getSelected();
@@ -87,14 +82,26 @@ public class AutoMissionChooser {
         cachedDesiredMission = desiredMission;
     }
 
+    public Optional<MissionBase> getAutoMissionForParams(String missionName) {
+        try {
+            return getAutoMissionForParams(DesiredMission.valueOf(missionName));
+        } catch (IllegalArgumentException e) {
+            return Optional.empty();
+        }
+    }
+
     private Optional<MissionBase> getAutoMissionForParams(DesiredMission mission) {
         switch (mission) {
-            // do nothing mission
+            case LeftShootClimb:
+                return Optional.of(new LeftShootClimbMission());
+            case AdvancedChoreoMission:
+                return Optional.of(new AdvancedChoreoMission());
+            case DoSomething:
+                return Optional.of(new DoSomething());
+            case exampleMission:
+                return Optional.of(new ExampleMission());
             case doNothing:
-                return null;
-            // if no auto mission is found
             default:
-                System.err.println("No valid autonomous mission found for" + mission);
                 return Optional.empty();
         }
     }
@@ -106,6 +113,15 @@ public class AutoMissionChooser {
 
     public void outputToSmartDashboard() {
         SmartDashboard.putString("AutoMissionSelected", cachedDesiredMission.name());
+    }
+
+    public SendableChooser<DesiredMission> getRawChooser() {
+        return missionChooser;
+    }
+
+    public String getSelected() {
+        DesiredMission selected = missionChooser.getSelected();
+        return selected == null ? DesiredMission.doNothing.name() : selected.name();
     }
 
     public Optional<MissionBase> getAutoMission() {

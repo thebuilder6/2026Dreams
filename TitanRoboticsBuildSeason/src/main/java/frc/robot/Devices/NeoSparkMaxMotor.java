@@ -16,6 +16,7 @@ public class NeoSparkMaxMotor {
 
     private double simVelocity = 0;
     private double simPosition = 0;
+    private double simSpeed = 0; // Commanded speed for simulation
 
     public NeoSparkMaxMotor(int CANID) {
         this(CANID, false);
@@ -79,12 +80,18 @@ public class NeoSparkMaxMotor {
     }
 
     public void setSpeed(double speed) {
+        if (edu.wpi.first.wpilibj.RobotBase.isSimulation()) {
+            simSpeed = speed;
+        }
         if (m_motor != null) {
             m_motor.set(isInverted ? -speed : speed);
         }
     }
 
     public double getSpeed() {
+        if (edu.wpi.first.wpilibj.RobotBase.isSimulation()) {
+            return simSpeed;
+        }
         if (m_motor != null) {
             return isInverted ? -m_motor.get() : m_motor.get();
         }

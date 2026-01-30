@@ -9,6 +9,7 @@ import choreo.Choreo;
 import choreo.trajectory.*;
 import edu.wpi.first.math.controller.PIDController;
 import edu.wpi.first.math.geometry.Pose2d;
+import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.DriverStation.Alliance;
@@ -31,24 +32,29 @@ public class FollowChoreoPath implements Actions {
     SwerveBase swerveBase;
     Timer timer;
     private final Map<String, Runnable> eventBindings = new HashMap<>();
-    private final Set<EventMarker> triggeredEvents = new HashSet<>();
+    private final Set<String> triggeredMarkers = new HashSet<>();
+    private java.util.function.Supplier<edu.wpi.first.math.geometry.Rotation2d> rotationOverride = null;
     private boolean isPaused = false;
     private double totalPausedTime = 0;
     private double pauseStartTimestamp = 0;
 
-    private final PIDController xController = new PIDController(AutonConstants.kAutoDriveP, AutonConstants.kAutoDriveI,
-            AutonConstants.kAutoDriveD);
-    private final PIDController yController = new PIDController(AutonConstants.kAutoDriveP, AutonConstants.kAutoDriveI,
-            AutonConstants.kAutoDriveD);
-    // heading controller lets us go in a full circle
-    private final PIDController headingController = new PIDController(AutonConstants.kAutoTurnP,
-            AutonConstants.kAutoTurnI, AutonConstants.kAutoTurnD);
+    private final PIDController xController;
+    private final PIDController yController;
+    private final PIDController headingController;
 
     public FollowChoreoPath(String trajectoryName, boolean resetOdometry) {
         swerveBase = SwerveBase.getInstance();
         this.trajectory = Choreo.loadTrajectory(trajectoryName);
         this.timer = new Timer();
         this.resetOdometry = resetOdometry;
+
+        // Pull Heading PID constants directly from YAGSL SwerveController config
+        var config = swerveBase.getSwerveController().config;
+        this.xController = new PIDController(AutonConstants.kAutoDriveP, AutonConstants.kAutoDriveI,
+                AutonConstants.kAutoDriveD);
+        this.yController = new PIDController(AutonConstants.kAutoDriveP, AutonConstants.kAutoDriveI,
+                AutonConstants.kAutoDriveD);
+        this.headingController = new PIDController(config.headingPIDF.p, config.headingPIDF.i, config.headingPIDF.d);
 
         // Rotation2d.getRadians() returns -PI to PI, so continuous input must match
         headingController.enableContinuousInput(-Math.PI, Math.PI);
@@ -67,65 +73,69 @@ public class FollowChoreoPath implements Actions {
     }
 
     private boolean isRedAlliance() {
-        if (DriverStation.getAlliance().get() == Alliance.Red) {
-            return true;
-        }
-        if (DriverStation.getAlliance().get() == Alliance.Blue) {
-            return false;
-        } else {
-            return true;
-        }
+        var alliance = DriverStation.getAlliance();
+        return alliance.isPresent() ? alliance.get() == Alliance.Red : false;
     }
 
     @Override
     public void start() {
         timer.restart();
-        triggeredEvents.clear();
+        triggeredMarkers.clear();
 
-        if (resetOdometry) {
+        if (resetOdometry && trajectory.isPresent()) {
             Optional<Pose2d> startPose = trajectory.get().getInitialPose(isRedAlliance());
-            if (startPose != null) {
+            if (startPose != null && startPose.isPresent()) {
                 swerveBase.resetOdometry(startPose.get());
             }
         }
     }
 
+    public FollowChoreoPath setRotationOverride(
+            java.util.function.Supplier<edu.wpi.first.math.geometry.Rotation2d> override) {
+        this.rotationOverride = override;
+        return this;
+    }
+
+    public boolean hasMarkerBeenPassed(String markerName) {
+        return triggeredMarkers.contains(markerName);
+    }
+
     public void update() {
-        // autoDrive.followTrajectory(SwerveSample); Tried to use to call this stuff
-        // from auto drive
+        if (!trajectory.isPresent())
+            return;
 
         double time = timer.get() - totalPausedTime;
         if (isPaused) {
             time = pauseStartTimestamp - totalPausedTime;
         }
 
-        SwerveSample sample = trajectory.get().sampleAt(time, resetOdometry).get();
-        // Get the current currentRobotPose the robot
+        SwerveSample sample = trajectory.get().sampleAt(time, isRedAlliance()).get();
         Pose2d currentRobotPose = swerveBase.getPose();
         Pose2d targetPose = sample.getPose();
+
+        // Target Heading: Use override if provided, otherwise use trajectory value
+        Rotation2d targetHeading = (rotationOverride != null) ? rotationOverride.get() : targetPose.getRotation();
 
         // Generate the next speeds for the robot
         ChassisSpeeds autoSpeeds = new ChassisSpeeds(
                 sample.vx + xController.calculate(currentRobotPose.getX(), sample.x),
                 sample.vy + yController.calculate(currentRobotPose.getY(), sample.y),
                 sample.omega + headingController.calculate(currentRobotPose.getRotation().getRadians(),
-                        targetPose.getRotation().getRadians()));
+                        targetHeading.getRadians()));
 
         // Apply the generated speeds into swerve
         swerveBase.driveFieldOriented(autoSpeeds);
 
         // Handle events
-        if (trajectory.isPresent()) {
-            for (EventMarker event : trajectory.get().events()) {
-                double timestamp = event.timestamp;
-                // If we passed the timestamp and haven't triggered it yet
-                if (time >= timestamp && !triggeredEvents.contains(event)) {
-                    Runnable action = eventBindings.get(event.event);
-                    if (action != null) {
-                        action.run();
-                    }
-                    triggeredEvents.add(event);
+        for (EventMarker event : trajectory.get().events()) {
+            double timestamp = event.timestamp;
+            // If we passed the timestamp and haven't triggered it yet
+            if (time >= timestamp && !triggeredMarkers.contains(event.event)) {
+                Runnable action = eventBindings.get(event.event);
+                if (action != null) {
+                    action.run();
                 }
+                triggeredMarkers.add(event.event);
             }
         }
     }

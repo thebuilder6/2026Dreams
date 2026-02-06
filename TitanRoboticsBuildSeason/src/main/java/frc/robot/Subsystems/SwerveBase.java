@@ -7,6 +7,7 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 
 import edu.wpi.first.math.VecBuilder;
 import edu.wpi.first.math.geometry.Pose2d;
@@ -47,6 +48,12 @@ public class SwerveBase implements Subsystem {
 
     private static final Pose2d OFF_FIELD_POSE = new Pose2d(-999, -999, new Rotation2d());
 
+    // Members for logging
+    private int lastLimelightTagCount = 0;
+    private double lastLimelightAvgDist = 0;
+    private double lastLimelightStdDev = 0;
+    private boolean lastLimelightAccepted = false;
+
     /**
      * Gets the singleton instance of SwerveBase.
      * 
@@ -74,7 +81,7 @@ public class SwerveBase implements Subsystem {
                         Rotation2d.fromDegrees(180));
         // Configure the Telemetry before creating the SwerveDrive to avoid unnecessary
         // objects being created.
-        SwerveDriveTelemetry.verbosity = TelemetryVerbosity.HIGH;
+        SwerveDriveTelemetry.verbosity = TelemetryVerbosity.NONE;
         try {
             swerveDrive = new SwerveParser(new File(Filesystem.getDeployDirectory(), "swerve"))
                     .createSwerveDrive(Constants.MAX_SPEED, startingPose);
@@ -133,6 +140,13 @@ public class SwerveBase implements Subsystem {
                 rotation,
                 fieldRelative,
                 false); // Open loop is disabled since it shouldn't be used most of the time.
+    }
+
+    /**
+     * Stop the drivebase by commanding zero velocity.
+     */
+    public void stop() {
+        swerveDrive.drive(new Translation2d(0, 0), 0, false, false);
     }
 
     /**
@@ -195,6 +209,15 @@ public class SwerveBase implements Subsystem {
      */
     public Pose2d getPose() {
         return swerveDrive.getPose();
+    }
+
+    /**
+     * Gets the current simulation pose of the robot.
+     * 
+     * @return The simulation pose
+     */
+    public Pose2d getSimulationPose() {
+        return swerveDrive.getSimulationDriveTrainPose().orElse(getPose());
     }
 
     /**
@@ -550,7 +573,9 @@ public class SwerveBase implements Subsystem {
     }
 
     public void LimelightOdometryUpdate() {
-        LimelightHelpers.SetRobotOrientation("limelight", getPose().getRotation().getDegrees(), 0, 0, 0, 0, 0);
+
+        double yawRate = swerveDrive.getGyro().getYawAngularVelocity().in(DegreesPerSecond);
+        LimelightHelpers.SetRobotOrientation("limelight", getPose().getRotation().getDegrees(), yawRate, 0, 0, 0, 0);
         LimelightHelpers.PoseEstimate mt2 = LimelightHelpers.getBotPoseEstimate_wpiBlue_MegaTag2("limelight");
 
         if (mt2 == null) {
@@ -567,7 +592,7 @@ public class SwerveBase implements Subsystem {
         boolean doRejectUpdate = false;
 
         // 1. Angular Velocity Rejection
-        if (Math.abs(swerveDrive.getGyro().getYawAngularVelocity().in(DegreesPerSecond)) > 360) {
+        if (Math.abs(yawRate) > 360) {
             doRejectUpdate = true;
         }
 
@@ -576,9 +601,17 @@ public class SwerveBase implements Subsystem {
             doRejectUpdate = true;
         }
 
-        // 3. Single Tag Rejection at distance
-        if (mt2.tagCount == 1 && mt2.avgTagDist > 3.0) {
-            doRejectUpdate = true;
+        // 3. Single Tag Rejection at distance or high ambiguity
+        if (mt2.tagCount == 1) {
+            if (mt2.avgTagDist > 3.0) {
+                doRejectUpdate = true;
+            }
+
+            for (LimelightHelpers.RawFiducial tag : mt2.rawFiducials) {
+                if (tag != null && tag.ambiguity > 0.4) {
+                    doRejectUpdate = true;
+                }
+            }
         }
 
         // Calculate dynamic trust (Standard Deviation)
@@ -592,10 +625,12 @@ public class SwerveBase implements Subsystem {
         stdDev += (mt2.avgTagDist * mt2.avgTagDist) / 20.0;
 
         // Logging & Visualization
-        SmartDashboard.putNumber("Limelight/TagCount", mt2.tagCount);
-        SmartDashboard.putNumber("Limelight/AvgDist", mt2.avgTagDist);
-        SmartDashboard.putNumber("Limelight/TrustLevel (SD)", stdDev);
-        SmartDashboard.putBoolean("Limelight/IsAccepted", !doRejectUpdate);
+        // Store for logging
+        this.lastLimelightTagCount = mt2.tagCount;
+        this.lastLimelightAvgDist = mt2.avgTagDist;
+        this.lastLimelightStdDev = stdDev;
+        this.lastLimelightAccepted = !doRejectUpdate;
+
         field.getObject("LimelightGhost").setPose(mt2.pose);
 
         if (!doRejectUpdate) {
@@ -613,13 +648,22 @@ public class SwerveBase implements Subsystem {
     @Override
     public void update() {
         swerveDrive.updateOdometry();
-        if (!SwerveDriveTelemetry.isSimulation) {
-            LimelightOdometryUpdate();
+
+        Pose2d estimatedPose = getPose();
+        Pose2d truthPose = SwerveDriveTelemetry.isSimulation ? getSimulationPose() : estimatedPose;
+
+        if (SwerveDriveTelemetry.isSimulation) {
+            LimelightSim.update(truthPose);
+            field.getObject("OdometryGhost").setPose(estimatedPose);
         }
+
+        LimelightOdometryUpdate();
         drawGlidePointsOnField();
         highlightNearestGlidePointOnField(getNearestGlidePoint());
-        // No manual field.setRobotPose call needed here; YAGSL handles it internally
-        // for the unified field
+
+        // Explicitly update the field object with the current pose
+        // In simulation, we show the Truth Pose as the main robot
+        field.setRobotPose(truthPose);
     }
 
     @Override
@@ -629,9 +673,14 @@ public class SwerveBase implements Subsystem {
 
     @Override
     public void log() {
-        SmartDashboard.putNumber("Swerve/Heading", getHeading().getDegrees());
-        SmartDashboard.putNumber("Swerve/Pose X", getPose().getX());
-        SmartDashboard.putNumber("Swerve/Pose Y", getPose().getY());
+        SmartDashboard.putNumber("Subsystems/Swerve/Heading", getHeading().getDegrees());
+        SmartDashboard.putNumber("Subsystems/Swerve/Pose X", getPose().getX());
+        SmartDashboard.putNumber("Subsystems/Swerve/Pose Y", getPose().getY());
+
+        SmartDashboard.putNumber("Subsystems/Limelight/TagCount", lastLimelightTagCount);
+        SmartDashboard.putNumber("Subsystems/Limelight/AvgDist", lastLimelightAvgDist);
+        SmartDashboard.putNumber("Subsystems/Limelight/TrustLevel", lastLimelightStdDev);
+        SmartDashboard.putBoolean("Subsystems/Limelight/IsAccepted", lastLimelightAccepted);
     }
 
     @Override

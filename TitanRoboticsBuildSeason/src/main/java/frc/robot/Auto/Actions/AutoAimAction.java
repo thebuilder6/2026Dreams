@@ -1,9 +1,13 @@
 package frc.robot.Auto.Actions;
 
+import choreo.trajectory.SwerveSample;
+import edu.wpi.first.math.geometry.Pose2d;
+import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import frc.robot.Interfaces.Actions;
 import frc.robot.Subsystems.Shooter;
 import frc.robot.Subsystems.SwerveBase;
 import frc.robot.Data.Constants.ShooterConstants;
+import java.util.Optional;
 
 /**
  * Action that continuously calculates the best shooting heading and RPM while
@@ -28,15 +32,36 @@ public class AutoAimAction implements Actions {
         if (path != null) {
             // Set the path to use our calculated heading instead of the one baked in
             path.setRotationOverride(() -> {
-                var solution = shooter.calculateShootingSolution(swerve.getPose(), swerve.getFieldVelocity());
-                return solution.turretAngle();
+                double lookAhead = frc.robot.Data.Constants.LOOP_TIME;
+                Optional<SwerveSample> sample = path.getSampleAtRelativeTime(lookAhead);
+                if (sample.isPresent()) {
+                    SwerveSample s = sample.get();
+                    var solution = shooter.calculateShootingSolution(s.getPose(), s.getChassisSpeeds(), 0);
+                    return solution.turretAngle();
+                }
+                return swerve.getHeading();
             });
         }
     }
 
     @Override
     public void update() {
-        var solution = shooter.calculateShootingSolution(swerve.getPose(), swerve.getFieldVelocity());
+        double lookAhead = frc.robot.Data.Constants.LOOP_TIME;
+        Optional<SwerveSample> sample = (path != null) ? path.getSampleAtRelativeTime(lookAhead) : Optional.empty();
+
+        Pose2d pose;
+        ChassisSpeeds speeds;
+
+        if (sample.isPresent()) {
+            SwerveSample s = sample.get();
+            pose = s.getPose();
+            speeds = s.getChassisSpeeds();
+        } else {
+            pose = swerve.getPose();
+            speeds = swerve.getFieldVelocity();
+        }
+
+        var solution = shooter.calculateShootingSolution(pose, speeds, 0);
 
         if (solution.possible()) {
             shooter.setFlywheelVelocity(solution.flywheelRPM());

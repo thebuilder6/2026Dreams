@@ -166,4 +166,29 @@ public class FollowChoreoPath implements Actions {
     public boolean isPaused() {
         return isPaused;
     }
+
+    /**
+     * Gets the current time into the trajectory.
+     * 
+     * @return Time in seconds
+     */
+    public double getCurrentTrajectoryTime() {
+        double time = timer.get() - totalPausedTime;
+        if (isPaused) {
+            time = pauseStartTimestamp - totalPausedTime;
+        }
+        return time;
+    }
+
+    /**
+     * Samples the trajectory at a time relative to the current progress.
+     * 
+     * @param relativeTime Seconds into the future to sample
+     * @return Optional SwerveSample
+     */
+    public Optional<SwerveSample> getSampleAtRelativeTime(double relativeTime) {
+        if (!trajectory.isPresent())
+            return Optional.empty();
+        return trajectory.get().sampleAt(getCurrentTrajectoryTime() + relativeTime, isRedAlliance());
+    }
 }

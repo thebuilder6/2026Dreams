@@ -154,6 +154,16 @@ public class Intake implements Subsystem {
         armMotor.setVoltage(pidOutput + ffOutput);
     }
 
+    /**
+     * Stop all motors and set state to IDLE.
+     */
+    public void stop() {
+        currentState = IntakeState.IDLE;
+        rollerMotor.stop();
+        hopperMotor.stop();
+        armMotor.stop();
+    }
+
     public void setArmSpeed(double speed) {
         armMotor.setSpeed(speed);
     }
@@ -167,14 +177,14 @@ public class Intake implements Subsystem {
 
     @Override
     public void log() {
-        SmartDashboard.putString("Intake/State", currentState.toString());
-        SmartDashboard.putNumber("Intake/Arm Position", armMotor.getPosition());
-        SmartDashboard.putNumber("Intake/Target Arm Position", targetArmPositionRad);
-        SmartDashboard.putNumber("Intake/Arm Velocity", armMotor.getVelocity());
-        SmartDashboard.putNumber("Intake/Roller Velocity", rollerMotor.getVelocity());
-        SmartDashboard.putNumber("Intake/Hopper Velocity", hopperMotor.getVelocity());
-        SmartDashboard.putNumber("Intake/Roller Current", rollerMotor.getOutputCurrent());
-        SmartDashboard.putBoolean("Intake/Is Jammed", isEjectingJam);
+        SmartDashboard.putString("Subsystems/Intake/State", currentState.toString());
+        SmartDashboard.putNumber("Subsystems/Intake/Arm Position", armMotor.getPosition());
+        SmartDashboard.putNumber("Subsystems/Intake/Target Arm Position", targetArmPositionRad);
+        SmartDashboard.putNumber("Subsystems/Intake/Arm Velocity", armMotor.getVelocity());
+        SmartDashboard.putNumber("Subsystems/Intake/Roller Velocity", rollerMotor.getVelocity());
+        SmartDashboard.putNumber("Subsystems/Intake/Hopper Velocity", hopperMotor.getVelocity());
+        SmartDashboard.putNumber("Subsystems/Intake/Roller Current", rollerMotor.getOutputCurrent());
+        SmartDashboard.putBoolean("Subsystems/Intake/Is Jammed", isEjectingJam);
     }
 
     @Override

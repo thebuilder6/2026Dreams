@@ -9,6 +9,7 @@ import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.TimedRobot;
 import frc.robot.Auto.AutoMissionExecutor;
 import frc.robot.Auto.Missions.MissionBase;
+import frc.robot.Subsystems.AIRobotSim;
 import frc.robot.Subsystems.Climber;
 import frc.robot.Subsystems.Dashboard;
 import frc.robot.Subsystems.GameSim;
@@ -47,9 +48,14 @@ public class Robot extends TimedRobot {
     Climber.getInstance();
     Dashboard.getInstance();
     GameSim.getInstance();
+    AIRobotSim.getInstance();
     teleop = new Teleop();
     SubsystemManager.initializeSubsystems();
     swerveBase.update();
+
+    // Disable LiveWindow to reduce NetworkTable noise
+    edu.wpi.first.wpilibj.livewindow.LiveWindow.setEnabled(false);
+    edu.wpi.first.wpilibj.livewindow.LiveWindow.disableAllTelemetry();
   }
 
   /**
@@ -66,6 +72,7 @@ public class Robot extends TimedRobot {
   public void robotPeriodic() {
 
     SubsystemManager.updateSubsystems();
+    SubsystemManager.logSubsystems();
     // private final Field2d m_field = new Field2d();
     // Do this in either robot or subsystem init
     // SmartDashboard.putData("Field", m_field);
@@ -98,6 +105,8 @@ public class Robot extends TimedRobot {
    */
   @Override
   public void autonomousInit() {
+    GameSim.getInstance().resetGame();
+    AIRobotSim.getInstance().reset();
     m_autoSelected = Dashboard.getInstance().getAutoChooser().getSelected();
     System.out.println("Auto selected: " + m_autoSelected);
 
@@ -120,7 +129,6 @@ public class Robot extends TimedRobot {
   /** This function is called once when teleop is enabled. */
   @Override
   public void teleopInit() {
-    swerveBase.zeroGyroWithAlliance();
   }
 
   /** This function is called periodically during operator control. */
@@ -135,6 +143,11 @@ public class Robot extends TimedRobot {
   @Override
   public void disabledInit() {
     mAutoMissionExecutor.stop();
+    teleop.reset();
+    swerveBase.stop();
+    Shooter.getInstance().stop();
+    Intake.getInstance().stop();
+    swerveBase.setMotorBrake(true);
   }
 
   /** This function is called periodically when disabled. */
@@ -161,5 +174,6 @@ public class Robot extends TimedRobot {
   @Override
   public void simulationPeriodic() {
     SubsystemManager.simulationUpdateSubsystems();
+    swervelib.simulation.ironmaple.simulation.SimulatedArena.getInstance().simulationPeriodic();
   }
 }

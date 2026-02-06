@@ -1,23 +1,23 @@
 package frc.robot.Subsystems;
 
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.List;
+import edu.wpi.first.units.Units;
 import java.util.Optional;
+
+import swervelib.simulation.ironmaple.simulation.seasonspecific.rebuilt2026.RebuiltFuelOnFly;
 
 import com.revrobotics.spark.config.SparkMaxConfig;
 
 import edu.wpi.first.math.controller.PIDController;
 import edu.wpi.first.math.controller.SimpleMotorFeedforward;
 import edu.wpi.first.math.geometry.Pose2d;
-import edu.wpi.first.math.geometry.Pose3d;
 import edu.wpi.first.math.geometry.Rotation2d;
-import edu.wpi.first.math.geometry.Rotation3d;
+
 import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.math.geometry.Translation3d;
 import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import edu.wpi.first.math.system.plant.DCMotor;
 import edu.wpi.first.math.system.plant.LinearSystemId;
+
 import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.DriverStation.Alliance;
 import edu.wpi.first.wpilibj.RobotBase;
@@ -42,25 +42,10 @@ public class Shooter implements Subsystem {
     private FlywheelSim flywheelSim;
 
     private double targetVelocityRPM = 0;
-    private final List<SimBall> activeBalls = new ArrayList<>();
     private double lastBallSpawnTime = 0;
     private double lastSimTime = -1;
     private long simShotCount = 0;
     private long simScoreCount = 0;
-
-    private static class SimBall {
-        double x, y, z, vx, vy, vz, timeAlive;
-
-        public SimBall(double x, double y, double z, double vx, double vy, double vz) {
-            this.x = x;
-            this.y = y;
-            this.z = z;
-            this.vx = vx;
-            this.vy = vy;
-            this.vz = vz;
-            this.timeAlive = 0;
-        }
-    }
 
     // Record to hold the calculated shooting solution
     public record ShootingSolution(Rotation2d turretAngle, double flywheelRPM, boolean possible) {
@@ -167,53 +152,71 @@ public class Shooter implements Subsystem {
     /**
      * Calculates the shooting solution (heading and RPM) to hit the goal while
      * moving.
+     * Incorporates predictive look-ahead to compensate for control/sensor latency.
      * 
      * @param robotPose Current robot pose
      * @param robotVel  Current robot field-relative velocity
      * @return ShootingSolution containing target heading and RPM
      */
     public ShootingSolution calculateShootingSolution(Pose2d robotPose, ChassisSpeeds robotVel) {
-        Translation2d goalLoc = getGoalLocation().toTranslation2d();
+        return calculateShootingSolution(robotPose, robotVel, Constants.LOOP_TIME);
+    }
 
-        // Compensate for physical shooter offset from robot center
-        Translation2d shooterLoc = robotPose.getTranslation().plus(
-                new Translation2d(ShooterConstants.SHOOTER_OFFSET_METERS, 0).rotateBy(robotPose.getRotation()));
+    /**
+     * Calculates the shooting solution (heading and RPM) to hit the goal while
+     * moving.
+     * 
+     * @param robotPose     Current robot pose
+     * @param robotVel      Current robot field-relative velocity (used for leading
+     *                      target)
+     * @param lookAheadTime Seconds to predict forward for the robot's pose
+     * @return ShootingSolution containing target heading and RPM
+     */
+    public ShootingSolution calculateShootingSolution(Pose2d robotPose, ChassisSpeeds robotVel, double lookAheadTime) {
+        // 1. Predictive Look-ahead (Latency Compensation)
+        // Adjust robot pose based on expected delay (sensor lag + loop time)
+        Pose2d predictedPose = new Pose2d(
+                robotPose.getX() + robotVel.vxMetersPerSecond * lookAheadTime,
+                robotPose.getY() + robotVel.vyMetersPerSecond * lookAheadTime,
+                robotPose.getRotation().plus(Rotation2d.fromRadians(robotVel.omegaRadiansPerSecond * lookAheadTime)));
+
+        Translation2d goalLoc = getGoalLocation().toTranslation2d();
+        Translation2d robotTrans = predictedPose.getTranslation();
+
+        // 2. Compensate for physical shooter offset from robot center
+        Translation2d shooterLoc = robotTrans.plus(
+                new Translation2d(ShooterConstants.SHOOTER_OFFSET_METERS, 0).rotateBy(predictedPose.getRotation()));
 
         Translation2d diff = goalLoc.minus(shooterLoc);
         double distance = diff.getNorm();
 
         double heightDiff = Constants.FieldConstants.GOAL_HEIGHT_METERS - ShooterConstants.SHOOTER_HEIGHT_METERS;
-
-        // 1. Calculate ideal exit velocity (V_total) required if stationary
-        // Using projectile motion equation: v = sqrt( (g * x^2) / (2 * cos^2(theta) *
-        // (x * tan(theta) - y)) )
         double g = 9.81;
         double theta = ShooterConstants.SHOOTER_ANGLE_RAD;
         double cosTheta = Math.cos(theta);
         double tanTheta = Math.tan(theta);
 
+        // 3. Calculate initial estimate for required horizontal velocity (vIdealMag)
+        // Projectile motion: v = sqrt( (g * x^2) / (2 * cos^2(theta) * (x * tan(theta)
+        // - y)) )
         double term = distance * tanTheta - heightDiff;
         if (term <= 0)
             return new ShootingSolution(new Rotation2d(), 0, false); // Impossible shot
 
         double vIdealMag = Math.sqrt((g * distance * distance) / (2 * cosTheta * cosTheta * term));
 
-        // Vector of the ideal shot in the horizontal plane
-        Translation2d vIdealHorizontal = diff.div(distance).times(vIdealMag * cosTheta);
-
-        // 2. Compensate for robot velocity
-        // vShot_horizontal = vIdeal_horizontal - vRobot
+        // 4. Refine for robot velocity
+        // vBallHorizontal = vShotHorizontal + vRobot
         Translation2d vRobot = new Translation2d(robotVel.vxMetersPerSecond, robotVel.vyMetersPerSecond);
-        Translation2d vShotHorizontal = vIdealHorizontal.minus(vRobot);
+        Translation2d vShotHorizontal = diff.div(distance).times(vIdealMag * cosTheta).minus(vRobot);
 
-        // 3. Calculate new heading and RPM
+        // Calculate new heading and RPM
         Rotation2d targetYaw = vShotHorizontal.getAngle();
         double targetHorizontalSpeed = vShotHorizontal.getNorm();
-        double targetTotalSpeed = targetHorizontalSpeed / cosTheta;
+        double targetTotalSpeed = (targetHorizontalSpeed / cosTheta);
 
-        // Convert m/s to RPM. This depends on flywheel radius and gear ratio
-        // Approximation: RPM = (Speed / Circumference) * 60 * GearRatio
-        // Assumed 4 inch wheel (0.1016 m) -> Circumference approx 0.319m
+        // Convert m/s to RPM. Assumed 4 inch wheel (0.1016 m) -> Circumference approx
+        // 0.319m
         double wheelCircumference = 0.1016 * Math.PI;
         double targetRPM = (targetTotalSpeed / wheelCircumference) * 60.0;
 
@@ -252,111 +255,45 @@ public class Shooter implements Subsystem {
                 if (GameSim.getInstance().consumeHeldBallForShot()) {
                     Pose2d robotPose = SwerveBase.getInstance().getPose();
                     ChassisSpeeds robotVel = SwerveBase.getInstance().getFieldVelocity();
-                    Rotation2d shootHeading = robotPose.getRotation();
 
-                    // Calculate Spawn Position (Robot Center + Shooter Offset)
-                    Translation2d spawnOffset = new Translation2d(ShooterConstants.SHOOTER_OFFSET_METERS, 0)
-                            .rotateBy(shootHeading);
-                    Translation2d ballSpawn = robotPose.getTranslation().plus(spawnOffset);
+                    // Create Maple Sim projectile
+                    // Note: The constructor args are based on the documentation example.
+                    // We map our constants to the expected parameters.
 
-                    // 3D Exit Velocity relative to robot (before robot motion compensation)
                     double exitVelocity = (flywheelMotor.getVelocity() / 60.0) * (0.1016 * Math.PI);
-                    double vHorizontalRel = exitVelocity * Math.cos(ShooterConstants.SHOOTER_ANGLE_RAD);
-                    double vVerticalRel = exitVelocity * Math.sin(ShooterConstants.SHOOTER_ANGLE_RAD);
 
-                    // Combine robot velocity + projectile velocity
-                    double totalVX = robotVel.vxMetersPerSecond + (vHorizontalRel * shootHeading.getCos());
-                    double totalVY = robotVel.vyMetersPerSecond + (vHorizontalRel * shootHeading.getSin());
-                    double totalVZ = vVerticalRel; // Assuming vertical velocity isn't affected much by horizontal drive
+                    var fuelOnFly = new RebuiltFuelOnFly(
+                            robotPose.getTranslation(),
+                            new Translation2d(ShooterConstants.SHOOTER_OFFSET_METERS, 0),
+                            robotVel,
+                            robotPose.getRotation(),
+                            Units.Meters.of(ShooterConstants.SHOOTER_HEIGHT_METERS),
+                            Units.MetersPerSecond.of(exitVelocity),
+                            Units.Radians.of(ShooterConstants.SHOOTER_ANGLE_RAD));
 
-                    activeBalls.add(new SimBall(
-                            ballSpawn.getX(),
-                            ballSpawn.getY(),
-                            ShooterConstants.SHOOTER_HEIGHT_METERS,
-                            totalVX,
-                            totalVY,
-                            totalVZ));
+                    // Configure target based on alliance
+                    Translation3d targetLoc = getGoalLocation();
+
+                    // Maple Sim utilities for mirroring might be needed if the library expects
+                    // blue-relative always,
+                    // but since we are providing the absolute field location, it might be fine.
+                    // The docs example used: FieldMirroringUtils.toCurrentAllianceTranslation(...)
+                    // We will trust our `getGoalLocation()` returns the correct field coordinates.
+
+                    fuelOnFly.withTargetPosition(() -> targetLoc)
+                            .withTargetTolerance(new Translation3d(0.5, 1.2, 0.3)) // Tolerance from docs
+                            .withHitTargetCallBack(() -> {
+                                simScoreCount++;
+                                // System.out.println("Hit hub!");
+                            });
+
+                    swervelib.simulation.ironmaple.simulation.SimulatedArena.getInstance()
+                            .addGamePieceProjectile(fuelOnFly);
 
                     simShotCount++;
-
                     lastBallSpawnTime = currentTime;
                 }
             }
-
-            // Update active balls
-            double dt = (lastSimTime < 0) ? 0.02 : (currentTime - lastSimTime);
-            lastSimTime = currentTime;
-
-            Iterator<SimBall> iter = activeBalls.iterator();
-            List<Pose2d> ballPoses2d = new ArrayList<>();
-            List<Pose3d> ballPoses3d = new ArrayList<>();
-            while (iter.hasNext()) {
-                SimBall ball = iter.next();
-
-                double oldX = ball.x;
-                double oldY = ball.y;
-                double oldZ = ball.z;
-
-                // Apply Gravity (9.81 m/s^2)
-                ball.vz -= 9.81 * dt;
-
-                ball.x += ball.vx * dt;
-                ball.y += ball.vy * dt;
-                ball.z += ball.vz * dt;
-                ball.timeAlive += dt;
-
-                boolean didScore = false;
-                double goalZ = getGoalLocation().getZ();
-                if (Dashboard.getInstance().isHubActive() && oldZ != ball.z) {
-                    boolean crossesPlane = (oldZ - goalZ) * (ball.z - goalZ) <= 0.0;
-                    if (crossesPlane) {
-                        double t = (goalZ - oldZ) / (ball.z - oldZ);
-                        if (t >= 0.0 && t <= 1.0) {
-                            double xCross = oldX + (ball.x - oldX) * t;
-                            double yCross = oldY + (ball.y - oldY) * t;
-                            Translation2d goalXY = getGoalLocation().toTranslation2d();
-                            double dx = xCross - goalXY.getX();
-                            double dy = yCross - goalXY.getY();
-                            if ((dx * dx + dy * dy) <= (0.5 * 0.5)) {
-                                simScoreCount++;
-                                didScore = true;
-                            }
-                        }
-                    }
-                }
-
-                if (didScore || ball.timeAlive > 3.0 || ball.z < -0.1) { // Despawn after 2 seconds or if it hits ground
-                    iter.remove();
-                } else {
-                    ballPoses2d.add(new Pose2d(ball.x, ball.y, new Rotation2d()));
-
-                    // Calculate 3D orientation based on velocity vector for realism
-                    double vHorizontal = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
-                    Rotation3d orientation = new Rotation3d(
-                            0,
-                            -Math.atan2(ball.vz, vHorizontal),
-                            Math.atan2(ball.vy, ball.vx));
-                    ballPoses3d.add(new Pose3d(ball.x, ball.y, ball.z, orientation));
-                }
-            }
-
-            // Update 2D Field for standard Dashboard
-            SwerveBase.getInstance().getField().getObject("Fuel").setPoses(ballPoses2d);
-
-            // Publish 3D Poses for AdvantageScope (format: x, y, z, qw, qx, qy, qz)
-            double[] flatPoses = new double[ballPoses3d.size() * 7];
-            for (int i = 0; i < ballPoses3d.size(); i++) {
-                Pose3d p = ballPoses3d.get(i);
-                int idx = i * 7;
-                flatPoses[idx] = p.getX();
-                flatPoses[idx + 1] = p.getY();
-                flatPoses[idx + 2] = p.getZ();
-                flatPoses[idx + 3] = p.getRotation().getQuaternion().getW();
-                flatPoses[idx + 4] = p.getRotation().getQuaternion().getX();
-                flatPoses[idx + 5] = p.getRotation().getQuaternion().getY();
-                flatPoses[idx + 6] = p.getRotation().getQuaternion().getZ();
-            }
-            SmartDashboard.putNumberArray("Shooter/BallPoses3d", flatPoses);
         }
     }
 
@@ -375,11 +312,16 @@ public class Shooter implements Subsystem {
 
     @Override
     public void log() {
-        SmartDashboard.putNumber("Shooter/Flywheel Velocity", flywheelMotor.getVelocity());
-        SmartDashboard.putNumber("Shooter/Target Velocity", targetVelocityRPM);
-        SmartDashboard.putNumber("Shooter/Feeder Speed", feederMotor.getVelocity());
-        SmartDashboard.putBoolean("Shooter/Is At Target", isAtTargetVelocity());
-        SmartDashboard.putBoolean("Shooter/Is Lined Up", isLinedUp());
+        SmartDashboard.putNumber("Subsystems/Shooter/Flywheel Velocity", flywheelMotor.getVelocity());
+        SmartDashboard.putNumber("Subsystems/Shooter/Target Velocity", targetVelocityRPM);
+        SmartDashboard.putNumber("Subsystems/Shooter/Feeder Speed", feederMotor.getVelocity());
+        SmartDashboard.putBoolean("Subsystems/Shooter/Is At Target", isAtTargetVelocity());
+        SmartDashboard.putBoolean("Subsystems/Shooter/Is Lined Up", isLinedUp());
+
+        if (RobotBase.isSimulation()) {
+            SmartDashboard.putNumber("Simulation/Shooter/Shot Count", simShotCount);
+            SmartDashboard.putNumber("Simulation/Shooter/Score Count", simScoreCount);
+        }
     }
 
     @Override

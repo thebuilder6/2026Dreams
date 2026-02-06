@@ -40,6 +40,12 @@ public class SubsystemManager {
         }
     }
 
+    public static void logSubsystems() {
+        for (Subsystem subsystem : subsystems) {
+            subsystem.log();
+        }
+    }
+
     /**
      * Returns the list of registered subsystems. This list is unmodifiable, as the
      * purpose is to

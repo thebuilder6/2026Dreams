@@ -3,14 +3,20 @@ package frc.robot.Subsystems;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
+import java.util.Set;
+
+import swervelib.simulation.ironmaple.simulation.SimulatedArena;
+import swervelib.simulation.ironmaple.simulation.gamepieces.GamePiece;
+import swervelib.simulation.ironmaple.simulation.gamepieces.GamePieceOnFieldSimulation;
+import swervelib.simulation.ironmaple.simulation.seasonspecific.rebuilt2026.RebuiltFuelOnField;
 
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Pose3d;
 import edu.wpi.first.math.geometry.Rotation2d;
-import edu.wpi.first.math.geometry.Rotation3d;
 import edu.wpi.first.math.geometry.Translation2d;
-import edu.wpi.first.math.geometry.Translation3d;
 import edu.wpi.first.wpilibj.DriverStation;
+import edu.wpi.first.networktables.NetworkTableInstance;
+import edu.wpi.first.networktables.StructArrayPublisher;
 import edu.wpi.first.wpilibj.RobotBase;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
@@ -20,14 +26,12 @@ public class GameSim implements Subsystem {
 
     private static GameSim instance;
 
-    private final List<Translation2d> pickupBalls = new ArrayList<>();
-
     private int heldBalls = 0;
     private int score = 0;
 
     private double simTimeRemainingSec = 150.0;
     private boolean simRunning = false;
-    private double lastTimestampSec = -1.0;
+    private final StructArrayPublisher<Pose3d> gamePiecePublisher;
 
     private long lastSimScoreCount = 0;
     private long shotsConsumedWithBall = 0;
@@ -44,6 +48,9 @@ public class GameSim implements Subsystem {
     }
 
     private GameSim() {
+        this.gamePiecePublisher = NetworkTableInstance.getDefault()
+                .getStructArrayTopic("Simulation/GamePieces", Pose3d.struct)
+                .publish();
         resetGame();
         SubsystemManager.registerSubsystem(this);
     }
@@ -74,25 +81,21 @@ public class GameSim implements Subsystem {
             return;
         }
 
-        double nowSec = Timer.getFPGATimestamp();
-        double dt = (lastTimestampSec < 0.0) ? 0.02 : (nowSec - lastTimestampSec);
-        lastTimestampSec = nowSec;
-
-        boolean reset = SmartDashboard.getBoolean("Game/Reset", false);
+        boolean reset = SmartDashboard.getBoolean("Simulation/Reset", false);
         if (reset) {
-            SmartDashboard.putBoolean("Game/Reset", false);
+            SmartDashboard.putBoolean("Simulation/Reset", false);
             resetGame();
         }
 
-        boolean respawn = SmartDashboard.getBoolean("Game/RespawnBalls", false);
+        boolean respawn = SmartDashboard.getBoolean("Simulation/RespawnBalls", false);
         if (respawn) {
-            SmartDashboard.putBoolean("Game/RespawnBalls", false);
+            SmartDashboard.putBoolean("Simulation/RespawnBalls", false);
             spawnPickupBalls();
         }
 
         double dsTimeRemainingSec = DriverStation.getMatchTime();
         boolean isDsTimeValid = dsTimeRemainingSec >= 0.0;
-        SmartDashboard.putBoolean("Game/TimeRemainingValid", isDsTimeValid);
+        SmartDashboard.putBoolean("Simulation/TimeRemainingValid", isDsTimeValid);
 
         if (isDsTimeValid) {
             simTimeRemainingSec = dsTimeRemainingSec;
@@ -105,7 +108,7 @@ public class GameSim implements Subsystem {
             }
 
             if (simRunning) {
-                simTimeRemainingSec = Math.max(0.0, simTimeRemainingSec - dt);
+                simTimeRemainingSec = Math.max(0.0, simTimeRemainingSec - 0.02);
                 if (simTimeRemainingSec <= 0.0) {
                     simRunning = false;
                 }
@@ -118,40 +121,23 @@ public class GameSim implements Subsystem {
     }
 
     private void publish() {
-        SmartDashboard.putNumber("Game/TimeRemainingSec", simTimeRemainingSec);
-        SmartDashboard.putBoolean("Game/Running", simRunning);
-        SmartDashboard.putNumber("Game/Score", score);
-        SmartDashboard.putNumber("Game/HeldBalls", heldBalls);
-        SmartDashboard.putNumber("Game/BallsRemaining", pickupBalls.size());
-        SmartDashboard.putBoolean("Game/LastShotScored", lastShotScored);
+        SmartDashboard.putNumber("Simulation/TimeRemainingSec", simTimeRemainingSec);
+        SmartDashboard.putBoolean("Simulation/Running", simRunning);
+        SmartDashboard.putNumber("Simulation/Score", score);
+        SmartDashboard.putNumber("Simulation/HeldBalls", heldBalls);
+        SmartDashboard.putBoolean("Simulation/LastShotScored", lastShotScored);
 
-        List<Pose2d> poses = new ArrayList<>(pickupBalls.size());
-        List<Pose3d> poses3d = new ArrayList<>(pickupBalls.size());
-        for (Translation2d t : pickupBalls) {
-            poses.add(new Pose2d(t, new Rotation2d()));
-            // Add 3D poses with balls on the ground (z=0)
-            poses3d.add(new Pose3d(new Translation3d(t.getX(), t.getY(), 0.0), new Rotation3d()));
-        }
-        SwerveBase.getInstance().getField().getObject("PickupBalls").setPoses(poses);
-        
-        // Publish 3D poses for better visualization
-        double[] flatPoses = new double[poses3d.size() * 7];
-        for (int i = 0; i < poses3d.size(); i++) {
-            Pose3d p = poses3d.get(i);
-            int idx = i * 7;
-            flatPoses[idx] = p.getX();
-            flatPoses[idx + 1] = p.getY();
-            flatPoses[idx + 2] = p.getZ();
-            flatPoses[idx + 3] = p.getRotation().getQuaternion().getW();
-            flatPoses[idx + 4] = p.getRotation().getQuaternion().getX();
-            flatPoses[idx + 5] = p.getRotation().getQuaternion().getY();
-            flatPoses[idx + 6] = p.getRotation().getQuaternion().getZ();
-        }
-        SmartDashboard.putNumberArray("Game/PickupBallPoses3d", flatPoses);
+        // --- AdvantageScope Consolidation ---
+        // Get all game pieces on field
+        Pose3d[] fuelPoses = SimulatedArena.getInstance().getGamePiecesArrayByType("Fuel");
+
+        // Publish as a binary struct array (NT4 protocol)
+        // This creates ONE single entry in NT instead of 400+ separate numeric topics.
+        gamePiecePublisher.set(fuelPoses);
     }
 
     private void handlePickup() {
-        if (heldBalls >= 5) {
+        if (heldBalls >= 50) {
             return;
         }
 
@@ -159,31 +145,62 @@ public class GameSim implements Subsystem {
             return;
         }
 
-        Pose2d robotPose = SwerveBase.getInstance().getPose();
+        Pose2d robotPose = SwerveBase.getInstance().getSimulationPose();
         Translation2d robot = robotPose.getTranslation();
         Rotation2d robotHeading = robotPose.getRotation();
 
         double pickupRadiusM = 0.45;
         double maxPickupAngleRad = Math.PI / 2; // 90 degrees in front
 
-        for (int i = 0; i < pickupBalls.size(); i++) {
-            Translation2d ball = pickupBalls.get(i);
+        // Query SimulatedArena for game pieces
+        // We iterate through "Fuel" pieces and check distance
+        // Since we can't easily get the object list to remove directly without
+        // iterating or using a query,
+        // we'll use a simpler approach if possible, but for now assuming we can get
+        // poses.
+        // Actually, SimulatedArena likely doesn't expose a "remove nearest" easily
+        // without the object reference.
+        // Let's check documentation or assume we can iterate.
+        // Docs said: .getGamePiecesByType("Fuel") returns a List of GamePieceOnField
+
+        // Note: Since I don't have the full javadoc for `getGamePiecesByType` return
+        // type in the chunk,
+        // I will assume it returns a list of objects that have a pose.
+        // However, `getGamePiecesArrayByType` returns Pose3d[].
+
+        // The best way to interact is probably to check distance to poses, giving us a
+        // hint,
+        // but removing them requires the object instance.
+        // Docs chunk 6 mentioned:
+        // `SimulatedArena.getInstance().getGamePiecesByType("Fuel")`
+
+        // I will use `SimulatedArena.getInstance().removeGamePiece(gamePiece)` if I can
+        // find it.
+        // I'll try to iterate over the objects.
+
+        Set<GamePieceOnFieldSimulation> pieces = SimulatedArena.getInstance().gamePiecesOnField();
+
+        for (var piece : pieces) {
+            Translation2d ball = piece.getPoseOnField().getTranslation();
             double distance = ball.getDistance(robot);
-            
+
             if (distance <= pickupRadiusM) {
                 // Check if ball is in front of robot
                 Translation2d robotToBall = ball.minus(robot);
                 double angleToBall = robotToBall.getAngle().minus(robotHeading).getRadians();
-                
+
                 // Normalize angle to [-pi, pi]
-                while (angleToBall > Math.PI) angleToBall -= 2 * Math.PI;
-                while (angleToBall < -Math.PI) angleToBall += 2 * Math.PI;
-                
+                while (angleToBall > Math.PI)
+                    angleToBall -= 2 * Math.PI;
+                while (angleToBall < -Math.PI)
+                    angleToBall += 2 * Math.PI;
+
                 // Check if ball is within 90 degrees in front
                 if (Math.abs(angleToBall) <= maxPickupAngleRad) {
-                    pickupBalls.remove(i);
+                    SimulatedArena.getInstance().removeGamePiece(piece);
                     heldBalls++;
-                    break;
+                    if (heldBalls >= 8)
+                        break; // Limit pickup per loop
                 }
             }
         }
@@ -213,39 +230,42 @@ public class GameSim implements Subsystem {
         }
     }
 
-    private void resetGame() {
+    public void resetGame() {
         heldBalls = 8;
         score = 0;
         simTimeRemainingSec = 150.0;
         simRunning = false;
-        lastTimestampSec = -1.0;
         lastSimScoreCount = Shooter.getInstance().getSimScoreCount();
         shotsConsumedWithBall = 0;
         lastShotScored = false;
         nextRespawnTimeSec = -1.0;
+
+        SimulatedArena.getInstance().clearGamePieces();
         spawnPickupBalls();
 
-        SmartDashboard.putBoolean("Game/Reset", false);
-        SmartDashboard.putBoolean("Game/RespawnBalls", false);
+        SmartDashboard.putBoolean("Simulation/Reset", false);
+        SmartDashboard.putBoolean("Simulation/RespawnBalls", false);
     }
 
     private void spawnBallInCenterHalf() {
-        // Center half of the field: X in [4.0, 8.0], Y in [2.0, 6.0]
-        double x = 4.0 + rng.nextDouble() * 4.0;
+        // Center half of the field: X in [6.0, 10.0], Y in [2.0, 6.0]
+        double x = 6.0 + rng.nextDouble() * 4.0;
         double y = 2.0 + rng.nextDouble() * 4.0;
-        pickupBalls.add(new Translation2d(x, y));
+        SimulatedArena.getInstance().addGamePiece(new RebuiltFuelOnField(new Translation2d(x, y)));
     }
 
     private void spawnPickupBalls() {
-        pickupBalls.clear();
-        pickupBalls.add(new Translation2d(7.0, 2.0));
-        pickupBalls.add(new Translation2d(7.0, 4.0));
-        pickupBalls.add(new Translation2d(7.0, 6.0));
-        pickupBalls.add(new Translation2d(9.0, 2.0));
-        pickupBalls.add(new Translation2d(9.0, 4.0));
-        pickupBalls.add(new Translation2d(9.0, 6.0));
+        SimulatedArena.getInstance().clearGamePieces();
+
+        SimulatedArena.getInstance().addGamePiece(new RebuiltFuelOnField(new Translation2d(6.0, 2.0)));
+        SimulatedArena.getInstance().addGamePiece(new RebuiltFuelOnField(new Translation2d(6.0, 4.0)));
+        SimulatedArena.getInstance().addGamePiece(new RebuiltFuelOnField(new Translation2d(6.0, 6.0)));
+        SimulatedArena.getInstance().addGamePiece(new RebuiltFuelOnField(new Translation2d(8.0, 2.0)));
+        SimulatedArena.getInstance().addGamePiece(new RebuiltFuelOnField(new Translation2d(8.0, 4.0)));
+        SimulatedArena.getInstance().addGamePiece(new RebuiltFuelOnField(new Translation2d(8.0, 6.0)));
+
         // Add a few more in the center half for variety
-        for (int i = 0; i < 10; i++) {
+        for (int i = 0; i < 50; i++) {
             spawnBallInCenterHalf();
         }
     }

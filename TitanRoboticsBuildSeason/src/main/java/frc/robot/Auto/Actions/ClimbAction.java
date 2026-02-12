@@ -9,7 +9,7 @@ public class ClimbAction implements Actions {
 
     @Override
     public void start() {
-        climber.extend();
+        climber.setState(Climber.ClimberState.UP);
         done = true;
     }
 

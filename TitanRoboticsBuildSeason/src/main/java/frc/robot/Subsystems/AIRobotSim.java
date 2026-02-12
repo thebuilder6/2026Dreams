@@ -167,7 +167,7 @@ public class AIRobotSim implements Subsystem {
                     // Mirror the target pose for opponent
                     boolean isRedAlliance = DriverStation.getAlliance().orElse(Alliance.Blue) == Alliance.Red;
                     Pose2d targetPose = new Pose2d(sample.x, sample.y, new Rotation2d(sample.heading));
-                    Pose2d mirroredTarget = mirrorPoseForOpponent(targetPose, isRedAlliance);
+                    Pose2d mirroredTarget = mirrorPoseForOpponent(targetPose, !isRedAlliance);
 
                     Pose2d currentPose = driveSimulation.getActualPoseInSimulationWorld();
 

@@ -10,10 +10,17 @@ import frc.robot.Interfaces.Subsystem;
 
 public class Climber implements Subsystem {
 
+    public enum ClimberState {
+        UP, DOWN, STATIONARY
+    }
+
     private static Climber instance = null;
 
-    private final DoubleSolenoid climberSolenoid;
-    private final Compressor compressor;
+    private final DoubleSolenoid m_doubleSolenoidLeft;
+    private final DoubleSolenoid m_doubleSolenoidRight;
+    private final Compressor m_compressor;
+
+    private ClimberState state = ClimberState.STATIONARY;
 
     public static Climber getInstance() {
         if (instance == null) {
@@ -23,42 +30,60 @@ public class Climber implements Subsystem {
     }
 
     private Climber() {
-        climberSolenoid = new DoubleSolenoid(ClimberConstants.PNEUMATICS_MODULE_ID, PneumaticsModuleType.CTREPCM,
-                ClimberConstants.FORWARD_CHANNEL, ClimberConstants.REVERSE_CHANNEL);
-        compressor = new Compressor(ClimberConstants.PNEUMATICS_MODULE_ID, PneumaticsModuleType.CTREPCM);
-        compressor.enableDigital();
+        m_doubleSolenoidLeft = new DoubleSolenoid(ClimberConstants.PNEUMATICS_MODULE_ID, PneumaticsModuleType.CTREPCM,
+                ClimberConstants.LEFT_FORWARD_CHANNEL, ClimberConstants.LEFT_REVERSE_CHANNEL);
+        m_doubleSolenoidRight = new DoubleSolenoid(ClimberConstants.PNEUMATICS_MODULE_ID, PneumaticsModuleType.CTREPCM,
+                ClimberConstants.RIGHT_FORWARD_CHANNEL, ClimberConstants.RIGHT_REVERSE_CHANNEL);
+        m_compressor = new Compressor(ClimberConstants.PNEUMATICS_MODULE_ID, PneumaticsModuleType.CTREPCM);
+        m_compressor.enableDigital();
 
         SubsystemManager.registerSubsystem(this);
     }
 
-    public void extend() {
-        climberSolenoid.set(Value.kForward);
+    public void setState(ClimberState state) {
+        this.state = state;
     }
 
-    public void retract() {
-        climberSolenoid.set(Value.kReverse);
+    public void enableCompressor() {
+        m_compressor.enableDigital();
     }
 
-    public void off() {
-        climberSolenoid.set(Value.kOff);
+    public void disableCompressor() {
+        m_compressor.disable();
     }
 
     @Override
     public void update() {
-        // Periodic updates if needed
+        switch (state) {
+            case UP:
+                m_doubleSolenoidLeft.set(Value.kForward);
+                m_doubleSolenoidRight.set(Value.kForward);
+                break;
+            case DOWN:
+                m_doubleSolenoidLeft.set(Value.kReverse);
+                m_doubleSolenoidRight.set(Value.kReverse);
+                break;
+            case STATIONARY:
+            default:
+                m_doubleSolenoidLeft.set(Value.kOff);
+                m_doubleSolenoidRight.set(Value.kOff);
+                break;
+        }
     }
 
     @Override
     public void initialize() {
-        retract();
+        state = ClimberState.STATIONARY;
     }
 
     @Override
     public void log() {
-        SmartDashboard.putString("Climber/Solenoid State", climberSolenoid.get().toString());
-        SmartDashboard.putBoolean("Climber/Pressure Switch", compressor.getPressureSwitchValue());
-        SmartDashboard.putNumber("Climber/Current", compressor.getCurrent());
-        SmartDashboard.putBoolean("Climber/Active", compressor.isEnabled());
+        SmartDashboard.putString("Climber/State", state.toString());
+        SmartDashboard.putString("Climber/Left Solenoid", m_doubleSolenoidLeft.get().toString());
+        SmartDashboard.putString("Climber/Right Solenoid", m_doubleSolenoidRight.get().toString());
+        SmartDashboard.putBoolean("Climber/Pressure Switch", m_compressor.getPressureSwitchValue());
+        SmartDashboard.putNumber("Climber/Current", m_compressor.getCurrent());
+        SmartDashboard.putBoolean("Climber/Compressor Active", m_compressor.isEnabled());
     }
 
     @Override

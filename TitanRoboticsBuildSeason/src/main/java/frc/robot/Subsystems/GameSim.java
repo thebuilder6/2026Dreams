@@ -38,7 +38,7 @@ public class GameSim implements Subsystem {
     private boolean lastShotScored = false;
     private final Random rng = new Random();
     private double nextRespawnTimeSec = -1.0;
-    private static final double RESPAWN_DELAY_SEC = 2.0;
+    private static final double RESPAWN_DELAY_SEC = 0.3;
 
     public static GameSim getInstance() {
         if (instance == null) {

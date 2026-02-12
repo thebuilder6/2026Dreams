@@ -3,7 +3,9 @@ package frc.robot.Subsystems;
 import edu.wpi.first.units.Units;
 import java.util.Optional;
 
+import swervelib.simulation.ironmaple.simulation.seasonspecific.rebuilt2026.Arena2026Rebuilt;
 import swervelib.simulation.ironmaple.simulation.seasonspecific.rebuilt2026.RebuiltFuelOnFly;
+import swervelib.simulation.ironmaple.simulation.SimulatedArena;
 
 import com.revrobotics.spark.config.SparkMaxConfig;
 
@@ -43,7 +45,6 @@ public class Shooter implements Subsystem {
 
     private double targetVelocityRPM = 0;
     private double lastBallSpawnTime = 0;
-    private double lastSimTime = -1;
     private long simShotCount = 0;
     private long simScoreCount = 0;
 
@@ -135,18 +136,6 @@ public class Shooter implements Subsystem {
             return Constants.FieldConstants.RED_GOAL_LOCATION;
         }
         return Constants.FieldConstants.BLUE_GOAL_LOCATION;
-    }
-
-    /**
-     * Calculates the distance from the robot to the goal.
-     * 
-     * @param robotPose Current robot pose.
-     * @return Distance in meters.
-     */
-    public double calculateDistanceToGoal(Pose2d robotPose) {
-        Translation3d robotPos3d = new Translation3d(robotPose.getX(), robotPose.getY(),
-                ShooterConstants.SHOOTER_HEIGHT_METERS);
-        return robotPos3d.getDistance(getGoalLocation());
     }
 
     /**
@@ -283,8 +272,16 @@ public class Shooter implements Subsystem {
                     fuelOnFly.withTargetPosition(() -> targetLoc)
                             .withTargetTolerance(new Translation3d(0.5, 1.2, 0.3)) // Tolerance from docs
                             .withHitTargetCallBack(() -> {
-                                simScoreCount++;
-                                // System.out.println("Hit hub!");
+                                boolean isBlueGoal = targetLoc.equals(Constants.FieldConstants.BLUE_GOAL_LOCATION);
+                                if (SimulatedArena.getInstance() instanceof Arena2026Rebuilt) {
+                                    Arena2026Rebuilt arena = (Arena2026Rebuilt) SimulatedArena.getInstance();
+                                    if (arena.isActive(isBlueGoal)) {
+                                        simScoreCount++;
+                                    }
+                                } else {
+                                    // Fallback for generic arena
+                                    simScoreCount++;
+                                }
                             });
 
                     swervelib.simulation.ironmaple.simulation.SimulatedArena.getInstance()

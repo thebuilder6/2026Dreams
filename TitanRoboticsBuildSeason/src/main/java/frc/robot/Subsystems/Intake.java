@@ -164,10 +164,6 @@ public class Intake implements Subsystem {
         armMotor.stop();
     }
 
-    public void setArmSpeed(double speed) {
-        armMotor.setSpeed(speed);
-    }
-
     @Override
     public void initialize() {
         setState(IntakeState.IDLE);

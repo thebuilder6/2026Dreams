@@ -48,10 +48,6 @@ public class Climber implements Subsystem {
         m_compressor.enableDigital();
     }
 
-    public void disableCompressor() {
-        m_compressor.disable();
-    }
-
     @Override
     public void update() {
         switch (state) {

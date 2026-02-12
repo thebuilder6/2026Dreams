@@ -18,7 +18,6 @@ import edu.wpi.first.math.kinematics.SwerveDriveKinematics;
 import edu.wpi.first.math.trajectory.Trajectory;
 import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.Filesystem;
-import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.smartdashboard.Field2d;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import frc.robot.Data.Constants;
@@ -150,8 +149,7 @@ public class SwerveBase implements Subsystem {
     }
 
     /**
-     * Drive according to the chassis robot o
-     * riented velocity.
+     * Drive according to the chassis robot oriented velocity.
      *
      * @param velocity Robot oriented {@link ChassisSpeeds}
      */
@@ -523,9 +521,7 @@ public class SwerveBase implements Subsystem {
     //
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     /**
-     * Get the {@link SwerveDriveConfiguration} object.
-     *
-     * @return The {@link SwerveDriveConfiguration} fpr the current drive.
+     * @return The {@link SwerveDriveConfiguration} for the current drive.
      */
     public SwerveDriveConfiguration getSwerveDriveConfiguration() {
         return swerveDrive.swerveDriveConfiguration;
@@ -545,13 +541,6 @@ public class SwerveBase implements Subsystem {
      */
     public Rotation2d getPitch() {
         return swerveDrive.getPitch();
-    }
-
-    /**
-     * Add a fake vision reading for testing purposes.
-     */
-    public void addFakeVisionReading() {
-        swerveDrive.addVisionMeasurement(new Pose2d(3, 3, Rotation2d.fromDegrees(65)), Timer.getFPGATimestamp());
     }
 
     /**
@@ -596,8 +585,8 @@ public class SwerveBase implements Subsystem {
             doRejectUpdate = true;
         }
 
-        // 2. Tag Count & Distance Rejection
-        if (mt2.tagCount == 0 || mt2.avgTagDist > 4.0) {
+        // 2. Tag Distance Rejection
+        if (mt2.avgTagDist > 4.0) {
             doRejectUpdate = true;
         }
 

@@ -8,6 +8,7 @@ import java.util.Set;
 import swervelib.simulation.ironmaple.simulation.SimulatedArena;
 import swervelib.simulation.ironmaple.simulation.gamepieces.GamePiece;
 import swervelib.simulation.ironmaple.simulation.gamepieces.GamePieceOnFieldSimulation;
+import swervelib.simulation.ironmaple.simulation.seasonspecific.rebuilt2026.Arena2026Rebuilt;
 import swervelib.simulation.ironmaple.simulation.seasonspecific.rebuilt2026.RebuiltFuelOnField;
 
 import edu.wpi.first.math.geometry.Pose2d;
@@ -37,8 +38,13 @@ public class GameSim implements Subsystem {
     private long shotsConsumedWithBall = 0;
     private boolean lastShotScored = false;
     private final Random rng = new Random();
-    private double nextRespawnTimeSec = -1.0;
-    private static final double RESPAWN_DELAY_SEC = 0.3;
+    private int pendingRespawns = 0;
+    private double lastRespawnTime = 0;
+    private static final double MIN_RESPAWN_INTERVAL = 0.2;
+
+    private int simLoopCounter = 0;
+    private double lastPublishTime = 0;
+    private static final double PUBLISH_INTERVAL_SEC = 0.1; // 10Hz publishing
 
     public static GameSim getInstance() {
         if (instance == null) {
@@ -51,7 +57,8 @@ public class GameSim implements Subsystem {
         this.gamePiecePublisher = NetworkTableInstance.getDefault()
                 .getStructArrayTopic("Simulation/GamePieces", Pose3d.struct)
                 .publish();
-        resetGame();
+        // Skip calling resetGame() here, move setup to initialize()
+        // to ensure it runs after SimulatedArena is stable.
         SubsystemManager.registerSubsystem(this);
     }
 
@@ -80,6 +87,8 @@ public class GameSim implements Subsystem {
         if (!RobotBase.isSimulation()) {
             return;
         }
+
+        simLoopCounter++;
 
         boolean reset = SmartDashboard.getBoolean("Simulation/Reset", false);
         if (reset) {
@@ -115,9 +124,19 @@ public class GameSim implements Subsystem {
             }
         }
 
-        handlePickup();
+        // Optimize: Check pickup every 3 loops (~60ms)
+        if (simLoopCounter % 3 == 0) {
+            handlePickup();
+        }
+
         handleShotsAndScoring();
-        publish();
+
+        // Throttle publishing to 10Hz
+        double now = Timer.getFPGATimestamp();
+        if (now - lastPublishTime >= PUBLISH_INTERVAL_SEC) {
+            publish();
+            lastPublishTime = now;
+        }
     }
 
     private void publish() {
@@ -127,12 +146,20 @@ public class GameSim implements Subsystem {
         SmartDashboard.putNumber("Simulation/HeldBalls", heldBalls);
         SmartDashboard.putBoolean("Simulation/LastShotScored", lastShotScored);
 
+        // --- Rebuilt 2026 Specific Telemetry ---
+        if (SimulatedArena.getInstance() instanceof Arena2026Rebuilt) {
+            Arena2026Rebuilt arena = (Arena2026Rebuilt) SimulatedArena.getInstance();
+            SmartDashboard.putBoolean("Simulation/HubActive/Blue", arena.isActive(true));
+            SmartDashboard.putBoolean("Simulation/HubActive/Red", arena.isActive(false));
+
+            // The arena manages its own clock in simulationSubTick
+            // We can surface it here if it's not already on NT (it is, but let's
+            // centralize)
+        }
+
         // --- AdvantageScope Consolidation ---
-        // Get all game pieces on field
         Pose3d[] fuelPoses = SimulatedArena.getInstance().getGamePiecesArrayByType("Fuel");
 
-        // Publish as a binary struct array (NT4 protocol)
-        // This creates ONE single entry in NT instead of 400+ separate numeric topics.
         gamePiecePublisher.set(fuelPoses);
     }
 
@@ -152,32 +179,6 @@ public class GameSim implements Subsystem {
         double pickupRadiusM = 0.45;
         double maxPickupAngleRad = Math.PI / 2; // 90 degrees in front
 
-        // Query SimulatedArena for game pieces
-        // We iterate through "Fuel" pieces and check distance
-        // Since we can't easily get the object list to remove directly without
-        // iterating or using a query,
-        // we'll use a simpler approach if possible, but for now assuming we can get
-        // poses.
-        // Actually, SimulatedArena likely doesn't expose a "remove nearest" easily
-        // without the object reference.
-        // Let's check documentation or assume we can iterate.
-        // Docs said: .getGamePiecesByType("Fuel") returns a List of GamePieceOnField
-
-        // Note: Since I don't have the full javadoc for `getGamePiecesByType` return
-        // type in the chunk,
-        // I will assume it returns a list of objects that have a pose.
-        // However, `getGamePiecesArrayByType` returns Pose3d[].
-
-        // The best way to interact is probably to check distance to poses, giving us a
-        // hint,
-        // but removing them requires the object instance.
-        // Docs chunk 6 mentioned:
-        // `SimulatedArena.getInstance().getGamePiecesByType("Fuel")`
-
-        // I will use `SimulatedArena.getInstance().removeGamePiece(gamePiece)` if I can
-        // find it.
-        // I'll try to iterate over the objects.
-
         Set<GamePieceOnFieldSimulation> pieces = SimulatedArena.getInstance().gamePiecesOnField();
 
         for (var piece : pieces) {
@@ -185,22 +186,19 @@ public class GameSim implements Subsystem {
             double distance = ball.getDistance(robot);
 
             if (distance <= pickupRadiusM) {
-                // Check if ball is in front of robot
                 Translation2d robotToBall = ball.minus(robot);
                 double angleToBall = robotToBall.getAngle().minus(robotHeading).getRadians();
 
-                // Normalize angle to [-pi, pi]
                 while (angleToBall > Math.PI)
                     angleToBall -= 2 * Math.PI;
                 while (angleToBall < -Math.PI)
                     angleToBall += 2 * Math.PI;
 
-                // Check if ball is within 90 degrees in front
                 if (Math.abs(angleToBall) <= maxPickupAngleRad) {
                     SimulatedArena.getInstance().removeGamePiece(piece);
                     heldBalls++;
-                    if (heldBalls >= 8)
-                        break; // Limit pickup per loop
+                    if (heldBalls >= 10)
+                        break; // Limit pickup per check
                 }
             }
         }
@@ -213,20 +211,21 @@ public class GameSim implements Subsystem {
 
         long maxAdditionalScoresAllowed = Math.max(0, shotsConsumedWithBall - score);
         long scoresToApply = Math.min(newScores, maxAdditionalScoresAllowed);
+
         if (scoresToApply > 0) {
             score += scoresToApply;
             lastShotScored = true;
-            // Schedule respawn of scored balls
-            nextRespawnTimeSec = Timer.getFPGATimestamp() + RESPAWN_DELAY_SEC;
+            pendingRespawns += scoresToApply; // Increment queue for all scored balls
         } else if (newScores > 0) {
             lastShotScored = false;
         }
 
-        // Handle respawn timer
+        // Handle respawn queue with a throttle
         double now = Timer.getFPGATimestamp();
-        if (nextRespawnTimeSec > 0.0 && now >= nextRespawnTimeSec) {
+        if (pendingRespawns > 0 && now - lastRespawnTime >= MIN_RESPAWN_INTERVAL) {
             spawnBallInCenterHalf();
-            nextRespawnTimeSec = -1.0;
+            pendingRespawns--;
+            lastRespawnTime = now;
         }
     }
 
@@ -238,7 +237,9 @@ public class GameSim implements Subsystem {
         lastSimScoreCount = Shooter.getInstance().getSimScoreCount();
         shotsConsumedWithBall = 0;
         lastShotScored = false;
-        nextRespawnTimeSec = -1.0;
+        pendingRespawns = 0;
+        lastRespawnTime = 0;
+        simLoopCounter = 0;
 
         SimulatedArena.getInstance().clearGamePieces();
         spawnPickupBalls();
@@ -255,23 +256,36 @@ public class GameSim implements Subsystem {
     }
 
     private void spawnPickupBalls() {
+        // Use library's official 2026 layout to maintain "official" ground balls
         SimulatedArena.getInstance().clearGamePieces();
+        SimulatedArena.getInstance().placeGamePiecesOnField();
 
-        SimulatedArena.getInstance().addGamePiece(new RebuiltFuelOnField(new Translation2d(6.0, 2.0)));
-        SimulatedArena.getInstance().addGamePiece(new RebuiltFuelOnField(new Translation2d(6.0, 4.0)));
-        SimulatedArena.getInstance().addGamePiece(new RebuiltFuelOnField(new Translation2d(6.0, 6.0)));
-        SimulatedArena.getInstance().addGamePiece(new RebuiltFuelOnField(new Translation2d(8.0, 2.0)));
-        SimulatedArena.getInstance().addGamePiece(new RebuiltFuelOnField(new Translation2d(8.0, 4.0)));
-        SimulatedArena.getInstance().addGamePiece(new RebuiltFuelOnField(new Translation2d(8.0, 6.0)));
+        // Pruning: Remove "Outpost" balls in the corners (human player stations)
+        // while keeping the ground balls (center) and staging balls (depots).
+        Set<GamePieceOnFieldSimulation> pieces = SimulatedArena.getInstance().gamePiecesOnField();
+        List<GamePieceOnFieldSimulation> toRemove = new ArrayList<>();
 
-        // Add a few more in the center half for variety
-        for (int i = 0; i < 50; i++) {
-            spawnBallInCenterHalf();
+        for (var piece : pieces) {
+            Translation2d pos = piece.getPoseOnField().getTranslation();
+            double x = pos.getX();
+            double y = pos.getY();
+
+            // 1. Remove anything literally outside the field boundaries (safety)
+            if (x < 0 || x > 16.54 || y < 0 || y > 8.02) {
+                toRemove.add(piece);
+            }
+        }
+
+        for (var piece : toRemove) {
+            SimulatedArena.getInstance().removeGamePiece(piece);
         }
     }
 
     @Override
     public void initialize() {
+        if (RobotBase.isSimulation()) {
+            resetGame();
+        }
     }
 
     @Override

@@ -121,7 +121,8 @@ public class Teleop {
             var nearest = swerveBase.getNearestGlidePoint();
             if (nearest != null) {
                 if (nearest.isTunnelEntrance && nearest.tunnelExitPose != null) {
-                    activeAction = new frc.robot.Auto.Actions.TunnelAction(nearest.pose, nearest.tunnelExitPose);
+                    activeAction = new frc.robot.Auto.Actions.TrajectoryTunnelAction(nearest.pose,
+                            nearest.tunnelExitPose);
                 } else {
                     activeAction = new frc.robot.Auto.Actions.DriveToPoseAction(nearest.pose);
                 }

@@ -43,6 +43,10 @@ public class Shooter implements frc.robot.Interfaces.Subsystem {
     private final NeoSparkMaxMotor flywheelMotor;
     private final NeoSparkMaxMotor feederMotor;
 
+    /**
+     * The Linear System Loop combines the Plant, Controller, and Observer.
+     * Implements State-Space Control (Chapter 6) and Discrete Control (Chapter 7).
+     */
     private final LinearSystemLoop<N1, N1, N1> flywheelLoop;
 
     private FlywheelSim flywheelSim;
@@ -274,7 +278,11 @@ public class Shooter implements frc.robot.Interfaces.Subsystem {
             double voltage = flywheelLoop.getU(0);
 
             // Add kS (Static Friction) feedforward manually
-            voltage += Math.signum(targetVelocityRPM) * ShooterConstants.kFlywheelS;
+            // This represents a nonlinear term (signum(v) * kS) which the LinearSystem
+            // cannot model directly.
+            // See Chapter 8: Nonlinear Control.
+            double feedforwardS = calculateStaticFriction(targetVelocityRPM);
+            voltage += feedforwardS;
 
             flywheelMotor.setVoltage(voltage);
         } else {
@@ -446,6 +454,18 @@ public class Shooter implements frc.robot.Interfaces.Subsystem {
 
     public double getTargetVelocityRPM() {
         return targetVelocityRPM;
+    }
+
+    /**
+     * Calculates the static friction feedforward.
+     * Use this to compensate for the non-linear force required to break static
+     * friction.
+     * 
+     * @param targetRPM The target velocity in RPM.
+     * @return The voltage to add to the control output.
+     */
+    private double calculateStaticFriction(double targetRPM) {
+        return Math.signum(targetRPM) * ShooterConstants.kFlywheelS;
     }
 
 }

@@ -579,6 +579,13 @@ public class SwerveBase implements Subsystem {
         swerveDrive.driveFieldOriented(velocity);
     }
 
+    /**
+     * Updates odometry using Limelight vision data.
+     * Implements Stochastic Sensor Fusion (Chapter 9) and Pose Estimation (Chapter
+     * 10).
+     * Calculates dynamic variance based on tag distance to trust/distrust
+     * measurements.
+     */
     public void LimelightOdometryUpdate() {
 
         double yawRate = swerveDrive.getGyro().getYawAngularVelocity().in(DegreesPerSecond);
@@ -729,6 +736,19 @@ public class SwerveBase implements Subsystem {
      */
     public void setPathVisualization(List<Pose2d> waypoints) {
         field.getObject("CurrentPath").setPoses(waypoints);
+    }
+
+    /**
+     * Visualizes a trajectory on the field.
+     * 
+     * @param trajectory The trajectory to display
+     */
+    public void setTrajectoryVisualization(Trajectory trajectory) {
+        if (trajectory != null) {
+            field.getObject("CurrentPath").setTrajectory(trajectory);
+        } else {
+            field.getObject("CurrentPath").setPoses(new ArrayList<>());
+        }
     }
 
 }

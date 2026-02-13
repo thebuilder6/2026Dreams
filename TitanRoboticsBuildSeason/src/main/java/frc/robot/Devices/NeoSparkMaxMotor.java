@@ -4,13 +4,14 @@ import com.revrobotics.spark.*;
 import com.revrobotics.spark.SparkLowLevel.MotorType;
 import com.revrobotics.RelativeEncoder;
 import com.revrobotics.spark.config.SparkMaxConfig;
+import com.revrobotics.ResetMode;
+import com.revrobotics.PersistMode;
 
 public class NeoSparkMaxMotor {
 
     private SparkMax m_motor;
     private boolean isInverted;
     private int CANID;
-    private SparkClosedLoopController closedLoopController;
     private RelativeEncoder encoder;
     private SparkMaxConfig motorConfig;
 
@@ -28,7 +29,6 @@ public class NeoSparkMaxMotor {
         try {
             m_motor = new SparkMax(CANID, MotorType.kBrushless);
             encoder = m_motor.getEncoder();
-            closedLoopController = m_motor.getClosedLoopController();
             motorConfig = new SparkMaxConfig();
         } catch (Exception e) {
             m_motor = null;
@@ -43,8 +43,8 @@ public class NeoSparkMaxMotor {
     public void configure(SparkMaxConfig config) {
         if (m_motor != null) {
             this.motorConfig = config;
-            m_motor.configure(motorConfig, SparkMax.ResetMode.kResetSafeParameters,
-                    SparkMax.PersistMode.kPersistParameters);
+            m_motor.configure(motorConfig, ResetMode.kResetSafeParameters,
+                    PersistMode.kPersistParameters);
         }
     }
 
@@ -73,10 +73,17 @@ public class NeoSparkMaxMotor {
         }
     }
 
+    private double lastVoltage = 0.0;
+
     public void setVoltage(double voltage) {
+        lastVoltage = voltage;
         if (m_motor != null) {
             m_motor.setVoltage(voltage);
         }
+    }
+
+    public double getAppliedVoltage() {
+        return lastVoltage;
     }
 
     public void setSpeed(double speed) {

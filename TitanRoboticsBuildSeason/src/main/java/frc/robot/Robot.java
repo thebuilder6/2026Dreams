@@ -14,9 +14,12 @@ import frc.robot.Subsystems.Climber;
 import frc.robot.Subsystems.Dashboard;
 import frc.robot.Subsystems.GameSim;
 import frc.robot.Subsystems.Intake;
+import frc.robot.Subsystems.LEDs;
 import frc.robot.Subsystems.Shooter;
 import frc.robot.Subsystems.SubsystemManager;
 import frc.robot.Subsystems.SwerveBase;
+import edu.wpi.first.wpilibj.simulation.BatterySim;
+import edu.wpi.first.wpilibj.simulation.RoboRioSim;
 
 /**
  * The methods in this class are called automatically corresponding to each
@@ -49,6 +52,7 @@ public class Robot extends TimedRobot {
     Dashboard.getInstance();
     GameSim.getInstance();
     AIRobotSim.getInstance();
+    LEDs.getInstance();
     teleop = new Teleop();
     SubsystemManager.initializeSubsystems();
     swerveBase.update();
@@ -175,5 +179,15 @@ public class Robot extends TimedRobot {
   public void simulationPeriodic() {
     SubsystemManager.simulationUpdateSubsystems();
     swervelib.simulation.ironmaple.simulation.SimulatedArena.getInstance().simulationPeriodic();
+
+    // Calculate total current draw
+    double totalCurrentDraw = 0.0;
+    for (frc.robot.Interfaces.Subsystem subsystem : SubsystemManager.getSubsystems()) {
+      totalCurrentDraw += subsystem.getSimulationCurrentDraw();
+    }
+
+    // Set the simulated battery voltage based on current draw
+    double loadedVoltage = BatterySim.calculateDefaultBatteryLoadedVoltage(totalCurrentDraw);
+    RoboRioSim.setVInVoltage(loadedVoltage);
   }
 }

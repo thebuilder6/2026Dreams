@@ -103,6 +103,34 @@ public class Constants {
         public static final int RIGHT_REVERSE_CHANNEL = 4;
     }
 
+    public static final class LEDConstants {
+        public static final int BLINKIN_PWM_PORT = 0;
+
+        // Blinkin Patterns (-1.0 to 1.0)
+        public static final double RAINBOW = -0.99;
+        public static final double RAINBOW_PARTY = -0.97;
+        public static final double CONFETTI = -0.87;
+        public static final double LARSON_SCAN_RED = -0.35;
+        public static final double HEARTBEAT_RED = -0.25;
+        public static final double HEARTBEAT_BLUE = -0.23;
+        public static final double BREATH_RED = -0.17;
+        public static final double BREATH_BLUE = -0.15;
+        public static final double STROBE_RED = -0.11;
+        public static final double STROBE_BLUE = -0.09;
+        public static final double STROBE_GOLD = -0.07;
+        public static final double STROBE_WHITE = -0.05;
+
+        // Solid Colors (Color 1)
+        public static final double SOLID_RED = 0.61;
+        public static final double SOLID_ORANGE = 0.65;
+        public static final double SOLID_YELLOW = 0.69;
+        public static final double SOLID_GREEN = 0.77;
+        public static final double SOLID_BLUE = 0.87;
+        public static final double SOLID_PURPLE = 0.91;
+        public static final double SOLID_WHITE = 0.93;
+        public static final double SOLID_BLACK = 0.99;
+    }
+
     public static class OperatorConstants {
 
         // Joystick Deadband

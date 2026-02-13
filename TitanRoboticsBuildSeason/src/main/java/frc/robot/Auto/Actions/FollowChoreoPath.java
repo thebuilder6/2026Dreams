@@ -37,6 +37,7 @@ public class FollowChoreoPath implements Actions {
     private boolean isPaused = false;
     private double totalPausedTime = 0;
     private double pauseStartTimestamp = 0;
+    private double extraTime = 1;
 
     private final PIDController xController;
     private final PIDController yController;
@@ -143,7 +144,7 @@ public class FollowChoreoPath implements Actions {
     @Override
     public boolean isFinished() {
         // the timer is done, so we reached end of trajectory
-        return timer.hasElapsed(trajectory.get().getTotalTime());
+        return timer.hasElapsed(trajectory.get().getTotalTime() + extraTime);
     }
 
     @Override

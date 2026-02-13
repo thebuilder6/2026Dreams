@@ -10,6 +10,14 @@ import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import frc.robot.Data.Constants.IntakeConstants;
 import frc.robot.Devices.NeoSparkMaxMotor;
 import frc.robot.Interfaces.Subsystem;
+import edu.wpi.first.wpilibj.simulation.SingleJointedArmSim;
+import edu.wpi.first.math.system.plant.DCMotor;
+import edu.wpi.first.math.util.Units;
+import edu.wpi.first.wpilibj.smartdashboard.Mechanism2d;
+import edu.wpi.first.wpilibj.smartdashboard.MechanismLigament2d;
+import edu.wpi.first.wpilibj.smartdashboard.MechanismRoot2d;
+import edu.wpi.first.wpilibj.util.Color;
+import edu.wpi.first.wpilibj.util.Color8Bit;
 
 public class Intake implements Subsystem {
 
@@ -35,6 +43,13 @@ public class Intake implements Subsystem {
 
     private final ArmFeedforward armFeedforward;
     private final ProfiledPIDController armController;
+
+    // Simulation
+    private SingleJointedArmSim armSim;
+    private Mechanism2d mech2d;
+    private MechanismRoot2d mechRoot;
+    private MechanismLigament2d armTower;
+    private MechanismLigament2d armLigament;
 
     public static Intake getInstance() {
         if (instance == null) {
@@ -77,6 +92,28 @@ public class Intake implements Subsystem {
                         IntakeConstants.kMaxArmVelocity,
                         IntakeConstants.kMaxArmAcceleration));
 
+        // Simulation Setup
+        if (edu.wpi.first.wpilibj.RobotBase.isSimulation()) {
+            armSim = new SingleJointedArmSim(
+                    DCMotor.getNEO(1),
+                    100.0, // Gearing (Estimate)
+                    SingleJointedArmSim.estimateMOI(0.4, 3.0), // MOI (Length 0.4m, Mass 3kg)
+                    0.4, // Length
+                    IntakeConstants.ARM_INTAKE_POS - 0.1, // Min Angle
+                    IntakeConstants.ARM_IDLE_POS + 0.1, // Max Angle
+                    true, // Simulate Gravity
+                    IntakeConstants.ARM_IDLE_POS // Starting Angle
+            );
+
+            mech2d = new Mechanism2d(1.0, 1.0);
+            mechRoot = mech2d.getRoot("IntakeRoot", 0.5, 0.5);
+            armTower = mechRoot.append(new MechanismLigament2d("Tower", 0.0, -90, 6, new Color8Bit(Color.kBlue)));
+            armLigament = mechRoot.append(
+                    new MechanismLigament2d("IntakeArm", 0.4, Units.radiansToDegrees(IntakeConstants.ARM_IDLE_POS), 6,
+                            new Color8Bit(Color.kYellow)));
+            SmartDashboard.putData("Intake Sim", mech2d);
+        }
+
         SubsystemManager.registerSubsystem(this);
     }
 
@@ -90,6 +127,32 @@ public class Intake implements Subsystem {
 
     public void setArmPosition(double positionRad) {
         targetArmPositionRad = positionRad;
+    }
+
+    @Override
+    public void simulationUpdate() {
+        if (armSim != null) {
+            // Use the actual voltage applied by the control loop in update()
+            double voltage = armMotor.getAppliedVoltage();
+
+            armSim.setInput(voltage);
+            armSim.update(0.02);
+
+            armMotor.setSimState(0, armSim.getAngleRads() / IntakeConstants.ARM_POSITION_CONVERSION);
+            armLigament.setAngle(Units.radiansToDegrees(armSim.getAngleRads()));
+        }
+    }
+
+    @Override
+    public double getSimulationCurrentDraw() {
+        double current = 0.0;
+        if (armSim != null) {
+            current += armSim.getCurrentDrawAmps();
+        }
+        // Add rollers
+        current += Math.abs(rollerMotor.getSpeed()) * 20.0; // Loaded roller estimate
+        current += Math.abs(hopperMotor.getSpeed()) * 10.0; // Hopper estimate
+        return current;
     }
 
     @Override
@@ -139,6 +202,7 @@ public class Intake implements Subsystem {
                 case FEEDING:
                     rollerMotor.stop();
                     hopperMotor.setSpeed(IntakeConstants.HOPPER_SPEED);
+                    setArmPosition(IntakeConstants.ARM_IDLE_POS);
                     break;
                 case EJECTING:
                     rollerMotor.setSpeed(-IntakeConstants.INTAKE_SPEED);
@@ -195,5 +259,9 @@ public class Intake implements Subsystem {
 
     public double getArmPosition() {
         return armMotor.getPosition();
+    }
+
+    public boolean isJammed() {
+        return isEjectingJam;
     }
 }

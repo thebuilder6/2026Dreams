@@ -1,13 +1,11 @@
 package frc.robot.Subsystems;
 
-import static edu.wpi.first.units.Units.DegreesPerSecond;
-import static edu.wpi.first.units.Units.Meter;
+import static edu.wpi.first.units.Units.*;
 
 import java.io.File;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Optional;
 
 import edu.wpi.first.math.VecBuilder;
 import edu.wpi.first.math.geometry.Pose2d;
@@ -109,6 +107,7 @@ public class SwerveBase implements Subsystem {
 
         field = swerveDrive.field;
         SmartDashboard.putData("Field", field);
+
     }
 
     /**
@@ -271,6 +270,8 @@ public class SwerveBase implements Subsystem {
         }
     }
 
+    private GlideConstants.GlidePoint lastNearest = null;
+
     public GlideConstants.GlidePoint getNearestGlidePoint() {
         List<GlideConstants.GlidePoint> glidePoints = isRedAlliance()
                 ? GlideConstants.RED_GLIDE_POINTS
@@ -284,11 +285,21 @@ public class SwerveBase implements Subsystem {
         GlideConstants.GlidePoint nearest = null;
         double nearestDistance = Double.POSITIVE_INFINITY;
 
+        // Selection Hysteresis: Give a "bonus" to the last selected point to prevent
+        // flickering
+        double HYSTERESIS_BONUS = 0.8; // Meters
+
         for (GlideConstants.GlidePoint p : glidePoints) {
             if (p == null || p.pose == null) {
                 continue;
             }
             double d = currentPose.getTranslation().getDistance(p.pose.getTranslation());
+
+            // Apply hysteresis bonus
+            if (lastNearest != null && p.name.equals(lastNearest.name)) {
+                d -= HYSTERESIS_BONUS;
+            }
+
             if (d < nearestDistance) {
                 nearestDistance = d;
                 nearest = p;
@@ -296,6 +307,12 @@ public class SwerveBase implements Subsystem {
 
             if (p.isTunnelEntrance && p.tunnelExitPose != null) {
                 double exitD = currentPose.getTranslation().getDistance(p.tunnelExitPose.getTranslation());
+
+                // Tunnel points also need hysteresis check
+                if (lastNearest != null && lastNearest.name.equals(p.name + " (Exit)")) {
+                    exitD -= HYSTERESIS_BONUS;
+                }
+
                 if (exitD < nearestDistance) {
                     nearestDistance = exitD;
                     Pose2d reverseStartPose = new Pose2d(
@@ -306,7 +323,7 @@ public class SwerveBase implements Subsystem {
                             p.pose.getRotation().plus(Rotation2d.fromDegrees(180)));
 
                     nearest = new GlideConstants.GlidePoint(
-                            p.name,
+                            p.name + " (Exit)",
                             reverseStartPose,
                             true,
                             reverseEndPose);
@@ -314,6 +331,7 @@ public class SwerveBase implements Subsystem {
             }
         }
 
+        lastNearest = nearest;
         return nearest;
     }
 
@@ -650,6 +668,11 @@ public class SwerveBase implements Subsystem {
         drawGlidePointsOnField();
         highlightNearestGlidePointOnField(getNearestGlidePoint());
 
+        // Update path visualization if an action is active
+        // This is a bit of a hack since SwerveBase doesn't know about Teleop's
+        // activeAction,
+        // but we can provide a method for Teleop or Actions to push path data.
+
         // Explicitly update the field object with the current pose
         // In simulation, we show the Truth Pose as the main robot
         field.setRobotPose(truthPose);
@@ -673,6 +696,19 @@ public class SwerveBase implements Subsystem {
     }
 
     @Override
+    public double getSimulationCurrentDraw() {
+        // Estimate swerve current draw
+        // 4 modules * (Drive Motor + Angle Motor)
+        // Simple model: Base current + Speed proportion
+        double driveCurrent = Math.abs(getRobotVelocity().vxMetersPerSecond) * 10.0;
+        double turnCurrent = Math.abs(getRobotVelocity().omegaRadiansPerSecond) * 10.0;
+
+        return 4.0 // Idle current
+                + driveCurrent
+                + turnCurrent;
+    }
+
+    @Override
     public boolean isEnabled() {
         return true;
     }
@@ -684,6 +720,15 @@ public class SwerveBase implements Subsystem {
 
     public Field2d getField() {
         return field;
+    }
+
+    /**
+     * Visualizes a list of waypoints on the field.
+     * 
+     * @param waypoints List of poses to display
+     */
+    public void setPathVisualization(List<Pose2d> waypoints) {
+        field.getObject("CurrentPath").setPoses(waypoints);
     }
 
 }

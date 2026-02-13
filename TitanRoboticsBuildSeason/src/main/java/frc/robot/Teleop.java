@@ -190,9 +190,7 @@ public class Teleop {
             swerveBase.drive(new Translation2d(finalF, finalS), targetSpeeds.omegaRadiansPerSecond, true);
             logAutoAim(targetHeading, targetSpeeds.omegaRadiansPerSecond);
 
-            double headingError = Math.abs(swerveBase.getHeading().minus(targetHeading).getDegrees());
-            shooter.setFeederSpeed(
-                    (headingError < 2.5 && shooter.isAtTargetVelocity()) ? Constants.ShooterConstants.FEED_SPEED : 0);
+            shooter.setFeederSpeed(shooter.isReadyToFire(targetHeading) ? Constants.ShooterConstants.FEED_SPEED : 0);
             return true;
         }
         return false;

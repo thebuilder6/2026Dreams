@@ -4,31 +4,31 @@ import edu.wpi.first.math.geometry.Pose2d;
 import frc.robot.Interfaces.Actions;
 
 public class TunnelAction implements Actions {
-    private final Actions series;
+    private final DriveToPoseAction action;
 
     public TunnelAction(Pose2d entrancePose, Pose2d exitPose) {
-        series = new SeriesAction(
-                new DriveToPoseAction(entrancePose),
-                new DriveToPoseAction(exitPose));
+        // Use the multi-pose constructor of DriveToPoseAction to enable
+        // smooth waypoint switching between the entrance and exit.
+        this.action = new DriveToPoseAction(java.util.List.of(entrancePose, exitPose), true);
     }
 
     @Override
     public void start() {
-        series.start();
+        action.start();
     }
 
     @Override
     public void update() {
-        series.update();
+        action.update();
     }
 
     @Override
     public boolean isFinished() {
-        return series.isFinished();
+        return action.isFinished();
     }
 
     @Override
     public void done() {
-        series.done();
+        action.done();
     }
 }

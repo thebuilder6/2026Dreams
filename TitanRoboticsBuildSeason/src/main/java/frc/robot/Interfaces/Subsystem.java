@@ -12,5 +12,9 @@ public interface Subsystem {
     public default void simulationUpdate() {
     }
 
+    public default double getSimulationCurrentDraw() {
+        return 0.0;
+    }
+
     public String getName();
 }

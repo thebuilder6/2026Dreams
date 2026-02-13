@@ -6,11 +6,12 @@ import java.util.Random;
 import java.util.Set;
 
 import swervelib.simulation.ironmaple.simulation.SimulatedArena;
-import swervelib.simulation.ironmaple.simulation.gamepieces.GamePiece;
+
 import swervelib.simulation.ironmaple.simulation.gamepieces.GamePieceOnFieldSimulation;
 import swervelib.simulation.ironmaple.simulation.seasonspecific.rebuilt2026.Arena2026Rebuilt;
 import swervelib.simulation.ironmaple.simulation.seasonspecific.rebuilt2026.RebuiltFuelOnField;
 
+import edu.wpi.first.wpilibj.simulation.DriverStationSim;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Pose3d;
 import edu.wpi.first.math.geometry.Rotation2d;
@@ -22,6 +23,8 @@ import edu.wpi.first.wpilibj.RobotBase;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import frc.robot.Interfaces.Subsystem;
+
+//jdt://contents/YAGSL-java-2026.1.14.jar/swervelib.simulation.ironmaple.simulation.seasonspecific.rebuilt2026/Arena2026Rebuilt.class?=TitanRoboticsBuildSeason/C:\/Users\/jumpi\/.gradle\/caches\/modules-2\/files-2.1\/swervelib\/YAGSL-java\/2026.1.14\/2d5926d32cee7003bb639b2000ad1afc3ccb0db9\/YAGSL-java-2026.1.14.jar=/gradle_used_by_scope=/main,test=/<swervelib.simulation.ironmaple.simulation.seasonspecific.rebuilt2026(Arena2026Rebuilt.class
 
 public class GameSim implements Subsystem {
 
@@ -66,16 +69,14 @@ public class GameSim implements Subsystem {
         return simTimeRemainingSec;
     }
 
-    public synchronized boolean consumeHeldBallForShot() {
+    public synchronized int consumeHeldBallsForShot(int maxToConsume) {
         if (!RobotBase.isSimulation()) {
-            return true;
+            return maxToConsume;
         }
-        if (heldBalls <= 0) {
-            return false;
-        }
-        heldBalls--;
-        shotsConsumedWithBall++;
-        return true;
+        int toConsume = Math.min(heldBalls, maxToConsume);
+        heldBalls -= toConsume;
+        shotsConsumedWithBall += toConsume;
+        return toConsume;
     }
 
     @Override
@@ -246,6 +247,11 @@ public class GameSim implements Subsystem {
 
         SmartDashboard.putBoolean("Simulation/Reset", false);
         SmartDashboard.putBoolean("Simulation/RespawnBalls", false);
+
+        if (RobotBase.isSimulation()) {
+            // Set a default game data for 2026 hub shifts: 'R' (Red starts inactive)
+            DriverStationSim.setGameSpecificMessage("R");
+        }
     }
 
     private void spawnBallInCenterHalf() {

@@ -83,6 +83,14 @@ public class Climber implements Subsystem {
     }
 
     @Override
+    public double getSimulationCurrentDraw() {
+        if (m_compressor.isEnabled()) {
+            return m_compressor.getCurrent();
+        }
+        return 0.0;
+    }
+
+    @Override
     public boolean isEnabled() {
         return true;
     }

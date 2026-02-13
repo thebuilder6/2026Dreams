@@ -1,5 +1,10 @@
 package frc.robot.Subsystems;
 
+import edu.wpi.first.math.geometry.Pose2d;
+import edu.wpi.first.math.geometry.Rotation2d;
+import edu.wpi.first.math.geometry.Translation2d;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
 import edu.wpi.first.wpilibj.DriverStation;
@@ -15,7 +20,9 @@ public class Dashboard implements Subsystem {
 
     // 2026 Game Data Variables
     private String gameData = "";
-    private boolean isMyHubActive = true; // Default to active until told otherwise
+    private boolean isMyHubActive = true;
+    private double hubSwitchProgress = 0.0;
+    private double timeUntilSwitch = 0.0;
 
     public static Dashboard getInstance() {
         if (instance == null) {
@@ -55,12 +62,14 @@ public class Dashboard implements Subsystem {
             SmartDashboard.putBoolean("Features/Opponent Robot", false);
         if (!SmartDashboard.containsKey("Features/2 Player Defense"))
             SmartDashboard.putBoolean("Features/2 Player Defense", false);
+
     }
 
     @Override
     public void update() {
         double timeRemainingSec = DriverStation.getMatchTime();
         updateHubStatus(timeRemainingSec);
+        updateFieldVisuals();
     }
 
     @Override
@@ -72,6 +81,8 @@ public class Dashboard implements Subsystem {
         SmartDashboard.putBoolean("Match/TimeRemainingValid", isTimeValid);
         SmartDashboard.putNumber("Match/TimeRemainingSec", Math.max(0.0, timeRemainingSec));
         SmartDashboard.putBoolean("Match/HubActive", isMyHubActive);
+        SmartDashboard.putNumber("Match/Hub Switch Progress", hubSwitchProgress);
+        SmartDashboard.putNumber("Match/Time Until Switch", timeUntilSwitch);
         SmartDashboard.putString("Match/GameData", gameData);
 
         String phase;
@@ -92,6 +103,14 @@ public class Dashboard implements Subsystem {
         // --- Driver Aggregation (For Elastic) ---
         SmartDashboard.putBoolean("Driver/Shooter Ready", Shooter.getInstance().isAtTargetVelocity());
         SmartDashboard.putBoolean("Driver/Hub Active", isMyHubActive);
+        SmartDashboard.putString("Driver/Hub Status", isMyHubActive ? "ACTIVE" : "INACTIVE");
+
+        boolean canShoot = isMyHubActive && Shooter.getInstance().isAtTargetVelocity()
+                && Shooter.getInstance().isLinedUp();
+        SmartDashboard.putBoolean("Driver/Shoot Alert", canShoot);
+        SmartDashboard.putString("Driver/Shoot Message",
+                canShoot ? "READY TO FIRE" : (isMyHubActive ? "WAITING FOR FLYWHEEL/ALIGN" : "HUB INACTIVE"));
+
         SmartDashboard.putString("Driver/Intake State", Intake.getInstance().getState().toString());
 
         var nearest = SwerveBase.getInstance().getNearestGlidePoint();
@@ -142,21 +161,71 @@ public class Dashboard implements Subsystem {
         if (matchTime > 130 || matchTime <= 30) {
             // Transition Period or End Game
             isMyHubActive = true;
-        } else if ((matchTime <= 130 && matchTime > 105) || (matchTime <= 80 && matchTime > 55)) {
-            // SHIFT 1 or SHIFT 3
-            if (myAlliance.get() == Alliance.Red) {
-                isMyHubActive = !redStartsInactive;
-            } else {
-                isMyHubActive = !blueStartsInactive;
-            }
-        } else if ((matchTime <= 105 && matchTime > 80) || (matchTime <= 55 && matchTime > 30)) {
-            // SHIFT 2 or SHIFT 4 (Statuses flip)
-            if (myAlliance.get() == Alliance.Red) {
-                isMyHubActive = redStartsInactive;
-            } else {
-                isMyHubActive = blueStartsInactive;
+            hubSwitchProgress = 1.0; // Fully active
+            timeUntilSwitch = (matchTime > 130) ? (matchTime - 130) : matchTime;
+        } else {
+            // SHIFTS (25s intervals)
+            double shiftStartTime = 0;
+            if (matchTime > 105)
+                shiftStartTime = 130;
+            else if (matchTime > 80)
+                shiftStartTime = 105;
+            else if (matchTime > 55)
+                shiftStartTime = 80;
+            else
+                shiftStartTime = 55;
+
+            double elapsedInShift = shiftStartTime - matchTime;
+            hubSwitchProgress = Math.min(1.0, elapsedInShift / 25.0);
+            timeUntilSwitch = Math.max(0.0, 25.0 - elapsedInShift);
+
+            if ((matchTime <= 130 && matchTime > 105) || (matchTime <= 80 && matchTime > 55)) {
+                // SHIFT 1 or SHIFT 3
+                if (myAlliance.get() == Alliance.Red) {
+                    isMyHubActive = !redStartsInactive;
+                } else {
+                    isMyHubActive = !blueStartsInactive;
+                }
+            } else if ((matchTime <= 105 && matchTime > 80) || (matchTime <= 55 && matchTime > 30)) {
+                // SHIFT 2 or SHIFT 4 (Statuses flip)
+                if (myAlliance.get() == Alliance.Red) {
+                    isMyHubActive = redStartsInactive;
+                } else {
+                    isMyHubActive = blueStartsInactive;
+                }
             }
         }
+    }
+
+    /**
+     * Updates the Field2d visual representation of the hub timing.
+     */
+    private void updateFieldVisuals() {
+        Optional<Alliance> alliance = DriverStation.getAlliance();
+        Translation2d goalPos;
+        if (alliance.isPresent() && alliance.get() == Alliance.Red) {
+            goalPos = frc.robot.Data.Constants.FieldConstants.RED_GOAL_LOCATION.toTranslation2d();
+        } else {
+            goalPos = frc.robot.Data.Constants.FieldConstants.BLUE_GOAL_LOCATION.toTranslation2d();
+        }
+
+        // Create a circular "timing ring" around the goal
+        // We use a series of Pose2d objects to represent the progress
+        int maxPoints = 32;
+        int activePoints = (int) (hubSwitchProgress * maxPoints);
+        List<Pose2d> ringPoints = new ArrayList<>();
+        double radius = 1.0; // 1 meter radius around the hub
+
+        for (int i = 0; i < activePoints; i++) {
+            double angleRad = (i / (double) maxPoints) * 2.0 * Math.PI;
+            ringPoints.add(new Pose2d(
+                    goalPos.getX() + radius * Math.cos(angleRad),
+                    goalPos.getY() + radius * Math.sin(angleRad),
+                    Rotation2d.fromRadians(angleRad)));
+        }
+
+        // Publish to Field2d
+        SwerveBase.getInstance().getField().getObject("Driver/Hub Timing Ring").setPoses(ringPoints);
     }
 
     @Override

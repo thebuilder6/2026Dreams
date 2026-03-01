@@ -73,6 +73,8 @@ public class GameSim implements Subsystem {
         if (!RobotBase.isSimulation()) {
             return maxToConsume;
         }
+        if (heldBalls <= 0)
+            return 0;
         int toConsume = Math.min(heldBalls, maxToConsume);
         heldBalls -= toConsume;
         shotsConsumedWithBall += toConsume;

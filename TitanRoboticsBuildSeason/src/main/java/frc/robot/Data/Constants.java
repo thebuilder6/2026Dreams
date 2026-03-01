@@ -55,6 +55,7 @@ public class Constants {
         public static final double SHOOTER_HEIGHT_METERS = 0.5; // Height from floor
         public static final double SHOOTER_OFFSET_METERS = 0.3; // Distance forward from robot center
         public static final double SHOOT_MAX_DISTANCE = 5.0; // Meters
+        public static final double IDLE_RPM = 60;
     }
 
     public static final class IntakeConstants {

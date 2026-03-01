@@ -139,9 +139,22 @@ public class Shooter implements frc.robot.Interfaces.Subsystem {
     }
 
     public void stop() {
+        StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
+        if (stackTrace.length > 2) {
+            String caller = stackTrace[2].getClassName() + "." + stackTrace[2].getMethodName();
+            // Don't print if called by Loop or Init, only interesting callers
+            if (!caller.contains("linearSystem") && targetVelocityRPM > 0) {
+                System.out.println("[Shooter] STOP called by: " + caller);
+            }
+        }
+
         targetVelocityRPM = 0;
         flywheelMotor.stop();
         feederMotor.stop();
+    }
+
+    public double getActualRPM() {
+        return flywheelMotor.getVelocity();
     }
 
     public boolean isAtTargetVelocity() {
@@ -337,10 +350,9 @@ public class Shooter implements frc.robot.Interfaces.Subsystem {
 
             // Ball Simulation Logic
             double currentTime = edu.wpi.first.wpilibj.Timer.getFPGATimestamp();
-            // Spawn balls if feeder is running and flywheel is near target
+
+            // IF Feeder is running AND we have waited long enough since last ball
             if (Math.abs(feederMotor.getSpeed()) > 0.1
-                    && isReadyToFire(calculateShootingSolution(SwerveBase.getInstance().getPose(),
-                            SwerveBase.getInstance().getFieldVelocity()).turretAngle())
                     && (currentTime - lastBallSpawnTime) > 0.3) {
                 int ballsToFire = GameSim.getInstance().consumeHeldBallsForShot(2);
                 if (ballsToFire > 0) {

@@ -28,7 +28,6 @@ public class Teleop {
     private boolean isSnapMode = false;
     private boolean wasGlideHeld = false;
     private boolean intakeFeedToggle = false;
-    private boolean wasRightBumperPressed = false;
 
     private frc.robot.Interfaces.Actions activeAction = null;
 
@@ -46,7 +45,6 @@ public class Teleop {
         isSnapMode = false;
         wasGlideHeld = false;
         intakeFeedToggle = false;
-        wasRightBumperPressed = false;
     }
 
     public void teleopPeriodic() {
@@ -93,16 +91,10 @@ public class Teleop {
 
     private void handleIntakeControls() {
         // Driver toggle (Auto)
-        boolean rbPressed = driverController.getRightBumperButton();
-        if (rbPressed && !wasRightBumperPressed) {
+        if (driverController.getRightBumperPressed()) {
             intakeFeedToggle = !intakeFeedToggle;
-            if (intakeFeedToggle) {
-                intake.setState(Intake.IntakeState.INTAKING);
-            } else {
-                intake.setState(Intake.IntakeState.IDLE);
-            }
+            intake.setState(intakeFeedToggle ? Intake.IntakeState.INTAKING : Intake.IntakeState.IDLE);
         }
-        wasRightBumperPressed = rbPressed;
 
         // Operator manual overrides
         double manualArmY = -operatorController.getLeftY();
@@ -144,14 +136,12 @@ public class Teleop {
     }
 
     private void handleClimberControls() {
-        int pov = operatorController.getPOV();
-        if (pov == 0) {
-            climber.setState(Climber.ClimberState.UP);
-        } else if (pov == 180) {
-            climber.setState(Climber.ClimberState.DOWN);
-        } else {
-            climber.setState(Climber.ClimberState.STATIONARY);
-        }
+        Climber.ClimberState nextState = switch (operatorController.getPOV()) {
+            case 0 -> Climber.ClimberState.UP;
+            case 180 -> Climber.ClimberState.DOWN;
+            default -> Climber.ClimberState.STATIONARY;
+        };
+        climber.setState(nextState);
     }
 
     public void driveBaseControl() {

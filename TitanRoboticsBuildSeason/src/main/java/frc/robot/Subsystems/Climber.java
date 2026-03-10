@@ -50,21 +50,18 @@ public class Climber implements Subsystem {
 
     @Override
     public void update() {
-        switch (state) {
-            case UP:
-                m_doubleSolenoidLeft.set(Value.kForward);
-                m_doubleSolenoidRight.set(Value.kForward);
-                break;
-            case DOWN:
-                m_doubleSolenoidLeft.set(Value.kReverse);
-                m_doubleSolenoidRight.set(Value.kReverse);
-                break;
-            case STATIONARY:
-            default:
-                m_doubleSolenoidLeft.set(Value.kOff);
-                m_doubleSolenoidRight.set(Value.kOff);
-                break;
-        }
+        Value solenoidValue = switch (state) {
+            case UP -> Value.kForward;
+            case DOWN -> Value.kReverse;
+            case STATIONARY -> Value.kOff;
+        };
+
+        setSolenoids(solenoidValue);
+    }
+
+    private void setSolenoids(Value value) {
+        m_doubleSolenoidLeft.set(value);
+        m_doubleSolenoidRight.set(value);
     }
 
     @Override

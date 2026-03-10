@@ -299,7 +299,7 @@ public class Shooter implements frc.robot.Interfaces.Subsystem {
      * @return ShootingSolution containing target heading and RPM
      */
     public ShootingSolution calculateShootingSolution(Pose2d robotPose, ChassisSpeeds robotVel) {
-        return calculateShootingSolution(robotPose, robotVel, Constants.LOOP_TIME);
+        return calculateShootingSolution(robotPose, robotVel, Constants.SHOOTER_PREDICTIVE_LOOK_AHEAD);
     }
 
     /**

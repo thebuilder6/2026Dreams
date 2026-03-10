@@ -37,7 +37,7 @@ public class AutoAimAction implements Actions {
 
         if (path != null) {
             path.setRotationOverride(() -> {
-                double lookAhead = Constants.LOOP_TIME;
+                double lookAhead = Constants.SHOOTER_PREDICTIVE_LOOK_AHEAD;
                 Optional<SwerveSample> sample = path.getSampleAtRelativeTime(lookAhead);
 
                 if (sample.isPresent()) {
@@ -56,7 +56,7 @@ public class AutoAimAction implements Actions {
     @Override
     public void update() {
         double currentTime = Timer.getFPGATimestamp();
-        double lookAhead = Constants.LOOP_TIME;
+        double lookAhead = Constants.SHOOTER_PREDICTIVE_LOOK_AHEAD;
         Optional<SwerveSample> sample = (path != null) ? path.getSampleAtRelativeTime(lookAhead) : Optional.empty();
 
         Pose2d pose;

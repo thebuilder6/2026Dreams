@@ -1,4 +1,4 @@
-package frc.robot;
+package frc.robot.Test;
 
 import static edu.wpi.first.units.Units.Volts;
 import static edu.wpi.first.units.Units.RotationsPerSecond;
@@ -128,5 +128,3 @@ public class SysID {
         }
     }
 }
-
-

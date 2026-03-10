@@ -105,4 +105,12 @@ public class TunableNumber {
 
     return false;
   }
+
+  /**
+   * Update the tunable number, should be called periodically to check for changes.
+   */
+  public void update() {
+    // This method can be used to periodically update the tunable number
+    // In this implementation, the get() method handles the update automatically
+  }
 }

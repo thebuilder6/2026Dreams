@@ -1,12 +1,17 @@
-package frc.robot.Subsystems;
+package frc.robot.Test;
 
-import edu.wpi.first.wpilibj.Timer;
-import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
-import frc.robot.Interfaces.Subsystem;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
+
+import edu.wpi.first.wpilibj.Timer;
+import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
+import frc.robot.Interfaces.Subsystem;
+import frc.robot.Subsystems.Intake;
+import frc.robot.Subsystems.Shooter;
+import frc.robot.Subsystems.SubsystemManager;
+import frc.robot.Subsystems.SwerveBase;
 
 /**
  * Diagnostics subsystem for safe hardware verification.
@@ -218,5 +223,21 @@ public class Diagnostics implements Subsystem {
      */
     public Iterable<String> getTestNames() {
         return tests.keySet();
+    }
+
+    /**
+     * Setup dashboard controls for diagnostics
+     */
+    public void setupDashboard() {
+        SmartDashboard.putBoolean("Diagnostics/Running", false);
+        SmartDashboard.putString("Diagnostics/Active Test", "None");
+        SmartDashboard.putNumber("Diagnostics/Last Delta", 0.0);
+        
+        // Initialize test triggers to false
+        registerTests();
+        for (String name : tests.keySet()) {
+            String key = "Diagnostics/Run " + name;
+            SmartDashboard.putBoolean(key, false);
+        }
     }
 }

@@ -8,8 +8,8 @@ import edu.wpi.first.math.geometry.Rotation3d;
 import edu.wpi.first.math.numbers.N1;
 import edu.wpi.first.math.numbers.N3;
 import edu.wpi.first.math.util.Units;
-import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.units.measure.AngularVelocity;
+import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import frc.robot.Data.Constants.DrivebaseConstants;
 import frc.robot.Interfaces.Subsystem;
 import limelight.Limelight;
@@ -18,7 +18,6 @@ import limelight.networktables.LimelightPoseEstimator.EstimationMode;
 import limelight.networktables.Orientation3d;
 import limelight.networktables.PoseEstimate;
 import limelight.results.RawFiducial;
-import java.util.Optional;
 
 /**
  * Vision Subsystem
@@ -150,6 +149,59 @@ public class Vision implements Subsystem {
 
     public double getTX() {
         return camera.getData().targetData.getHorizontalOffset();
+    }
+
+    /**
+     * Get the latest Limelight target
+     */
+    public PoseEstimate getLimelightTarget() {
+        return poseEstimator.getPoseEstimate().orElse(null);
+    }
+
+    /**
+     * Get the latest PhotonVision target (placeholder implementation)
+     */
+    public PoseEstimate getPhotonTarget() {
+        // This would integrate with PhotonVision if available
+        // For now, return the same as Limelight
+        return getLimelightTarget();
+    }
+
+    /**
+     * Get the best available target from any vision source
+     */
+    public PoseEstimate getBestTarget() {
+        return getLimelightTarget();
+    }
+
+    /**
+     * Get the latest vision pose estimate
+     */
+    public Pose2d getVisionPose() {
+        PoseEstimate estimate = getLimelightTarget();
+        return estimate != null ? estimate.pose.toPose2d() : null;
+    }
+
+    /**
+     * Enable or disable Limelight
+     */
+    public void setLimelightEnabled(boolean enabled) {
+        // Simplified LED control - just log for now
+        System.out.println("[Vision] Limelight enabled: " + enabled);
+    }
+
+    /**
+     * Set Limelight LED mode
+     */
+    public void setLimelightLED(String mode) {
+        System.out.println("[Vision] Limelight LED mode: " + mode);
+    }
+
+    /**
+     * Set PhotonVision pipeline
+     */
+    public void setPhotonPipeline(int pipeline) {
+        System.out.println("[Vision] PhotonVision pipeline: " + pipeline);
     }
 
     @Override

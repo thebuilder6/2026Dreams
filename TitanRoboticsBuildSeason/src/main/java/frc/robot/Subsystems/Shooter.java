@@ -1,42 +1,32 @@
 package frc.robot.Subsystems;
 
-import edu.wpi.first.math.interpolation.InterpolatingDoubleTreeMap;
-import static edu.wpi.first.units.Units.*;
 import java.util.Optional;
-
-import swervelib.simulation.ironmaple.simulation.seasonspecific.rebuilt2026.Arena2026Rebuilt;
-import swervelib.simulation.ironmaple.simulation.seasonspecific.rebuilt2026.RebuiltFuelOnFly;
-import swervelib.simulation.ironmaple.simulation.SimulatedArena;
 
 import com.revrobotics.spark.config.SparkMaxConfig;
 
+import edu.wpi.first.math.Nat;
+import edu.wpi.first.math.VecBuilder;
+import edu.wpi.first.math.controller.LinearQuadraticRegulator;
+import edu.wpi.first.math.estimator.KalmanFilter;
 import edu.wpi.first.math.geometry.Pose2d;
+import edu.wpi.first.math.geometry.Pose3d;
 import edu.wpi.first.math.geometry.Rotation2d;
-
+import edu.wpi.first.math.geometry.Rotation3d;
 import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.math.geometry.Translation3d;
+import edu.wpi.first.math.interpolation.InterpolatingDoubleTreeMap;
 import edu.wpi.first.math.kinematics.ChassisSpeeds;
-import edu.wpi.first.math.system.plant.DCMotor;
-import edu.wpi.first.math.system.plant.LinearSystemId;
 import edu.wpi.first.math.numbers.N1;
 import edu.wpi.first.math.system.LinearSystem;
 import edu.wpi.first.math.system.LinearSystemLoop;
-import edu.wpi.first.math.controller.LinearQuadraticRegulator;
-import edu.wpi.first.math.geometry.Pose3d;
-import edu.wpi.first.math.geometry.Rotation3d;
-import edu.wpi.first.math.estimator.KalmanFilter;
-import edu.wpi.first.math.VecBuilder;
-import edu.wpi.first.math.Nat;
-
+import edu.wpi.first.math.system.plant.LinearSystemId;
 import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.DriverStation.Alliance;
 import edu.wpi.first.wpilibj.RobotBase;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import frc.robot.Data.Constants;
 import frc.robot.Data.Constants.ShooterConstants;
-import frc.robot.Data.TunableNumber;
 import frc.robot.Devices.NeoSparkMaxMotor;
-import frc.robot.Sim.GameSim;
 
 public class Shooter implements frc.robot.Interfaces.Subsystem {
 
@@ -55,9 +45,6 @@ public class Shooter implements frc.robot.Interfaces.Subsystem {
     private frc.robot.Sim.ShooterSim flywheelSim;
 
     private double targetVelocityRPM = 0;
-    private double lastBallSpawnTime = 0;
-    private long simShotCount = 0;
-    private long simScoreCount = 0;
 
     private final InterpolatingDoubleTreeMap shooterInterpolationMap = new InterpolatingDoubleTreeMap();
 
@@ -424,72 +411,13 @@ public class Shooter implements frc.robot.Interfaces.Subsystem {
             flywheelMotorLeft.setSimState(flywheelSim.getVelocityRPM(), 0);
             flywheelMotorRight.setSimState(flywheelSim.getVelocityRPM(), 0);
 
-            // Ball Simulation Logic
-            double currentTime = edu.wpi.first.wpilibj.Timer.getFPGATimestamp();
-
-            // IF Kicker is running AND we have waited long enough since last ball
-            if (Math.abs(kickerMotor.getSpeed()) > 0.1
-                    && (currentTime - lastBallSpawnTime) > ShooterConstants.BALL_SPAWN_INTERVAL) {
-                int ballsToFire = GameSim.getInstance().consumeHeldBallsForShot(2);
-                if (ballsToFire > 0) {
-                    Pose2d robotPose = SwerveBase.getInstance().getPose();
-                    ChassisSpeeds robotVel = SwerveBase.getInstance().getFieldVelocity();
-                    double exitVelocity = (flywheelMotorLeft.getVelocity() / 60.0)
-                            * ShooterConstants.SHOOTER_WHEEL_CIRCUMFERENCE;
-                    Translation3d targetLoc = getGoalLocation();
-
-                    for (int i = 0; i < ballsToFire; i++) {
-                        // Lateral offset for 2-wide shooter (+/- 0.12m)
-                        double lateralOffset = (ballsToFire == 2) ? (i == 0 ? -0.12 : 0.12) : 0.0;
-                        Translation2d shooterOffset = new Translation2d(ShooterConstants.SHOOTER_OFFSET_METERS.get(),
-                                lateralOffset);
-
-                        // Introduce Randomness (+/- 2% velocity, +/- 0.5 deg yaw, +/- 1 deg pitch)
-                        double randomExitVelocity = exitVelocity * (1.0 + (Math.random() - 0.5) * 0.04);
-                        Rotation2d randomYaw = robotPose.getRotation()
-                                .plus(Rotation2d.fromDegrees((Math.random() - 0.5) * 1.0));
-                        double randomPitch = ShooterConstants.SHOOTER_ANGLE_RAD + (Math.random() - 0.5) * 0.035; // ~2
-                                                                                                                 // deg
-                                                                                                                 // total
-                                                                                                                 // spread
-
-                        var fuelOnFly = new RebuiltFuelOnFly(
-                                robotPose.getTranslation(),
-                                shooterOffset,
-                                robotVel,
-                                randomYaw,
-                                Meters.of(ShooterConstants.SHOOTER_HEIGHT_METERS.get()),
-                                MetersPerSecond.of(randomExitVelocity),
-                                Radians.of(randomPitch));
-
-                        // Probabilistic scoring logic: Swish (tight) vs Rim (loose)
-                        fuelOnFly.withTargetPosition(() -> targetLoc)
-                                .withTargetTolerance(new Translation3d(0.3, 0.4, 0.2)) // Tight swish zone
-                                .withHitTargetCallBack(() -> {
-                                    boolean isBlueGoal = targetLoc.equals(Constants.FieldConstants.BLUE_GOAL_LOCATION);
-                                    if (SimulatedArena.getInstance() instanceof Arena2026Rebuilt) {
-                                        Arena2026Rebuilt arena = (Arena2026Rebuilt) SimulatedArena.getInstance();
-                                        if (arena.isActive(isBlueGoal)) {
-                                            simScoreCount++;
-                                        }
-                                    } else {
-                                        simScoreCount++;
-                                    }
-                                });
-
-                        // Secondary "Rim hit" chance (extra wide tolerance but only 40% probability)
-                        if (Math.random() < 0.4) {
-                            fuelOnFly.withTargetTolerance(new Translation3d(0.8, 1.0, 0.4));
-                        }
-
-                        swervelib.simulation.ironmaple.simulation.SimulatedArena.getInstance()
-                                .addGamePieceProjectile(fuelOnFly);
-                    }
-
-                    simShotCount += ballsToFire;
-                    lastBallSpawnTime = currentTime;
-                }
-            }
+            // Ball simulation is now handled by ShooterSim
+            flywheelSim.updateBallSimulation(
+                kickerMotor.getSpeed(),
+                flywheelMotorLeft.getVelocity(),
+                targetVelocityRPM,
+                voltage
+            );
         }
     }
 
@@ -499,20 +427,17 @@ public class Shooter implements frc.robot.Interfaces.Subsystem {
     }
 
     public long getSimShotCount() {
-        return simShotCount;
+        return flywheelSim != null ? flywheelSim.getSimShotCount() : 0;
     }
 
     public long getSimScoreCount() {
-        return simScoreCount;
+        return flywheelSim != null ? flywheelSim.getSimScoreCount() : 0;
     }
 
     @Override
     public double getSimulationCurrentDraw() {
         if (flywheelSim != null) {
-            // Estimate kicker current (stall current is ~2.6A for NEO 550, free is ~0.4A)
-            // Using a simple resistive model matching simulated voltage
-            double kickerCurrent = Math.abs(kickerMotor.getSpeed()) * 2.0;
-            return flywheelSim.getCurrentDrawAmps() + kickerCurrent;
+            return flywheelSim.getTotalCurrentDraw(kickerMotor.getSpeed());
         }
         return 0.0;
     }
@@ -526,8 +451,8 @@ public class Shooter implements frc.robot.Interfaces.Subsystem {
         SmartDashboard.putBoolean("Subsystems/Shooter/Is Lined Up", isLinedUp());
 
         if (RobotBase.isSimulation()) {
-            SmartDashboard.putNumber("Simulation/Shooter/Shot Count", simShotCount);
-            SmartDashboard.putNumber("Simulation/Shooter/Score Count", simScoreCount);
+            SmartDashboard.putNumber("Simulation/Shooter/Shot Count", getSimShotCount());
+            SmartDashboard.putNumber("Simulation/Shooter/Score Count", getSimScoreCount());
         }
 
         // 3D Mechanism Visualization

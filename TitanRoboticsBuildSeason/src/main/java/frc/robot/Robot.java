@@ -7,22 +7,22 @@ package frc.robot;
 import edu.wpi.first.wpilibj.DataLogManager;
 import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.TimedRobot;
+import edu.wpi.first.wpilibj.XboxController;
+import edu.wpi.first.wpilibj.simulation.BatterySim;
+import edu.wpi.first.wpilibj.simulation.RoboRioSim;
+import edu.wpi.first.wpilibj2.command.CommandScheduler;
 import frc.robot.Auto.AutoMissionExecutor;
 import frc.robot.Auto.Missions.MissionBase;
-import frc.robot.Data.Constants;
 import frc.robot.Sim.AIRobotSim;
+import frc.robot.Sim.GameSim;
 import frc.robot.Subsystems.Climber;
 import frc.robot.Subsystems.Dashboard;
-import frc.robot.Sim.GameSim;
 import frc.robot.Subsystems.Intake;
 import frc.robot.Subsystems.LEDs;
 import frc.robot.Subsystems.Shooter;
 import frc.robot.Subsystems.SubsystemManager;
 import frc.robot.Subsystems.SwerveBase;
-import edu.wpi.first.wpilibj.simulation.BatterySim;
-import edu.wpi.first.wpilibj.simulation.RoboRioSim;
-import edu.wpi.first.wpilibj.XboxController;
-import edu.wpi.first.wpilibj2.command.CommandScheduler;
+import frc.robot.Test.TestMode;
 
 /**
  * The methods in this class are called automatically corresponding to each
@@ -36,7 +36,7 @@ public class Robot extends TimedRobot {
 
   Teleop teleop;
   SwerveBase swerveBase;
-  SysID sysID;
+  TestMode testMode;
   XboxController testController;
   private AutoMissionExecutor mAutoMissionExecutor = new AutoMissionExecutor();
 
@@ -59,12 +59,10 @@ public class Robot extends TimedRobot {
     AIRobotSim.getInstance();
     LEDs.getInstance();
     teleop = new Teleop();
+    testMode = TestMode.getInstance();
     SubsystemManager.initializeSubsystems();
     swerveBase.update();
 
-    if (Constants.TUNING_MODE) {
-      sysID = new SysID(Shooter.getInstance(), Intake.getInstance(), SwerveBase.getInstance());
-    }
     testController = new XboxController(0); // Assuming port 0 for testing
 
     // Disable LiveWindow to reduce NetworkTable noise
@@ -87,6 +85,11 @@ public class Robot extends TimedRobot {
 
     SubsystemManager.updateSubsystems();
     SubsystemManager.logSubsystems();
+    
+    // Update test mode if enabled
+    if (testMode != null) {
+      testMode.update();
+    }
   }
 
   /**
@@ -166,11 +169,12 @@ public class Robot extends TimedRobot {
   /** This function is called periodically during test mode. */
   @Override
   public void testPeriodic() {
-    // Run the scheduler to execute any scheduled SysId commands
+    // Run the scheduler to execute any scheduled commands
     CommandScheduler.getInstance().run();
-    // Poll the controller for SysID input
-    if (sysID != null) {
-      sysID.runTest(testController);
+    
+    // Test mode handles SysID integration internally
+    if (testMode != null && testMode.isEnabled()) {
+      // Test mode already handles SysID in its update loop
     }
   }
 

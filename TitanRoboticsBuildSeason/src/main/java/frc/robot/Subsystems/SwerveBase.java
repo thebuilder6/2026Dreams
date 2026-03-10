@@ -1,6 +1,6 @@
 package frc.robot.Subsystems;
 
-import static edu.wpi.first.units.Units.*;
+import static edu.wpi.first.units.Units.Meter;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -8,21 +8,19 @@ import java.util.HashSet;
 import java.util.List;
 
 import edu.wpi.first.math.Matrix;
-import edu.wpi.first.math.VecBuilder;
-import edu.wpi.first.math.numbers.N1;
-import edu.wpi.first.math.numbers.N3;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import edu.wpi.first.math.kinematics.SwerveDriveKinematics;
+import edu.wpi.first.math.numbers.N1;
+import edu.wpi.first.math.numbers.N3;
 import edu.wpi.first.math.trajectory.Trajectory;
 import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.Filesystem;
 import edu.wpi.first.wpilibj.smartdashboard.Field2d;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import frc.robot.Data.Constants;
-import frc.robot.Data.Constants.DrivebaseConstants;
 import frc.robot.Data.GlideConstants;
 import frc.robot.Interfaces.Subsystem;
 import frc.robot.Sim.LimelightSim;
@@ -783,6 +781,52 @@ public class SwerveBase implements Subsystem {
      */
     public void addVisionMeasurement(Pose2d pose, double timestamp, Matrix<N3, N1> stdDevs) {
         swerveDrive.addVisionMeasurement(pose, timestamp, stdDevs);
+    }
+
+    /**
+     * Sets the voltage to all steer motors for SysId characterization.
+     */
+    public void setSteerVoltage(double volts) {
+        swerveDrive.drive(new Translation2d(), 0, false, true); // ensure static
+        for (swervelib.SwerveModule module : swerveDrive.getModules()) {
+            module.getAngleMotor().setVoltage(volts);
+        }
+    }
+
+    /**
+     * Gets the voltages of all steer motors.
+     */
+    public List<Double> getSteerMotorVoltages() {
+        List<Double> volts = new ArrayList<>();
+        for (swervelib.SwerveModule module : swerveDrive.getModules()) {
+            volts.add(module.getAngleMotor().getVoltage());
+        }
+        return volts;
+    }
+
+    /**
+     * Gets the positions of all steer motors.
+     */
+    public List<Double> getSteerMotorPositions() {
+        List<Double> pos = new ArrayList<>();
+        for (swervelib.SwerveModule module : swerveDrive.getModules()) {
+            pos.add(module.getAngleMotor().getPosition());
+        }
+        return pos;
+    }
+
+    /**
+     * Gets the current chassis speeds.
+     */
+    public ChassisSpeeds getChassisSpeeds() {
+        return swerveDrive.getRobotVelocity();
+    }
+
+    /**
+     * Set the robot pose (for testing)
+     */
+    public void setPose(Pose2d pose) {
+        swerveDrive.resetOdometry(pose);
     }
 
 }

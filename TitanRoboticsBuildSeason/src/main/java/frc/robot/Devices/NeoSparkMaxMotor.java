@@ -120,4 +120,12 @@ public class NeoSparkMaxMotor {
     public double getOutputCurrent() {
         return m_motor != null ? m_motor.getOutputCurrent() : 0.0;
     }
+
+    public double getAppliedOutput() {
+        return m_motor != null ? m_motor.getAppliedOutput() : 0.0;
+    }
+
+    public double getBusVoltage() {
+        return m_motor != null ? m_motor.getBusVoltage() : 12.0;
+    }
 }

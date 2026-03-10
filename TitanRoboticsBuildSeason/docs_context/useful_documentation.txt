@@ -1,0 +1,10 @@
+This document contains links to all of the documentation used in the creation of this code
+
+add as used
+
+https://docs.photonvision.org/
+https://choreo.autos/
+https://docs.limelightvision.io/docs/docs-limelight/
+https://shenzhen-robotics-alliance.github.io/maple-sim/
+https://docs.wpilib.org/en/stable/index.html
+https://docs.advantagekit.org/

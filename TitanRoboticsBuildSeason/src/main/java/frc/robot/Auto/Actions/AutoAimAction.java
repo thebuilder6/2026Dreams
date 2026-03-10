@@ -104,10 +104,10 @@ public class AutoAimAction implements Actions {
             boolean aimed = headingErrorDegrees < 5.0;
             boolean ready = shooter.isAtTargetVelocity();
             if (aimed && ready) {
-                shooter.setFeederSpeed(ShooterConstants.FEED_SPEED);
+                shooter.setKickerSpeed(ShooterConstants.FEED_SPEED);
                 SmartDashboard.putString("AutoAim/Status", "FIRING");
             } else {
-                shooter.setFeederSpeed(0);
+                shooter.setKickerSpeed(0);
 
                 // Detailed Status for Debugging
                 StringBuilder status = new StringBuilder("Wait: ");
@@ -120,7 +120,7 @@ public class AutoAimAction implements Actions {
 
         } else {
             // Shot Impossible (e.g. too close/far)
-            shooter.setFeederSpeed(0);
+            shooter.setKickerSpeed(0);
             shooter.setFlywheelVelocity(Constants.ShooterConstants.IDLE_RPM);
             SmartDashboard.putString("AutoAim/Status", "Solution Impossible");
 
@@ -146,7 +146,7 @@ public class AutoAimAction implements Actions {
         // Instead, just stop the feeder to prevent wasting balls, but let the flywheel
         // spin down naturally
         // or stay spinning if another action picks it up.
-        shooter.setFeederSpeed(0);
+        shooter.setKickerSpeed(0);
 
         // Optional: Only stop flywheel if we really want to shut down
         // shooter.stop();

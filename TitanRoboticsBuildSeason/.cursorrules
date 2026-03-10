@@ -1,0 +1,19 @@
+# Build Instructions for Agents
+
+This project requires a specific JDK provided by WPILib (2026). To build correctly and avoid registry or version errors, you **MUST** set the `JAVA_HOME` environment variable to the WPILib JDK path before running Gradle.
+
+### Recommended Build Command (PowerShell)
+```powershell
+$env:JAVA_HOME = 'C:\Users\Public\wpilib\2026\jdk'; .\gradlew build
+```
+
+### Recommended Simulation Command (PowerShell)
+```powershell
+$env:JAVA_HOME = 'C:\Users\Public\wpilib\2026\jdk'; .\gradlew simulateJava
+```
+
+### Key Considerations
+- **JDK Path**: `C:\Users\Public\wpilib\2026\jdk`
+- **Gradle Wrapper**: Use `./gradlew` instead of a system-installed `gradle`.
+- **Offline Mode**: If builds are slow or failing due to network, consider `--offline`.
+- **Deployment**: Deploy via `.\gradlew deploy` with the same `JAVA_HOME` set.

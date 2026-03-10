@@ -1,5 +1,6 @@
 package frc.robot.Auto.Missions;
 
+import frc.robot.Auto.AutoMission;
 import frc.robot.Auto.AutoMissionEndedException;
 import frc.robot.Auto.Actions.*;
 import frc.robot.Subsystems.Intake;
@@ -12,6 +13,7 @@ import frc.robot.Subsystems.SwerveBase;
  * - Starting intake on a marker while driving.
  * - Shooting while moving (Auto-Aim) triggered by a marker.
  */
+@AutoMission(name = "Advanced Choreo Shot")
 public class AdvancedChoreoMission extends MissionBase {
         @Override
         protected void routine() throws AutoMissionEndedException {

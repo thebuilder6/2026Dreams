@@ -22,6 +22,8 @@ import edu.wpi.first.math.numbers.N1;
 import edu.wpi.first.math.system.LinearSystem;
 import edu.wpi.first.math.system.LinearSystemLoop;
 import edu.wpi.first.math.controller.LinearQuadraticRegulator;
+import edu.wpi.first.math.geometry.Pose3d;
+import edu.wpi.first.math.geometry.Rotation3d;
 import edu.wpi.first.math.estimator.KalmanFilter;
 import edu.wpi.first.math.VecBuilder;
 import edu.wpi.first.math.Nat;
@@ -29,19 +31,20 @@ import edu.wpi.first.math.Nat;
 import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.DriverStation.Alliance;
 import edu.wpi.first.wpilibj.RobotBase;
-import edu.wpi.first.wpilibj.simulation.FlywheelSim;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import frc.robot.Data.Constants;
 import frc.robot.Data.Constants.ShooterConstants;
+import frc.robot.Data.TunableNumber;
 import frc.robot.Devices.NeoSparkMaxMotor;
-import frc.robot.ThirdParty.LimelightHelpers;
+import frc.robot.Sim.GameSim;
 
 public class Shooter implements frc.robot.Interfaces.Subsystem {
 
     private static Shooter instance = null;
 
-    private final NeoSparkMaxMotor flywheelMotor;
-    private final NeoSparkMaxMotor feederMotor;
+    private final NeoSparkMaxMotor flywheelMotorLeft;
+    private final NeoSparkMaxMotor flywheelMotorRight;
+    private final NeoSparkMaxMotor kickerMotor;
 
     /**
      * The Linear System Loop combines the Plant, Controller, and Observer.
@@ -49,7 +52,7 @@ public class Shooter implements frc.robot.Interfaces.Subsystem {
      */
     private final LinearSystemLoop<N1, N1, N1> flywheelLoop;
 
-    private FlywheelSim flywheelSim;
+    private frc.robot.Sim.ShooterSim flywheelSim;
 
     private double targetVelocityRPM = 0;
     private double lastBallSpawnTime = 0;
@@ -58,7 +61,28 @@ public class Shooter implements frc.robot.Interfaces.Subsystem {
 
     private final InterpolatingDoubleTreeMap shooterInterpolationMap = new InterpolatingDoubleTreeMap();
 
-    public record ShootingSolution(Rotation2d turretAngle, double flywheelRPM, boolean possible) {
+    public static class ShootingSolution {
+        private final Rotation2d turretAngle;
+        private final double flywheelRPM;
+        private final boolean possible;
+
+        public ShootingSolution(Rotation2d turretAngle, double flywheelRPM, boolean possible) {
+            this.turretAngle = turretAngle;
+            this.flywheelRPM = flywheelRPM;
+            this.possible = possible;
+        }
+
+        public Rotation2d turretAngle() {
+            return turretAngle;
+        }
+
+        public double flywheelRPM() {
+            return flywheelRPM;
+        }
+
+        public boolean possible() {
+            return possible;
+        }
     }
 
     public static Shooter getInstance() {
@@ -69,21 +93,28 @@ public class Shooter implements frc.robot.Interfaces.Subsystem {
     }
 
     private Shooter() {
-        flywheelMotor = new NeoSparkMaxMotor(ShooterConstants.FLYWHEEL_MOTOR_ID);
-        feederMotor = new NeoSparkMaxMotor(ShooterConstants.FEEDER_MOTOR_ID);
+        flywheelMotorLeft = new NeoSparkMaxMotor(ShooterConstants.FLYWHEEL_MOTOR_LEFT_ID);
+        flywheelMotorRight = new NeoSparkMaxMotor(ShooterConstants.FLYWHEEL_MOTOR_RIGHT_ID);
+        kickerMotor = new NeoSparkMaxMotor(ShooterConstants.KICKER_MOTOR_ID);
 
         SparkMaxConfig flywheelConfig = new SparkMaxConfig();
         flywheelConfig.inverted(false);
-        flywheelMotor.configure(flywheelConfig);
+        flywheelConfig.smartCurrentLimit((int) ShooterConstants.FLYWHEEL_CURRENT_LIMIT);
+        flywheelMotorLeft.configure(flywheelConfig);
 
-        SparkMaxConfig feederConfig = new SparkMaxConfig();
-        feederConfig.inverted(false);
-        feederMotor.configure(feederConfig);
+        SparkMaxConfig flywheelRightConfig = new SparkMaxConfig();
+        flywheelRightConfig.inverted(true);
+        flywheelRightConfig.smartCurrentLimit((int) ShooterConstants.FLYWHEEL_CURRENT_LIMIT);
+        flywheelMotorRight.configure(flywheelRightConfig);
+
+        SparkMaxConfig kickerConfig = new SparkMaxConfig();
+        kickerConfig.inverted(false);
+        kickerMotor.configure(kickerConfig);
 
         // State-Space Control Setup
         // Plant: Models the flywheel physics (Velocity System) in SI units (rad/s)
-        double kV_rads = ShooterConstants.kFlywheelV * 60.0 / (2.0 * Math.PI);
-        double kA_rads = ShooterConstants.kFlywheelA * 60.0 / (2.0 * Math.PI);
+        double kV_rads = ShooterConstants.kFlywheelV.get() * 60.0 / (2.0 * Math.PI);
+        double kA_rads = ShooterConstants.kFlywheelA.get() * 60.0 / (2.0 * Math.PI);
         LinearSystem<N1, N1, N1> plant = LinearSystemId.identifyVelocitySystem(kV_rads, kA_rads);
 
         // Controller: Linear Quadratic Regulator (LQR)
@@ -108,11 +139,7 @@ public class Shooter implements frc.robot.Interfaces.Subsystem {
         flywheelLoop = new LinearSystemLoop<>(plant, controller, observer, 12.0, 0.02);
 
         if (RobotBase.isSimulation()) {
-            flywheelSim = new FlywheelSim(
-                    plant,
-                    DCMotor.getNEO(1),
-                    1.0 // Gear ratio
-            );
+            flywheelSim = new frc.robot.Sim.ShooterSim();
         }
 
         // Initialize Interpolation Map (Distance in Meters -> RPM Offset)
@@ -126,6 +153,56 @@ public class Shooter implements frc.robot.Interfaces.Subsystem {
     }
 
     /**
+     * Set the raw voltage for the flywheel and kicker.
+     * Used by standalone SysId testing.
+     */
+    public void setVoltages(double flywheelVolts, double kickerVolts) {
+        setFlywheelVoltages(flywheelVolts, flywheelVolts);
+        kickerMotor.setVoltage(kickerVolts);
+    }
+
+    /** Sets flywheel voltages individually for diagnostics. */
+    public void setFlywheelVoltages(double leftVolts, double rightVolts) {
+        flywheelMotorLeft.setVoltage(leftVolts);
+        flywheelMotorRight.setVoltage(rightVolts);
+    }
+
+    /**
+     * Get the applied voltage for the left flywheel motor.
+     */
+    public double getFlywheelLeftAppliedVoltage() {
+        return flywheelMotorLeft.getBusVoltage() * flywheelMotorLeft.getAppliedOutput();
+    }
+
+    /**
+     * Get the velocity of the left flywheel in RPM.
+     */
+    public double getFlywheelLeftVelocityRPM() {
+        return flywheelMotorLeft.getVelocity();
+    }
+
+    /**
+     * Get the velocity of the right flywheel in RPM.
+     */
+    public double getFlywheelRightVelocityRPM() {
+        return flywheelMotorRight.getVelocity();
+    }
+
+    /**
+     * Get the applied voltage for the kicker motor.
+     */
+    public double getKickerAppliedVoltage() {
+        return kickerMotor.getBusVoltage() * kickerMotor.getAppliedOutput();
+    }
+
+    /**
+     * Get the velocity of the kicker in RPM.
+     */
+    public double getKickerVelocityRPM() {
+        return kickerMotor.getVelocity();
+    }
+
+    /**
      * Set the target velocity for the flywheel.
      * 
      * @param velocityRPM Target velocity in RPM.
@@ -134,8 +211,18 @@ public class Shooter implements frc.robot.Interfaces.Subsystem {
         this.targetVelocityRPM = velocityRPM;
     }
 
-    public void setFeederSpeed(double speed) {
-        feederMotor.setSpeed(speed);
+    /**
+     * Alias for setFlywheelVelocity to match user's manual controller
+     * implementation.
+     * 
+     * @param rpm Target velocity in RPM.
+     */
+    public void setTargetRPM(double rpm) {
+        setFlywheelVelocity(rpm);
+    }
+
+    public void setKickerSpeed(double speed) {
+        kickerMotor.setSpeed(speed);
     }
 
     public void stop() {
@@ -149,16 +236,17 @@ public class Shooter implements frc.robot.Interfaces.Subsystem {
         }
 
         targetVelocityRPM = 0;
-        flywheelMotor.stop();
-        feederMotor.stop();
+        flywheelMotorLeft.stop();
+        flywheelMotorRight.stop();
+        kickerMotor.stop();
     }
 
     public double getActualRPM() {
-        return flywheelMotor.getVelocity();
+        return flywheelMotorLeft.getVelocity();
     }
 
     public boolean isAtTargetVelocity() {
-        return Math.abs(flywheelMotor.getVelocity() - targetVelocityRPM) < 50; // 50 RPM tolerance
+        return Math.abs(flywheelMotorLeft.getVelocity() - targetVelocityRPM) < ShooterConstants.RPM_TOLERANCE;
     }
 
     /**
@@ -169,17 +257,18 @@ public class Shooter implements frc.robot.Interfaces.Subsystem {
      */
     public boolean isReadyToFire(Rotation2d targetHeading) {
         double headingError = Math.abs(SwerveBase.getInstance().getHeading().minus(targetHeading).getDegrees());
-        return Dashboard.getInstance().isHubActive() && isAtTargetVelocity() && headingError < 2.5;
+        return Dashboard.getInstance().isHubActive() && isAtTargetVelocity()
+                && headingError < ShooterConstants.ALIGNMENT_HEADING_TOLERANCE_DEG;
     }
 
     /**
      * Checks if the robot is aligned with the goal using the Limelight.
-     * Uses tx (horizontal offset) from LimelightHelpers.
      */
     public boolean isLinedUp() {
-        boolean hasTarget = LimelightHelpers.getTV("limelight");
-        double tx = LimelightHelpers.getTX("limelight");
-        return hasTarget && Math.abs(tx) < 2.0; // +/- 2 degrees tolerance
+        Vision vision = Vision.getInstance();
+        boolean hasTarget = vision.hasTarget();
+        double tx = vision.getTX();
+        return hasTarget && Math.abs(tx) < ShooterConstants.LIMELIGHT_TX_TOLERANCE_DEG;
     }
 
     /**
@@ -201,6 +290,10 @@ public class Shooter implements frc.robot.Interfaces.Subsystem {
      * moving.
      * Incorporates predictive look-ahead to compensate for control/sensor latency.
      * 
+     * Uses 3D projectile motion equations:
+     * v = sqrt( (g * x^2) / (2 * cos^2(theta) * (x * tan(theta) - y)) )
+     * where x is horizontal distance and y is height difference.
+     * 
      * @param robotPose Current robot pose
      * @param robotVel  Current robot field-relative velocity
      * @return ShootingSolution containing target heading and RPM
@@ -220,50 +313,59 @@ public class Shooter implements frc.robot.Interfaces.Subsystem {
      * @return ShootingSolution containing target heading and RPM
      */
     public ShootingSolution calculateShootingSolution(Pose2d robotPose, ChassisSpeeds robotVel, double lookAheadTime) {
-        // 1. Predictive Look-ahead (Latency Compensation)
-        // Adjust robot pose based on expected delay (sensor lag + loop time)
+        // 1. Predictive Look-ahead
         Pose2d predictedPose = new Pose2d(
                 robotPose.getX() + robotVel.vxMetersPerSecond * lookAheadTime,
                 robotPose.getY() + robotVel.vyMetersPerSecond * lookAheadTime,
                 robotPose.getRotation().plus(Rotation2d.fromRadians(robotVel.omegaRadiansPerSecond * lookAheadTime)));
 
         Translation2d goalLoc = getGoalLocation().toTranslation2d();
-        Translation2d robotTrans = predictedPose.getTranslation();
+        Translation2d shooterLoc = predictedPose.getTranslation().plus(
+                new Translation2d(ShooterConstants.SHOOTER_OFFSET_METERS.get(), 0)
+                        .rotateBy(predictedPose.getRotation()));
 
-        // 2. Compensate for physical shooter offset from robot center
-        Translation2d shooterLoc = robotTrans.plus(
-                new Translation2d(ShooterConstants.SHOOTER_OFFSET_METERS, 0).rotateBy(predictedPose.getRotation()));
+        Translation2d vRobot = new Translation2d(robotVel.vxMetersPerSecond, robotVel.vyMetersPerSecond);
 
-        Translation2d diff = goalLoc.minus(shooterLoc);
-        double distance = diff.getNorm();
+        // We will iteratively refine the virtual target location
+        Translation2d virtualGoalLoc = goalLoc;
+        Rotation2d targetYaw = new Rotation2d();
+        double targetTotalSpeed = 0;
+        double distance = 0;
 
-        double heightDiff = Constants.FieldConstants.GOAL_HEIGHT_METERS - ShooterConstants.SHOOTER_HEIGHT_METERS;
+        double heightDiff = Constants.FieldConstants.GOAL_HEIGHT_METERS - ShooterConstants.SHOOTER_HEIGHT_METERS.get();
         double g = 9.81;
         double theta = ShooterConstants.SHOOTER_ANGLE_RAD;
         double cosTheta = Math.cos(theta);
         double tanTheta = Math.tan(theta);
 
-        // 3. Calculate initial estimate for required horizontal velocity (vIdealMag)
-        // Projectile motion: v = sqrt( (g * x^2) / (2 * cos^2(theta) * (x * tan(theta)
-        // - y)) )
-        double term = distance * tanTheta - heightDiff;
-        if (term <= 0)
-            return new ShootingSolution(new Rotation2d(), 0, false); // Impossible shot
+        // ITERATIVE CONVERGENCE (Loop 3 times to perfect the math)
+        for (int i = 0; i < 3; i++) {
+            Translation2d diff = virtualGoalLoc.minus(shooterLoc);
+            distance = diff.getNorm();
 
-        double vIdealMag = Math.sqrt((g * distance * distance) / (2 * cosTheta * cosTheta * term));
+            double term = distance * tanTheta - heightDiff;
+            if (term <= 0)
+                return new ShootingSolution(new Rotation2d(), 0, false);
 
-        // 4. Refine for robot velocity
-        // vBallHorizontal = vShotHorizontal + vRobot
-        Translation2d vRobot = new Translation2d(robotVel.vxMetersPerSecond, robotVel.vyMetersPerSecond);
-        Translation2d vShotHorizontal = diff.div(distance).times(vIdealMag * cosTheta).minus(vRobot);
+            // Calculate time of flight and ideal velocity for this specific distance
+            double vIdealMag = Math.sqrt((g * distance * distance) / (2 * cosTheta * cosTheta * term));
 
-        // Calculate new heading and RPM
-        Rotation2d targetYaw = vShotHorizontal.getAngle();
-        double targetHorizontalSpeed = vShotHorizontal.getNorm();
-        double targetTotalSpeed = (targetHorizontalSpeed / cosTheta);
+            // Subtract robot velocity to find the new required shot vector
+            Translation2d vShotHorizontal = diff.div(distance).times(vIdealMag * cosTheta).minus(vRobot);
 
-        // 5. Apply Interpolation Offset
-        double wheelCircumference = 0.1016 * Math.PI;
+            targetYaw = vShotHorizontal.getAngle();
+            double targetHorizontalSpeed = vShotHorizontal.getNorm();
+            targetTotalSpeed = (targetHorizontalSpeed / cosTheta);
+
+            // Update the virtual goal location for the next loop based on how much the
+            // robot's velocity shifted the shot
+            // Time of flight = distance / horizontal speed
+            double timeOfFlight = distance / (vIdealMag * cosTheta);
+            virtualGoalLoc = goalLoc.minus(vRobot.times(timeOfFlight));
+        }
+
+        // 5. Apply Interpolation Offset using the final converged distance
+        double wheelCircumference = ShooterConstants.SHOOTER_WHEEL_CIRCUMFERENCE;
         double rpmOffset = shooterInterpolationMap.get(distance);
         double targetRPM = ((targetTotalSpeed / wheelCircumference) * 60.0) + rpmOffset;
 
@@ -275,7 +377,7 @@ public class Shooter implements frc.robot.Interfaces.Subsystem {
 
         if (targetVelocityRPM > 0) {
             // Convert measurement to SI (rad/s)
-            double velocityRads = flywheelMotor.getVelocity() * (2.0 * Math.PI) / 60.0;
+            double velocityRads = flywheelMotorLeft.getVelocity() * (2.0 * Math.PI) / 60.0;
             double targetRads = targetVelocityRPM * (2.0 * Math.PI) / 60.0;
 
             // Correct the loop with the fresh measurement
@@ -290,81 +392,56 @@ public class Shooter implements frc.robot.Interfaces.Subsystem {
             // Get the calculated voltage
             double voltage = flywheelLoop.getU(0);
 
-            // Add kS (Static Friction) feedforward manually
-            // This represents a nonlinear term (signum(v) * kS) which the LinearSystem
-            // cannot model directly.
-            // See Chapter 8: Nonlinear Control.
+            // Note: If we wanted to tune kV/kA live, we would need to re-generate the
+            // plant/controller/observer here.
+            // For now, we allow live tuning of kS (Static Friction) as it is applied
+            // outside the LinearSystemLoop.
             double feedforwardS = calculateStaticFriction(targetVelocityRPM);
             voltage += feedforwardS;
 
-            flywheelMotor.setVoltage(voltage);
+            flywheelMotorLeft.setVoltage(voltage);
+            flywheelMotorRight.setVoltage(voltage);
         } else {
-            flywheelMotor.stop();
+            flywheelMotorLeft.stop();
+            flywheelMotorRight.stop();
             // Reset loop state (in rad/s)
-            double velocityRads = flywheelMotor.getVelocity() * (2.0 * Math.PI) / 60.0;
+            double velocityRads = flywheelMotorLeft.getVelocity() * (2.0 * Math.PI) / 60.0;
             flywheelLoop.reset(VecBuilder.fill(velocityRads));
         }
     }
 
+    @Override
     public void simulationUpdate() {
         if (flywheelSim != null) {
-            // In simulation, we rely on the same update() loop running before this
-            // But for the physics sim, we need to pass the voltage
-            // The motor wrapper usually handles "setVoltage" -> SimState, but let's be
-            // explicit if needed
-            // Actually, NeoSparkMaxMotor likely handles it. Let's just update the physics.
-
-            // We can retrieve the last set voltage from the motor (if the wrapper supports
-            // it)
-            // Or we can assume update() ran.
-
-            // For FlywheelSim, it needs the input voltage.
-            // Since we set it in update(), let's just make sure flywheelSim gets it.
-            // But wait, in the original code, it recalculated voltage here.
-            // Let's use the actual applied voltage from the motor object if possible,
-            // or just let the motor wrapper handle the sim state integration if it does.
-
-            // Original code:
-            // flywheelSim.setInput(voltage);
-            // flywheelSim.update(0.02);
-
-            // Since we switched to proper structure, let's just use the loop's calculated U
-            // from previous step?
-            // Or easier: Just let the loop run in update(), and here we just step the
-            // physics.
-            // We need to fetch the voltage we *just* asked the motor to run at.
-            // Assuming "flywheelMotor.setSimState" does what we expect, we might not need
-            // to manually step FlywheelSim
-            // IF we were using the REV Physics Sim. But we are using WPILib FlywheelSim.
-
-            // Let's rely on the loop's output.
-            double voltage = flywheelLoop.getU(0) + Math.signum(targetVelocityRPM) * ShooterConstants.kFlywheelS;
+            // Calculate voltage including static friction feedforward
+            double voltage = flywheelLoop.getU(0) + Math.signum(targetVelocityRPM) * ShooterConstants.kFlywheelS.get();
             if (targetVelocityRPM == 0)
                 voltage = 0;
 
-            flywheelSim.setInput(voltage);
-            flywheelSim.update(0.02); // 20ms sim step matches control loop
+            flywheelSim.update(voltage);
 
             // Update the motor's simulated encoder
-            flywheelMotor.setSimState(flywheelSim.getAngularVelocityRPM(), 0);
+            flywheelMotorLeft.setSimState(flywheelSim.getVelocityRPM(), 0);
+            flywheelMotorRight.setSimState(flywheelSim.getVelocityRPM(), 0);
 
             // Ball Simulation Logic
             double currentTime = edu.wpi.first.wpilibj.Timer.getFPGATimestamp();
 
-            // IF Feeder is running AND we have waited long enough since last ball
-            if (Math.abs(feederMotor.getSpeed()) > 0.1
-                    && (currentTime - lastBallSpawnTime) > 0.3) {
+            // IF Kicker is running AND we have waited long enough since last ball
+            if (Math.abs(kickerMotor.getSpeed()) > 0.1
+                    && (currentTime - lastBallSpawnTime) > ShooterConstants.BALL_SPAWN_INTERVAL) {
                 int ballsToFire = GameSim.getInstance().consumeHeldBallsForShot(2);
                 if (ballsToFire > 0) {
                     Pose2d robotPose = SwerveBase.getInstance().getPose();
                     ChassisSpeeds robotVel = SwerveBase.getInstance().getFieldVelocity();
-                    double exitVelocity = (flywheelMotor.getVelocity() / 60.0) * (0.1016 * Math.PI);
+                    double exitVelocity = (flywheelMotorLeft.getVelocity() / 60.0)
+                            * ShooterConstants.SHOOTER_WHEEL_CIRCUMFERENCE;
                     Translation3d targetLoc = getGoalLocation();
 
                     for (int i = 0; i < ballsToFire; i++) {
                         // Lateral offset for 2-wide shooter (+/- 0.12m)
                         double lateralOffset = (ballsToFire == 2) ? (i == 0 ? -0.12 : 0.12) : 0.0;
-                        Translation2d shooterOffset = new Translation2d(ShooterConstants.SHOOTER_OFFSET_METERS,
+                        Translation2d shooterOffset = new Translation2d(ShooterConstants.SHOOTER_OFFSET_METERS.get(),
                                 lateralOffset);
 
                         // Introduce Randomness (+/- 2% velocity, +/- 0.5 deg yaw, +/- 1 deg pitch)
@@ -381,7 +458,7 @@ public class Shooter implements frc.robot.Interfaces.Subsystem {
                                 shooterOffset,
                                 robotVel,
                                 randomYaw,
-                                Meters.of(ShooterConstants.SHOOTER_HEIGHT_METERS),
+                                Meters.of(ShooterConstants.SHOOTER_HEIGHT_METERS.get()),
                                 MetersPerSecond.of(randomExitVelocity),
                                 Radians.of(randomPitch));
 
@@ -432,19 +509,19 @@ public class Shooter implements frc.robot.Interfaces.Subsystem {
     @Override
     public double getSimulationCurrentDraw() {
         if (flywheelSim != null) {
-            // Estimate feeder current (stall current is ~2.6A for NEO 550, free is ~0.4A)
+            // Estimate kicker current (stall current is ~2.6A for NEO 550, free is ~0.4A)
             // Using a simple resistive model matching simulated voltage
-            double feederCurrent = Math.abs(feederMotor.getSpeed()) * 2.0;
-            return flywheelSim.getCurrentDrawAmps() + feederCurrent;
+            double kickerCurrent = Math.abs(kickerMotor.getSpeed()) * 2.0;
+            return flywheelSim.getCurrentDrawAmps() + kickerCurrent;
         }
         return 0.0;
     }
 
     @Override
     public void log() {
-        SmartDashboard.putNumber("Subsystems/Shooter/Flywheel Velocity", flywheelMotor.getVelocity());
+        SmartDashboard.putNumber("Subsystems/Shooter/Flywheel Velocity", flywheelMotorLeft.getVelocity());
         SmartDashboard.putNumber("Subsystems/Shooter/Target Velocity", targetVelocityRPM);
-        SmartDashboard.putNumber("Subsystems/Shooter/Feeder Speed", feederMotor.getVelocity());
+        SmartDashboard.putNumber("Subsystems/Shooter/Kicker Speed", kickerMotor.getVelocity());
         SmartDashboard.putBoolean("Subsystems/Shooter/Is At Target", isAtTargetVelocity());
         SmartDashboard.putBoolean("Subsystems/Shooter/Is Lined Up", isLinedUp());
 
@@ -452,6 +529,25 @@ public class Shooter implements frc.robot.Interfaces.Subsystem {
             SmartDashboard.putNumber("Simulation/Shooter/Shot Count", simShotCount);
             SmartDashboard.putNumber("Simulation/Shooter/Score Count", simScoreCount);
         }
+
+        // 3D Mechanism Visualization
+        // Shooter is at a fixed angle and position
+        Translation3d shooterRootRobotRelative = new Translation3d(
+                ShooterConstants.SHOOTER_OFFSET_METERS.get(),
+                0,
+                ShooterConstants.SHOOTER_HEIGHT_METERS.get());
+        Rotation3d shooterRotation = new Rotation3d(0, -ShooterConstants.SHOOTER_ANGLE_RAD, 0);
+        Pose3d shooterPose = new Pose3d(shooterRootRobotRelative, shooterRotation);
+
+        SmartDashboard.putNumberArray("Subsystems/Shooter/ShooterPose3d", new double[] {
+                shooterPose.getX(),
+                shooterPose.getY(),
+                shooterPose.getZ(),
+                shooterPose.getRotation().getQuaternion().getW(),
+                shooterPose.getRotation().getQuaternion().getX(),
+                shooterPose.getRotation().getQuaternion().getY(),
+                shooterPose.getRotation().getQuaternion().getZ()
+        });
     }
 
     @Override
@@ -477,7 +573,7 @@ public class Shooter implements frc.robot.Interfaces.Subsystem {
      * @return The voltage to add to the control output.
      */
     private double calculateStaticFriction(double targetRPM) {
-        return Math.signum(targetRPM) * ShooterConstants.kFlywheelS;
+        return Math.signum(targetRPM) * ShooterConstants.kFlywheelS.get();
     }
 
 }

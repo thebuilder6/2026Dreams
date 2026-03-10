@@ -5,19 +5,19 @@ import com.revrobotics.spark.config.SparkMaxConfig;
 import edu.wpi.first.math.controller.ArmFeedforward;
 import edu.wpi.first.math.controller.ProfiledPIDController;
 import edu.wpi.first.math.trajectory.TrapezoidProfile;
+import edu.wpi.first.wpilibj.RobotBase;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import frc.robot.Data.Constants.IntakeConstants;
 import frc.robot.Devices.NeoSparkMaxMotor;
 import frc.robot.Interfaces.Subsystem;
-import edu.wpi.first.wpilibj.simulation.SingleJointedArmSim;
-import edu.wpi.first.math.system.plant.DCMotor;
 import edu.wpi.first.math.util.Units;
-import edu.wpi.first.wpilibj.smartdashboard.Mechanism2d;
-import edu.wpi.first.wpilibj.smartdashboard.MechanismLigament2d;
-import edu.wpi.first.wpilibj.smartdashboard.MechanismRoot2d;
-import edu.wpi.first.wpilibj.util.Color;
-import edu.wpi.first.wpilibj.util.Color8Bit;
+import frc.robot.Data.PortMap;
+import frc.robot.Devices.ModifiedEncoder;
+import edu.wpi.first.math.geometry.Pose3d;
+import edu.wpi.first.math.geometry.Rotation3d;
+import edu.wpi.first.math.geometry.Translation3d;
+import edu.wpi.first.math.geometry.Transform3d;
 
 public class Intake implements Subsystem {
 
@@ -26,6 +26,7 @@ public class Intake implements Subsystem {
     private final NeoSparkMaxMotor armMotor;
     private final NeoSparkMaxMotor rollerMotor;
     private final NeoSparkMaxMotor hopperMotor;
+    private final ModifiedEncoder pivotEncoder;
 
     public enum IntakeState {
         IDLE,
@@ -35,7 +36,8 @@ public class Intake implements Subsystem {
     }
 
     private IntakeState currentState = IntakeState.IDLE;
-    private double targetArmPositionRad = IntakeConstants.ARM_IDLE_POS;
+    private double targetArmPositionDeg = IntakeConstants.ARM_IDLE_POS;
+    private double currentArmPositionDeg = 0.0;
 
     private final Timer stallTimer = new Timer();
     private final Timer ejectTimer = new Timer();
@@ -45,11 +47,7 @@ public class Intake implements Subsystem {
     private final ProfiledPIDController armController;
 
     // Simulation
-    private SingleJointedArmSim armSim;
-    private Mechanism2d mech2d;
-    private MechanismRoot2d mechRoot;
-    private MechanismLigament2d armTower;
-    private MechanismLigament2d armLigament;
+    private frc.robot.Sim.ArmSim armSim;
 
     public static Intake getInstance() {
         if (instance == null) {
@@ -63,60 +61,51 @@ public class Intake implements Subsystem {
         rollerMotor = new NeoSparkMaxMotor(IntakeConstants.ROLLER_MOTOR_ID);
         hopperMotor = new NeoSparkMaxMotor(IntakeConstants.HOPPER_MOTOR_ID);
 
+        pivotEncoder = new ModifiedEncoder(PortMap.INTAKE_ENCODER_ID);
+
         SparkMaxConfig armConfig = new SparkMaxConfig();
-        armConfig.inverted(false);
-        // Configure encoder to output radians instead of rotations
-        armConfig.encoder.positionConversionFactor(IntakeConstants.ARM_POSITION_CONVERSION);
-        armConfig.encoder.velocityConversionFactor(IntakeConstants.ARM_VELOCITY_CONVERSION);
+        armConfig.inverted(IntakeConstants.INTAKE_ARM_INVERTED);
         armMotor.configure(armConfig);
 
         SparkMaxConfig rollerConfig = new SparkMaxConfig();
-        rollerConfig.inverted(false);
+        rollerConfig.inverted(IntakeConstants.INTAKE_WHEELS_INVERTED);
         rollerMotor.configure(rollerConfig);
 
         SparkMaxConfig hopperConfig = new SparkMaxConfig();
         hopperConfig.inverted(false);
         hopperMotor.configure(hopperConfig);
 
+        // No local TunableNumbers needed, using global ones in IntakeConstants
+
         armFeedforward = new ArmFeedforward(
-                IntakeConstants.kArmS,
-                IntakeConstants.kArmG,
-                IntakeConstants.kArmV,
-                IntakeConstants.kArmA);
+                IntakeConstants.kArmS.get(),
+                IntakeConstants.kArmG.get(),
+                IntakeConstants.kArmV.get(),
+                IntakeConstants.kArmA.get());
 
         armController = new ProfiledPIDController(
-                IntakeConstants.kArmP,
-                IntakeConstants.kArmI,
-                IntakeConstants.kArmD,
+                IntakeConstants.kArmP.get(),
+                IntakeConstants.kArmI.get(),
+                IntakeConstants.kArmD.get(),
                 new TrapezoidProfile.Constraints(
                         IntakeConstants.kMaxArmVelocity,
                         IntakeConstants.kMaxArmAcceleration));
 
         // Simulation Setup
-        if (edu.wpi.first.wpilibj.RobotBase.isSimulation()) {
-            armSim = new SingleJointedArmSim(
-                    DCMotor.getNEO(1),
-                    100.0, // Gearing (Estimate)
-                    SingleJointedArmSim.estimateMOI(0.4, 3.0), // MOI (Length 0.4m, Mass 3kg)
-                    0.4, // Length
-                    IntakeConstants.ARM_INTAKE_POS - 0.1, // Min Angle
-                    IntakeConstants.ARM_IDLE_POS + 0.1, // Max Angle
-                    true, // Simulate Gravity
-                    IntakeConstants.ARM_IDLE_POS // Starting Angle
-            );
-
-            mech2d = new Mechanism2d(1.0, 1.0);
-            mechRoot = mech2d.getRoot("IntakeRoot", 0.5, 0.5);
-            armTower = mechRoot.append(new MechanismLigament2d("Tower", 0.0, -90, 6, new Color8Bit(Color.kBlue)));
-            armLigament = mechRoot.append(
-                    new MechanismLigament2d("IntakeArm", 0.4, Units.radiansToDegrees(IntakeConstants.ARM_IDLE_POS), 6,
-                            new Color8Bit(Color.kYellow)));
-            SmartDashboard.putData("Intake Sim", mech2d);
+        if (RobotBase.isSimulation()) {
+            armSim = new frc.robot.Sim.ArmSim();
         }
 
         SubsystemManager.registerSubsystem(this);
     }
 
+    /**
+     * Sets the state of the intake subsystem.
+     * Transitions between IDLE, INTAKING, FEEDING, and EJECTING states affect both
+     * arm position and motor outputs in the update loop.
+     * 
+     * @param newState The next state to transition to.
+     */
     public void setState(IntakeState newState) {
         currentState = newState;
     }
@@ -125,8 +114,8 @@ public class Intake implements Subsystem {
         return currentState;
     }
 
-    public void setArmPosition(double positionRad) {
-        targetArmPositionRad = positionRad;
+    public void setArmPosition(double positionDeg) {
+        targetArmPositionDeg = positionDeg;
     }
 
     @Override
@@ -135,11 +124,10 @@ public class Intake implements Subsystem {
             // Use the actual voltage applied by the control loop in update()
             double voltage = armMotor.getAppliedVoltage();
 
-            armSim.setInput(voltage);
-            armSim.update(0.02);
+            armSim.update(voltage);
 
-            armMotor.setSimState(0, armSim.getAngleRads() / IntakeConstants.ARM_POSITION_CONVERSION);
-            armLigament.setAngle(Units.radiansToDegrees(armSim.getAngleRads()));
+            // Update the motor's simulated state
+            armMotor.setSimState(0, armSim.getAngleRads());
         }
     }
 
@@ -158,7 +146,8 @@ public class Intake implements Subsystem {
     @Override
     public void update() {
         // Rollers and Hopper logic
-        // JAM DETECTION
+        // JAM DETECTION: Checks if roller current exceeds threshold for a sustained period.
+        // Triggers an automatic reversal (EJECTING) to clear the jam.
         if (currentState == IntakeState.INTAKING && !isEjectingJam) {
             double current = rollerMotor.getOutputCurrent();
             if (current > IntakeConstants.STALL_CURRENT_LIMIT) {
@@ -212,9 +201,23 @@ public class Intake implements Subsystem {
         }
 
         // Arm Control logic
-        double pidOutput = armController.calculate(armMotor.getPosition(), targetArmPositionRad);
+        if (frc.robot.Data.Constants.TUNING_MODE) {
+            armController.setP(IntakeConstants.kArmP.get());
+            armController.setI(IntakeConstants.kArmI.get());
+            armController.setD(IntakeConstants.kArmD.get());
+            // Note: armFeedforward and constraints are harder to update live without re-instantiating,
+            // but P, I, D are the most common tuning targets.
+        }
+
+        double unmodifiedAbsolutePosition = pivotEncoder.getAbsolutePosition();
+        currentArmPositionDeg = unmodifiedAbsolutePosition < 180 ? unmodifiedAbsolutePosition + 360
+                : unmodifiedAbsolutePosition;
+        currentArmPositionDeg -= IntakeConstants.INTAKE_POSITION_OFFSET;
+
+        double pidOutput = armController.calculate(currentArmPositionDeg, targetArmPositionDeg);
         TrapezoidProfile.State setpoint = armController.getSetpoint();
-        double ffOutput = armFeedforward.calculate(setpoint.position, setpoint.velocity);
+        double ffOutput = armFeedforward.calculate(Math.toRadians(setpoint.position),
+                Math.toRadians(setpoint.velocity));
         armMotor.setVoltage(pidOutput + ffOutput);
     }
 
@@ -232,19 +235,41 @@ public class Intake implements Subsystem {
     public void initialize() {
         setState(IntakeState.IDLE);
         armMotor.stop();
-        armController.reset(armMotor.getPosition());
+
+        double unmodifiedAbsolutePosition = pivotEncoder.getAbsolutePosition();
+        currentArmPositionDeg = unmodifiedAbsolutePosition < 180 ? unmodifiedAbsolutePosition + 360
+                : unmodifiedAbsolutePosition;
+        currentArmPositionDeg -= IntakeConstants.INTAKE_POSITION_OFFSET;
+
+        armController.reset(currentArmPositionDeg);
     }
 
     @Override
     public void log() {
         SmartDashboard.putString("Subsystems/Intake/State", currentState.toString());
-        SmartDashboard.putNumber("Subsystems/Intake/Arm Position", armMotor.getPosition());
-        SmartDashboard.putNumber("Subsystems/Intake/Target Arm Position", targetArmPositionRad);
+        SmartDashboard.putNumber("Subsystems/Intake/Arm Position", currentArmPositionDeg);
+        SmartDashboard.putNumber("Subsystems/Intake/Target Arm Position", targetArmPositionDeg);
         SmartDashboard.putNumber("Subsystems/Intake/Arm Velocity", armMotor.getVelocity());
         SmartDashboard.putNumber("Subsystems/Intake/Roller Velocity", rollerMotor.getVelocity());
         SmartDashboard.putNumber("Subsystems/Intake/Hopper Velocity", hopperMotor.getVelocity());
         SmartDashboard.putNumber("Subsystems/Intake/Roller Current", rollerMotor.getOutputCurrent());
         SmartDashboard.putBoolean("Subsystems/Intake/Is Jammed", isEjectingJam);
+
+        // 3D Mechanism Visualization
+        // Arm pivot is located at front of robot, slightly offset from center
+        Translation3d armPivotRobotRelative = new Translation3d(0.25, 0, 0.2); 
+        Rotation3d armRotation = new Rotation3d(0, -Units.degreesToRadians(currentArmPositionDeg), 0);
+        Pose3d armPose = new Pose3d(armPivotRobotRelative, armRotation);
+        
+        SmartDashboard.putNumberArray("Subsystems/Intake/ArmPose3d", new double[] {
+            armPose.getX(),
+            armPose.getY(),
+            armPose.getZ(),
+            armPose.getRotation().getQuaternion().getW(),
+            armPose.getRotation().getQuaternion().getX(),
+            armPose.getRotation().getQuaternion().getY(),
+            armPose.getRotation().getQuaternion().getZ()
+        });
     }
 
     @Override
@@ -258,10 +283,46 @@ public class Intake implements Subsystem {
     }
 
     public double getArmPosition() {
-        return armMotor.getPosition();
+        return currentArmPositionDeg;
+    }
+
+    public void setArmVoltage(double volts) {
+        armMotor.setVoltage(volts);
+    }
+
+    public double getArmAppliedVoltage() {
+        return armMotor.getBusVoltage() * armMotor.getAppliedOutput();
+    }
+
+    public double getArmVelocityRads() {
+        return Units.degreesToRadians(armMotor.getVelocity()); // Velocity in rad/s if configured, or needs conversion
+    }
+
+    public double getArmPositionRads() {
+        return Units.degreesToRadians(getArmPosition());
     }
 
     public boolean isJammed() {
         return isEjectingJam;
+    }
+
+    /** Sets roller motor voltage directly (used by Diagnostics). */
+    public void setRollerVoltage(double volts) {
+        rollerMotor.setVoltage(volts);
+    }
+
+    /** Gets roller motor velocity in RPM. */
+    public double getRollerVelocityRPM() {
+        return rollerMotor.getVelocity();
+    }
+
+    /** Sets hopper motor voltage directly (used by Diagnostics). */
+    public void setHopperVoltage(double volts) {
+        hopperMotor.setVoltage(volts);
+    }
+
+    /** Gets hopper motor velocity in RPM. */
+    public double getHopperVelocityRPM() {
+        return hopperMotor.getVelocity();
     }
 }

@@ -1,4 +1,4 @@
-package frc.robot.Subsystems;
+package frc.robot.Sim;
 
 import java.util.Optional;
 
@@ -18,6 +18,9 @@ import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import frc.robot.Data.Constants;
 import frc.robot.Data.Constants.AutonConstants;
 import frc.robot.Interfaces.Subsystem;
+import frc.robot.Subsystems.Dashboard;
+import frc.robot.Subsystems.SubsystemManager;
+import frc.robot.Subsystems.SwerveBase;
 import swervelib.simulation.ironmaple.simulation.SimulatedArena;
 import swervelib.simulation.ironmaple.simulation.drivesims.SelfControlledSwerveDriveSimulation;
 import swervelib.simulation.ironmaple.simulation.drivesims.SwerveDriveSimulation;

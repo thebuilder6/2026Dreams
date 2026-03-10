@@ -5,7 +5,7 @@ import java.util.List;
 import frc.robot.Interfaces.Subsystem;
 
 public class SubsystemManager {
-    public static List<Subsystem> subsystems = new ArrayList<Subsystem>();
+    private static final List<Subsystem> subsystems = new ArrayList<Subsystem>();
 
     /**
      * Registers a subsystem for periodic updating and execution.

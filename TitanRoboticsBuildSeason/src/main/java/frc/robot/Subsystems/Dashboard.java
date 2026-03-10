@@ -62,6 +62,8 @@ public class Dashboard implements Subsystem {
             SmartDashboard.putBoolean("Features/Opponent Robot", false);
         if (!SmartDashboard.containsKey("Features/2 Player Defense"))
             SmartDashboard.putBoolean("Features/2 Player Defense", false);
+        if (!SmartDashboard.containsKey("Features/Pit Mode"))
+            SmartDashboard.putBoolean("Features/Pit Mode", false);
 
     }
 
@@ -70,6 +72,12 @@ public class Dashboard implements Subsystem {
         double timeRemainingSec = DriverStation.getMatchTime();
         updateHubStatus(timeRemainingSec);
         updateFieldVisuals();
+
+        // Update the auto mission chooser and delay
+        autoMissionChooser.updateMissionCreator();
+
+        // Sync Pit Mode
+        SwerveBase.getInstance().setPitMode(SmartDashboard.getBoolean("Features/Pit Mode", false));
     }
 
     @Override

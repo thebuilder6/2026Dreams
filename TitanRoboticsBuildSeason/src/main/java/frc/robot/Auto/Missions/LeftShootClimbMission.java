@@ -1,9 +1,11 @@
 package frc.robot.Auto.Missions;
 
+import frc.robot.Auto.AutoMission;
 import frc.robot.Auto.Actions.ClimbAction;
 import frc.robot.Auto.Actions.FollowChoreoPath;
 import frc.robot.Auto.AutoMissionEndedException;
 
+@AutoMission(name = "Left Shoot Climb")
 public class LeftShootClimbMission extends MissionBase {
 
     @Override

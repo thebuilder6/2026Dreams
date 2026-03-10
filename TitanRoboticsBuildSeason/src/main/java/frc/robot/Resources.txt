@@ -5,5 +5,10 @@ https://docs.yagsl.com/
 https://choreo.autos/
 https://yet-another-software-suite.github.io/YAGSL/javadocs/
 https://codedocs.revrobotics.com/
-https://limelightvision.io/
 https://frc-elastic.gitbook.io/docs
+https://docs.photonvision.org/
+https://docs.limelightvision.io/docs/docs-limelight/
+https://shenzhen-robotics-alliance.github.io/maple-sim/
+https://docs.advantagekit.org/
+https://yet-another-software-suite.github.io/YALL/
+https://yet-another-software-suite.github.io/YALL/javadocs/

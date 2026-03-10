@@ -5,6 +5,10 @@ import edu.wpi.first.math.util.Units;
 import swervelib.math.Matter;
 
 public class Constants {
+    // Global flag for enabling live tuning of PID values/setpoints via NetworkTables.
+    // Set to false for competition to save loop time.
+    public static final boolean TUNING_MODE = true;
+
     public static final class FieldConstants {
         public static final Translation3d RED_GOAL_LOCATION = new Translation3d(11.938, 4.035, 1.829);
         public static final Translation3d BLUE_GOAL_LOCATION = new Translation3d(4.597, 4.035, 1.829);
@@ -16,8 +20,8 @@ public class Constants {
     public static final double ROBOT_MASS = (148 - 20.3) * 0.453592; // 32lbs * kg per pound
     public static final Matter CHASSIS = new Matter(new Translation3d(0, 0, Units.inchesToMeters(8)), ROBOT_MASS);
     public static final double LOOP_TIME = 0.13; // s, 20ms + 110ms sprk max velocity lag
-    public static final double MAX_SPEED = Units.feetToMeters(20);
-    public static final double MAX_ROTATION_SPEED = 20;
+    public static final double MAX_SPEED = Units.feetToMeters(15);
+    public static final double MAX_ROTATION_SPEED = 8.0;
     // Maximum speed of the robot in meters per second, used to limit acceleration.
 
     public static final class AutonConstants {
@@ -32,36 +36,67 @@ public class Constants {
     }
 
     public static final class DrivebaseConstants {
-
         // Hold time on motor brakes when disabled
         public static final double WHEEL_LOCK_TIME = 10; // seconds
+
+        // Vision Rejection Thresholds
+        public static final double VISION_MAX_YAW_RATE = 360.0; // deg/s
+        public static final double VISION_MAX_TAG_DIST = 4.0; // meters
+        public static final double VISION_SINGLE_TAG_MAX_DIST = 3.0; // meters
+        public static final double VISION_MAX_AMBIGUITY = 0.4;
+
+        // Vision Trust (Std Dev) Coefficients
+        public static final double VISION_BASE_STD_DEV = 0.1;
+        public static final double VISION_SINGLE_TAG_PENALTY = 0.4;
+        public static final double VISION_DIST_PENALTY_DIVISOR = 20.0;
     }
 
     public static final class ShooterConstants {
-        public static final int FLYWHEEL_MOTOR_ID = 10;
-        public static final int FEEDER_MOTOR_ID = 11;
+        public static final int FLYWHEEL_MOTOR_LEFT_ID = PortMap.SHOOTER_MOTOR_LEFT_ID;
+        public static final int FLYWHEEL_MOTOR_RIGHT_ID = PortMap.SHOOTER_MOTOR_RIGHT_ID;
+        public static final int KICKER_MOTOR_ID = PortMap.KICKER_MOTOR_ID;
 
         public static final double SHOOT_SPEED = 0.8;
+        public static final double KICK_VOLTAGE = 12.0;
         public static final double FEED_SPEED = 0.5;
 
         // Flywheel Gains (RPM based) - TUNE THESE
-        public static final double kFlywheelP = 0.0001;
-        public static final double kFlywheelS = 0.1; // Volts
-        public static final double kFlywheelV = 0.002; // Volts per RPM
-        public static final double kFlywheelA = 0.0001; // Volts per RPM^2
+        public static final TunableNumber kFlywheelP = new TunableNumber("Shooter/kFlywheelP", 0.0001);
+        public static final TunableNumber kFlywheelS = new TunableNumber("Shooter/kFlywheelS", 0.1); // Volts
+        public static final TunableNumber kFlywheelV = new TunableNumber("Shooter/kFlywheelV", 0.002); // Volts per RPM
+        public static final TunableNumber kFlywheelA = new TunableNumber("Shooter/kFlywheelA", 0.0001); // Volts per RPM^2
 
-        // Physics Constants
+        // Physics Constants (Old values kept as defaults)
         public static final double SHOOTER_ANGLE_RAD = Units.degreesToRadians(75.0); // Fixed angle from floor
-        public static final double SHOOTER_HEIGHT_METERS = 0.5; // Height from floor
-        public static final double SHOOTER_OFFSET_METERS = 0.3; // Distance forward from robot center
+        public static final TunableNumber SHOOTER_HEIGHT_METERS = new TunableNumber("Shooter/HeightMeters", 0.5);
+        public static final TunableNumber SHOOTER_OFFSET_METERS = new TunableNumber("Shooter/OffsetMeters", 0.3);
         public static final double SHOOT_MAX_DISTANCE = 5.0; // Meters
         public static final double IDLE_RPM = 60;
+
+        // Tolerances
+        public static final double RPM_TOLERANCE = 50.0;
+        public static final double ALIGNMENT_HEADING_TOLERANCE_DEG = 2.5;
+        public static final double LIMELIGHT_TX_TOLERANCE_DEG = 2.0;
+
+        // Safety
+        public static final double FLYWHEEL_CURRENT_LIMIT = 40.0; // Amps
+
+        // Simulation
+        public static final double SIM_GEARING = 1.0;
+        public static final double SIM_MOI = 0.001; // Estimate
+        public static final double BALL_SPAWN_INTERVAL = 0.3; // seconds
+        public static final double SHOOTER_WHEEL_DIAMETER = 0.1016; // meters (4 inch)
+        public static final double SHOOTER_WHEEL_CIRCUMFERENCE = SHOOTER_WHEEL_DIAMETER * Math.PI;
     }
 
     public static final class IntakeConstants {
-        public static final int ARM_MOTOR_ID = 20;
-        public static final int ROLLER_MOTOR_ID = 21;
-        public static final int HOPPER_MOTOR_ID = 22;
+        public static final int ARM_MOTOR_ID = PortMap.INTAKE_ARM_MOTOR_ID;
+        public static final int ROLLER_MOTOR_ID = PortMap.INTAKE_WHEELS_MOTOR_ID;
+        public static final int HOPPER_MOTOR_ID = PortMap.HOPPER_MOTOR_CANID;
+
+        public static final boolean INTAKE_ARM_INVERTED = false;
+        public static final boolean INTAKE_WHEELS_INVERTED = true;
+        public static final double INTAKE_POSITION_OFFSET = 276.0;
 
         public static final double STALL_CURRENT_LIMIT = 30.0; // Amps
         public static final double STALL_TIME = 0.5; // Seconds to trigger unjam
@@ -72,33 +107,32 @@ public class Constants {
         public static final double ARM_DOWN_SPEED = -0.3;
         public static final double HOPPER_SPEED = 0.5;
 
-        // Arm Gains (Radians based) - TUNE THESE
-        public static final double kArmP = 1.0;
-        public static final double kArmI = 0.0;
-        public static final double kArmD = 0.0;
-        public static final double kArmS = 0.1;
-        public static final double kArmG = 0.2;
-        public static final double kArmV = 0.5;
-        public static final double kArmA = 0.1;
+        // Arm Gains (Degrees based) - Retained physical tuning
+        public static final TunableNumber kArmP = new TunableNumber("Intake/kArmP", 0.05);
+        public static final TunableNumber kArmI = new TunableNumber("Intake/kArmI", 0.0);
+        public static final TunableNumber kArmD = new TunableNumber("Intake/kArmD", 0.0);
+        public static final TunableNumber kArmS = new TunableNumber("Intake/kArmS", 0.0);
+        public static final TunableNumber kArmG = new TunableNumber("Intake/kArmG", 0.0);
+        public static final TunableNumber kArmV = new TunableNumber("Intake/kArmV", 0.0);
+        public static final TunableNumber kArmA = new TunableNumber("Intake/kArmA", 0.0);
 
-        public static final double kMaxArmVelocity = 2.0; // rad/s
-        public static final double kMaxArmAcceleration = 1.0; // rad/s^2
+        public static final double kMaxArmVelocity = 10.0; // degrees/s
+        public static final double kMaxArmAcceleration = 10.0; // degrees/s^2
 
-        // Encoder conversion: motor rotations to arm radians
-        // Formula: (2 * PI) / gear_ratio - adjust gear ratio for your hardware
-        public static final double ARM_GEAR_RATIO = 100.0; // Example: 100:1 reduction
-        public static final double ARM_POSITION_CONVERSION = (2 * Math.PI) / ARM_GEAR_RATIO; // rotations -> rad
-        public static final double ARM_VELOCITY_CONVERSION = ARM_POSITION_CONVERSION / 60.0; // RPM -> rad/s
+        public static final double ARM_INTAKE_POS = 1.0; // degrees
+        public static final double ARM_IDLE_POS = 95.0; // degrees
 
-        public static final double ARM_INTAKE_POS = 0.5; // rad
-        public static final double ARM_IDLE_POS = 0.0; // rad
+        // Simulation
+        public static final double SIM_ARM_GEARING = 100.0;
+        public static final double SIM_ARM_LENGTH = 0.4; // meters
+        public static final double SIM_ARM_MASS = 3.0; // kg
     }
 
     public static final class ClimberConstants {
-        public static final int PNEUMATICS_MODULE_ID = 1;
+        public static final int PNEUMATICS_MODULE_ID = 0;
 
-        public static final int LEFT_FORWARD_CHANNEL = 2;
-        public static final int LEFT_REVERSE_CHANNEL = 3;
+        public static final int LEFT_FORWARD_CHANNEL = 7;
+        public static final int LEFT_REVERSE_CHANNEL = 6;
 
         public static final int RIGHT_FORWARD_CHANNEL = 5;
         public static final int RIGHT_REVERSE_CHANNEL = 4;

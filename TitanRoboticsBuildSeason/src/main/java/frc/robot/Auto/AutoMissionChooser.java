@@ -1,130 +1,136 @@
 package frc.robot.Auto;
 
 import frc.robot.Auto.Missions.*;
-//import frc.robot.Auto.Missions.BlueMissions.BlueScoreL4;
-//import frc.robot.Auto.Missions.RedMissions.RedScoreL4;
 
+import java.io.File;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 import edu.wpi.first.wpilibj.DriverStation;
+import edu.wpi.first.wpilibj.Filesystem;
 import edu.wpi.first.wpilibj.smartdashboard.SendableChooser;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
-//import frc.robot.Data.Debug;
 
 /*
     Class: AutoMissionChooser
-    Description: This lets the person choose which mission is executed
+    Description: This lets the person choose which mission is executed.
+                 Now supports dynamic discovery of Choreo trajectories and simplified mission registration.
     Author: Unknown
  */
 
 public class AutoMissionChooser {
-    enum DesiredMission {
-        doNothing,
-        DoSomething,
-        exampleMission,
-        MoveAcrossLineMission,
-        ScoringL4Mission,
-        LeftShootClimb,
-        AdvancedChoreoMission,
-    }
-
-    private DesiredMission cachedDesiredMission = DesiredMission.doNothing;
-
-    private final SendableChooser<DesiredMission> missionChooser;
-
-    private Optional<MissionBase> autoMission = Optional.empty();
+    private final SendableChooser<String> missionChooser;
+    private final Map<String, Supplier<MissionBase>> missionRegistry = new HashMap<>();
 
     public static double delay;
-
-    String alliance;
+    private String cachedSelected = "Do Nothing";
+    private Optional<MissionBase> autoMission = Optional.empty();
 
     public AutoMissionChooser() {
         missionChooser = new SendableChooser<>();
 
-        // add more here as needed, is what is seen when choosing a mission
-        missionChooser.addOption("Do Nothing", DesiredMission.doNothing);
-        missionChooser.addOption("Do Something", DesiredMission.DoSomething);
-        missionChooser.addOption("Leave Community", DesiredMission.MoveAcrossLineMission);
-        missionChooser.addOption("Scoring L4", DesiredMission.ScoringL4Mission);
-        missionChooser.addOption("Left Shoot Climb", DesiredMission.LeftShootClimb);
-        missionChooser.addOption("Advanced Choreo Shot", DesiredMission.AdvancedChoreoMission);
+        // 1. Register specialized Java missions
+        registerMission(LeftShootClimbMission.class);
+        registerMission(AdvancedChoreoMission.class);
+
+        // 2. Automatically register Choreo trajectories from the deploy directory
+        registerChoreoMissions();
+
+        // 3. Setup the chooser
+        missionChooser.setDefaultOption("Do Nothing", "Do Nothing");
+        for (String name : missionRegistry.keySet()) {
+            missionChooser.addOption(name, name);
+        }
 
         SmartDashboard.putNumber("Auto Delay (seconds)", 0);
-
         SmartDashboard.putData("Auto Mission", missionChooser);
         SmartDashboard.putString("Current Action System", "None");
+    }
 
-        try {
-            alliance = DriverStation.getAlliance().orElseThrow(() -> new Exception("No alliance")).toString();
-        } catch (Exception e) {
-            // Handle the exception, for example:
-            System.out.println("Exception occurred: " + e.getMessage());
+    /**
+     * Registers a mission class by reading its @AutoMission annotation for the display name.
+     */
+    private void registerMission(Class<? extends MissionBase> missionClass) {
+        AutoMission annotation = missionClass.getAnnotation(AutoMission.class);
+        String name = (annotation != null) ? annotation.name() : missionClass.getSimpleName();
+        missionRegistry.put(name, () -> {
+            try {
+                return missionClass.getDeclaredConstructor().newInstance();
+            } catch (Exception e) {
+                DriverStation.reportError("Failed to instantiate mission: " + name, e.getStackTrace());
+                return null;
+            }
+        });
+    }
+
+    /**
+     * Scans the deploy/choreo directory for .traj files and adds them as simple missions.
+     */
+    private void registerChoreoMissions() {
+        File choreoDir = new File(Filesystem.getDeployDirectory(), "choreo");
+        if (choreoDir.exists() && choreoDir.isDirectory()) {
+            File[] files = choreoDir.listFiles((dir, name) -> name.endsWith(".traj"));
+            if (files != null) {
+                for (File file : files) {
+                    String trajName = file.getName().replace(".traj", "");
+                    // Only add if not already registered by a specialized mission
+                    if (!missionRegistry.containsKey(trajName)) {
+                        missionRegistry.put(trajName, () -> new DynamicChoreoMission(trajName));
+                    }
+                }
+            }
         }
     }
 
     public void updateMissionCreator() {
-        try {
-            alliance = DriverStation.getAlliance().orElseThrow(() -> new Exception("No alliance")).toString();
-        } catch (Exception e) {
-
-        }
         delay = SmartDashboard.getNumber("Auto Delay", 0);
-        DesiredMission desiredMission = missionChooser.getSelected();
+        String selected = missionChooser.getSelected();
 
-        if (desiredMission == null) {
-            desiredMission = DesiredMission.doNothing;
+        if (selected == null) {
+            selected = "Do Nothing";
         }
 
-        if (cachedDesiredMission != desiredMission) {
-            autoMission = getAutoMissionForParams(desiredMission);
+        if (!selected.equals(cachedSelected)) {
+            autoMission = getAutoMissionForParams(selected);
         }
 
-        cachedDesiredMission = desiredMission;
+        cachedSelected = selected;
     }
 
     public Optional<MissionBase> getAutoMissionForParams(String missionName) {
-        try {
-            return getAutoMissionForParams(DesiredMission.valueOf(missionName));
-        } catch (IllegalArgumentException e) {
+        if (missionName == null || missionName.equals("Do Nothing")) {
             return Optional.empty();
         }
-    }
 
-    private Optional<MissionBase> getAutoMissionForParams(DesiredMission mission) {
-        switch (mission) {
-            case LeftShootClimb:
-                return Optional.of(new LeftShootClimbMission());
-            case AdvancedChoreoMission:
-                return Optional.of(new AdvancedChoreoMission());
-            case DoSomething:
-                return Optional.of(new DoSomething());
-            case exampleMission:
-                return Optional.of(new ExampleMission());
-            case doNothing:
-            default:
-                return Optional.empty();
+        Supplier<MissionBase> supplier = missionRegistry.get(missionName);
+        if (supplier != null) {
+            return Optional.ofNullable(supplier.get());
         }
+
+        return Optional.empty();
     }
 
     public void reset() {
         autoMission = Optional.empty();
-        cachedDesiredMission = DesiredMission.doNothing;
+        cachedSelected = "Do Nothing";
     }
 
     public void outputToSmartDashboard() {
-        SmartDashboard.putString("AutoMissionSelected", cachedDesiredMission.name());
+        SmartDashboard.putString("AutoMissionSelected", cachedSelected);
     }
 
-    public SendableChooser<DesiredMission> getRawChooser() {
+    public SendableChooser<String> getRawChooser() {
         return missionChooser;
     }
 
     public String getSelected() {
-        DesiredMission selected = missionChooser.getSelected();
-        return selected == null ? DesiredMission.doNothing.name() : selected.name();
+        String selected = missionChooser.getSelected();
+        return selected == null ? "Do Nothing" : selected;
     }
 
     public Optional<MissionBase> getAutoMission() {
         return autoMission;
     }
-}
+}

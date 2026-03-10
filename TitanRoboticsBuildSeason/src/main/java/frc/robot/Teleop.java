@@ -8,6 +8,7 @@ import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import frc.robot.Data.Constants;
 import frc.robot.Data.PortMap;
 import frc.robot.Devices.Controller;
+import frc.robot.Subsystems.Climber;
 import frc.robot.Subsystems.Dashboard;
 import frc.robot.Subsystems.Intake;
 import frc.robot.Subsystems.Shooter;
@@ -15,22 +16,29 @@ import frc.robot.Subsystems.SwerveBase;
 
 public class Teleop {
 
-    Controller driverController; // object of Controller
-    SwerveBase swerveBase; // object of SwerveBase
-    Intake intake; // object of Intake
+    Controller driverController;
+    Controller operatorController;
+    SwerveBase swerveBase;
+    Intake intake;
+    Shooter shooter;
+    Climber climber;
 
     private double rotationX;
     private double rotationY;
     private boolean isSnapMode = false;
-
     private boolean wasGlideHeld = false;
+    private boolean intakeFeedToggle = false;
+    private boolean wasRightBumperPressed = false;
 
     private frc.robot.Interfaces.Actions activeAction = null;
 
     public Teleop() {
         driverController = new Controller(PortMap.DRIVER_CONTROLLER);
+        operatorController = new Controller(PortMap.OPERATOR_CONTROLLER);
         swerveBase = SwerveBase.getInstance();
         intake = Intake.getInstance();
+        shooter = Shooter.getInstance();
+        climber = Climber.getInstance();
     }
 
     public void reset() {
@@ -38,13 +46,28 @@ public class Teleop {
         isSnapMode = false;
         wasGlideHeld = false;
         intakeFeedToggle = false;
+        wasRightBumperPressed = false;
     }
 
     public void teleopPeriodic() {
-        if (handleActiveAction())
-            return;
+        if (handleEStop()) return;
+        if (handleActiveAction()) return;
+
         handleIntakeControls();
+        handleShooterControls();
+        handleClimberControls();
         driveBaseControl();
+    }
+
+    private boolean handleEStop() {
+        if (operatorController.getPOV() == 180) {
+            swerveBase.stop();
+            intake.setState(Intake.IntakeState.IDLE);
+            shooter.stop();
+            activeAction = null;
+            return true;
+        }
+        return false;
     }
 
     private boolean handleActiveAction() {
@@ -68,56 +91,80 @@ public class Teleop {
         return true;
     }
 
-    private boolean wasXButtonPressed = false;
-    private boolean intakeFeedToggle = false; // false = Intake, true = Feed
-
     private void handleIntakeControls() {
-        // Intake controls using available buttons
-        // Right Bumper (toggle): Intake/Feed (Feed pulls arm in and runs hopper only
-        // for safety)
-        // Left Bumper: Eject (runs rollers and hopper in reverse)
-        // X Button: Stop/Idle
-
-        // Handle Right Bumper toggle logic
-        boolean xButtonPressed = driverController.getXButton();
-        if (xButtonPressed && !wasXButtonPressed) {
-            intakeFeedToggle = !intakeFeedToggle; // Toggle state
-
+        // Driver toggle (Auto)
+        boolean rbPressed = driverController.getRightBumperButton();
+        if (rbPressed && !wasRightBumperPressed) {
+            intakeFeedToggle = !intakeFeedToggle;
             if (intakeFeedToggle) {
-                intake.setState(Intake.IntakeState.FEEDING); // Safe mode: arm in, hopper only
+                intake.setState(Intake.IntakeState.INTAKING);
             } else {
-                intake.setState(Intake.IntakeState.INTAKING); // Full intake mode
+                intake.setState(Intake.IntakeState.IDLE);
             }
         }
-        wasXButtonPressed = xButtonPressed;
+        wasRightBumperPressed = rbPressed;
 
-        // Other controls
-        if (driverController.getBButton()) {
+        // Operator manual overrides
+        double manualArmY = -operatorController.getLeftY();
+        if (Math.abs(manualArmY) > 0.1) {
+            intake.setArmVoltage(manualArmY * 6.0); // Manual voltage override
+        }
+
+        if (operatorController.getLeftTriggerAxis() > 0.5) {
+            intake.setState(Intake.IntakeState.FEEDING);
+        } else if (operatorController.getYButton()) {
             intake.setState(Intake.IntakeState.EJECTING);
-        } else if (driverController.getYButton()) {
+        } else if (operatorController.getBButton()) {
             intake.setState(Intake.IntakeState.IDLE);
-            intakeFeedToggle = false; // Reset toggle when going to idle
+            intakeFeedToggle = false;
+        }
+    }
+
+    private void handleShooterControls() {
+        // Driver Auto-Aim
+        if (Dashboard.isAutoAimEnabled() && driverController.getRightTriggerAxis() >= 0.5) {
+            handleAutoAim();
+        } else {
+            // Operator manual overrides
+            double manualShootTrigger = operatorController.getRightTriggerAxis();
+            if (manualShootTrigger > 0.1) {
+                shooter.setFlywheelVelocity(3000 * manualShootTrigger); // Linear mapping for troubleshooting
+                if (operatorController.getRightBumperButton()) {
+                    shooter.setKickerSpeed(Constants.ShooterConstants.FEED_SPEED);
+                } else {
+                    shooter.setKickerSpeed(0);
+                }
+            } else if (operatorController.getXButton()) {
+                shooter.setFlywheelVelocity(-500); // Reverse slow
+                shooter.setKickerSpeed(-0.3);
+            } else {
+                shooter.stop();
+            }
+        }
+    }
+
+    private void handleClimberControls() {
+        int pov = operatorController.getPOV();
+        if (pov == 0) {
+            climber.setState(Climber.ClimberState.UP);
+        } else if (pov == 180) {
+            climber.setState(Climber.ClimberState.DOWN);
+        } else {
+            climber.setState(Climber.ClimberState.STATIONARY);
         }
     }
 
     public void driveBaseControl() {
         boolean isRed = DriverStation.getAlliance().orElse(Alliance.Blue) == Alliance.Red;
 
-        // 1. Process Inputs (Deadbands handled in Controller class)
         double speedMultiplier = Dashboard.isSlowModeEnabled() ? 0.35 : 1.0;
         double forward = -driverController.getLeftY() * Constants.MAX_SPEED * speedMultiplier;
         double strafe = -driverController.getLeftX() * Constants.MAX_SPEED * speedMultiplier;
         double manualRotation = -(driverController.getRightX() * Math.abs(driverController.getRightX()))
                 * Constants.MAX_ROTATION_SPEED * speedMultiplier;
 
-        double rightTrigger = driverController.getRightTriggerAxis();
-
-        double leftTrigger = driverController.getLeftTriggerAxis();
-        boolean isGlideHeld = leftTrigger > 0.5;
-        boolean glidePressed = isGlideHeld && !wasGlideHeld;
-        wasGlideHeld = isGlideHeld;
-
-        if (Dashboard.isGlidePointsEnabled() && glidePressed && activeAction == null) {
+        boolean isGlideHeld = driverController.getLeftTriggerAxis() > 0.5;
+        if (Dashboard.isGlidePointsEnabled() && isGlideHeld && activeAction == null && !wasGlideHeld) {
             var nearest = swerveBase.getNearestGlidePoint();
             if (nearest != null) {
                 if (nearest.isTunnelEntrance && nearest.tunnelExitPose != null) {
@@ -127,33 +174,23 @@ public class Teleop {
                     activeAction = new frc.robot.Auto.Actions.DriveToPoseAction(nearest.pose);
                 }
                 activeAction.start();
+                wasGlideHeld = true;
                 return;
             }
         }
+        wasGlideHeld = isGlideHeld;
 
-        // 2. Handle Alliance Flicking (Field-Relative)
         double finalForward = isRed ? -forward : forward;
         double finalStrafe = isRed ? -strafe : strafe;
 
-        // 3. Handle Special Modes (Shooting, Zeroing, Snapping)
         if (driverController.getAButton()) {
             swerveBase.zeroGyroWithAlliance();
-            rotationX = 0;
-            rotationY = isRed ? 1 : -1;
-            isSnapMode = true;
         }
 
         if (Dashboard.isBallHuntEnabled() && driverController.getLeftBumperButton() && activeAction == null) {
             activeAction = new frc.robot.Auto.Actions.BallHuntAction();
             activeAction.start();
             return;
-        }
-
-        if (Dashboard.isAutoAimEnabled() && rightTrigger >= 0.5) {
-            if (handleAutoAim(forward, strafe, finalForward, finalStrafe))
-                return;
-        } else {
-            Shooter.getInstance().stop();
         }
 
         updateRotationState();
@@ -163,68 +200,35 @@ public class Teleop {
     private void updateRotationState() {
         double rX = driverController.getRightX();
         double rY = driverController.getRightY();
-
-        boolean snapEnabled = Dashboard.isSnapToTurnEnabled();
-        isSnapMode = snapEnabled && (Math.abs(rX) >= 0.97 || Math.abs(rY) >= 0.97);
-        boolean isManualRotation = !isSnapMode && Math.abs(rX) > 0; // Constants.OperatorConstants.DEADBAND already
-                                                                    // applied
-
+        isSnapMode = Dashboard.isSnapToTurnEnabled() && (Math.abs(rX) >= 0.97 || Math.abs(rY) >= 0.97);
         if (isSnapMode) {
             rotationX = rX;
             rotationY = rY;
-        } else if (!isManualRotation) {
-            rotationX = 0;
-            rotationY = 0;
         }
     }
 
-    private boolean handleAutoAim(double forward, double strafe, double finalF, double finalS) {
-        Shooter shooter = Shooter.getInstance();
+    private void handleAutoAim() {
+        double forward = -driverController.getLeftY() * Constants.MAX_SPEED;
+        double strafe = -driverController.getLeftX() * Constants.MAX_SPEED;
+        
         var solution = shooter.calculateShootingSolution(swerveBase.getPose(), swerveBase.getFieldVelocity());
-
         if (solution.possible()) {
             shooter.setFlywheelVelocity(solution.flywheelRPM());
             Rotation2d targetHeading = solution.turretAngle();
-            edu.wpi.first.math.kinematics.ChassisSpeeds targetSpeeds = swerveBase.getTargetSpeeds(forward, strafe,
-                    targetHeading);
-
-            swerveBase.drive(new Translation2d(finalF, finalS), targetSpeeds.omegaRadiansPerSecond, true);
-            logAutoAim(targetHeading, targetSpeeds.omegaRadiansPerSecond);
-
-            shooter.setFeederSpeed(shooter.isReadyToFire(targetHeading) ? Constants.ShooterConstants.FEED_SPEED : 0);
-            return true;
+            var targetSpeeds = swerveBase.getTargetSpeeds(forward, strafe, targetHeading);
+            swerveBase.drive(new Translation2d(forward, strafe), targetSpeeds.omegaRadiansPerSecond, true);
+            shooter.setKickerSpeed(shooter.isReadyToFire(targetHeading) ? Constants.ShooterConstants.FEED_SPEED : 0);
         }
-        return false;
     }
 
     private void applyDrive(double finalForward, double finalStrafe, double manualRotation, boolean isRed) {
         if (isSnapMode) {
-            Rotation2d targetHeading = (Math.abs(rotationX) < 1e-6 && Math.abs(rotationY) < 1e-6)
-                    ? swerveBase.getPose().getRotation()
-                    : new Rotation2d(-rotationY, -rotationX);
-
-            if (isRed)
-                targetHeading = targetHeading.plus(Rotation2d.fromDegrees(180));
-
-            edu.wpi.first.math.kinematics.ChassisSpeeds targetSpeeds = swerveBase.getTargetSpeeds(finalForward,
-                    finalStrafe, targetHeading);
-            swerveBase.drive(new Translation2d(finalForward, finalStrafe), targetSpeeds.omegaRadiansPerSecond,
-                    Dashboard.isFieldOrientedEnabled());
-            logSnap(targetHeading, targetSpeeds.omegaRadiansPerSecond);
+            Rotation2d targetHeading = new Rotation2d(-rotationY, -rotationX);
+            if (isRed) targetHeading = targetHeading.plus(Rotation2d.fromDegrees(180));
+            var targetSpeeds = swerveBase.getTargetSpeeds(finalForward, finalStrafe, targetHeading);
+            swerveBase.drive(new Translation2d(finalForward, finalStrafe), targetSpeeds.omegaRadiansPerSecond, true);
         } else {
-            swerveBase.drive(new Translation2d(finalForward, finalStrafe), manualRotation,
-                    Dashboard.isFieldOrientedEnabled());
+            swerveBase.drive(new Translation2d(finalForward, finalStrafe), manualRotation, true);
         }
-    }
-
-    private void logAutoAim(Rotation2d target, double corr) {
-        Rotation2d current = swerveBase.getHeading();
-        SmartDashboard.putNumber("Subsystems/Swerve/Tuning/Target Heading Deg", target.getDegrees());
-        SmartDashboard.putNumber("Subsystems/Swerve/Tuning/Error Deg", target.minus(current).getDegrees());
-        SmartDashboard.putNumber("Subsystems/Swerve/Tuning/Rotation Correction RadPerSec", corr);
-    }
-
-    private void logSnap(Rotation2d target, double corr) {
-        logAutoAim(target, corr); // Currently identical
     }
 }

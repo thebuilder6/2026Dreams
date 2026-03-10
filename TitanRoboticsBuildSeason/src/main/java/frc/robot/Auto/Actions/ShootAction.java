@@ -27,7 +27,7 @@ public class ShootAction implements Actions {
     @Override
     public void update() {
         if (!feeding && shooter.isAtTargetVelocity()) {
-            shooter.setFeederSpeed(ShooterConstants.FEED_SPEED);
+            shooter.setKickerSpeed(ShooterConstants.FEED_SPEED);
             feeding = true;
         }
     }

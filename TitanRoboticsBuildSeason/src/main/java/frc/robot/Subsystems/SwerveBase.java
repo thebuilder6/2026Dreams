@@ -7,7 +7,10 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 
+import edu.wpi.first.math.Matrix;
 import edu.wpi.first.math.VecBuilder;
+import edu.wpi.first.math.numbers.N1;
+import edu.wpi.first.math.numbers.N3;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
@@ -19,9 +22,10 @@ import edu.wpi.first.wpilibj.Filesystem;
 import edu.wpi.first.wpilibj.smartdashboard.Field2d;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import frc.robot.Data.Constants;
+import frc.robot.Data.Constants.DrivebaseConstants;
 import frc.robot.Data.GlideConstants;
 import frc.robot.Interfaces.Subsystem;
-import frc.robot.ThirdParty.LimelightHelpers;
+import frc.robot.Sim.LimelightSim;
 import swervelib.SwerveController;
 import swervelib.SwerveDrive;
 import swervelib.parser.SwerveDriveConfiguration;
@@ -50,6 +54,8 @@ public class SwerveBase implements Subsystem {
     private double lastLimelightAvgDist = 0;
     private double lastLimelightStdDev = 0;
     private boolean lastLimelightAccepted = false;
+
+    private boolean isPitMode = false;
 
     /**
      * Gets the singleton instance of SwerveBase.
@@ -391,6 +397,12 @@ public class SwerveBase implements Subsystem {
         }
     }
 
+    /**
+     * Sanitizes a string for use as a Field2d object name by replacing special characters with underscores.
+     * 
+     * @param name The original name to sanitize.
+     * @return A sanitized string compatible with NetworkTables/Field2d naming.
+     */
     private static String sanitizeFieldObjectName(String name) {
         if (name == null) {
             return "";
@@ -404,7 +416,22 @@ public class SwerveBase implements Subsystem {
      * @param brake True to set motors to brake mode, false for coast.
      */
     public void setMotorBrake(boolean brake) {
-        swerveDrive.setMotorIdleMode(brake);
+        if (isPitMode && DriverStation.isDisabled()) {
+            swerveDrive.setMotorIdleMode(false); // Force coast in pit mode
+        } else {
+            swerveDrive.setMotorIdleMode(brake);
+        }
+    }
+
+    /**
+     * Set the robot to "Pit Mode" which disables motor brakes in disabled mode
+     * for easier pushing.
+     * 
+     * @param pitMode True to enable pit mode.
+     */
+    public void setPitMode(boolean pitMode) {
+        this.isPitMode = pitMode;
+        setMotorBrake(true); // Re-apply current brake state logic
     }
 
     /**
@@ -579,85 +606,6 @@ public class SwerveBase implements Subsystem {
         swerveDrive.driveFieldOriented(velocity);
     }
 
-    /**
-     * Updates odometry using Limelight vision data.
-     * Implements Stochastic Sensor Fusion (Chapter 9) and Pose Estimation (Chapter
-     * 10).
-     * Calculates dynamic variance based on tag distance to trust/distrust
-     * measurements.
-     */
-    public void LimelightOdometryUpdate() {
-
-        double yawRate = swerveDrive.getGyro().getYawAngularVelocity().in(DegreesPerSecond);
-        LimelightHelpers.SetRobotOrientation("limelight", getPose().getRotation().getDegrees(), yawRate, 0, 0, 0, 0);
-        LimelightHelpers.PoseEstimate mt2 = LimelightHelpers.getBotPoseEstimate_wpiBlue_MegaTag2("limelight");
-
-        if (mt2 == null) {
-            // Un-comment this for aggressive debugging
-            // System.out.println("Limelight: mt2 is NULL - No data received from NT");
-            return;
-        }
-
-        if (mt2.tagCount == 0) {
-            // We have data, but no tags seen
-            return;
-        }
-
-        boolean doRejectUpdate = false;
-
-        // 1. Angular Velocity Rejection
-        if (Math.abs(yawRate) > 360) {
-            doRejectUpdate = true;
-        }
-
-        // 2. Tag Distance Rejection
-        if (mt2.avgTagDist > 4.0) {
-            doRejectUpdate = true;
-        }
-
-        // 3. Single Tag Rejection at distance or high ambiguity
-        if (mt2.tagCount == 1) {
-            if (mt2.avgTagDist > 3.0) {
-                doRejectUpdate = true;
-            }
-
-            for (LimelightHelpers.RawFiducial tag : mt2.rawFiducials) {
-                if (tag != null && tag.ambiguity > 0.4) {
-                    doRejectUpdate = true;
-                }
-            }
-        }
-
-        // Calculate dynamic trust (Standard Deviation)
-        // Base SD: 0.1m (very trusted)
-        // Penalty for single tag: +0.4m
-        // Penalty for distance: distance^2 / 20
-        double stdDev = 0.1;
-        if (mt2.tagCount == 1) {
-            stdDev += 0.4;
-        }
-        stdDev += (mt2.avgTagDist * mt2.avgTagDist) / 20.0;
-
-        // Logging & Visualization
-        // Store for logging
-        this.lastLimelightTagCount = mt2.tagCount;
-        this.lastLimelightAvgDist = mt2.avgTagDist;
-        this.lastLimelightStdDev = stdDev;
-        this.lastLimelightAccepted = !doRejectUpdate;
-
-        field.getObject("LimelightGhost").setPose(mt2.pose);
-
-        if (!doRejectUpdate) {
-            System.out.println("Limelight: Applying Update - Tags: " + mt2.tagCount + " Dist: "
-                    + String.format("%.2f", mt2.avgTagDist) + " Trust: " + String.format("%.2f", stdDev));
-            // Apply measurement with dynamic standard deviation
-            // High SD for rotation (999999) to trust gyro over vision
-            swerveDrive.addVisionMeasurement(
-                    mt2.pose,
-                    mt2.timestampSeconds,
-                    VecBuilder.fill(stdDev, stdDev, 999999));
-        }
-    }
 
     @Override
     public void update() {
@@ -671,7 +619,6 @@ public class SwerveBase implements Subsystem {
             field.getObject("OdometryGhost").setPose(estimatedPose);
         }
 
-        LimelightOdometryUpdate();
         drawGlidePointsOnField();
         highlightNearestGlidePointOnField(getNearestGlidePoint());
 
@@ -749,6 +696,93 @@ public class SwerveBase implements Subsystem {
         } else {
             field.getObject("CurrentPath").setPoses(new ArrayList<>());
         }
+    }
+
+    /**
+     * Sets the voltage to all drive motors for SysId characterization.
+     */
+    public void setDriveVoltage(double volts) {
+        swerveDrive.drive(new Translation2d(), 0, false, true); // ensure static
+        for (swervelib.SwerveModule module : swerveDrive.getModules()) {
+            module.getDriveMotor().setVoltage(volts);
+        }
+    }
+
+    /**
+     * Sets drive voltage on a single module by index (0=FL, 1=FR, 2=BL, 3=BR).
+     */
+    public void setModuleDriveVoltage(int index, double volts) {
+        swervelib.SwerveModule[] modules = swerveDrive.getModules();
+        if (index >= 0 && index < modules.length) {
+            modules[index].getDriveMotor().setVoltage(volts);
+        }
+    }
+
+    /**
+     * Sets angle motor voltage on a single module by index (0=FL, 1=FR, 2=BL, 3=BR).
+     */
+    public void setModuleAngleVoltage(int index, double volts) {
+        swervelib.SwerveModule[] modules = swerveDrive.getModules();
+        if (index >= 0 && index < modules.length) {
+            modules[index].getAngleMotor().setVoltage(volts);
+        }
+    }
+
+    /**
+     * Gets drive motor velocity for a single module by index.
+     */
+    public double getModuleDriveVelocity(int index) {
+        swervelib.SwerveModule[] modules = swerveDrive.getModules();
+        if (index >= 0 && index < modules.length) {
+            return modules[index].getDriveMotor().getVelocity();
+        }
+        return 0.0;
+    }
+
+    /**
+     * Gets angle motor position for a single module by index (degrees).
+     */
+    public double getModuleAnglePosition(int index) {
+        swervelib.SwerveModule[] modules = swerveDrive.getModules();
+        if (index >= 0 && index < modules.length) {
+            return modules[index].getAbsolutePosition();
+        }
+        return 0.0;
+    }
+
+    public List<Double> getDriveMotorVoltages() {
+        List<Double> volts = new ArrayList<>();
+        for (swervelib.SwerveModule module : swerveDrive.getModules()) {
+            volts.add(module.getDriveMotor().getVoltage());
+        }
+        return volts;
+    }
+
+    public List<Double> getDriveMotorPositions() {
+        List<Double> pos = new ArrayList<>();
+        for (swervelib.SwerveModule module : swerveDrive.getModules()) {
+            pos.add(module.getDriveMotor().getPosition());
+        }
+        return pos;
+    }
+
+    public List<Double> getDriveMotorVelocities() {
+        List<Double> vels = new ArrayList<>();
+        for (swervelib.SwerveModule module : swerveDrive.getModules()) {
+            vels.add(module.getDriveMotor().getVelocity());
+        }
+        return vels;
+    }
+
+    /**
+     * Adds a vision measurement to the pose estimator.
+     * 
+     * @param pose           Estimated pose
+     * @param timestamp      Measurement timestamp
+     * @param stdDevs        Standard deviations for X, Y, and Theta
+     */
+    public void addVisionMeasurement(Pose2d pose, double timestamp, Matrix<N3, N1> stdDevs) {
+        swerveDrive.addVisionMeasurement(pose, timestamp, stdDevs);
     }
 
 }

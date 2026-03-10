@@ -18,7 +18,11 @@ public class AutoMissionExecutor {
             @Override
             public void run() {
                 if (mAutoMission != null) {
-                    mAutoMission.run();
+                    try {
+                        mAutoMission.run();
+                    } catch (Exception e) {
+                        edu.wpi.first.wpilibj.DriverStation.reportError("AUTO MISSION CRASHED: " + e.getMessage(), e.getStackTrace());
+                    }
                 }
             }
         });

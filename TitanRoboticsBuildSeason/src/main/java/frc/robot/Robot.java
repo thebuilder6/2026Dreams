@@ -9,10 +9,11 @@ import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.TimedRobot;
 import frc.robot.Auto.AutoMissionExecutor;
 import frc.robot.Auto.Missions.MissionBase;
-import frc.robot.Subsystems.AIRobotSim;
+import frc.robot.Data.Constants;
+import frc.robot.Sim.AIRobotSim;
 import frc.robot.Subsystems.Climber;
 import frc.robot.Subsystems.Dashboard;
-import frc.robot.Subsystems.GameSim;
+import frc.robot.Sim.GameSim;
 import frc.robot.Subsystems.Intake;
 import frc.robot.Subsystems.LEDs;
 import frc.robot.Subsystems.Shooter;
@@ -20,6 +21,8 @@ import frc.robot.Subsystems.SubsystemManager;
 import frc.robot.Subsystems.SwerveBase;
 import edu.wpi.first.wpilibj.simulation.BatterySim;
 import edu.wpi.first.wpilibj.simulation.RoboRioSim;
+import edu.wpi.first.wpilibj.XboxController;
+import edu.wpi.first.wpilibj2.command.CommandScheduler;
 
 /**
  * The methods in this class are called automatically corresponding to each
@@ -33,6 +36,8 @@ public class Robot extends TimedRobot {
 
   Teleop teleop;
   SwerveBase swerveBase;
+  SysID sysID;
+  XboxController testController;
   private AutoMissionExecutor mAutoMissionExecutor = new AutoMissionExecutor();
 
   /**
@@ -57,6 +62,11 @@ public class Robot extends TimedRobot {
     SubsystemManager.initializeSubsystems();
     swerveBase.update();
 
+    if (Constants.TUNING_MODE) {
+      sysID = new SysID(Shooter.getInstance(), Intake.getInstance(), SwerveBase.getInstance());
+    }
+    testController = new XboxController(0); // Assuming port 0 for testing
+
     // Disable LiveWindow to reduce NetworkTable noise
     edu.wpi.first.wpilibj.livewindow.LiveWindow.setEnabled(false);
     edu.wpi.first.wpilibj.livewindow.LiveWindow.disableAllTelemetry();
@@ -77,17 +87,6 @@ public class Robot extends TimedRobot {
 
     SubsystemManager.updateSubsystems();
     SubsystemManager.logSubsystems();
-    // private final Field2d m_field = new Field2d();
-    // Do this in either robot or subsystem init
-    // SmartDashboard.putData("Field", m_field);
-    // Do this in either robot periodic or subsystem periodic
-    // m_field.setRobotPose(LimelightHelpers.SetRobotOrientation("limelight",
-    // getPose().getRotation().getDegrees(), 0, 0, 0, 0,
-    // 0).LimelightHelpers.PoseEstimate.mt2 =
-    // LimelightHelpers.getBotPoseEstimate_wpiBlue_MegaTag2("limelight"));
-    //
-    // smart dashbard 2d map
-
   }
 
   /**
@@ -167,6 +166,12 @@ public class Robot extends TimedRobot {
   /** This function is called periodically during test mode. */
   @Override
   public void testPeriodic() {
+    // Run the scheduler to execute any scheduled SysId commands
+    CommandScheduler.getInstance().run();
+    // Poll the controller for SysID input
+    if (sysID != null) {
+      sysID.runTest(testController);
+    }
   }
 
   /** This function is called once when the robot is first started up. */

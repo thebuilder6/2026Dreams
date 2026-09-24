@@ -78,7 +78,7 @@ public class DriveCharacterization {
                         .linearPosition(Meters.of(avgPos))
                         .linearVelocity(MetersPerSecond.of(avgVel));
                 },
-                null
+                swerve
             )
         );
         
@@ -99,7 +99,7 @@ public class DriveCharacterization {
                         .voltage(Volts.of(avgVolts))
                         .angularPosition(edu.wpi.first.units.Units.Radians.of(avgPos));
                 },
-                null
+                swerve
             )
         );
         
@@ -168,28 +168,24 @@ public class DriveCharacterization {
      * SysID quasistatic test mode
      */
     private void handleSysIdQuasistatic(Controller driverController, Controller operatorController) {
-        // Use face buttons for SysID commands
+        SysIdManager sysId = SysIdManager.getInstance();
         if (driverController.getAButtonPressed()) {
-            System.out.println("[DriveCharacterization] Starting quasistatic forward");
-            driveRoutine.quasistatic(Direction.kForward).schedule();
+            sysId.startTest(SysIdManager.Mechanism.SWERVE_DRIVE_LINEAR, SysIdManager.TestType.QUASISTATIC, Direction.kForward);
             testRunning = true;
             testStartTime = edu.wpi.first.wpilibj.Timer.getFPGATimestamp();
         } else if (driverController.getBButtonPressed()) {
-            System.out.println("[DriveCharacterization] Starting quasistatic reverse");
-            driveRoutine.quasistatic(Direction.kReverse).schedule();
+            sysId.startTest(SysIdManager.Mechanism.SWERVE_DRIVE_LINEAR, SysIdManager.TestType.QUASISTATIC, Direction.kReverse);
             testRunning = true;
             testStartTime = edu.wpi.first.wpilibj.Timer.getFPGATimestamp();
         }
-        
+
         // Steer testing with X/Y
         if (driverController.getXButtonPressed()) {
-            System.out.println("[DriveCharacterization] Starting steer quasistatic forward");
-            steerRoutine.quasistatic(Direction.kForward).schedule();
+            sysId.startTest(SysIdManager.Mechanism.SWERVE_STEER, SysIdManager.TestType.QUASISTATIC, Direction.kForward);
             testRunning = true;
             testStartTime = edu.wpi.first.wpilibj.Timer.getFPGATimestamp();
         } else if (driverController.getYButtonPressed()) {
-            System.out.println("[DriveCharacterization] Starting steer quasistatic reverse");
-            steerRoutine.quasistatic(Direction.kReverse).schedule();
+            sysId.startTest(SysIdManager.Mechanism.SWERVE_STEER, SysIdManager.TestType.QUASISTATIC, Direction.kReverse);
             testRunning = true;
             testStartTime = edu.wpi.first.wpilibj.Timer.getFPGATimestamp();
         }
@@ -199,28 +195,24 @@ public class DriveCharacterization {
      * SysID dynamic test mode
      */
     private void handleSysIdDynamic(Controller driverController, Controller operatorController) {
-        // Use face buttons for SysID commands
+        SysIdManager sysId = SysIdManager.getInstance();
         if (driverController.getAButtonPressed()) {
-            System.out.println("[DriveCharacterization] Starting dynamic forward");
-            driveRoutine.dynamic(Direction.kForward).schedule();
+            sysId.startTest(SysIdManager.Mechanism.SWERVE_DRIVE_LINEAR, SysIdManager.TestType.DYNAMIC, Direction.kForward);
             testRunning = true;
             testStartTime = edu.wpi.first.wpilibj.Timer.getFPGATimestamp();
         } else if (driverController.getBButtonPressed()) {
-            System.out.println("[DriveCharacterization] Starting dynamic reverse");
-            driveRoutine.dynamic(Direction.kReverse).schedule();
+            sysId.startTest(SysIdManager.Mechanism.SWERVE_DRIVE_LINEAR, SysIdManager.TestType.DYNAMIC, Direction.kReverse);
             testRunning = true;
             testStartTime = edu.wpi.first.wpilibj.Timer.getFPGATimestamp();
         }
         
         // Steer testing with X/Y
         if (driverController.getXButtonPressed()) {
-            System.out.println("[DriveCharacterization] Starting steer dynamic forward");
-            steerRoutine.dynamic(Direction.kForward).schedule();
+            sysId.startTest(SysIdManager.Mechanism.SWERVE_STEER, SysIdManager.TestType.DYNAMIC, Direction.kForward);
             testRunning = true;
             testStartTime = edu.wpi.first.wpilibj.Timer.getFPGATimestamp();
         } else if (driverController.getYButtonPressed()) {
-            System.out.println("[DriveCharacterization] Starting steer dynamic reverse");
-            steerRoutine.dynamic(Direction.kReverse).schedule();
+            sysId.startTest(SysIdManager.Mechanism.SWERVE_STEER, SysIdManager.TestType.DYNAMIC, Direction.kReverse);
             testRunning = true;
             testStartTime = edu.wpi.first.wpilibj.Timer.getFPGATimestamp();
         }

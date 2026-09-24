@@ -16,7 +16,8 @@ import frc.robot.Subsystems.SwerveBase;
 public class BallHuntAction implements Actions {
     private final SwerveBase swerve = SwerveBase.getInstance();
     private final Intake intake = Intake.getInstance();
-    private final NetworkTable limelightTable = NetworkTableInstance.getDefault().getTable("limelight");
+    private final frc.robot.Subsystems.Vision vision = frc.robot.Subsystems.Vision.getInstance();
+    private final NetworkTable limelightTable = NetworkTableInstance.getDefault().getTable("limelight-front");
 
     // PID constants for steering. tx is in degrees.
     // If tx is 10 degrees, we want to rotate at some speed to center it.
@@ -38,22 +39,40 @@ public class BallHuntAction implements Actions {
 
     @Override
     public void update() {
-        double tv = limelightTable.getEntry("tv").getDouble(0);
+        if (vision.hasGamePiece()) {
+            double yaw = vision.getGamePieceYaw();
+            double rotationOutput = -turnController.calculate(yaw, 0);
 
-        if (tv > 0) {
-            double tx = limelightTable.getEntry("tx").getDouble(0);
+            // True 2D Holonomic Vectoring using Rubik Pi ground projection
+            Translation2d robotRel = vision.getGamePieceRobotRelativeTranslation();
+            double distance = vision.getGamePieceDistanceMeters();
 
-            // Calculate rotation speed based on tx error
-            // Negative tx means ball is to the left, so we want positive rotation (CCW)
-            // However, most systems use tx as positive to the right.
-            // If tx > 0, ball is to the right, we want negative rotation (CW).
-            double rotationOutput = -turnController.calculate(tx, 0);
+            double forwardSpeed;
+            double strafeSpeed;
 
-            // Drive forward in robot-relative coordinates
-            swerve.drive(new Translation2d(driveSpeed, 0), rotationOutput, false);
+            if (distance > 0.05) {
+                // Scale speed smoothly: full speed at >1.5m, smoothly tapering down near bumper
+                double speedScale = Math.min(driveSpeed, Math.max(1.0, distance * 1.5));
+                Translation2d normalizedDir = robotRel.div(robotRel.getNorm());
+                forwardSpeed = normalizedDir.getX() * speedScale;
+                strafeSpeed = normalizedDir.getY() * speedScale;
+            } else {
+                // Fallback to forward drive if distance calculation is uncalibrated
+                forwardSpeed = driveSpeed;
+                strafeSpeed = 0.0;
+            }
+
+            swerve.drive(new Translation2d(forwardSpeed, strafeSpeed), rotationOutput, false);
         } else {
-            // If no ball is seen, slow down and stop
-            swerve.drive(new Translation2d(0, 0), 0, false);
+            double tv = limelightTable.getEntry("tv").getDouble(0);
+            if (tv > 0) {
+                double tx = limelightTable.getEntry("tx").getDouble(0);
+                double rotationOutput = -turnController.calculate(tx, 0);
+                swerve.drive(new Translation2d(driveSpeed, 0), rotationOutput, false);
+            } else {
+                // If no ball is seen, slow down and stop
+                swerve.drive(new Translation2d(0, 0), 0, false);
+            }
         }
     }
 

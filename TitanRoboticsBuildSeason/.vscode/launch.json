@@ -15,7 +15,15 @@
       "type": "wpilib",
       "name": "WPILib roboRIO Debug",
       "request": "launch",
-      "desktop": false,
+      "desktop": false
+    },
+    {
+      "type": "java",
+      "name": "Debug (Main)",
+      "request": "launch",
+      "mainClass": "frc.robot.Main",
+      "projectName": "TitanRoboticsBuildSeason",
+      "javaExec": "C:\\Users\\Public\\wpilib\\2026\\jdk\\bin\\java.exe"
     }
   ]
 }

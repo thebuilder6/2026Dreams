@@ -1,6 +1,6 @@
 package frc.robot.Interfaces;
 
-public interface Subsystem {
+public interface Subsystem extends edu.wpi.first.wpilibj2.command.Subsystem {
     public void update();
 
     public void initialize();

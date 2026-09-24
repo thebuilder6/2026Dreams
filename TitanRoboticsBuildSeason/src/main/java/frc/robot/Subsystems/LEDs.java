@@ -6,6 +6,8 @@ import edu.wpi.first.wpilibj.motorcontrol.Spark;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import frc.robot.Data.Constants.LEDConstants;
 import frc.robot.Interfaces.Subsystem;
+import frc.robot.Utils.AlertManager;
+import frc.robot.Utils.AllianceFlipUtil;
 import java.util.Optional;
 
 public class LEDs implements Subsystem {
@@ -40,17 +42,24 @@ public class LEDs implements Subsystem {
     @Override
     public void update() {
         if (!DriverStation.isEnabled()) {
-            setPattern(LEDConstants.RAINBOW);
+            if (AlertManager.hasActiveErrors()) {
+                setPattern(LEDConstants.STROBE_RED);
+            } else if (AlertManager.hasActiveWarnings()) {
+                setPattern(LEDConstants.SOLID_ORANGE);
+            } else {
+                setPattern(LEDConstants.RAINBOW);
+            }
         } else {
             // Priority-based LED selection
             Intake intake = Intake.getInstance();
             Shooter shooter = Shooter.getInstance();
 
-            if (intake.isJammed()) {
+            if (AlertManager.hasActiveErrors() || intake.isJammed()) {
                 setPattern(LEDConstants.STROBE_RED);
+            } else if (AlertManager.hasActiveWarnings()) {
+                setPattern(LEDConstants.SOLID_ORANGE);
             } else if (shooter.isAtTargetVelocity() && shooter.isReadyToFire(
-                    shooter.calculateShootingSolution(SwerveBase.getInstance().getPose(),
-                            SwerveBase.getInstance().getFieldVelocity()).turretAngle())) {
+                    shooter.getLatestShootingSolution().turretAngle())) {
                 setPattern(LEDConstants.SOLID_GREEN);
             } else if (shooter.getTargetVelocityRPM() > 0) {
                 setPattern(LEDConstants.STROBE_GOLD);
@@ -58,8 +67,7 @@ public class LEDs implements Subsystem {
                 setPattern(LEDConstants.LARSON_SCAN_RED);
             } else {
                 // Default Alliance Color
-                Optional<Alliance> alliance = DriverStation.getAlliance();
-                if (alliance.isPresent() && alliance.get() == Alliance.Red) {
+                if (AllianceFlipUtil.isRedAlliance()) {
                     setPattern(LEDConstants.SOLID_RED);
                 } else {
                     setPattern(LEDConstants.SOLID_BLUE);

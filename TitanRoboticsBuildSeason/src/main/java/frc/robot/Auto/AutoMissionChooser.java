@@ -32,7 +32,9 @@ public class AutoMissionChooser {
         missionChooser = new SendableChooser<>();
 
         // 1. Register specialized Java missions
-        registerMission(LeftShootClimbMission.class);
+        registerMission(DepotShootMission.class);
+        registerMission(ShooterMission.class);
+        registerMission(ExampleMission.class);
         registerMission(AdvancedChoreoMission.class);
 
         // 2. Automatically register Choreo trajectories from the deploy directory

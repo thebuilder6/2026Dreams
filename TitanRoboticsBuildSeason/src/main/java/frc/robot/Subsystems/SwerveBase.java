@@ -1,6 +1,7 @@
 package frc.robot.Subsystems;
 
 import static edu.wpi.first.units.Units.Meter;
+import static edu.wpi.first.units.Units.DegreesPerSecond;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -8,6 +9,7 @@ import java.util.HashSet;
 import java.util.List;
 
 import edu.wpi.first.math.Matrix;
+import edu.wpi.first.math.VecBuilder;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
@@ -18,12 +20,21 @@ import edu.wpi.first.math.numbers.N3;
 import edu.wpi.first.math.trajectory.Trajectory;
 import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.Filesystem;
+import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.smartdashboard.Field2d;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import frc.robot.Data.Constants;
 import frc.robot.Data.GlideConstants;
 import frc.robot.Interfaces.Subsystem;
 import frc.robot.Sim.LimelightSim;
+import frc.robot.Sim.VisionSim;
+import frc.robot.Subsystems.drive.DriveIO;
+import frc.robot.Subsystems.drive.DriveIO.DriveIOInputs;
+import frc.robot.Subsystems.drive.DriveIOSparkMax;
+import frc.robot.Subsystems.drive.DriveIOSim;
+import frc.robot.Utils.Alert;
+import frc.robot.Utils.Alert.AlertType;
+import frc.robot.Utils.AllianceFlipUtil;
 import swervelib.SwerveController;
 import swervelib.SwerveDrive;
 import swervelib.parser.SwerveDriveConfiguration;
@@ -35,10 +46,16 @@ public class SwerveBase implements Subsystem {
 
     private static SwerveBase instance = null;
 
+    // AdvantageKit Hardware IO Abstraction
+    private final DriveIO io;
+    private final DriveIOInputs inputs = new DriveIOInputs();
+
     // Unified field object from YAGSL
     private Field2d field;
 
     private final ArrayList<String> lastGlideFieldObjectNames = new ArrayList<>();
+    private Boolean lastRedAllianceDrawn = null;
+    private GlideConstants.GlidePoint lastHighlightedGlidePoint = null;
 
     /**
      * Swerve drive object.
@@ -52,6 +69,12 @@ public class SwerveBase implements Subsystem {
     private double lastLimelightAvgDist = 0;
     private double lastLimelightStdDev = 0;
     private boolean lastLimelightAccepted = false;
+
+    // Vision Watchdog & Graceful Degradation
+    private final Alert visionDegradedAlert = new Alert("Vision", "Vision Degraded: Pure Odometry Active", AlertType.WARNING);
+    private double lastVisionTimestamp = 0.0;
+    private static final double VISION_TIMEOUT_SEC = 0.75;
+    private boolean isVisionDegraded = false;
 
     private boolean isPitMode = false;
 
@@ -112,6 +135,7 @@ public class SwerveBase implements Subsystem {
         field = swerveDrive.field;
         SmartDashboard.putData("Field", field);
 
+        this.io = SwerveDriveTelemetry.isSimulation ? new DriveIOSim(swerveDrive) : new DriveIOSparkMax(swerveDrive);
     }
 
     /**
@@ -222,6 +246,13 @@ public class SwerveBase implements Subsystem {
     }
 
     /**
+     * Gets the underlying MapleSim drive train simulation if in simulation.
+     */
+    public java.util.Optional<swervelib.simulation.ironmaple.simulation.drivesims.SwerveDriveSimulation> getMapleSimDrive() {
+        return swerveDrive.getMapleSimDrive();
+    }
+
+    /**
      * Set chassis speeds with closed-loop velocity control.
      *
      * @param chassisSpeeds Chassis Speeds to set.
@@ -254,8 +285,7 @@ public class SwerveBase implements Subsystem {
      *         available.
      */
     private boolean isRedAlliance() {
-        var alliance = DriverStation.getAlliance();
-        return alliance.isPresent() ? alliance.get() == DriverStation.Alliance.Red : false;
+        return AllianceFlipUtil.isRedAlliance();
     }
 
     /**
@@ -376,9 +406,14 @@ public class SwerveBase implements Subsystem {
     }
 
     private void highlightNearestGlidePointOnField(GlideConstants.GlidePoint nearest) {
+        if (nearest == lastHighlightedGlidePoint) {
+            return;
+        }
+        lastHighlightedGlidePoint = nearest;
+
         int segments = 12;
         double radiusMeters = 0.35;
-        ArrayList<Pose2d> ringPoses = new ArrayList<>();
+        ArrayList<Pose2d> ringPoses = new ArrayList<>(segments);
         if (nearest != null && nearest.pose != null) {
             for (int i = 0; i < segments; i++) {
                 double angleRad = (2.0 * Math.PI * i) / segments;
@@ -389,10 +424,6 @@ public class SwerveBase implements Subsystem {
         }
 
         field.getObject("NearestGlidePoint").setPoses(ringPoses);
-
-        for (int i = 0; i < segments; i++) {
-            field.getObject("NearestGlideRing/" + i).setPose(OFF_FIELD_POSE);
-        }
     }
 
     /**
@@ -605,8 +636,13 @@ public class SwerveBase implements Subsystem {
     }
 
 
+    public boolean isVisionDegraded() {
+        return isVisionDegraded;
+    }
+
     @Override
     public void update() {
+        io.updateInputs(inputs);
         swerveDrive.updateOdometry();
 
         Pose2d estimatedPose = getPose();
@@ -614,19 +650,25 @@ public class SwerveBase implements Subsystem {
 
         if (SwerveDriveTelemetry.isSimulation) {
             LimelightSim.update(truthPose);
+            VisionSim.getInstance().update(truthPose);
             field.getObject("OdometryGhost").setPose(estimatedPose);
+        } else {
+            // Vision measurements and MegaTag2 gating are handled by Vision subsystem
+            if (Timer.getFPGATimestamp() - lastVisionTimestamp > VISION_TIMEOUT_SEC) {
+                isVisionDegraded = true;
+                lastLimelightAccepted = false;
+                visionDegradedAlert.set(true);
+            }
         }
 
-        drawGlidePointsOnField();
+        boolean currentRedAlliance = isRedAlliance();
+        if (lastRedAllianceDrawn == null || lastRedAllianceDrawn != currentRedAlliance) {
+            drawGlidePointsOnField();
+            lastRedAllianceDrawn = currentRedAlliance;
+        }
         highlightNearestGlidePointOnField(getNearestGlidePoint());
 
-        // Update path visualization if an action is active
-        // This is a bit of a hack since SwerveBase doesn't know about Teleop's
-        // activeAction,
-        // but we can provide a method for Teleop or Actions to push path data.
-
         // Explicitly update the field object with the current pose
-        // In simulation, we show the Truth Pose as the main robot
         field.setRobotPose(truthPose);
     }
 
@@ -640,6 +682,14 @@ public class SwerveBase implements Subsystem {
         SmartDashboard.putNumber("Subsystems/Swerve/Heading", getHeading().getDegrees());
         SmartDashboard.putNumber("Subsystems/Swerve/Pose X", getPose().getX());
         SmartDashboard.putNumber("Subsystems/Swerve/Pose Y", getPose().getY());
+
+        // AdvantageScope Odometry & Module Telemetry
+        Pose2d currentPose = getPose();
+        org.littletonrobotics.junction.Logger.recordOutput("Odometry/RobotPose", currentPose);
+        org.littletonrobotics.junction.Logger.recordOutput("Odometry/ModuleStates", swerveDrive.getStates());
+        if (SwerveDriveTelemetry.isSimulation) {
+            org.littletonrobotics.junction.Logger.recordOutput("FieldSimulation/RobotPose", getSimulationPose());
+        }
 
         SmartDashboard.putNumber("Subsystems/Limelight/TagCount", lastLimelightTagCount);
         SmartDashboard.putNumber("Subsystems/Limelight/AvgDist", lastLimelightAvgDist);
@@ -697,33 +747,56 @@ public class SwerveBase implements Subsystem {
     }
 
     /**
-     * Sets the voltage to all drive motors for SysId characterization.
+     * Sets the voltage to all drive motors for SysId characterization,
+     * ensuring steering angles are locked forward at 0 degrees.
      */
-    public void setDriveVoltage(double volts) {
-        swerveDrive.drive(new Translation2d(), 0, false, true); // ensure static
+    public void setSysIdDriveVoltage(double volts) {
         for (swervelib.SwerveModule module : swerveDrive.getModules()) {
+            module.setAngle(0.0);
             module.getDriveMotor().setVoltage(volts);
         }
+    }
+
+    /**
+     * Sets the voltage to all drive motors oriented tangentially to characterize
+     * chassis yaw moment of inertia (MoI) and angular feedforward.
+     */
+    public void setSysIdRotationVoltage(double volts) {
+        var states = swerveDrive.kinematics.toSwerveModuleStates(new ChassisSpeeds(0, 0, 1.0));
+        var modules = swerveDrive.getModules();
+        for (int i = 0; i < Math.min(modules.length, states.length); i++) {
+            modules[i].setAngle(states[i].angle.getDegrees());
+            modules[i].getDriveMotor().setVoltage(volts);
+        }
+    }
+
+    /**
+     * Sets the voltage to all drive motors.
+     */
+    public void setDriveVoltage(double volts) {
+        setSysIdDriveVoltage(volts);
     }
 
     /**
      * Sets drive voltage on a single module by index (0=FL, 1=FR, 2=BL, 3=BR).
      */
     public void setModuleDriveVoltage(int index, double volts) {
-        swervelib.SwerveModule[] modules = swerveDrive.getModules();
-        if (index >= 0 && index < modules.length) {
-            modules[index].getDriveMotor().setVoltage(volts);
-        }
+        io.setModuleDriveVoltage(index, volts);
     }
 
     /**
      * Sets angle motor voltage on a single module by index (0=FL, 1=FR, 2=BL, 3=BR).
      */
     public void setModuleAngleVoltage(int index, double volts) {
-        swervelib.SwerveModule[] modules = swerveDrive.getModules();
-        if (index >= 0 && index < modules.length) {
-            modules[index].getAngleMotor().setVoltage(volts);
-        }
+        io.setModuleAngleVoltage(index, volts);
+    }
+
+    public DriveIO getIO() {
+        return io;
+    }
+
+    public DriveIOInputs getInputs() {
+        return inputs;
     }
 
     /**
@@ -781,16 +854,37 @@ public class SwerveBase implements Subsystem {
      */
     public void addVisionMeasurement(Pose2d pose, double timestamp, Matrix<N3, N1> stdDevs) {
         swerveDrive.addVisionMeasurement(pose, timestamp, stdDevs);
+        lastVisionTimestamp = Timer.getFPGATimestamp();
+        isVisionDegraded = false;
+        lastLimelightAccepted = true;
+        visionDegradedAlert.set(false);
+        field.getObject("LimelightGhost").setPose(pose);
     }
 
     /**
      * Sets the voltage to all steer motors for SysId characterization.
      */
-    public void setSteerVoltage(double volts) {
-        swerveDrive.drive(new Translation2d(), 0, false, true); // ensure static
+    public void setSysIdSteerVoltage(double volts) {
         for (swervelib.SwerveModule module : swerveDrive.getModules()) {
             module.getAngleMotor().setVoltage(volts);
         }
+    }
+
+    public void setSteerVoltage(double volts) {
+        setSysIdSteerVoltage(volts);
+    }
+
+    /**
+     * Checks all module absolute encoders for hardware/read faults.
+     * @return boolean array indicating fault status for [FL, FR, BL, BR]
+     */
+    public boolean[] getAbsoluteEncoderFaults() {
+        var modules = swerveDrive.getModules();
+        boolean[] faults = new boolean[modules.length];
+        for (int i = 0; i < modules.length; i++) {
+            faults[i] = modules[i].getAbsoluteEncoderReadIssue();
+        }
+        return faults;
     }
 
     /**

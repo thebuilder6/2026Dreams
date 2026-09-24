@@ -105,12 +105,21 @@ public class FollowChoreoPath implements Actions {
         if (!trajectory.isPresent())
             return;
 
+        double totalTime = trajectory.get().getTotalTime();
         double time = timer.get() - totalPausedTime;
         if (isPaused) {
             time = pauseStartTimestamp - totalPausedTime;
         }
 
-        SwerveSample sample = trajectory.get().sampleAt(time, isRedAlliance()).get();
+        // Clamp time to valid trajectory bounds to prevent NoSuchElementException
+        double clampedTime = Math.max(0.0, Math.min(totalTime, time));
+        Optional<SwerveSample> sampleOpt = trajectory.get().sampleAt(clampedTime, isRedAlliance());
+        if (sampleOpt.isEmpty()) {
+            swerveBase.driveFieldOriented(new ChassisSpeeds());
+            return;
+        }
+        SwerveSample sample = sampleOpt.get();
+
         Pose2d currentRobotPose = swerveBase.getPose();
         Pose2d targetPose = sample.getPose();
 

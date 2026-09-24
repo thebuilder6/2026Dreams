@@ -3,82 +3,228 @@ package frc.robot;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.wpilibj.DriverStation;
-import edu.wpi.first.wpilibj.DriverStation.Alliance;
+import edu.wpi.first.wpilibj.Joystick;
+import frc.robot.Utils.AlertManager;
+import frc.robot.Auto.Actions.AutoAimAction;
+import frc.robot.Auto.Actions.BallHuntAction;
+import frc.robot.Auto.Actions.DriveToPoseAction;
 import frc.robot.Data.Constants;
+import frc.robot.Data.GlideConstants;
 import frc.robot.Data.PortMap;
 import frc.robot.Devices.Controller;
-import frc.robot.Subsystems.Climber;
 import frc.robot.Subsystems.Dashboard;
 import frc.robot.Subsystems.Intake;
 import frc.robot.Subsystems.Shooter;
+import frc.robot.Subsystems.Shooter.ShootingSolution;
 import frc.robot.Subsystems.SwerveBase;
 
+/*
+ * Class: Teleop
+ * Description: Teleoperated control system unified onto a single Xbox controller,
+ *              combining driving, intake, auto-aim shooting, and advanced navigation features.
+ * Authors: Austin, Rhea, Sarah, Trevor, Mai, InfiniteQuery
+ */
 public class Teleop {
 
-    Controller driverController;
-    Controller operatorController;
-    SwerveBase swerveBase;
+    // Subsystems
     Intake intake;
     Shooter shooter;
-    Climber climber;
+    SwerveBase swerveBase;
 
-    private double rotationX;
-    private double rotationY;
-    private boolean isSnapMode = false;
-    private boolean wasGlideHeld = false;
-    private boolean intakeFeedToggle = false;
+    // Single Controller
+    Controller controller;
+    Joystick joystickController;
 
+    public static boolean joystickEnabled = false;
+
+    // Controller Inputs
+    private double leftX;
+    private double leftY;
+    private double rightX;
+    private double leftTrigger;
+    private double rightTrigger;
+    private boolean aButton;
+    private boolean bButton;
+    private boolean xButton;
+    private boolean yButton;
+    private boolean leftBumper;
+    private boolean rightBumper;
+    private int pov;
+
+    // Intake Toggle States
+    private String intakeToggleState = "Disabled";
+    private boolean lastXButton = false;
+    private boolean armOverrideActive = false;
+    private boolean lastBButton = false;
+
+    // Drive Variables
+    private double driverForward;
+    private double driverStrafe;
+
+    // Shooter
+    ShootingSolution shootingSolution;
+
+    // Advanced Actions (Glide / Ball Hunt)
     private frc.robot.Interfaces.Actions activeAction = null;
+    private boolean wasGlideHeld = false;
+
+    // Haptic Feedback Tracking
+    private boolean wasTargetLocked = false;
+    private boolean warned30s = false;
+    private boolean warned15s = false;
+    private boolean wasVisionDegraded = false;
+    private boolean wasHardwareError = false;
 
     public Teleop() {
-        driverController = new Controller(PortMap.DRIVER_CONTROLLER);
-        operatorController = new Controller(PortMap.OPERATOR_CONTROLLER);
-        swerveBase = SwerveBase.getInstance();
         intake = Intake.getInstance();
         shooter = Shooter.getInstance();
-        climber = Climber.getInstance();
+        swerveBase = SwerveBase.getInstance();
+
+        if (!joystickEnabled) {
+            controller = new Controller(PortMap.DRIVER_CONTROLLER);
+        } else {
+            joystickController = new Joystick(PortMap.DRIVER_CONTROLLER);
+        }
+    }
+
+    public void init() {
+        intakeToggleState = "Disabled";
+        intake.setState("Disabled");
+        activeAction = null;
+        wasTargetLocked = false;
+        warned30s = false;
+        warned15s = false;
+        wasVisionDegraded = false;
+        wasHardwareError = false;
     }
 
     public void reset() {
-        activeAction = null;
-        isSnapMode = false;
-        wasGlideHeld = false;
-        intakeFeedToggle = false;
+        init();
     }
 
     public void teleopPeriodic() {
-        if (handleEStop()) return;
-        if (handleActiveAction()) return;
+        readControllers();
+        updateHapticFeedback();
 
-        handleIntakeControls();
-        handleShooterControls();
-        handleClimberControls();
+        // E-Stop check: Down on D-Pad
+        if (pov == 180) {
+            intake.setState("Disabled");
+            shooter.stop();
+            if (activeAction != null) {
+                activeAction.done();
+                activeAction = null;
+            }
+            return;
+        }
+
+        // Check if an advanced action is running (Glide or Ball Hunt)
+        if (handleActiveAction()) {
+            return;
+        }
+
+        shootingSolution = shooter.getLatestShootingSolution();
         driveBaseControl();
+        intakeControl();
+        shooterControl();
     }
 
-    private boolean handleEStop() {
-        if (operatorController.getPOV() == 180) {
-            swerveBase.stop();
-            intake.setState(Intake.IntakeState.IDLE);
-            shooter.stop();
-            activeAction = null;
-            return true;
+    private void updateHapticFeedback() {
+        if (!joystickEnabled && controller != null) {
+            controller.updateRumble();
         }
-        return false;
+
+        // Match Time Warnings (Endgame reminders)
+        double matchTime = DriverStation.getMatchTime();
+        if (matchTime > 0.0) {
+            if (matchTime <= 30.0 && matchTime > 28.5 && !warned30s) {
+                if (!joystickEnabled && controller != null) {
+                    controller.triggerRumblePattern(Controller.RumblePattern.MATCH_TIME_WARNING);
+                }
+                warned30s = true;
+            } else if (matchTime <= 15.0 && matchTime > 13.5 && !warned15s) {
+                if (!joystickEnabled && controller != null) {
+                    controller.triggerRumblePattern(Controller.RumblePattern.MATCH_TIME_WARNING);
+                }
+                warned15s = true;
+            }
+        }
+
+        // Sensor / Vision Degradation Alert Pulse
+        boolean visionDegraded = swerveBase.isVisionDegraded();
+        if (visionDegraded && !wasVisionDegraded) {
+            if (!joystickEnabled && controller != null) {
+                controller.triggerRumblePattern(Controller.RumblePattern.HARDWARE_WARNING);
+            }
+        }
+        wasVisionDegraded = visionDegraded;
+
+        // General Hardware Error Alert Pulse
+        boolean errorActive = AlertManager.hasActiveErrors();
+        if (errorActive && !wasHardwareError) {
+            if (!joystickEnabled && controller != null) {
+                controller.triggerRumblePattern(Controller.RumblePattern.HARDWARE_WARNING);
+            }
+        }
+        wasHardwareError = errorActive;
+    }
+
+    private void readControllers() {
+        if (!joystickEnabled && controller != null) {
+            leftY = controller.getLeftY();
+            leftX = controller.getLeftX();
+            rightX = controller.getRightX();
+            leftTrigger = controller.getLeftTriggerAxis();
+            rightTrigger = controller.getRightTriggerAxis();
+            aButton = controller.getAButton();
+            bButton = controller.getBButton();
+            xButton = controller.getXButton();
+            yButton = controller.getYButton();
+            leftBumper = controller.getLeftBumperButton();
+            rightBumper = controller.getRightBumperButton();
+            pov = controller.getPOV();
+        } else if (joystickController != null) {
+            leftY = joystickController.getY();
+            leftX = joystickController.getX();
+            rightX = joystickController.getTwist();
+            leftTrigger = 0.0;
+            rightTrigger = joystickController.getRawButton(1) ? 1.0 : 0.0;
+            aButton = joystickController.getRawButton(2);
+            bButton = joystickController.getRawButton(3);
+            xButton = joystickController.getRawButton(4);
+            yButton = joystickController.getRawButton(5);
+            leftBumper = joystickController.getRawButton(6);
+            rightBumper = joystickController.getRawButton(7);
+            pov = joystickController.getPOV();
+        }
     }
 
     private boolean handleActiveAction() {
-        if (activeAction == null)
-            return false;
+        // Advanced Modes: Glide (Right Bumper or D-Pad Up) / Ball Hunt (Left Bumper)
+        boolean isGlideHeld = !joystickEnabled && (rightBumper || pov == 0) && Dashboard.isGlidePointsEnabled();
+        boolean isBallHuntHeld = !joystickEnabled && leftBumper && Dashboard.isBallHuntEnabled();
 
-        boolean isOverride = Math.abs(driverController.getLeftY()) > 0.1 ||
-                Math.abs(driverController.getLeftX()) > 0.1 ||
-                Math.abs(driverController.getRightX()) > 0.1;
+        // Start Glide Action if newly triggered
+        if (isGlideHeld && !wasGlideHeld && activeAction == null) {
+            GlideConstants.GlidePoint nearest = swerveBase.getNearestGlidePoint();
+            if (nearest != null) {
+                activeAction = new DriveToPoseAction(nearest.pose());
+                activeAction.start();
+            }
+        }
+        wasGlideHeld = isGlideHeld;
 
-        boolean isGlideHeld = driverController.getLeftTriggerAxis() > 0.5;
-        boolean isBallHuntHeld = driverController.getLeftBumperButton();
+        // Start Ball Hunt Action if newly triggered
+        if (isBallHuntHeld && activeAction == null) {
+            activeAction = new BallHuntAction();
+            activeAction.start();
+        }
 
-        if (!(isGlideHeld || isBallHuntHeld) || activeAction.isFinished() || isOverride) {
+        if (activeAction == null) return false;
+
+        // Manual driver override cancels autonomous action
+        boolean isDriverOverride = Math.abs(leftY) > 0.15 || Math.abs(leftX) > 0.15 || Math.abs(rightX) > 0.15;
+
+        if (!(isGlideHeld || isBallHuntHeld) || activeAction.isFinished() || isDriverOverride) {
             activeAction.done();
             activeAction = null;
             return false;
@@ -88,136 +234,122 @@ public class Teleop {
         return true;
     }
 
-    private void handleIntakeControls() {
-        // Driver toggle (Auto)
-        if (driverController.getRightBumperPressed()) {
-            intakeFeedToggle = !intakeFeedToggle;
-            intake.setState(intakeFeedToggle ? Intake.IntakeState.INTAKING : Intake.IntakeState.IDLE);
+    public void intakeControl() {
+        // --- Arm Lock Toggle (B Button) ---
+        if (bButton && !lastBButton) {
+            armOverrideActive = !armOverrideActive;
         }
+        lastBButton = bButton;
 
-        // Operator manual overrides
-        double manualArmY = -operatorController.getLeftY();
-        if (Math.abs(manualArmY) > 0.1) {
-            intake.setArmVoltage(manualArmY * 6.0); // Manual voltage override
-        }
-
-        if (operatorController.getLeftTriggerAxis() > 0.5) {
-            intake.setState(Intake.IntakeState.FEEDING);
-        } else if (operatorController.getYButton()) {
-            intake.setState(Intake.IntakeState.EJECTING);
-        } else if (operatorController.getBButton()) {
-            intake.setState(Intake.IntakeState.IDLE);
-            intakeFeedToggle = false;
-        }
-    }
-
-    private void handleShooterControls() {
-        // Driver Auto-Aim
-        if (Dashboard.isAutoAimEnabled() && driverController.getRightTriggerAxis() >= 0.5) {
-            handleAutoAim();
-        } else {
-            // Operator manual overrides
-            double manualShootTrigger = operatorController.getRightTriggerAxis();
-            if (manualShootTrigger > 0.1) {
-                shooter.setFlywheelVelocity(3000 * manualShootTrigger); // Linear mapping for troubleshooting
-                if (operatorController.getRightBumperButton()) {
-                    shooter.setKickerSpeed(Constants.ShooterConstants.FEED_SPEED);
+        // --- Intake Arm Deploy Toggle (X Button) ---
+        if (xButton && !lastXButton) {
+            if (!armOverrideActive) {
+                if (intakeToggleState.equals("Standby")) {
+                    intakeToggleState = "Down";
                 } else {
-                    shooter.setKickerSpeed(0);
+                    intakeToggleState = "Standby";
                 }
-            } else if (operatorController.getXButton()) {
-                shooter.setFlywheelVelocity(-500); // Reverse slow
-                shooter.setKickerSpeed(-0.3);
-            } else {
-                shooter.stop();
             }
         }
-    }
+        lastXButton = xButton;
 
-    private void handleClimberControls() {
-        Climber.ClimberState nextState = switch (operatorController.getPOV()) {
-            case 0 -> Climber.ClimberState.UP;
-            case 180 -> Climber.ClimberState.DOWN;
-            default -> Climber.ClimberState.STATIONARY;
-        };
-        climber.setState(nextState);
+        if (armOverrideActive) {
+            intakeToggleState = "Standby";
+        }
+
+        // --- Roller and Arm Mapping ---
+        boolean intakeRequested = leftTrigger > 0.5;
+        boolean reverseRequested = yButton && intakeRequested;
+        boolean armDown = intakeToggleState.equals("Down");
+
+        if (reverseRequested) {
+            if (intakeToggleState.equals("Disabled")) intakeToggleState = "Standby";
+            intake.setState(armDown ? "Reversed" : "StandbyReversed");
+        } else if (intakeRequested) {
+            if (intakeToggleState.equals("Disabled")) intakeToggleState = "Standby";
+            intake.setState(armDown ? "Intaking" : "StandbyIntaking");
+        } else if (!intakeToggleState.equals("Disabled")) {
+            intake.setState(armDown ? "Down" : "Standby");
+        } else {
+            intake.setState("Disabled");
+        }
     }
 
     public void driveBaseControl() {
-        boolean isRed = DriverStation.getAlliance().orElse(Alliance.Blue) == Alliance.Red;
+        double rotation = 0;
 
-        double speedMultiplier = Dashboard.isSlowModeEnabled() ? 0.35 : 1.0;
-        double forward = -driverController.getLeftY() * Constants.MAX_SPEED * speedMultiplier;
-        double strafe = -driverController.getLeftX() * Constants.MAX_SPEED * speedMultiplier;
-        double manualRotation = -(driverController.getRightX() * Math.abs(driverController.getRightX()))
-                * Constants.MAX_ROTATION_SPEED * speedMultiplier;
-
-        boolean isGlideHeld = driverController.getLeftTriggerAxis() > 0.5;
-        if (Dashboard.isGlidePointsEnabled() && isGlideHeld && activeAction == null && !wasGlideHeld) {
-            var nearest = swerveBase.getNearestGlidePoint();
-            if (nearest != null) {
-                if (nearest.isTunnelEntrance && nearest.tunnelExitPose != null) {
-                    activeAction = new frc.robot.Auto.Actions.TrajectoryTunnelAction(nearest.pose,
-                            nearest.tunnelExitPose);
-                } else {
-                    activeAction = new frc.robot.Auto.Actions.DriveToPoseAction(nearest.pose);
-                }
-                activeAction.start();
-                wasGlideHeld = true;
-                return;
-            }
+        // Translation
+        if (Math.abs(leftY) >= Constants.OperatorConstants.DEADBAND) {
+            driverForward = leftY * Constants.MAX_SPEED;
+        } else {
+            driverForward = 0;
         }
-        wasGlideHeld = isGlideHeld;
 
-        double finalForward = isRed ? -forward : forward;
-        double finalStrafe = isRed ? -strafe : strafe;
+        if (Math.abs(leftX) >= Constants.OperatorConstants.DEADBAND) {
+            driverStrafe = leftX * Constants.MAX_SPEED;
+        } else {
+            driverStrafe = 0;
+        }
 
-        if (driverController.getAButton()) {
+        // Rotation (Quadratic curve for precision)
+        if (Math.abs(rightX) >= Constants.OperatorConstants.DEADBAND) {
+            rotation = -(Math.abs(rightX) * rightX) * Constants.MAX_ROTATION_SPEED;
+        } else {
+            rotation = 0;
+        }
+
+        // A Button: Zero Gyro with Alliance
+        if (aButton) {
             swerveBase.zeroGyroWithAlliance();
         }
 
-        if (Dashboard.isBallHuntEnabled() && driverController.getLeftBumperButton() && activeAction == null) {
-            activeAction = new frc.robot.Auto.Actions.BallHuntAction();
-            activeAction.start();
-            return;
-        }
-
-        updateRotationState();
-        applyDrive(finalForward, finalStrafe, manualRotation, isRed);
-    }
-
-    private void updateRotationState() {
-        double rX = driverController.getRightX();
-        double rY = driverController.getRightY();
-        isSnapMode = Dashboard.isSnapToTurnEnabled() && (Math.abs(rX) >= 0.97 || Math.abs(rY) >= 0.97);
-        if (isSnapMode) {
-            rotationX = rX;
-            rotationY = rY;
+        boolean autoRequested = yButton && (leftTrigger <= 0.5);
+        boolean autoAimActive = autoRequested && shootingSolution != null && shootingSolution.shotPossibility();
+        if (!autoAimActive) {
+            swerveBase.drive(new Translation2d(driverForward, driverStrafe), rotation, Dashboard.isFieldOriented());
         }
     }
 
-    private void handleAutoAim() {
-        double forward = -driverController.getLeftY() * Constants.MAX_SPEED;
-        double strafe = -driverController.getLeftX() * Constants.MAX_SPEED;
-        
-        var solution = shooter.calculateShootingSolution(swerveBase.getPose(), swerveBase.getFieldVelocity());
-        if (solution.possible()) {
-            shooter.setFlywheelVelocity(solution.flywheelRPM());
-            Rotation2d targetHeading = solution.turretAngle();
-            var targetSpeeds = swerveBase.getTargetSpeeds(forward, strafe, targetHeading);
-            swerveBase.drive(new Translation2d(forward, strafe), targetSpeeds.omegaRadiansPerSecond, true);
-            shooter.setKickerSpeed(shooter.isReadyToFire(targetHeading) ? Constants.ShooterConstants.FEED_SPEED : 0);
-        }
-    }
+    public void shooterControl() {
+        boolean autoRequested = yButton && (leftTrigger <= 0.5);
+        boolean manualRequested = rightTrigger > 0.05 && !yButton;
 
-    private void applyDrive(double finalForward, double finalStrafe, double manualRotation, boolean isRed) {
-        if (isSnapMode) {
-            Rotation2d targetHeading = new Rotation2d(-rotationY, -rotationX);
-            if (isRed) targetHeading = targetHeading.plus(Rotation2d.fromDegrees(180));
-            var targetSpeeds = swerveBase.getTargetSpeeds(finalForward, finalStrafe, targetHeading);
-            swerveBase.drive(new Translation2d(finalForward, finalStrafe), targetSpeeds.omegaRadiansPerSecond, true);
+        if (autoRequested) {
+            if (shootingSolution != null && shootingSolution.shotPossibility()) {
+                // Auto-aim Swerve override (allow translation while overriding rotation to target)
+                swerveBase.driveFieldOriented(swerveBase.getTargetSpeeds(driverForward, driverStrafe, shootingSolution.shootingAngle()));
+
+                // Spool up flywheels to distance solution
+                shooter.setTargetRPM(shootingSolution.flywheelRpmLeft(), shootingSolution.flywheelRpmRight());
+
+                boolean headingAligned = Math.abs(shootingSolution.shootingAngle().minus(swerveBase.getHeading()).getDegrees()) < 3.0;
+                boolean flywheelsReady = shooter.isAtTargetVelocity();
+                boolean targetLocked = headingAligned && flywheelsReady;
+
+                if (targetLocked && !wasTargetLocked) {
+                    if (!joystickEnabled && controller != null) {
+                        controller.triggerRumblePattern(Controller.RumblePattern.TARGET_LOCKED);
+                    }
+                }
+                wasTargetLocked = targetLocked;
+
+                if (headingAligned) {
+                    shooter.shoot();
+                } else {
+                    shooter.prepareToShoot();
+                }
+            } else {
+                shooter.stop();
+                wasTargetLocked = false;
+            }
+        } else if (manualRequested) {
+            wasTargetLocked = false;
+            shooter.manualFire(rightTrigger);
         } else {
-            swerveBase.drive(new Translation2d(finalForward, finalStrafe), manualRotation, true);
+            wasTargetLocked = false;
+            if (pov != 180) {
+                shooter.stop();
+            }
         }
     }
 }

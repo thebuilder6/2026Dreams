@@ -3,190 +3,281 @@ package frc.robot.Subsystems;
 import static edu.wpi.first.units.Units.DegreesPerSecond;
 
 import edu.wpi.first.math.Matrix;
+import edu.wpi.first.math.VecBuilder;
 import edu.wpi.first.math.geometry.Pose2d;
-import edu.wpi.first.math.geometry.Rotation3d;
 import edu.wpi.first.math.numbers.N1;
 import edu.wpi.first.math.numbers.N3;
 import edu.wpi.first.math.util.Units;
-import edu.wpi.first.units.measure.AngularVelocity;
+import edu.wpi.first.wpilibj.RobotBase;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import frc.robot.Data.Constants.DrivebaseConstants;
 import frc.robot.Interfaces.Subsystem;
-import limelight.Limelight;
-import limelight.networktables.LimelightPoseEstimator;
-import limelight.networktables.LimelightPoseEstimator.EstimationMode;
-import limelight.networktables.Orientation3d;
-import limelight.networktables.PoseEstimate;
-import limelight.results.RawFiducial;
+import frc.robot.Subsystems.vision.VisionIO;
+import frc.robot.Subsystems.vision.VisionIO.VisionIOInputs;
+import frc.robot.Subsystems.vision.VisionIOLimelight;
+import frc.robot.Subsystems.vision.VisionIOPhotonVision;
+import frc.robot.Subsystems.vision.VisionIOSim;
+import edu.wpi.first.math.geometry.Pose3d;
 
 /**
- * Vision Subsystem
- * Logic:
- * 1. Processes Limelight/PhotonVision data.
- * 2. Implements rejection logic based on angular velocity, distance, and
- * ambiguity.
- * 3. Updates SwerveBase pose estimator using MegaTag2.
+ * Vision Subsystem following the AdvantageKit IO abstraction pattern.
+ * Manages camera inputs, MegaTag2 pose gating, and std-dev dynamic weighting.
  */
 public class Vision implements Subsystem {
 
     private static Vision instance;
-    private final Limelight camera;
-    private final LimelightPoseEstimator poseEstimator;
 
-    // Logging data
-    private int tagCount = 0;
-    private double avgDist = 0;
+    private final VisionIO primaryIO;
+    private final VisionIO secondaryIO;
+    private final VisionIOInputs primaryInputs = new VisionIOInputs();
+    private final VisionIOInputs secondaryInputs = new VisionIOInputs();
+
+    // Telemetry state
     private double stdDev = 0;
     private boolean isAccepted = false;
-    private boolean hasTarget = false;
 
     public static Vision getInstance() {
         if (instance == null) {
-            instance = new Vision();
+            VisionIO primary = RobotBase.isSimulation()
+                    ? new VisionIOSim(VisionIOSim.CameraType.LIMELIGHT)
+                    : new VisionIOLimelight("limelight-front");
+            VisionIO secondary = RobotBase.isSimulation()
+                    ? new VisionIOSim(VisionIOSim.CameraType.RUBIK_PI)
+                    : new VisionIOPhotonVision("rubik-pi-coprocessor");
+            instance = new Vision(primary, secondary);
         }
         return instance;
     }
 
-    private Vision() {
-        camera = new Limelight("limelight-front");
-        poseEstimator = camera.createPoseEstimator(EstimationMode.MEGATAG2);
+    public Vision(VisionIO primaryIO) {
+        this(primaryIO, RobotBase.isSimulation()
+                ? new VisionIOSim(VisionIOSim.CameraType.RUBIK_PI)
+                : new VisionIOPhotonVision("rubik-pi-coprocessor"));
+    }
+
+    public Vision(VisionIO primaryIO, VisionIO secondaryIO) {
+        this.primaryIO = primaryIO;
+        this.secondaryIO = secondaryIO;
         SubsystemManager.registerSubsystem(this);
     }
 
     @Override
     public void update() {
-        updateVisionOdometry();
-    }
-
-    private void updateVisionOdometry() {
         SwerveBase swerve = SwerveBase.getInstance();
-        AngularVelocity yawRate = swerve.getSwerveDrive().getGyro().getYawAngularVelocity();
+        double yawRate = Math.abs(swerve.getSwerveDrive().getGyro().getYawAngularVelocity().in(DegreesPerSecond));
 
-        // Update robot orientation in LL for MT2
-        camera.getSettings()
-                .withRobotOrientation(new Orientation3d(
-                        new Rotation3d(0, 0, swerve.getPose().getRotation().getRadians()),
-                        yawRate,
-                        DegreesPerSecond.of(0),
-                        DegreesPerSecond.of(0)))
-                .save();
+        // ── 1. Primary Camera (Limelight MegaTag2) ───────────────────────────
+        primaryIO.setRobotOrientation(
+                swerve.getHeading().getDegrees(),
+                swerve.getSwerveDrive().getGyro().getYawAngularVelocity().in(DegreesPerSecond),
+                swerve.getPitch().getDegrees(),
+                0.0);
 
-        PoseEstimate mt2 = poseEstimator.getPoseEstimate().orElse(null);
+        primaryIO.updateInputs(primaryInputs);
 
-        if (mt2 == null || mt2.tagCount == 0) {
-            hasTarget = false;
-            isAccepted = false;
-            tagCount = 0;
-            avgDist = 0;
-            return;
-        }
+        if (primaryInputs.hasTarget && primaryInputs.tagCount > 0) {
+            boolean doReject = false;
+            if (yawRate > DrivebaseConstants.VISION_MAX_YAW_RATE) doReject = true;
+            if (primaryInputs.avgTagDist > DrivebaseConstants.VISION_MAX_TAG_DIST) doReject = true;
+            if (primaryInputs.latencyMs > 150.0) doReject = true;
 
-        hasTarget = true;
-        tagCount = mt2.tagCount;
-        avgDist = mt2.avgTagDist;
+            stdDev = DrivebaseConstants.VISION_BASE_STD_DEV;
+            if (primaryInputs.tagCount == 1) stdDev += DrivebaseConstants.VISION_SINGLE_TAG_PENALTY;
+            stdDev += (primaryInputs.avgTagDist * primaryInputs.avgTagDist) / DrivebaseConstants.VISION_DIST_PENALTY_DIVISOR;
 
-        boolean doRejectUpdate = false;
-
-        // 1. Angular Velocity Rejection
-        if (Math.abs(yawRate.in(DegreesPerSecond)) > DrivebaseConstants.VISION_MAX_YAW_RATE) {
-            doRejectUpdate = true;
-        }
-
-        // 2. Tag Distance Rejection
-        if (mt2.avgTagDist > DrivebaseConstants.VISION_MAX_TAG_DIST) {
-            doRejectUpdate = true;
-        }
-
-        // 3. Single Tag Rejection at distance or high ambiguity
-        if (mt2.tagCount == 1) {
-            if (mt2.avgTagDist > DrivebaseConstants.VISION_SINGLE_TAG_MAX_DIST) {
-                doRejectUpdate = true;
+            isAccepted = !doReject;
+            if (isAccepted) {
+                Matrix<N3, N1> visionStdDevs = VecBuilder.fill(stdDev, stdDev, Units.degreesToRadians(900));
+                swerve.addVisionMeasurement(primaryInputs.estimatedPose, primaryInputs.timestamp, visionStdDevs);
             }
+        } else {
+            isAccepted = false;
+        }
 
-            for (RawFiducial tag : mt2.rawFiducials) {
-                if (tag != null && tag.ambiguity > DrivebaseConstants.VISION_MAX_AMBIGUITY) {
-                    doRejectUpdate = true;
+        // ── 2. Secondary Coprocessor (Orange Pi 5 PhotonVision) ─────────────
+        if (secondaryIO != null) {
+            secondaryIO.updateInputs(secondaryInputs);
+
+            if (secondaryInputs.hasTarget && secondaryInputs.tagCount > 0 && secondaryInputs.latencyMs < 150.0) {
+                if (secondaryInputs.avgTagDist < DrivebaseConstants.VISION_MAX_TAG_DIST && yawRate <= DrivebaseConstants.VISION_MAX_YAW_RATE) {
+                    double secStdDev = DrivebaseConstants.VISION_BASE_STD_DEV + 0.15;
+                    if (secondaryInputs.tagCount == 1) secStdDev += DrivebaseConstants.VISION_SINGLE_TAG_PENALTY;
+                    secStdDev += (secondaryInputs.avgTagDist * secondaryInputs.avgTagDist) / DrivebaseConstants.VISION_DIST_PENALTY_DIVISOR;
+
+                    Matrix<N3, N1> secStdDevs = VecBuilder.fill(secStdDev, secStdDev, Units.degreesToRadians(900));
+                    swerve.addVisionMeasurement(secondaryInputs.estimatedPose, secondaryInputs.timestamp, secStdDevs);
                 }
             }
         }
-
-        // Calculate dynamic trust (Standard Deviation)
-        stdDev = DrivebaseConstants.VISION_BASE_STD_DEV;
-        if (mt2.tagCount == 1) {
-            stdDev += DrivebaseConstants.VISION_SINGLE_TAG_PENALTY;
-        }
-        stdDev += (mt2.avgTagDist * mt2.avgTagDist) / DrivebaseConstants.VISION_DIST_PENALTY_DIVISOR;
-
-        isAccepted = !doRejectUpdate;
-
-        if (isAccepted) {
-            Matrix<N3, N1> visionStdDevs = edu.wpi.first.math.VecBuilder.fill(stdDev, stdDev,
-                    Units.degreesToRadians(900));
-            swerve.addVisionMeasurement(mt2.pose.toPose2d(), mt2.timestampSeconds, visionStdDevs);
-        }
-    }
-
-    @Override
-    public void initialize() {
-    }
-
-    @Override
-    public void simulationUpdate() {
-    }
-
-    @Override
-    public void log() {
-        SmartDashboard.putNumber("Vision/TagCount", tagCount);
-        SmartDashboard.putNumber("Vision/AvgDistance", avgDist);
-        SmartDashboard.putNumber("Vision/StdDev", stdDev);
-        SmartDashboard.putBoolean("Vision/IsAccepted", isAccepted);
-        SmartDashboard.putBoolean("Vision/HasTarget", hasTarget());
     }
 
     public boolean hasTarget() {
-        return camera.getData().targetData.getTargetStatus();
+        return primaryInputs.hasTarget || (secondaryInputs != null && secondaryInputs.hasTarget);
+    }
+
+    public boolean hasGamePiece() {
+        return (secondaryInputs != null && secondaryInputs.hasGamePiece) || primaryInputs.hasGamePiece;
+    }
+
+    public double getGamePieceYaw() {
+        if (secondaryInputs != null && secondaryInputs.hasGamePiece) {
+            return secondaryInputs.gamePieceYaw;
+        }
+        return primaryInputs.gamePieceYaw;
+    }
+
+    public double getGamePiecePitch() {
+        if (secondaryInputs != null && secondaryInputs.hasGamePiece) {
+            return secondaryInputs.gamePiecePitch;
+        }
+        return primaryInputs.gamePiecePitch;
+    }
+
+    public double getGamePieceArea() {
+        if (secondaryInputs != null && secondaryInputs.hasGamePiece) {
+            return secondaryInputs.gamePieceArea;
+        }
+        return primaryInputs.gamePieceArea;
+    }
+
+    /**
+     * Calculates distance from camera to the game piece on the carpet using trigonometry.
+     * d = (h_camera - h_target) / tan(pitch_camera + pitch_target)
+     * @return Distance in meters, or 0.0 if no game piece is detected
+     */
+    public double getGamePieceDistanceMeters() {
+        if (!hasGamePiece()) {
+            return 0.0;
+        }
+        double cameraHeight = DrivebaseConstants.RUBIK_PI_CAMERA_HEIGHT_METERS;
+        double targetHeight = DrivebaseConstants.FUEL_TARGET_HEIGHT_METERS;
+        double cameraPitchRads = Units.degreesToRadians(DrivebaseConstants.RUBIK_PI_CAMERA_PITCH_DEG);
+        double targetPitchRads = Units.degreesToRadians(getGamePiecePitch());
+
+        double totalAngleRads = cameraPitchRads + targetPitchRads;
+        // Avoid division by zero or negative distances if looking parallel/up
+        if (Math.abs(Math.tan(totalAngleRads)) < 0.01 || totalAngleRads >= 0) {
+            return 0.0;
+        }
+
+        // Camera is higher than target, total angle is negative (tilted down)
+        return Math.abs((cameraHeight - targetHeight) / Math.tan(totalAngleRads));
+    }
+
+    /**
+     * Calculates the robot-relative (X, Y) Translation2d to the detected game piece.
+     * @return Translation2d in robot frame (+X forward, +Y left)
+     */
+    public edu.wpi.first.math.geometry.Translation2d getGamePieceRobotRelativeTranslation() {
+        double distance = getGamePieceDistanceMeters();
+        if (distance <= 0.01) {
+            return new edu.wpi.first.math.geometry.Translation2d();
+        }
+        double yawRads = -Units.degreesToRadians(getGamePieceYaw()); // CCW positive
+        double forward = distance * Math.cos(yawRads) + DrivebaseConstants.RUBIK_PI_CAMERA_FORWARD_OFFSET_METERS;
+        double left = distance * Math.sin(yawRads);
+        return new edu.wpi.first.math.geometry.Translation2d(forward, left);
+    }
+
+    /**
+     * Projects the detected game piece to global field coordinates using current odometry.
+     * @return Pose2d of game piece on field, or null if no target detected
+     */
+    public Pose2d getGamePieceFieldPose() {
+        if (!hasGamePiece()) {
+            return null;
+        }
+        Pose2d robotPose = SwerveBase.getInstance().getPose();
+        edu.wpi.first.math.geometry.Translation2d robotRel = getGamePieceRobotRelativeTranslation();
+        edu.wpi.first.math.geometry.Translation2d fieldPos = robotPose.getTranslation().plus(
+                robotRel.rotateBy(robotPose.getRotation()));
+        return new Pose2d(fieldPos, robotPose.getRotation());
     }
 
     public double getTX() {
-        return camera.getData().targetData.getHorizontalOffset();
+        return primaryInputs.targetTx;
+    }
+
+    public double getTY() {
+        return primaryInputs.targetTy;
+    }
+
+    public Pose2d getEstimatedPose() {
+        return primaryInputs.estimatedPose;
+    }
+
+    public boolean isAccepted() {
+        return isAccepted;
+    }
+
+    public VisionIO getIO() {
+        return primaryIO;
+    }
+
+    public VisionIO getSecondaryIO() {
+        return secondaryIO;
+    }
+
+    public VisionIOInputs getInputs() {
+        return primaryInputs;
+    }
+
+    public VisionIOInputs getSecondaryInputs() {
+        return secondaryInputs;
+    }
+
+    public static class VisionTargetEstimate {
+        public final Pose3d pose;
+        public final double avgTagDist;
+        public final double timestampSeconds;
+
+        public VisionTargetEstimate(Pose2d pose2d, double avgTagDist, double timestampSeconds) {
+            this.pose = new Pose3d(pose2d);
+            this.avgTagDist = avgTagDist;
+            this.timestampSeconds = timestampSeconds;
+        }
     }
 
     /**
-     * Get the latest Limelight target
+     * Get the latest Limelight target pose estimate
      */
-    public PoseEstimate getLimelightTarget() {
-        return poseEstimator.getPoseEstimate().orElse(null);
+    public VisionTargetEstimate getLimelightTarget() {
+        if (!primaryInputs.hasTarget || primaryInputs.tagCount == 0) {
+            return null;
+        }
+        return new VisionTargetEstimate(primaryInputs.estimatedPose, primaryInputs.avgTagDist, primaryInputs.timestamp);
     }
 
     /**
-     * Get the latest PhotonVision target (placeholder implementation)
+     * Get the latest PhotonVision target
      */
-    public PoseEstimate getPhotonTarget() {
-        // This would integrate with PhotonVision if available
-        // For now, return the same as Limelight
-        return getLimelightTarget();
+    public VisionTargetEstimate getPhotonTarget() {
+        if (secondaryInputs == null || !secondaryInputs.hasTarget || secondaryInputs.tagCount == 0) {
+            return null;
+        }
+        return new VisionTargetEstimate(secondaryInputs.estimatedPose, secondaryInputs.avgTagDist, secondaryInputs.timestamp);
     }
 
     /**
      * Get the best available target from any vision source
      */
-    public PoseEstimate getBestTarget() {
-        return getLimelightTarget();
+    public VisionTargetEstimate getBestTarget() {
+        VisionTargetEstimate primary = getLimelightTarget();
+        if (primary != null) return primary;
+        return getPhotonTarget();
     }
 
     /**
      * Get the latest vision pose estimate
      */
     public Pose2d getVisionPose() {
-        PoseEstimate estimate = getLimelightTarget();
-        return estimate != null ? estimate.pose.toPose2d() : null;
+        return getEstimatedPose();
     }
 
     /**
      * Enable or disable Limelight
      */
     public void setLimelightEnabled(boolean enabled) {
-        // Simplified LED control - just log for now
         System.out.println("[Vision] Limelight enabled: " + enabled);
     }
 
@@ -202,6 +293,48 @@ public class Vision implements Subsystem {
      */
     public void setPhotonPipeline(int pipeline) {
         System.out.println("[Vision] PhotonVision pipeline: " + pipeline);
+    }
+
+    @Override
+    public void initialize() {
+    }
+
+    @Override
+    public void log() {
+        SmartDashboard.putNumber("Vision/Primary/TagCount", primaryInputs.tagCount);
+        SmartDashboard.putNumber("Vision/Primary/AvgDistance", primaryInputs.avgTagDist);
+        SmartDashboard.putNumber("Vision/Primary/StdDev", stdDev);
+        SmartDashboard.putBoolean("Vision/Primary/IsAccepted", isAccepted);
+        SmartDashboard.putBoolean("Vision/Primary/HasTarget", primaryInputs.hasTarget);
+
+        if (primaryInputs.hasTarget) {
+            org.littletonrobotics.junction.Logger.recordOutput("Vision/PrimaryPose", primaryInputs.estimatedPose);
+        }
+
+        if (secondaryIO != null) {
+            SmartDashboard.putNumber("Vision/Secondary/TagCount", secondaryInputs.tagCount);
+            SmartDashboard.putNumber("Vision/Secondary/AvgDistance", secondaryInputs.avgTagDist);
+            SmartDashboard.putBoolean("Vision/Secondary/HasTarget", secondaryInputs.hasTarget);
+            SmartDashboard.putNumber("Vision/Secondary/LatencyMs", secondaryInputs.latencyMs);
+            if (secondaryInputs.hasTarget) {
+                org.littletonrobotics.junction.Logger.recordOutput("Vision/SecondaryPose", secondaryInputs.estimatedPose);
+            }
+        }
+
+        // Neural Network Object Detection Telemetry ("Ball Hunt" YOLOv8 / Rubik Pi 3)
+        boolean hasBall = hasGamePiece();
+        SmartDashboard.putBoolean("Vision/BallHunt/HasTarget", hasBall);
+        SmartDashboard.putNumber("Vision/BallHunt/TargetYaw", getGamePieceYaw());
+        SmartDashboard.putNumber("Vision/BallHunt/TargetPitch", getGamePiecePitch());
+        SmartDashboard.putNumber("Vision/BallHunt/TargetArea", getGamePieceArea());
+        SmartDashboard.putNumber("Vision/BallHunt/DistanceMeters", getGamePieceDistanceMeters());
+        org.littletonrobotics.junction.Logger.recordOutput("Vision/BallHunt/HasTarget", hasBall);
+        org.littletonrobotics.junction.Logger.recordOutput("Vision/BallHunt/DistanceMeters", getGamePieceDistanceMeters());
+
+        Pose2d ballFieldPose = getGamePieceFieldPose();
+        if (ballFieldPose != null) {
+            org.littletonrobotics.junction.Logger.recordOutput("Vision/BallHunt/FieldPose", ballFieldPose);
+        }
     }
 
     @Override

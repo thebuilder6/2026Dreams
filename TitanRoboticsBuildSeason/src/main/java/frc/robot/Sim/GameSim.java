@@ -253,6 +253,7 @@ public class GameSim implements Subsystem {
             // --- AdvantageScope Consolidation ---
             Pose3d[] fuelPoses = arena.getGamePiecesArrayByType("Fuel");
             gamePiecePublisher.set(fuelPoses);
+            org.littletonrobotics.junction.Logger.recordOutput("FieldSimulation/Fuel", fuelPoses);
         } catch (Exception e) {
             System.err.println("GameSim: Error in publish: " + e.getMessage());
         }
@@ -283,7 +284,7 @@ public class GameSim implements Subsystem {
     }
 
     /**
-     * Handles ball pickup logic with improved performance and validation.
+     * Handles ball pickup logic using MapleSim physics intake simulation with geometric fallback.
      */
     private void handlePickup() {
         if (heldBalls >= Config.MAX_HELD_BALLS) {
@@ -295,6 +296,20 @@ public class GameSim implements Subsystem {
                 return;
             }
 
+            // Primary: Check MapleSim physics-based IntakeSimulation
+            var mapleIntake = Intake.getInstance().getMapleIntakeSim();
+            if (mapleIntake != null) {
+                while (mapleIntake.getGamePiecesAmount() > 0 && heldBalls < Config.MAX_HELD_BALLS) {
+                    if (mapleIntake.obtainGamePieceFromIntake()) {
+                        heldBalls++;
+                    } else {
+                        break;
+                    }
+                }
+                return;
+            }
+
+            // Fallback: Geometric proximity check when MapleSim intake isn't bound yet
             Pose2d robotPose = SwerveBase.getInstance().getSimulationPose();
             if (robotPose == null) {
                 return;
@@ -390,6 +405,10 @@ public class GameSim implements Subsystem {
             lastArenaCacheTime = 0;
 
             SimulatedArena arena = SimulatedArena.getInstance();
+            if (arena instanceof Arena2026Rebuilt arena2026) {
+                // Keep efficiency mode active: reduces active ball count from 360+ to ~120 on the carpet
+                arena2026.setEfficiencyMode(true);
+            }
             arena.clearGamePieces();
             spawnPickupBalls();
 

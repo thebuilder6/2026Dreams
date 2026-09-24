@@ -36,6 +36,12 @@ public class ShooterTuning {
     private final TunableNumber testVelocity = new TunableNumber("Test/Shooter/VelocityRPM", 3000);
     private final TunableNumber testDistance = new TunableNumber("Test/Shooter/DistanceMeters", 3.0);
     private final TunableNumber testAngle = new TunableNumber("Test/Shooter/AngleDegrees", 45.0);
+    private final TunableNumber kP = new TunableNumber("Test/Shooter/kP", Constants.kFLYWHEELp);
+    private final TunableNumber kI = new TunableNumber("Test/Shooter/kI", Constants.kFLYWHEELi);
+    private final TunableNumber kD = new TunableNumber("Test/Shooter/kD", Constants.kFLYWHEELd);
+    private final TunableNumber kS = new TunableNumber("Test/Shooter/kS", Constants.kFLYWHEELs);
+    private final TunableNumber kV = new TunableNumber("Test/Shooter/kV", Constants.kFLYWHEELv);
+    private final TunableNumber kA = new TunableNumber("Test/Shooter/kA", Constants.kFLYWHEELa);
     
     // Performance tracking
     private double lastVelocityError = 0;
@@ -199,13 +205,7 @@ public class ShooterTuning {
     private void handlePIDTuning(Controller driverController, Controller operatorController) {
         Shooter shooter = Shooter.getInstance();
         
-        // Use tunable numbers for PID gains
-        TunableNumber kP = new TunableNumber("Test/Shooter/kP", Constants.ShooterConstants.kFlywheelP.get());
-        TunableNumber kI = new TunableNumber("Test/Shooter/kI", 0.0);
-        TunableNumber kD = new TunableNumber("Test/Shooter/kD", 0.0);
-        TunableNumber kS = new TunableNumber("Test/Shooter/kS", Constants.ShooterConstants.kFlywheelS.get());
-        TunableNumber kV = new TunableNumber("Test/Shooter/kV", Constants.ShooterConstants.kFlywheelV.get());
-        TunableNumber kA = new TunableNumber("Test/Shooter/kA", Constants.ShooterConstants.kFlywheelA.get());
+        // PID gains are available via class fields kP, kI, kD, kS, kV, kA
         
         // Apply PID gains (this would need to be implemented in Shooter subsystem)
         // shooter.updatePIDGains(kP.get(), kI.get(), kD.get(), kS.get(), kV.get(), kA.get());

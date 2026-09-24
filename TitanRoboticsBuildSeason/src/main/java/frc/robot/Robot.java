@@ -4,6 +4,8 @@
 
 package frc.robot;
 
+import org.littletonrobotics.junction.LoggedRobot;
+
 import edu.wpi.first.wpilibj.DataLogManager;
 import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.TimedRobot;
@@ -15,14 +17,15 @@ import frc.robot.Auto.AutoMissionExecutor;
 import frc.robot.Auto.Missions.MissionBase;
 import frc.robot.Sim.AIRobotSim;
 import frc.robot.Sim.GameSim;
-import frc.robot.Subsystems.Climber;
 import frc.robot.Subsystems.Dashboard;
 import frc.robot.Subsystems.Intake;
 import frc.robot.Subsystems.LEDs;
 import frc.robot.Subsystems.Shooter;
 import frc.robot.Subsystems.SubsystemManager;
 import frc.robot.Subsystems.SwerveBase;
+import frc.robot.Subsystems.Vision;
 import frc.robot.Test.TestMode;
+import frc.robot.Utils.AlertManager;
 
 /**
  * The methods in this class are called automatically corresponding to each
@@ -31,7 +34,7 @@ import frc.robot.Test.TestMode;
  * package after creating
  * this project, you must also update the Main.java file in the project.
  */
-public class Robot extends TimedRobot {
+public class Robot extends LoggedRobot {
   private String m_autoSelected;
 
   Teleop teleop;
@@ -50,13 +53,27 @@ public class Robot extends TimedRobot {
     DataLogManager.start();
     DriverStation.startDataLog(DataLogManager.getLog());
 
+    // AdvantageKit Logger Configuration for AdvantageScope
+    org.littletonrobotics.junction.Logger.recordMetadata("ProjectName", "TitanRobotics2026");
+    if (isReal()) {
+      org.littletonrobotics.junction.Logger.addDataReceiver(new org.littletonrobotics.junction.wpilog.WPILOGWriter());
+      org.littletonrobotics.junction.Logger
+          .addDataReceiver(new org.littletonrobotics.junction.networktables.NT4Publisher());
+    } else {
+      org.littletonrobotics.junction.Logger
+          .addDataReceiver(new org.littletonrobotics.junction.networktables.NT4Publisher());
+    }
+    org.littletonrobotics.junction.Logger.start();
+
     swerveBase = SwerveBase.getInstance();
+    Vision.getInstance();
     Shooter.getInstance();
     Intake.getInstance();
-    Climber.getInstance();
     Dashboard.getInstance();
-    GameSim.getInstance();
-    AIRobotSim.getInstance();
+    if (isSimulation()) {
+      GameSim.getInstance();
+      AIRobotSim.getInstance();
+    }
     LEDs.getInstance();
     teleop = new Teleop();
     testMode = TestMode.getInstance();
@@ -85,7 +102,8 @@ public class Robot extends TimedRobot {
 
     SubsystemManager.updateSubsystems();
     SubsystemManager.logSubsystems();
-    
+    AlertManager.update();
+
     // Update test mode if enabled
     if (testMode != null) {
       testMode.update();
@@ -150,6 +168,9 @@ public class Robot extends TimedRobot {
   public void disabledInit() {
     mAutoMissionExecutor.stop();
     teleop.reset();
+    if (testMode != null) {
+      testMode.cleanup();
+    }
     swerveBase.stop();
     Shooter.getInstance().stop();
     Intake.getInstance().stop();
@@ -164,18 +185,15 @@ public class Robot extends TimedRobot {
   /** This function is called once when test mode is enabled. */
   @Override
   public void testInit() {
+    if (testMode != null) {
+      testMode.setEnabled(true);
+    }
   }
 
   /** This function is called periodically during test mode. */
   @Override
   public void testPeriodic() {
-    // Run the scheduler to execute any scheduled commands
     CommandScheduler.getInstance().run();
-    
-    // Test mode handles SysID integration internally
-    if (testMode != null && testMode.isEnabled()) {
-      // Test mode already handles SysID in its update loop
-    }
   }
 
   /** This function is called once when the robot is first started up. */

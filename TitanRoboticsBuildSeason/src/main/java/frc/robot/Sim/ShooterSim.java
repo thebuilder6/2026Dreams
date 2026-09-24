@@ -11,13 +11,12 @@ import edu.wpi.first.math.geometry.Translation3d;
 import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import edu.wpi.first.math.system.plant.DCMotor;
 import edu.wpi.first.math.system.plant.LinearSystemId;
-import edu.wpi.first.wpilibj.DriverStation;
-import edu.wpi.first.wpilibj.DriverStation.Alliance;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.simulation.FlywheelSim;
 import frc.robot.Data.Constants;
 import frc.robot.Data.Constants.ShooterConstants;
 import frc.robot.Subsystems.SwerveBase;
+import frc.robot.Utils.AllianceFlipUtil;
 import swervelib.simulation.ironmaple.simulation.SimulatedArena;
 import swervelib.simulation.ironmaple.simulation.seasonspecific.rebuilt2026.Arena2026Rebuilt;
 import swervelib.simulation.ironmaple.simulation.seasonspecific.rebuilt2026.RebuiltFuelOnFly;
@@ -32,7 +31,7 @@ public class ShooterSim {
 
     public ShooterSim() {
         flywheelSim = new FlywheelSim(
-                LinearSystemId.identifyVelocitySystem(ShooterConstants.kFlywheelV.get(), ShooterConstants.kFlywheelA.get()),
+                LinearSystemId.createFlywheelSystem(DCMotor.getNEO(1), ShooterConstants.SIM_MOI, ShooterConstants.SIM_GEARING),
                 DCMotor.getNEO(1),
                 ShooterConstants.SIM_GEARING
         );
@@ -43,12 +42,37 @@ public class ShooterSim {
         flywheelSim.update(0.02);
     }
 
+    public void update(double leftVoltage, double rightVoltage) {
+        flywheelSim.setInput(leftVoltage);
+        flywheelSim.update(0.02);
+    }
+
     public double getVelocityRPM() {
+        return flywheelSim.getAngularVelocityRPM();
+    }
+
+    public double getLeftVelocityRPM() {
+        return flywheelSim.getAngularVelocityRPM();
+    }
+
+    public double getRightVelocityRPM() {
         return flywheelSim.getAngularVelocityRPM();
     }
 
     public double getCurrentDrawAmps() {
         return flywheelSim.getCurrentDrawAmps();
+    }
+
+    public double getLeftCurrentDrawAmps() {
+        return flywheelSim.getCurrentDrawAmps();
+    }
+
+    public double getRightCurrentDrawAmps() {
+        return flywheelSim.getCurrentDrawAmps();
+    }
+
+    public void launchSimulatedFuel(double leftRPM, double rightRPM) {
+        updateBallSimulation(1.0, (leftRPM + rightRPM) / 2.0, (leftRPM + rightRPM) / 2.0, 12.0);
     }
     
     /**
@@ -102,7 +126,11 @@ public class ShooterSim {
                                 } else {
                                     simScoreCount++;
                                 }
-                            });
+                            })
+                            .withProjectileTrajectoryDisplayCallBack(
+                                (poses) -> org.littletonrobotics.junction.Logger.recordOutput("FieldSimulation/SuccessfulShotsTrajectory", poses.toArray(edu.wpi.first.math.geometry.Pose3d[]::new)),
+                                (poses) -> org.littletonrobotics.junction.Logger.recordOutput("FieldSimulation/MissedShotsTrajectory", poses.toArray(edu.wpi.first.math.geometry.Pose3d[]::new))
+                            );
 
                     // Secondary "Rim hit" chance (extra wide tolerance but only 40% probability)
                     if (Math.random() < 0.4) {
@@ -125,11 +153,7 @@ public class ShooterSim {
      * @return Translation3d of the target goal.
      */
     private Translation3d getGoalLocation() {
-        var alliance = DriverStation.getAlliance();
-        if (alliance.isPresent() && alliance.get() == Alliance.Red) {
-            return Constants.FieldConstants.RED_GOAL_LOCATION;
-        }
-        return Constants.FieldConstants.BLUE_GOAL_LOCATION;
+        return AllianceFlipUtil.apply(Constants.FieldConstants.BLUE_GOAL_LOCATION);
     }
     
     // Getters for simulation counters

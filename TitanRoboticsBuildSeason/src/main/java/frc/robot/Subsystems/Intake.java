@@ -2,274 +2,461 @@ package frc.robot.Subsystems;
 
 import com.revrobotics.spark.config.SparkMaxConfig;
 
+import edu.wpi.first.math.MathUtil;
 import edu.wpi.first.math.controller.ArmFeedforward;
 import edu.wpi.first.math.controller.ProfiledPIDController;
+import edu.wpi.first.math.geometry.Pose3d;
+import edu.wpi.first.math.geometry.Rotation3d;
+import edu.wpi.first.math.geometry.Transform3d;
+import edu.wpi.first.math.geometry.Translation3d;
 import edu.wpi.first.math.trajectory.TrapezoidProfile;
+import edu.wpi.first.math.util.Units;
 import edu.wpi.first.wpilibj.RobotBase;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
+import frc.robot.Data.Constants;
 import frc.robot.Data.Constants.IntakeConstants;
-import frc.robot.Devices.NeoSparkMaxMotor;
 import frc.robot.Interfaces.Subsystem;
-import edu.wpi.first.math.util.Units;
-import frc.robot.Data.PortMap;
-import frc.robot.Devices.ModifiedEncoder;
-import edu.wpi.first.math.geometry.Pose3d;
-import edu.wpi.first.math.geometry.Rotation3d;
-import edu.wpi.first.math.geometry.Translation3d;
-import edu.wpi.first.math.geometry.Transform3d;
+import frc.robot.Subsystems.intake.IntakeIO;
+import frc.robot.Subsystems.intake.IntakeIO.IntakeIOInputs;
+import frc.robot.Subsystems.intake.IntakeIOSim;
+import frc.robot.Subsystems.intake.IntakeIOSparkMax;
+import frc.robot.Utils.Alert;
+import frc.robot.Utils.Alert.AlertType;
 
+/*
+ * Class: Intake
+ * Description: Ground intake mechanism with articulated pivot arm, feedforward gravity compensation,
+ *              closed-loop continuous profiled PID, jam detection, and 3D simulation.
+ * Authors: Mai, InfiniteQuery
+ */
 public class Intake implements Subsystem {
 
     private static Intake instance = null;
 
-    private final NeoSparkMaxMotor armMotor;
-    private final NeoSparkMaxMotor rollerMotor;
-    private final NeoSparkMaxMotor hopperMotor;
-    private final ModifiedEncoder pivotEncoder;
+    // IO Abstraction (AdvantageKit pattern)
+    private final IntakeIO io;
+    private final IntakeIOInputs inputs = new IntakeIOInputs();
 
     public enum IntakeState {
-        IDLE,
+        DISABLED,
+        STANDBY,
+        STANDBY_INTAKING,
+        STANDBY_REVERSED,
         INTAKING,
+        DOWN,
+        REVERSED,
+        MANUAL,
+        IDLE,
         FEEDING,
-        EJECTING
+        EJECTING,
+        CHARACTERIZATION
     }
 
-    private IntakeState currentState = IntakeState.IDLE;
-    private double targetArmPositionDeg = IntakeConstants.ARM_IDLE_POS;
-    private double currentArmPositionDeg = 0.0;
+    private String stateStr = "Disabled";
+    private double power = -0.5;
+    private double armVoltage = 0.0;
 
+    private final ProfiledPIDController pivotProfiledPIDController;
+    private final ArmFeedforward feedforward;
+
+    private double currentPosition = 128.0;
+    private double unmodifiedAbsolutePosition = 0.0;
+    private double upPosition = Constants.INTAKE_UP_POSITION;
+    private double downPosition = Constants.INTAKE_DOWN_POSITION;
+    private double goal = Constants.INTAKE_UP_POSITION;
+    private double manualPosition;
+
+    // Jam detection & Alerts
     private final Timer stallTimer = new Timer();
     private final Timer ejectTimer = new Timer();
-    private boolean isEjectingJam = false; // Flag to track if we are in auto-eject mode
-
-    private final ArmFeedforward armFeedforward;
-    private final ProfiledPIDController armController;
+    private boolean isEjectingJam = false;
+    private final Alert intakeEncoderAlert = new Alert("Intake", "Absolute Encoder Disconnected: Fallback Active", AlertType.ERROR);
+    private final Alert intakeJamAlert = new Alert("Intake", "Roller Jam Detected: Auto-Clearing", AlertType.WARNING);
+    private double lastValidPosition = Constants.INTAKE_UP_POSITION;
+    private double lastMotorRotations = 0.0;
 
     // Simulation
     private frc.robot.Sim.ArmSim armSim;
 
     public static Intake getInstance() {
         if (instance == null) {
-            instance = new Intake();
+            IntakeIO io = RobotBase.isSimulation() ? new IntakeIOSim() : new IntakeIOSparkMax();
+            instance = new Intake(io);
         }
         return instance;
     }
 
-    private Intake() {
-        armMotor = new NeoSparkMaxMotor(IntakeConstants.ARM_MOTOR_ID);
-        rollerMotor = new NeoSparkMaxMotor(IntakeConstants.ROLLER_MOTOR_ID);
-        hopperMotor = new NeoSparkMaxMotor(IntakeConstants.HOPPER_MOTOR_ID);
+    public Intake(IntakeIO io) {
+        this.io = io;
 
-        pivotEncoder = new ModifiedEncoder(PortMap.INTAKE_ENCODER_ID);
+        feedforward = new ArmFeedforward(
+                Constants.INTAKE_ARM_KS,
+                Constants.INTAKE_ARM_KG,
+                Constants.INTAKE_ARM_KV,
+                Constants.INTAKE_ARM_KA);
 
-        SparkMaxConfig armConfig = new SparkMaxConfig();
-        armConfig.inverted(IntakeConstants.INTAKE_ARM_INVERTED);
-        armMotor.configure(armConfig);
+        pivotProfiledPIDController = new ProfiledPIDController(
+                Constants.INTAKE_ARM_KP,
+                Constants.INTAKE_ARM_KI,
+                Constants.INTAKE_ARM_KD,
+                new TrapezoidProfile.Constraints(Constants.MAX_ARM_VELOCITY, Constants.MAX_ARM_ACCELERATION));
 
-        SparkMaxConfig rollerConfig = new SparkMaxConfig();
-        rollerConfig.inverted(IntakeConstants.INTAKE_WHEELS_INVERTED);
-        rollerMotor.configure(rollerConfig);
+        // Tell the PID controller that 0 and 360 are continuous
+        pivotProfiledPIDController.enableContinuousInput(0, 360);
 
-        SparkMaxConfig hopperConfig = new SparkMaxConfig();
-        hopperConfig.inverted(false);
-        hopperMotor.configure(hopperConfig);
-
-        // No local TunableNumbers needed, using global ones in IntakeConstants
-
-        armFeedforward = new ArmFeedforward(
-                IntakeConstants.kArmS.get(),
-                IntakeConstants.kArmG.get(),
-                IntakeConstants.kArmV.get(),
-                IntakeConstants.kArmA.get());
-
-        armController = new ProfiledPIDController(
-                IntakeConstants.kArmP.get(),
-                IntakeConstants.kArmI.get(),
-                IntakeConstants.kArmD.get(),
-                new TrapezoidProfile.Constraints(
-                        IntakeConstants.kMaxArmVelocity,
-                        IntakeConstants.kMaxArmAcceleration));
-
-        // Simulation Setup
-        if (RobotBase.isSimulation()) {
+        if (RobotBase.isSimulation() && io instanceof IntakeIOSim simIO) {
+            armSim = simIO.getArmSim();
+        } else if (RobotBase.isSimulation()) {
             armSim = new frc.robot.Sim.ArmSim();
         }
 
         SubsystemManager.registerSubsystem(this);
     }
 
-    /**
-     * Sets the state of the intake subsystem.
-     * Transitions between IDLE, INTAKING, FEEDING, and EJECTING states affect both
-     * arm position and motor outputs in the update loop.
-     * 
-     * @param newState The next state to transition to.
-     */
-    public void setState(IntakeState newState) {
-        currentState = newState;
+    private void armControlFunction() {
+        pivotProfiledPIDController.setGoal(goal);
+
+        double pidOutput = pivotProfiledPIDController.calculate(currentPosition);
+        double targetVelocityRadians = Math.toRadians(pivotProfiledPIDController.getSetpoint().velocity);
+
+        double ffOutput = feedforward.calculate(
+                Math.toRadians(currentPosition - Constants.INTAKE_HORIZONTAL_POSITION),
+                targetVelocityRadians);
+
+        armVoltage = pidOutput + ffOutput;
+        io.setArmVoltage(armVoltage);
+    }
+
+    public void setState(String state) {
+        if (this.stateStr.equals("Disabled") && !state.equals("Disabled")) {
+            pivotProfiledPIDController.reset(currentPosition);
+        }
+        this.stateStr = state;
+    }
+
+    public void setState(IntakeState state) {
+        switch (state) {
+            case INTAKING:
+                setState("Intaking");
+                break;
+            case DOWN:
+                setState("Down");
+                break;
+            case REVERSED:
+            case EJECTING:
+                setState("Reversed");
+                break;
+            case STANDBY_INTAKING:
+                setState("StandbyIntaking");
+                break;
+            case STANDBY_REVERSED:
+                setState("StandbyReversed");
+                break;
+            case DISABLED:
+                setState("Disabled");
+                break;
+            case CHARACTERIZATION:
+                setState("Characterization");
+                break;
+            case STANDBY:
+            case IDLE:
+            default:
+                setState("Standby");
+                break;
+        }
+    }
+
+    public String getStateString() {
+        return stateStr;
     }
 
     public IntakeState getState() {
-        return currentState;
+        switch (stateStr) {
+            case "Intaking":
+                return IntakeState.INTAKING;
+            case "Down":
+                return IntakeState.DOWN;
+            case "Reversed":
+                return IntakeState.REVERSED;
+            case "StandbyIntaking":
+                return IntakeState.STANDBY_INTAKING;
+            case "StandbyReversed":
+                return IntakeState.STANDBY_REVERSED;
+            case "Disabled":
+                return IntakeState.DISABLED;
+            case "Manual":
+                return IntakeState.MANUAL;
+            case "Characterization":
+                return IntakeState.CHARACTERIZATION;
+            case "Standby":
+            default:
+                return IntakeState.STANDBY;
+        }
+    }
+
+    public void manualIntakeControl(double manualInput) {
+        setState("Manual");
+        double normalizedInput = (manualInput + 1.0) / 2.0;
+        double modifiedManualPosition = Constants.INTAKE_DOWN_POSITION
+                + (normalizedInput * (Constants.INTAKE_UP_POSITION - Constants.INTAKE_DOWN_POSITION));
+        this.manualPosition = MathUtil.clamp(modifiedManualPosition,
+                Math.min(Constants.INTAKE_DOWN_POSITION, Constants.INTAKE_UP_POSITION),
+                Math.max(Constants.INTAKE_DOWN_POSITION, Constants.INTAKE_UP_POSITION));
     }
 
     public void setArmPosition(double positionDeg) {
-        targetArmPositionDeg = positionDeg;
+        goal = positionDeg;
+        stateStr = "Manual";
+        manualPosition = positionDeg;
     }
 
-    @Override
-    public void simulationUpdate() {
-        if (armSim != null) {
-            // Use the actual voltage applied by the control loop in update()
-            double voltage = armMotor.getAppliedVoltage();
-
-            armSim.update(voltage);
-
-            // Update the motor's simulated state
-            armMotor.setSimState(0, armSim.getAngleRads());
-        }
+    public double getArmPosition() {
+        return currentPosition;
     }
 
-    @Override
-    public double getSimulationCurrentDraw() {
-        double current = 0.0;
-        if (armSim != null) {
-            current += armSim.getCurrentDrawAmps();
+    public void setArmVoltage(double volts) {
+        stateStr = "Characterization";
+        // Mechanical angle safety boundaries:
+        // Physical travel is roughly 245 deg (down) to 350 deg (up).
+        // If arm position is at or beyond boundary, clamp voltage driving into mechanical stop.
+        if (currentPosition <= 242.0 && volts < 0.0) {
+            volts = 0.0;
+        } else if (currentPosition >= 353.0 && volts > 0.0) {
+            volts = 0.0;
         }
-        // Add rollers
-        current += Math.abs(rollerMotor.getSpeed()) * 20.0; // Loaded roller estimate
-        current += Math.abs(hopperMotor.getSpeed()) * 10.0; // Hopper estimate
-        return current;
+        armVoltage = volts;
+        io.setArmVoltage(volts);
+    }
+
+    public void setCharacterizationVoltage(double armVolts) {
+        setArmVoltage(armVolts);
+    }
+
+    public double getArmAppliedVoltage() {
+        return armVoltage;
+    }
+
+    public double getArmPositionRads() {
+        return Math.toRadians(currentPosition);
+    }
+
+    public double getArmVelocityRads() {
+        return Math.toRadians(inputs.armVelocityDegPerSec);
+    }
+
+    public void runRollers(double speed) {
+        io.setRollerSpeed(speed);
+    }
+
+    public void setRollerVoltage(double volts) {
+        io.setRollerVoltage(volts);
+    }
+
+    public double getRollerVelocityRPM() {
+        return inputs.rollerVelocityRPM;
+    }
+
+    public void runHopper(double speed) {
+        io.setHopperSpeed(speed);
+    }
+
+    public void setHopperVoltage(double volts) {
+        io.setHopperVoltage(volts);
+    }
+
+    public double getHopperVelocityRPM() {
+        return inputs.hopperVelocityRPM;
+    }
+
+    public double getArmCurrentAmps() {
+        return inputs.armCurrentAmps;
+    }
+
+    public double getRollerCurrentAmps() {
+        return inputs.rollerCurrentAmps;
+    }
+
+    public void stop() {
+        setState("Disabled");
+        armVoltage = 0.0;
+        io.stop();
+    }
+
+    public boolean isAtTargetPosition() {
+        return Math.abs(currentPosition - goal) < 5.0;
+    }
+
+    public boolean isJammed() {
+        return isEjectingJam;
+    }
+
+    public double getCurrentDraw() {
+        return Math.abs(inputs.armCurrentAmps) + Math.abs(inputs.rollerCurrentAmps) + Math.abs(inputs.hopperCurrentAmps);
+    }
+
+    public IntakeIO getIO() {
+        return io;
+    }
+
+    public IntakeIOInputs getInputs() {
+        return inputs;
     }
 
     @Override
     public void update() {
-        // Rollers and Hopper logic
-        // JAM DETECTION: Checks if roller current exceeds threshold for a sustained period.
-        // Triggers an automatic reversal (EJECTING) to clear the jam.
-        if (currentState == IntakeState.INTAKING && !isEjectingJam) {
-            double current = rollerMotor.getOutputCurrent();
-            if (current > IntakeConstants.STALL_CURRENT_LIMIT) {
-                stallTimer.start();
-                if (stallTimer.hasElapsed(IntakeConstants.STALL_TIME)) {
-                    isEjectingJam = true;
-                    stallTimer.stop();
-                    stallTimer.reset();
-                    ejectTimer.reset();
-                    ejectTimer.start();
-                }
-            } else {
-                stallTimer.stop();
+        io.updateInputs(inputs);
+
+        boolean encoderHealthy = RobotBase.isSimulation() || inputs.encoderConnected;
+        intakeEncoderAlert.set(!encoderHealthy);
+
+        if (encoderHealthy) {
+            currentPosition = inputs.armPositionDeg;
+            lastValidPosition = currentPosition;
+            lastMotorRotations = inputs.armMotorRotations;
+        } else {
+            // Graceful degradation: Track delta rotations from SparkMax internal relative encoder
+            double deltaRotations = inputs.armMotorRotations - lastMotorRotations;
+            currentPosition = MathUtil.inputModulus(lastValidPosition + (deltaRotations * 3.6), 0, 360);
+        }
+
+        // Automated Jam Detection and Ejection
+        if (!RobotBase.isSimulation() && Math.abs(inputs.rollerAppliedVolts) > 1.0 
+                && inputs.rollerCurrentAmps > IntakeConstants.STALL_CURRENT_LIMIT) {
+            stallTimer.start();
+            if (stallTimer.hasElapsed(IntakeConstants.STALL_TIME)) {
+                isEjectingJam = true;
+                ejectTimer.restart();
                 stallTimer.reset();
+                stallTimer.stop();
             }
+        } else {
+            stallTimer.reset();
+            stallTimer.stop();
         }
 
         if (isEjectingJam) {
+            intakeJamAlert.set(true);
             if (ejectTimer.hasElapsed(IntakeConstants.EJECT_TIME)) {
                 isEjectingJam = false;
                 ejectTimer.stop();
-                currentState = IntakeState.INTAKING; // Go back to intaking
-            } else {
-                // Override state for jam clearing
-                rollerMotor.setSpeed(-IntakeConstants.INTAKE_SPEED);
-                hopperMotor.setSpeed(-IntakeConstants.HOPPER_SPEED);
+                ejectTimer.reset();
+                intakeJamAlert.set(false);
             }
         } else {
-            // Normal operation
-            switch (currentState) {
-                case IDLE:
-                    rollerMotor.stop();
-                    hopperMotor.stop();
-                    setArmPosition(IntakeConstants.ARM_IDLE_POS);
-                    break;
-                case INTAKING:
-                    rollerMotor.setSpeed(IntakeConstants.INTAKE_SPEED);
-                    hopperMotor.setSpeed(IntakeConstants.HOPPER_SPEED);
-                    setArmPosition(IntakeConstants.ARM_INTAKE_POS);
-                    break;
-                case FEEDING:
-                    rollerMotor.stop();
-                    hopperMotor.setSpeed(IntakeConstants.HOPPER_SPEED);
-                    setArmPosition(IntakeConstants.ARM_IDLE_POS);
-                    break;
-                case EJECTING:
-                    rollerMotor.setSpeed(-IntakeConstants.INTAKE_SPEED);
-                    hopperMotor.setSpeed(-IntakeConstants.HOPPER_SPEED);
-                    break;
-            }
+            intakeJamAlert.set(false);
         }
 
-        // Arm Control logic
-        if (frc.robot.Data.Constants.TUNING_MODE) {
-            armController.setP(IntakeConstants.kArmP.get());
-            armController.setI(IntakeConstants.kArmI.get());
-            armController.setD(IntakeConstants.kArmD.get());
-            // Note: armFeedforward and constraints are harder to update live without re-instantiating,
-            // but P, I, D are the most common tuning targets.
+        switch (stateStr) {
+            case "Standby":
+                goal = upPosition;
+                armControlFunction();
+                io.setRollerSpeed(0);
+                io.setHopperSpeed(0);
+                break;
+
+            case "StandbyIntaking":
+                goal = upPosition;
+                armControlFunction();
+                io.setRollerSpeed(power);
+                io.setHopperSpeed(Constants.IntakeConstants.HOPPER_SPEED);
+                break;
+
+            case "StandbyReversed":
+                goal = upPosition;
+                armControlFunction();
+                io.setRollerSpeed(-power);
+                io.setHopperSpeed(-Constants.IntakeConstants.HOPPER_SPEED);
+                break;
+
+            case "Intaking":
+                goal = downPosition;
+                armControlFunction();
+                io.setRollerSpeed(isEjectingJam ? -power : power);
+                io.setHopperSpeed(Constants.IntakeConstants.HOPPER_SPEED);
+                break;
+
+            case "Down":
+                goal = downPosition;
+                armControlFunction();
+                io.setRollerSpeed(0);
+                io.setHopperSpeed(0);
+                break;
+
+            case "Reversed":
+                goal = downPosition;
+                armControlFunction();
+                io.setRollerSpeed(-power);
+                io.setHopperSpeed(-Constants.IntakeConstants.HOPPER_SPEED);
+                break;
+
+            case "Manual":
+                goal = manualPosition;
+                armControlFunction();
+                break;
+
+            case "Characterization":
+                // Voltages controlled directly by characterization/diagnostic routines
+                break;
+
+            case "Disabled":
+            default:
+                io.stop();
+                break;
         }
-
-        double unmodifiedAbsolutePosition = pivotEncoder.getAbsolutePosition();
-        currentArmPositionDeg = unmodifiedAbsolutePosition < 180 ? unmodifiedAbsolutePosition + 360
-                : unmodifiedAbsolutePosition;
-        currentArmPositionDeg -= IntakeConstants.INTAKE_POSITION_OFFSET;
-
-        double pidOutput = armController.calculate(currentArmPositionDeg, targetArmPositionDeg);
-        TrapezoidProfile.State setpoint = armController.getSetpoint();
-        double ffOutput = armFeedforward.calculate(Math.toRadians(setpoint.position),
-                Math.toRadians(setpoint.velocity));
-        armMotor.setVoltage(pidOutput + ffOutput);
     }
 
-    /**
-     * Stop all motors and set state to IDLE.
-     */
-    public void stop() {
-        currentState = IntakeState.IDLE;
-        rollerMotor.stop();
-        hopperMotor.stop();
-        armMotor.stop();
+    @Override
+    public void simulationUpdate() {
+    }
+
+    @Override
+    public double getSimulationCurrentDraw() {
+        double current = inputs.armCurrentAmps;
+        current += inputs.rollerCurrentAmps;
+        current += inputs.hopperCurrentAmps;
+        return current;
     }
 
     @Override
     public void initialize() {
-        setState(IntakeState.IDLE);
-        armMotor.stop();
+        if (RobotBase.isSimulation() && io instanceof IntakeIOSim simIO) {
+            SwerveBase.getInstance().getMapleSimDrive().ifPresent(simIO::attachMapleSimDrivetrain);
+        }
+    }
 
-        double unmodifiedAbsolutePosition = pivotEncoder.getAbsolutePosition();
-        currentArmPositionDeg = unmodifiedAbsolutePosition < 180 ? unmodifiedAbsolutePosition + 360
-                : unmodifiedAbsolutePosition;
-        currentArmPositionDeg -= IntakeConstants.INTAKE_POSITION_OFFSET;
-
-        armController.reset(currentArmPositionDeg);
+    public swervelib.simulation.ironmaple.simulation.IntakeSimulation getMapleIntakeSim() {
+        if (io instanceof IntakeIOSim simIO) {
+            return simIO.getMapleIntakeSim();
+        }
+        return null;
     }
 
     @Override
     public void log() {
-        SmartDashboard.putString("Subsystems/Intake/State", currentState.toString());
-        SmartDashboard.putNumber("Subsystems/Intake/Arm Position", currentArmPositionDeg);
-        SmartDashboard.putNumber("Subsystems/Intake/Target Arm Position", targetArmPositionDeg);
-        SmartDashboard.putNumber("Subsystems/Intake/Arm Velocity", armMotor.getVelocity());
-        SmartDashboard.putNumber("Subsystems/Intake/Roller Velocity", rollerMotor.getVelocity());
-        SmartDashboard.putNumber("Subsystems/Intake/Hopper Velocity", hopperMotor.getVelocity());
-        SmartDashboard.putNumber("Subsystems/Intake/Roller Current", rollerMotor.getOutputCurrent());
-        SmartDashboard.putBoolean("Subsystems/Intake/Is Jammed", isEjectingJam);
+        SmartDashboard.putNumber("Intake/Pivot Position", currentPosition);
+        SmartDashboard.putNumber("Intake/Pivot Goal", goal);
+        SmartDashboard.putNumber("Intake/Arm Applied Output", inputs.armAppliedVolts);
+        SmartDashboard.putNumber("Intake/Arm Speed", inputs.armVelocityDegPerSec);
+        SmartDashboard.putNumber("Intake/Wheels Applied Output", inputs.rollerAppliedVolts);
+        SmartDashboard.putString("Intake/State", stateStr);
+        SmartDashboard.putNumber("Intake/Setpoint Position", pivotProfiledPIDController.getSetpoint().position);
+        SmartDashboard.putNumber("Intake/Setpoint Velocity", pivotProfiledPIDController.getSetpoint().velocity);
+        SmartDashboard.putNumber("Intake/Arm Voltage", armVoltage);
 
-        // 3D Mechanism Visualization
-        // Arm pivot is located at front of robot, slightly offset from center
-        Translation3d armPivotRobotRelative = new Translation3d(0.25, 0, 0.2); 
-        Rotation3d armRotation = new Rotation3d(0, -Units.degreesToRadians(currentArmPositionDeg), 0);
-        Pose3d armPose = new Pose3d(armPivotRobotRelative, armRotation);
-        
+        // 3D Visualizer
+        Translation3d armPivot = new Translation3d(0.2, 0, 0.2);
+        Rotation3d armRotation = new Rotation3d(0, -Math.toRadians(currentPosition), 0);
+        Pose3d armPose = new Pose3d(armPivot, armRotation);
+
         SmartDashboard.putNumberArray("Subsystems/Intake/ArmPose3d", new double[] {
-            armPose.getX(),
-            armPose.getY(),
-            armPose.getZ(),
-            armPose.getRotation().getQuaternion().getW(),
-            armPose.getRotation().getQuaternion().getX(),
-            armPose.getRotation().getQuaternion().getY(),
-            armPose.getRotation().getQuaternion().getZ()
+                armPose.getX(), armPose.getY(), armPose.getZ(),
+                armPose.getRotation().getQuaternion().getW(),
+                armPose.getRotation().getQuaternion().getX(),
+                armPose.getRotation().getQuaternion().getY(),
+                armPose.getRotation().getQuaternion().getZ()
         });
+        org.littletonrobotics.junction.Logger.recordOutput("Subsystems/Intake/ArmPose3d", armPose);
     }
 
     @Override
@@ -279,50 +466,6 @@ public class Intake implements Subsystem {
 
     @Override
     public String getName() {
-        return "Intake";
-    }
-
-    public double getArmPosition() {
-        return currentArmPositionDeg;
-    }
-
-    public void setArmVoltage(double volts) {
-        armMotor.setVoltage(volts);
-    }
-
-    public double getArmAppliedVoltage() {
-        return armMotor.getBusVoltage() * armMotor.getAppliedOutput();
-    }
-
-    public double getArmVelocityRads() {
-        return Units.degreesToRadians(armMotor.getVelocity()); // Velocity in rad/s if configured, or needs conversion
-    }
-
-    public double getArmPositionRads() {
-        return Units.degreesToRadians(getArmPosition());
-    }
-
-    public boolean isJammed() {
-        return isEjectingJam;
-    }
-
-    /** Sets roller motor voltage directly (used by Diagnostics). */
-    public void setRollerVoltage(double volts) {
-        rollerMotor.setVoltage(volts);
-    }
-
-    /** Gets roller motor velocity in RPM. */
-    public double getRollerVelocityRPM() {
-        return rollerMotor.getVelocity();
-    }
-
-    /** Sets hopper motor voltage directly (used by Diagnostics). */
-    public void setHopperVoltage(double volts) {
-        hopperMotor.setVoltage(volts);
-    }
-
-    /** Gets hopper motor velocity in RPM. */
-    public double getHopperVelocityRPM() {
-        return hopperMotor.getVelocity();
+        return "IntakeMechanism";
     }
 }

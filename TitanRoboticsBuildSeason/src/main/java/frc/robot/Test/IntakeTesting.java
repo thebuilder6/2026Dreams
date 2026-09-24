@@ -17,7 +17,7 @@ import frc.robot.Subsystems.Intake;
  * - Position accuracy validation
  */
 public class IntakeTesting {
-    
+
     private enum TestMode {
         ARM_CONTROL,
         ROLLER_TESTING,
@@ -25,33 +25,33 @@ public class IntakeTesting {
         JAM_DETECTION,
         POSITION_CALIBRATION
     }
-    
+
     private TestMode currentTestMode = TestMode.ARM_CONTROL;
     private boolean testRunning = false;
     private double testStartTime = 0;
-    
+
     // Tuning parameters
     private final TunableNumber targetArmPosition = new TunableNumber("Test/Intake/ArmPositionDeg", 45.0);
     private final TunableNumber rollerSpeed = new TunableNumber("Test/Intake/RollerSpeed", 0.5);
     private final TunableNumber hopperSpeed = new TunableNumber("Test/Intake/HopperSpeed", 0.5);
     private final TunableNumber armTestVoltage = new TunableNumber("Test/Intake/ArmTestVoltage", 2.0);
-    
+
     // Performance tracking
     private double lastPositionError = 0;
     private double timeToTargetPosition = 0;
     private int jamEvents = 0;
     private double maxCurrentDraw = 0;
-    
+
     public IntakeTesting() {
         setupDashboard();
     }
-    
+
     /**
      * Update intake testing based on controller input
      */
     public void update(Controller driverController, Controller operatorController) {
         handleModeSwitching(driverController);
-        
+
         switch (currentTestMode) {
             case ARM_CONTROL:
                 handleArmControl(driverController, operatorController);
@@ -69,10 +69,10 @@ public class IntakeTesting {
                 handlePositionCalibration(driverController, operatorController);
                 break;
         }
-        
+
         updatePerformanceMetrics();
     }
-    
+
     /**
      * Handle test mode switching
      */
@@ -95,7 +95,7 @@ public class IntakeTesting {
             System.out.println("[IntakeTesting] Mode: JAM_DETECTION");
             resetTest();
         }
-        
+
         // Position calibration with both bumpers
         if (driverController.getLeftBumperButton() && driverController.getRightBumperButton()) {
             currentTestMode = TestMode.POSITION_CALIBRATION;
@@ -103,13 +103,13 @@ public class IntakeTesting {
             resetTest();
         }
     }
-    
+
     /**
      * Arm position control mode
      */
     private void handleArmControl(Controller driverController, Controller operatorController) {
         Intake intake = Intake.getInstance();
-        
+
         // Use operator left joystick for manual arm control
         double manualArmY = -operatorController.getLeftY();
         if (Math.abs(manualArmY) > 0.1) {
@@ -119,8 +119,8 @@ public class IntakeTesting {
             // Automatic position control with right trigger
             if (operatorController.getRightTriggerAxis() > 0.5) {
                 double targetDeg = targetArmPosition.get();
-                intake.setArmPosition(Math.toRadians(targetDeg));
-                
+                intake.setArmPosition(targetDeg); // Pass degrees directly
+
                 if (!testRunning) {
                     testRunning = true;
                     testStartTime = edu.wpi.first.wpilibj.Timer.getFPGATimestamp();
@@ -130,7 +130,7 @@ public class IntakeTesting {
                 testRunning = false;
             }
         }
-        
+
         // Quick position presets with D-pad
         int pov = operatorController.getPOV();
         switch (pov) {
@@ -148,19 +148,19 @@ public class IntakeTesting {
                 break;
         }
     }
-    
+
     /**
      * Roller testing mode
      */
     private void handleRollerTesting(Controller driverController, Controller operatorController) {
         Intake intake = Intake.getInstance();
-        
+
         // Use operator right trigger for roller speed control
         double trigger = operatorController.getRightTriggerAxis();
-        
+
         if (trigger > 0.1) {
             intake.setRollerVoltage(trigger * 6.0); // Convert speed to voltage
-            
+
             if (!testRunning) {
                 testRunning = true;
                 testStartTime = edu.wpi.first.wpilibj.Timer.getFPGATimestamp();
@@ -169,13 +169,13 @@ public class IntakeTesting {
             intake.setRollerVoltage(0);
             testRunning = false;
         }
-        
+
         // Reverse with left bumper
         if (operatorController.getLeftBumperButton()) {
             intake.setRollerVoltage(-rollerSpeed.get() * 6.0);
             testRunning = true;
         }
-        
+
         // Speed presets with D-pad
         int pov = operatorController.getPOV();
         switch (pov) {
@@ -193,19 +193,19 @@ public class IntakeTesting {
                 break;
         }
     }
-    
+
     /**
      * Hopper testing mode
      */
     private void handleHopperTesting(Controller driverController, Controller operatorController) {
         Intake intake = Intake.getInstance();
-        
+
         // Use operator right trigger for hopper speed control
         double trigger = operatorController.getRightTriggerAxis();
-        
+
         if (trigger > 0.1) {
             intake.setHopperVoltage(trigger * 6.0); // Convert speed to voltage
-            
+
             if (!testRunning) {
                 testRunning = true;
                 testStartTime = edu.wpi.first.wpilibj.Timer.getFPGATimestamp();
@@ -214,13 +214,13 @@ public class IntakeTesting {
             intake.setHopperVoltage(0);
             testRunning = false;
         }
-        
+
         // Reverse with left bumper
         if (operatorController.getLeftBumperButton()) {
             intake.setHopperVoltage(-hopperSpeed.get() * 6.0);
             testRunning = true;
         }
-        
+
         // Speed presets with D-pad
         int pov = operatorController.getPOV();
         switch (pov) {
@@ -238,31 +238,31 @@ public class IntakeTesting {
                 break;
         }
     }
-    
+
     /**
      * Jam detection testing mode
      */
     private void handleJamDetection(Controller driverController, Controller operatorController) {
         Intake intake = Intake.getInstance();
-        
+
         // Run rollers and monitor for jams
         if (driverController.getRightTriggerAxis() > 0.5) {
             intake.setRollerVoltage(rollerSpeed.get() * 6.0);
-            
+
             // Simulate jam detection (this would normally come from current monitoring)
             double simulatedCurrent = Math.random() * 40; // 0-40 amps
             maxCurrentDraw = Math.max(maxCurrentDraw, simulatedCurrent);
-            
+
             if (simulatedCurrent > Constants.IntakeConstants.STALL_CURRENT_LIMIT) {
                 jamEvents++;
                 System.out.println("[IntakeTesting] Jam detected! Current: " + simulatedCurrent + "A");
-                
+
                 // Simulate jam response
                 intake.setRollerVoltage(-rollerSpeed.get() * 6.0);
                 edu.wpi.first.wpilibj.Timer.delay(Constants.IntakeConstants.EJECT_TIME);
                 intake.setRollerVoltage(rollerSpeed.get() * 6.0);
             }
-            
+
             if (!testRunning) {
                 testRunning = true;
                 testStartTime = edu.wpi.first.wpilibj.Timer.getFPGATimestamp();
@@ -272,13 +272,13 @@ public class IntakeTesting {
             testRunning = false;
         }
     }
-    
+
     /**
      * Position calibration mode
      */
     private void handlePositionCalibration(Controller driverController, Controller operatorController) {
         Intake intake = Intake.getInstance();
-        
+
         // Manual arm control for calibration
         double manualArmY = -operatorController.getLeftY();
         if (Math.abs(manualArmY) > 0.1) {
@@ -288,32 +288,32 @@ public class IntakeTesting {
             intake.setArmVoltage(0);
             testRunning = false;
         }
-        
+
         // Save current position as preset with right bumper
         if (operatorController.getRightBumperButton()) {
-            double currentPos = Math.toDegrees(intake.getArmPosition());
+            double currentPos = intake.getArmPosition(); // Already in degrees
             targetArmPosition.setDefault(currentPos);
             System.out.println("[IntakeTesting] Saved current position: " + currentPos + "°");
         }
     }
-    
+
     /**
      * Update performance metrics
      */
     private void updatePerformanceMetrics() {
         Intake intake = Intake.getInstance();
-        
+
         // Calculate position error
-        double targetPos = Math.toRadians(targetArmPosition.get());
+        double targetPos = targetArmPosition.get(); // Already in degrees
         double actualPos = intake.getArmPosition();
         lastPositionError = Math.abs(targetPos - actualPos);
-        
+
         // Calculate time to reach target position
-        if (testRunning && lastPositionError < Math.toRadians(2.0)) { // 2 degree tolerance
+        if (testRunning && lastPositionError < 2.0) { // 2 degree tolerance
             timeToTargetPosition = edu.wpi.first.wpilibj.Timer.getFPGATimestamp() - testStartTime;
         }
     }
-    
+
     /**
      * Reset test state
      */
@@ -325,7 +325,7 @@ public class IntakeTesting {
         timeToTargetPosition = 0;
         Intake.getInstance().stop();
     }
-    
+
     /**
      * Setup dashboard controls
      */
@@ -336,7 +336,7 @@ public class IntakeTesting {
         SmartDashboard.putNumber("Test/Intake/HopperSpeed", hopperSpeed.get());
         SmartDashboard.putNumber("Test/Intake/ArmTestVoltage", armTestVoltage.get());
     }
-    
+
     /**
      * Update dashboard values
      */
@@ -347,21 +347,21 @@ public class IntakeTesting {
         SmartDashboard.putNumber("Test/Intake/TimeToTarget", timeToTargetPosition);
         SmartDashboard.putNumber("Test/Intake/JamEvents", jamEvents);
         SmartDashboard.putNumber("Test/Intake/MaxCurrent", maxCurrentDraw);
-        
+
         // Update tunable numbers (TunableNumber doesn't have update method)
         // targetArmPosition.update();
         // rollerSpeed.update();
         // hopperSpeed.update();
         // armTestVoltage.update();
     }
-    
+
     /**
      * Check if test is currently running
      */
     public boolean isTestRunning() {
         return testRunning;
     }
-    
+
     /**
      * Cleanup method
      */

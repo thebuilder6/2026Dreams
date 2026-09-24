@@ -35,6 +35,14 @@ public class GlideConstants {
             this.isTunnelEntrance = isTunnel;
             this.tunnelExitPose = exit;
         }
+
+        public Pose2d pose() {
+            return pose;
+        }
+
+        public String name() {
+            return name;
+        }
     }
 
     public static final Map<String, GlidePoint> GLIDE_POINTS = Map.ofEntries(

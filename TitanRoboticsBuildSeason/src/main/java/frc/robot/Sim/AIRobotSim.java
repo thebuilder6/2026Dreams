@@ -21,6 +21,7 @@ import frc.robot.Interfaces.Subsystem;
 import frc.robot.Subsystems.Dashboard;
 import frc.robot.Subsystems.SubsystemManager;
 import frc.robot.Subsystems.SwerveBase;
+import frc.robot.Utils.AllianceFlipUtil;
 import swervelib.simulation.ironmaple.simulation.SimulatedArena;
 import swervelib.simulation.ironmaple.simulation.drivesims.SelfControlledSwerveDriveSimulation;
 import swervelib.simulation.ironmaple.simulation.drivesims.SwerveDriveSimulation;
@@ -142,6 +143,8 @@ public class AIRobotSim implements Subsystem {
 
         ChassisSpeeds targetSpeeds;
 
+        boolean jevAIEnabled = SmartDashboard.getBoolean("Simulation/JevAIEnabled", true);
+
         if (defenseMode) {
             // 2 Player manual control
             double x = -defenseController.getLeftY();
@@ -154,34 +157,56 @@ public class AIRobotSim implements Subsystem {
             rot = Math.abs(rot) < 0.1 ? 0 : rot;
 
             targetSpeeds = new ChassisSpeeds(x * Constants.MAX_SPEED, y * Constants.MAX_SPEED, rot * 5.0);
+        } else if (jevAIEnabled || !trajectory.isPresent()) {
+            // Dynamic Jev AI Tactical Sparring Partner (<20ms System One inference)
+            Pose2d playerPose = SwerveBase.getInstance().getPose();
+            Pose2d currentPose = driveSimulation.getActualPoseInSimulationWorld();
+            boolean isRedAlliance = AllianceFlipUtil.isRedAlliance();
+
+            double matchTime = Timer.getMatchTime();
+            if (matchTime < 0) matchTime = 150.0;
+
+            JevDecisionEngine.DecisionResult decision = JevDecisionEngine.getInstance().evaluate(
+                    playerPose, currentPose, matchTime, true, isRedAlliance);
+
+            Pose2d targetPose = decision.targetPose;
+            double vx = xController.calculate(currentPose.getX(), targetPose.getX());
+            double vy = yController.calculate(currentPose.getY(), targetPose.getY());
+            double omega = headingController.calculate(
+                    currentPose.getRotation().getRadians(),
+                    targetPose.getRotation().getRadians());
+
+            // Speed limit clamping for smooth sparring physics
+            double maxSpeed = Constants.MAX_SPEED * 0.70;
+            vx = Math.max(-maxSpeed, Math.min(maxSpeed, vx));
+            vy = Math.max(-maxSpeed, Math.min(maxSpeed, vy));
+            omega = Math.max(-4.0, Math.min(4.0, omega));
+
+            targetSpeeds = new ChassisSpeeds(vx, vy, omega);
         } else {
             // Choreo Path Following (if traj loaded)
-            if (trajectory.isPresent()) {
-                double time = pathTimer.get();
-                if (time > trajectory.get().getTotalTime()) {
-                    pathTimer.restart(); // Loop the path for simulation variety
-                    time = 0;
-                }
+            double time = pathTimer.get();
+            if (time > trajectory.get().getTotalTime()) {
+                pathTimer.restart(); // Loop the path for simulation variety
+                time = 0;
+            }
 
-                Optional<SwerveSample> sampleOpt = trajectory.get().sampleAt(time, false);
-                if (sampleOpt.isPresent()) {
-                    SwerveSample sample = sampleOpt.get();
+            Optional<SwerveSample> sampleOpt = trajectory.get().sampleAt(time, false);
+            if (sampleOpt.isPresent()) {
+                SwerveSample sample = sampleOpt.get();
 
-                    // Mirror the target pose for opponent
-                    boolean isRedAlliance = DriverStation.getAlliance().orElse(Alliance.Blue) == Alliance.Red;
-                    Pose2d targetPose = new Pose2d(sample.x, sample.y, new Rotation2d(sample.heading));
-                    Pose2d mirroredTarget = mirrorPoseForOpponent(targetPose, !isRedAlliance);
+                // Mirror the target pose for opponent
+                boolean isRedAlliance = DriverStation.getAlliance().orElse(Alliance.Blue) == Alliance.Red;
+                Pose2d targetPose = new Pose2d(sample.x, sample.y, new Rotation2d(sample.heading));
+                Pose2d mirroredTarget = mirrorPoseForOpponent(targetPose, !isRedAlliance);
 
-                    Pose2d currentPose = driveSimulation.getActualPoseInSimulationWorld();
+                Pose2d currentPose = driveSimulation.getActualPoseInSimulationWorld();
 
-                    targetSpeeds = new ChassisSpeeds(
-                            sample.vx + xController.calculate(currentPose.getX(), mirroredTarget.getX()),
-                            sample.vy + yController.calculate(currentPose.getY(), mirroredTarget.getY()),
-                            sample.omega + headingController.calculate(currentPose.getRotation().getRadians(),
-                                    mirroredTarget.getRotation().getRadians()));
-                } else {
-                    targetSpeeds = new ChassisSpeeds();
-                }
+                targetSpeeds = new ChassisSpeeds(
+                        sample.vx + xController.calculate(currentPose.getX(), mirroredTarget.getX()),
+                        sample.vy + yController.calculate(currentPose.getY(), mirroredTarget.getY()),
+                        sample.omega + headingController.calculate(currentPose.getRotation().getRadians(),
+                                mirroredTarget.getRotation().getRadians()));
             } else {
                 targetSpeeds = new ChassisSpeeds();
             }
@@ -192,11 +217,15 @@ public class AIRobotSim implements Subsystem {
 
     @Override
     public void update() {
-        // Log position to Dashboard for AdvantageScope visibility
+        if (edu.wpi.first.wpilibj.RobotBase.isReal()) {
+            return;
+        }
+        // Log position to Dashboard and AdvantageKit for 3D visibility
         Pose2d pose = driveSimulation.getActualPoseInSimulationWorld();
         SmartDashboard.putNumberArray("Simulation/OpponentPose", new double[] {
                 pose.getX(), pose.getY(), pose.getRotation().getDegrees()
         });
+        org.littletonrobotics.junction.Logger.recordOutput("Simulation/OpponentPose", pose);
     }
 
     @Override
@@ -228,7 +257,7 @@ public class AIRobotSim implements Subsystem {
 
     @Override
     public boolean isEnabled() {
-        return true;
+        return edu.wpi.first.wpilibj.RobotBase.isSimulation();
     }
 
     @Override

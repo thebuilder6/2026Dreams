@@ -11,6 +11,7 @@ import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.DriverStation.Alliance;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import frc.robot.Interfaces.Subsystem;
+import frc.robot.Utils.AllianceFlipUtil;
 
 public class Dashboard implements Subsystem {
 
@@ -23,6 +24,8 @@ public class Dashboard implements Subsystem {
     private boolean isMyHubActive = true;
     private double hubSwitchProgress = 0.0;
     private double timeUntilSwitch = 0.0;
+    private int lastActivePoints = -1;
+    private Translation2d lastGoalPos = null;
 
     public static Dashboard getInstance() {
         if (instance == null) {
@@ -209,19 +212,20 @@ public class Dashboard implements Subsystem {
      * Updates the Field2d visual representation of the hub timing.
      */
     private void updateFieldVisuals() {
-        Optional<Alliance> alliance = DriverStation.getAlliance();
-        Translation2d goalPos;
-        if (alliance.isPresent() && alliance.get() == Alliance.Red) {
-            goalPos = frc.robot.Data.Constants.FieldConstants.RED_GOAL_LOCATION.toTranslation2d();
-        } else {
-            goalPos = frc.robot.Data.Constants.FieldConstants.BLUE_GOAL_LOCATION.toTranslation2d();
+        Translation2d goalPos = AllianceFlipUtil.apply(frc.robot.Data.Constants.FieldConstants.BLUE_GOAL_LOCATION).toTranslation2d();
+
+        int maxPoints = 32;
+        int activePoints = (int) (hubSwitchProgress * maxPoints);
+
+        if (activePoints == lastActivePoints && goalPos.equals(lastGoalPos)) {
+            return;
         }
+        lastActivePoints = activePoints;
+        lastGoalPos = goalPos;
 
         // Create a circular "timing ring" around the goal
         // We use a series of Pose2d objects to represent the progress
-        int maxPoints = 32;
-        int activePoints = (int) (hubSwitchProgress * maxPoints);
-        List<Pose2d> ringPoints = new ArrayList<>();
+        List<Pose2d> ringPoints = new ArrayList<>(activePoints);
         double radius = 1.0; // 1 meter radius around the hub
 
         for (int i = 0; i < activePoints; i++) {
@@ -274,6 +278,10 @@ public class Dashboard implements Subsystem {
 
     public static boolean isFieldOrientedEnabled() {
         return SmartDashboard.getBoolean("Features/Field Oriented", true);
+    }
+
+    public static boolean isFieldOriented() {
+        return isFieldOrientedEnabled();
     }
 
     public static boolean isSlowModeEnabled() {

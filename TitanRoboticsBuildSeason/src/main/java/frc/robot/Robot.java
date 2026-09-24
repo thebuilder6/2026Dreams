@@ -18,6 +18,7 @@ import frc.robot.Sim.GameSim;
 import frc.robot.Subsystems.Dashboard;
 import frc.robot.Subsystems.Intake;
 import frc.robot.Subsystems.LEDs;
+import frc.robot.Subsystems.MatchCoach;
 import frc.robot.Subsystems.Shooter;
 import frc.robot.Subsystems.SubsystemManager;
 import frc.robot.Subsystems.SwerveBase;
@@ -70,6 +71,7 @@ public class Robot extends LoggedRobot {
         GameSim.getInstance();
         AIRobotSim.getInstance();
     }
+    MatchCoach.getInstance();
     LEDs.getInstance();
     teleop = new Teleop();
     testMode = TestMode.getInstance();
@@ -127,8 +129,10 @@ public class Robot extends LoggedRobot {
    */
   @Override
   public void autonomousInit() {
-    GameSim.getInstance().resetGame();
-    AIRobotSim.getInstance().reset();
+    if (isSimulation()) {
+      GameSim.getInstance().resetGame();
+      AIRobotSim.getInstance().reset();
+    }
     m_autoSelected = Dashboard.getInstance().getAutoChooser().getSelected();
     System.out.println("Auto selected: " + m_autoSelected);
 

@@ -78,7 +78,7 @@ To control the robot with a physical gamepad:
 
 ## 📊 Connecting Elastic Dashboard
 
-Elastic Dashboard is pre-configured with 5 tabs tailored for this robot:
+Elastic Dashboard is pre-configured with 6 tabs tailored for this robot:
 
 1. Launch **Elastic Dashboard**.
 2. Go to **Settings** (gear icon in upper right) and set:
@@ -86,12 +86,13 @@ Elastic Dashboard is pre-configured with 5 tabs tailored for this robot:
    - **Port**: `5810` (NT4 default)
 3. Click the layout dropdown and select **Open Layout File**.
 4. Open the pre-built layout: `TitanRoboticsBuildSeason/elastic-layout.json`.
-5. You will now have 5 synchronized tabs:
-   - **Driver Dashboard**: 3D field overview, match clock, Hub countdown timer, auto-aim lock indicator, and feature switches.
+5. You will now have 6 synchronized tabs:
+   - **Driver Dashboard**: 3D field overview, match clock, Hub countdown timer, auto-aim lock indicator, Jev strategy, and feature switches.
+   - **AI Coach & Practice**: Real-time driver grading ($A+$ to $D$), cycle timing gauges, shooting accuracy bar, practice drill selector, 1-click arena reset, and contextual AI coaching directives.
    - **Pre-Flight Diagnostics**: Automated 15-second scorecard and manual motor test bench.
    - **SysID & Characterization**: Routine selectors and execution controls.
-   - **Tuning & PID**: Live-tunable gains for flywheels ($kP, kI, kD, kS, kV, kA$), intake arm, auton pathfinding, and driver slew rates ($4.5\text{ m/s}^2$ translation, $7.0\text{ rad/s}^2$ rotation).
    - **Simulation & Match Info**: Live score counter, held ball count, respawn trigger, and opponent AI defense toggle.
+   - **Tuning & PID**: Live-tunable gains for flywheels ($kP, kI, kD, kS, kV, kA$), intake arm, auton pathfinding, and driver slew rates ($4.5\text{ m/s}^2$ translation, $7.0\text{ rad/s}^2$ rotation).
 
 ---
 
@@ -138,11 +139,11 @@ In the WPILib SimGUI:
 - **Release Left Trigger**: The arm automatically retracts to the standby upright position ($347^\circ$).
 
 ### 4. Auto-Aiming & Scoring in the Hub
-- Drive to any shooting position within $1.8\text{--}4.5\text{ meters}$ of the Alliance Hub.
+- Drive to any shooting position within $1.8\text{--}4.5\text{ meters}$ of the Alliance Hub **strictly inside your Alliance Zone** ($X \le 4.60\text{m}$ for Blue, $X \ge 11.94\text{m}$ for Red). Shots from Midfield are automatically inhibited.
 - **Hold Right Trigger (>30%)**:
   - The robot locks heading onto the Hub center.
   - Dual flywheels spool up to the interpolated target RPM based on distance.
-  - The dashboard displays **Ready to Fire** (green indicator) once aligned within $3^\circ$ and flywheels reach target velocity.
+  - The dashboard displays **Ready to Fire** (green indicator) once aligned within $3^\circ$, flywheels reach target velocity, and the robot is verified inside the Alliance Zone.
   - The kicker feed automatically fires the balls.
   - Watch the balls arc across the field into the Hub in AdvantageScope. The **Simulation Score** counter will increment!
 
@@ -150,14 +151,68 @@ In the WPILib SimGUI:
 - **Hold Right Bumper**: The robot autonomously plans a path and navigates to the nearest tactical waypoint (Alliance Feeder, Hub perimeter, Trench auto-tunnel, or Midfield crossing).
 - Deflecting any manual joystick (>15%) instantly cancels Glide mode and restores full driver control.
 
-### 6. Sparring Against Opponent AI
-- In Elastic Dashboard (`Simulation & Match Info` tab), check **`Opponent AI Defense`**.
-- An opponent robot will spawn on the field with active bumper collision physics.
-- The AI dynamically switches behaviors using the Jev decision engine:
-  - Shadows the player along the midfield line.
-  - Blocks shooting lanes when the player approaches the Hub.
-  - Contests neutral depots and harvests balls.
-- To spar manually with a second player, set the AI mode dropdown to **`Manual 2-Player (Port 2)`** and connect a gamepad to Joystick Port 2.
+### 6. Sparring Against Opponent AI (Autonomous Offense & Defense)
+- In Elastic Dashboard (`Simulation & Match Info` tab), check **`Opponent AI Defense`** (or toggle `Features/Opponent Robot`).
+- An opponent robot will spawn on the field with active bumper collision physics and realistic game piece intake/shooting capabilities.
+- Select the opponent's behavior via **`Simulation/AIModeChooser`** (defaults to **`Autonomous Fuel Cycler`**):
+  - **`Autonomous Fuel Cycler`**: Full offense mode with comprehensive **WHERE & WHEN** shooting intelligence:
+    - **WHERE It Shoots**:
+      - *Alliance Zone Enforcement*: Strictly fires only when inside its designated Alliance Zone ($X \le 4.60\text{m}$ for Blue, $X \ge 11.94\text{m}$ for Red). Shots from Midfield are strictly prohibited.
+      - *Distance Window*: Strictly validates firing distance ($1.60\text{m} \le d \le 4.20\text{m}$) within the Alliance Zone to clear Hub base collision while maintaining high parabolic ballistic accuracy.
+      - *Low-Clearance Trench Exclusion*: Evaluates field geofencing (`Intake.isPoseInTrenchLowClearanceZone`) to never fire under low-overhead steel trusses ($Z < 1.2\text{m}$), preventing ceiling deflections.
+      - *Dynamic Standoff & Lateral Evasion*: Projects to an optimal $2.40\text{m}$ standoff arc within the Alliance Zone, clamped to the open trench-free corridor ($Y \in [2.2, 5.8]$). If a defender guards the spot or blocks the direct shooting lane, the bot executes a lateral strafe to re-open line of sight.
+      - *Opportunistic Transitions*: If the bot gathers fuel and enters an unblocked valid shooting window within its Alliance Zone while the Hub is active, it fires immediately without driving to a rigid static waypoint.
+    - **WHEN It Shoots**:
+      - *Hub Active State Discipline*: Verifies ground-truth Hub scoring state (`Arena2026Rebuilt.isActive` and match shift timing). If the Hub is inactive, the bot hoards up to 5 Fuel pieces or stages at the standoff line instead of wasting game pieces.
+      - *Fuel Inventory & Cooldown*: Requires held fuel ($> 0$) and enforces a $0.30\text{s}$ firing cadence between shots.
+      - *Aim Alignment*: Verifies heading alignment within $< 8^\circ$ of the target Hub funnel.
+      - *Shoot-On-The-Fly (SOTF) Ballistics*: Automatically applies virtual target motion compensation ($\vec{P}_{\text{virtual}} = \vec{P}_{\text{goal}} - \vec{v}_{\text{chassis}} \cdot t_{\text{tof}}$) so shots fired on the move arc directly into the center funnel ($Z = 1.48\text{m}$) without tangential drift.
+  - **`Tactical Defense (Jev AI)`**: High-frequency defensive decision engine that shadows the player along midfield, blocks player shooting lanes, contests neutral depots, and opportunistically intakes loose balls and fires them into its Hub when in range.
+  - **`Lead Pursuit Intercept`**: Intercepts player travel paths using quadratic lead pursuit.
+  - **`Aggressive Pinning Bully`**: Charges player bumpers to practice spin-outs and test the 2-second legal pinning watchdog.
+  - **`Manual 2-Player (Port 2)`**: Connect a second controller to Joystick Port 2 to drive the opponent robot manually against your teammate.
+- **Topological Roadmap & Pure Pursuit Navigation Architecture**:
+  - *AABB Obstacle Modeling & Topological Visibility Graph* ([`StaticPathfinder.java`](file:///c:/Users/jumpi/Documents/Github/2026Dreams/TitanRoboticsBuildSeason/src/main/java/frc/robot/Auto/StaticPathfinder.java)):
+    - Full 2026 field obstacle geometry represented via axis-aligned bounding boxes (AABBs) with $O(1)$ Liang-Barsky line-box intersection testing.
+    - Preserves dedicated 53-inch Trench corridors ($Y = 7.42\text{m}$ Top, $Y = 0.65\text{m}$ Bottom) with $>0.42\text{m}$ bumper clearance from divider walls.
+    - Deterministic A* graph search over 34 strategic nodes with string-pulling line-of-sight shortcutting.
+  - *Resilient Pure Pursuit Lookahead Tracker* ([`AIRobotSim.java`](file:///c:/Users/jumpi/Documents/Github/2026Dreams/TitanRoboticsBuildSeason/src/main/java/frc/robot/Sim/AIRobotSim.java)):
+    - Computes lookahead point $P_{\text{look}}$ along polyline path with adaptive lookahead radius $R_{\text{look}} \in [0.45\text{m}, 0.85\text{m}]$.
+    - Monotonic path progression advances waypoints only when the robot crosses the segment tangent normal plane or reaches within $0.45\text{m}$.
+    - Goal deadband and replan hysteresis ($0.85\text{m}$ / $0.5\text{s}$) prevent waypoint index resets and rubber-banding during continuous target tracking.
+    - Trapezoidal deceleration profiling ($V_{\text{target}} = \min(V_{\text{max}}, \sqrt{2 \cdot A_{\text{max}} \cdot d_{\text{remaining}}})$) ensures smooth deceleration into targets with zero overshoot.
+  - *Trench Passage Lockout*:
+    - Automatically activates inside Trench corridors ($X \in [3.20, 6.10]$ or $[10.40, 13.30]$ with $Y \ge 6.50$ or $Y \le 1.55$).
+    - Locks heading parallel to the corridor ($0^\circ$ or $180^\circ$) to eliminate corner catch.
+    - Applies active cross-track centering ($V_y = -3.0 \cdot (Y - Y_{\text{centerline}})$) to keep the bot centered along the corridor centerline.
+    - Suppresses Artificial Potential Field (APF) player repulsion while inside trenches to prevent wall pinning.
+- **AdvantageScope Visualizations**:
+  - Add `/FieldSimulation/OpponentSuccessfulShotsTrajectory` and `/FieldSimulation/OpponentMissedShotsTrajectory` to the 3D Field tab to see the AI's 3D parabolic projectile arcs in real-time.
+  - Monitor `/Simulation/OpponentScoreCount`, `/Simulation/OpponentFuelCount`, and `/Simulation/OpponentCyclerPhase` for live AI offensive stats.
+
+### 7. AI Coach & Practice Proving Ground
+Switch to the **`AI Coach & Practice`** tab in Elastic Dashboard for focused driver training:
+
+- **Practice Drill Modes** (Select via `Practice Drill Mode` chooser):
+  - **`Free Play Match`**: Standard match simulation against an autonomous cycling opponent (`AIRobotSim` at 75% speed).
+  - **`Rapid Cycling Sprint`**: Disables opponent defense and enables automatic ball respawns for solo time-trial throughput drills.
+  - **`Trench Defense & Pirouette Drill`**: Spawns an 80% speed sparring partner patrolling the trenches to practice automated Smart Tunnel diversions, bumper pirouettes, and 2.0-second legal pinning evasion.
+  - **`Anti-Defense SOTF Drill`**: Spawns an 85% speed lead-pursuit interceptor to practice shoot-on-the-fly (SOTF) accuracy while under heavy pursuit.
+- **1-Click Proving Ground Reset**:
+  - Click **`Reset Practice Arena`** (`Coaching/ResetPractice`).
+  - Instantly resets session metrics, teleports the robot back to the alliance starting line, respawns all 54 Fuel balls across the arena, and configures the sparring AI for the selected drill.
+- **Dynamic Driver Grade**:
+  - Real-time rating from **`A+`** to **`D`** based on cycle speed, shooting accuracy, and Hub active timing discipline.
+- **TypeSafe Jev AI Coach Terminal & Markdown Reports**:
+  - Launch the terminal coaching tool in another PowerShell window while running simulation:
+    ```powershell
+    # Live ANSI Telemetry & Tactical Directive HUD
+    python tools/coaching/jev_coach.py --live
+
+    # Generate Post-Match Debrief Report (Saved to reports/)
+    python tools/coaching/jev_coach.py --report
+    ```
+  - If a `TYPESAFE_API_KEY` or `OPENROUTER_API_KEY` environment variable is defined, the tool queries the TypeSafe Jev API (`https://docs.typesafe.ai`) for automated System One AI tactical critiques.
 
 ---
 

@@ -145,8 +145,6 @@ public class Shooter implements Subsystem {
 
         if (RobotBase.isSimulation() && io instanceof ShooterIOSim simIO) {
             flywheelSim = simIO.getShooterSim();
-        } else if (RobotBase.isSimulation()) {
-            flywheelSim = new frc.robot.Sim.ShooterSim();
         }
 
         initialize();
@@ -181,8 +179,14 @@ public class Shooter implements Subsystem {
         double rpmLeft = leftRpmTable.get(normalDistanceToHub);
         double rpmRight = rightRpmTable.get(normalDistanceToHub);
 
-        if (possibilityDeterminator <= 0) {
-            return new ShootingSolution(new Rotation2d(), 0, 0, false);
+        boolean inAllianceZone = AllianceFlipUtil.isPoseInAllianceZone(robotPose);
+        boolean possible = inAllianceZone && possibilityDeterminator > 0 && normalDistanceToHub >= 1.2 && normalDistanceToHub <= 6.5;
+
+        Logger.recordOutput("Shooter/InAllianceZone", inAllianceZone);
+        SmartDashboard.putBoolean("Shooter/In Alliance Zone", inAllianceZone);
+
+        if (!possible) {
+            return new ShootingSolution(shootingAngle, 0, 0, false);
         } else {
             return new ShootingSolution(shootingAngle, rpmLeft, rpmRight, true);
         }
@@ -227,9 +231,11 @@ public class Shooter implements Subsystem {
 
         double rpmLeft = leftRpmTable.get(effectiveDist);
         double rpmRight = rightRpmTable.get(effectiveDist);
+        boolean inAllianceZone = AllianceFlipUtil.isPoseInAllianceZone(robotPose);
+        boolean possible = inAllianceZone && possibility > 0 && effectiveDist >= 1.2 && effectiveDist <= 6.5;
 
-        boolean possible = possibility > 0 && effectiveDist >= 1.2 && effectiveDist <= 6.5;
-
+        Logger.recordOutput("Shooter/InAllianceZone", inAllianceZone);
+        SmartDashboard.putBoolean("Shooter/In Alliance Zone", inAllianceZone);
         Logger.recordOutput("Shooter/SOTF/VirtualGoal", virtualGoal);
         Logger.recordOutput("Shooter/SOTF/EffectiveDistance", effectiveDist);
         Logger.recordOutput("Shooter/SOTF/CompensatedAngleDeg", compensatedAngle.getDegrees());
@@ -266,13 +272,6 @@ public class Shooter implements Subsystem {
      * Sets symmetric target RPM setpoint for both flywheels.
      */
     public void setTargetRPM(double rpm) {
-        setTargetRPM(rpm, rpm);
-    }
-
-    /**
-     * Alias for {@link #setTargetRPM(double)}.
-     */
-    public void setFlywheelVelocity(double rpm) {
         setTargetRPM(rpm, rpm);
     }
 
@@ -420,6 +419,10 @@ public class Shooter implements Subsystem {
 
     public ShooterState getStateEnum() {
         return state;
+    }
+
+    public boolean isShooting() {
+        return state == ShooterState.SHOOTING || state == ShooterState.MANUAL_FIRE;
     }
 
     /**

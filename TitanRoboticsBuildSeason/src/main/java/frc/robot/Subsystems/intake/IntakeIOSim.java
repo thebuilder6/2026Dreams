@@ -35,10 +35,12 @@ public class IntakeIOSim implements IntakeIO {
                     Meters.of(0.65), // 65cm width across bumper
                     Meters.of(0.25), // 25cm extension
                     IntakeSimulation.IntakeSide.FRONT,
-                    50 // 50 fuel capacity
+                    frc.robot.Data.Constants.IntakeConstants.MAX_HELD_BALLS // 30 fuel capacity
             );
             this.mapleIntakeSim.setGamePiecesCount(frc.robot.Sim.GameSim.getInstance().getHeldBalls());
-            mapleIntakeSim.register(SimulatedArena.getInstance());
+            // Note: IntakeSimulation constructor already invokes register(SimulatedArena.getInstance()).
+            // Do NOT call register() here, as doing so adds a second ContactListener to the physics world,
+            // which causes every single ball contact event to increment the held count twice (+2).
         }
     }
 

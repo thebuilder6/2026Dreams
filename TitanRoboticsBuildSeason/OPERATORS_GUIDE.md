@@ -19,7 +19,7 @@ The robot supports **Dual Xbox Controllers** (Driver on Port 0, Operator on Port
 | **Left Stick Click** | **Slow Mode (Toggle)** | Caps linear speed to 35% and angular speed to 50% for precision alignment. |
 | **D-Pad (POV)** | **Cardinal Snap-to-Heading** | **Up**: Face $0^\circ$ (Forward)<br>**Right**: Face $-90^\circ$ / $270^\circ$ (Right)<br>**Down**: Face $180^\circ$ (Backward)<br>**Left**: Face $+90^\circ$ (Left) |
 | **A Button** | **Zero Gyro** | Re-calibrates field orientation zero relative to current alliance. |
-| **Right Trigger (Hold > 30%)** | **Auto-Aim & Shoot** | Locks swerve heading onto the Hub, spools dual flywheels to distance-interpolated RPM, triggers haptic confirmation buzz, and automatically fires when lined up ($<3^\circ$ error) and at target speed. |
+| **Right Trigger (Hold > 30%)** | **Auto-Aim & Shoot** | Locks swerve heading onto the Hub, spools dual flywheels to distance-interpolated RPM, triggers haptic confirmation buzz, and automatically fires when lined up ($<3^\circ$ error) and at target speed. **Rule Constraint**: Firing is permitted *only within your Alliance Zone* ($X \le 4.60\text{m}$ for Blue, $X \ge 11.94\text{m}$ for Red); shooting is automatically inhibited when in Midfield. |
 | **Left Trigger (Hold > 30%)** | **Ground Intake (Hold-to-Run)** | Deploys arm to ground ($250^\circ$), runs intake rollers and hopper. Retracts to standby ($347^\circ$) upon release. |
 | **Right Bumper (Hold)** | **Smart Glide Mode** | Autonomously navigates to the optimal waypoint arbitrated dynamically by the Jev AI Decision Engine (Hub when loaded & active, Midfield hunt when empty, Depot when inactive). Features **Smart Tunnel Navigation** with automatic corridor diversion if an opponent blocks a trench. Manual stick deflection ($>30\%$) cancels cleanly. |
 | **Left Bumper (Hold)** | **Auto Ball Pick Up** | Activates vision object tracking and autonomous intake alignment. Features **Shared Driver Authority** (driver stick nudges search area without cancelling) and **350ms Blindspot Memory** for seamless bumper-level ingestion. |
@@ -53,7 +53,7 @@ Both controllers feature non-blocking rumble patterns to communicate real-time r
 2. **Ball Acquired (Solid Medium Buzz)**: Fires when a fuel piece is ingested into the intake / hopper.
 3. **Pin Warning (Rapid Double Buzz)**: Alerts the driver when bumper contact against an opponent robot approaches the $2.0\text{s}$ FRC G-rule pin limit.
 4. **Hub Phase Shift (Rhythmic Double Pulse)**: Warns the driver $\le 3.0\text{s}$ before the Hub active/inactive scoring cycle switches.
-5. **Collision Impact (High-G Shock Pulse)**: Instantaneous full-intensity pulse ($160\text{ms}$) triggered by IMU accelerometer jerk ($\|\vec{J}\| > 35\text{ m/s}^3$) upon frame or bumper contact.
+5. **Collision Impact (Directional Opposing Deceleration Pulse)**: Instantaneous full-intensity pulse ($160\text{ms}$) triggered by opposing deceleration ($a_{\text{opposing}} = -(\vec{a}_{\text{filt}} \cdot \hat{u}_v) > 10.0\text{ m/s}^2$ and $J_{\text{opposing}} > 120.0\text{ m/s}^3$) filtered with a 1st-order low-pass filter ($\alpha = 0.35$). Normal driving/acceleration produces negative opposing deceleration, mathematically preventing false positives. Gated by dashboard switch (`Operator/HapticCollisionEnabled`, default disabled in simulation, enabled on real hardware).
 6. **Directional Flank Alert (Left / Right Grip Vibration)**: Vibrates the corresponding controller grip when an opponent robot approaches within $2.2\text{m}$ in a driver blindspot.
 7. **Endgame Reminders (Long Deep Rumble)**: Alerts the drive team at **30 seconds** and **15 seconds** remaining in the match for climbing.
 8. **Hardware / Vision Warning (Rapid Triple Buzz)**: Alerts the driver if AprilTag vision drops into pure odometry mode or an active subsystem fault occurs.
@@ -75,7 +75,7 @@ Holding **Right Bumper** calculates a smooth, obstacle-aware trajectory:
 
 ## 📊 Elastic Dashboard Telemetry & Controls
 
-The Elastic Dashboard (`elastic-layout.json`) provides real-time situational awareness across 5 tabs:
+The Elastic Dashboard (`elastic-layout.json`) provides real-time situational awareness across 6 tabs:
 
 ### 1. Driver Dashboard HUD
 - **Shooter Ready Status**: Green light when flywheels are within $\pm 50\text{ RPM}$ of target.
@@ -84,18 +84,50 @@ The Elastic Dashboard (`elastic-layout.json`) provides real-time situational awa
 - **Nearest Glide Target**: Displays the target waypoint name before trigger engagement.
 - **3D Robot Field View**: Live holonomic pose, vision ghost, trajectory pathing, and Hub timing ring.
 
-### 2. Pre-Flight Diagnostics
+### 2. AI Coach & Practice Proving Ground
+- **Driver Grade Display**: Dynamic letter grade ($A+$ to $D$) reflecting cycle speed and shot timing discipline.
+- **Live Shooting Accuracy Bar**: Percentage of shots taken with locked heading and target RPM during active Hub periods.
+- **Cycle Timing Gauges**: Real-time display of average cycle duration, fastest cycle record, and total completed cycles.
+- **Practice Drill Chooser**: Switch between `Free Play Match`, `Rapid Cycling Sprint`, `Trench Defense`, and `Anti-Defense SOTF` drills.
+- **Reset Practice Arena**: 1-click button to clear stats, respawn all field balls, and teleport robot to starting line.
+- **Haptic Collision Alert Switch**: Quick toggle for controller collision rumble.
+
+### 3. Pre-Flight Diagnostics
 - Live Scorecard displaying **CAN Bus**, **Drivebase**, **Steer Alignment**, **Intake & Jam Protection**, **Dual Flywheels**, and **Vision Links**.
 - 12-motor manual jog testing bench.
 
-### 3. SysID & Characterization
+### 4. SysID & Characterization
 - Dedicated execution buttons for **Drive Linear**, **Drive Angular**, **Steer Azimuth**, **Flywheels**, and **Intake Arm**.
 
-### 4. Tuning & PID (Live Tuning Hub)
+### 5. Simulation & Match Telemetry
+- MapleSim 3D physics feed, battery sag estimator, ball respawner, opponent AI defense toggle, and match clock.
+
+### 6. Tuning & PID (Live Tuning Hub)
 - **Shooter Dual Flywheels**: Real-time RPM telemetry & live PID ($kP, kI, kD$) + Feedforward ($kS, kV, kA$) inputs, physical dimensions, and launch efficiency coefficients.
 - **Intake Arm Pivot**: Real-time angle telemetry vs goal & live Profiled PID ($kP, kI, kD$) + Gravity Feedforward ($kS, kG, kV, kA$).
 - **Autonomous Holonomic Pathfinding**: Live Choreo/Pure Pursuit Drive ($kP, kI, kD$) and Heading Turn ($kP, kI, kD$) controllers.
 - **Driver Response Shaping**: Live Slew Rate Limiters ($4.5\text{ m/s}^2$ translation, $7.0\text{ rad/s}^2$ rotation) and assist toggles.
 
-### 5. Simulation & Match Telemetry
-- MapleSim 3D physics feed, battery sag estimator, ball respawner, opponent AI defense toggle, and match clock.
+---
+
+## 🎯 Practice Drills & Real-Time AI Match Coach
+
+The robot codebase integrates an automated driver training system (`MatchCoach.java`):
+
+### Practice Drills
+1. **Free Play Match (`FREE_PLAY`)**: Full match scrimmage against an autonomous cycling competitor.
+2. **Rapid Cycling Sprint (`RAPID_CYCLING`)**: Defense disabled with automatic ball respawning for solo cycle time-trials.
+3. **Trench Defense & Pirouette Drill (`TRENCH_DEFENSE`)**: Defense sparring partner patrolling trenches at 80% speed to practice trench funneling and contact-breaking pirouettes.
+4. **Anti-Defense SOTF Drill (`ANTI_DEFENSE_SHOOTING`)**: 85% speed lead-pursuit defender to train moving shots under heavy pursuit.
+
+### External AI Coach Tool (`tools/coaching/jev_coach.py`)
+Run the standalone coaching tool during practice sessions:
+```powershell
+# Live terminal telemetry HUD
+python tools/coaching/jev_coach.py --live
+
+# Generate post-match markdown debrief report
+python tools/coaching/jev_coach.py --report
+```
+When configured with a `TYPESAFE_API_KEY`, the tool integrates with TypeSafe Jev API (`https://docs.typesafe.ai`) to generate automated tactical debriefs.
+

@@ -7,6 +7,7 @@ import java.util.List;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
+import frc.robot.Data.FieldMap;
 import frc.robot.Data.GlideConstants;
 import frc.robot.Utils.AllianceFlipUtil;
 import org.littletonrobotics.junction.Logger;
@@ -74,19 +75,19 @@ public class SmartTunnelRouter {
         }
     }
 
-    // Trench corridor boundaries (in standard Blue coordinates)
-    public static final double BLUE_TRENCH_X_MIN = 3.20;
-    public static final double BLUE_TRENCH_X_MAX = 6.10;
-    public static final double RED_TRENCH_X_MIN = 10.44;
-    public static final double RED_TRENCH_X_MAX = 13.34;
+    // Trench corridor boundaries (Consolidated via FieldMap)
+    public static final double BLUE_TRENCH_X_MIN = FieldMap.Trenches.BLUE_TRENCH_MIN_X;
+    public static final double BLUE_TRENCH_X_MAX = FieldMap.Trenches.BLUE_TRENCH_MAX_X;
+    public static final double RED_TRENCH_X_MIN = FieldMap.Trenches.RED_TRENCH_MIN_X;
+    public static final double RED_TRENCH_X_MAX = FieldMap.Trenches.RED_TRENCH_MAX_X;
 
-    public static final double TOP_TRENCH_Y_MIN = 6.50;
-    public static final double TOP_TRENCH_Y_MAX = 8.21;
-    public static final double BOTTOM_TRENCH_Y_MIN = 0.0;
-    public static final double BOTTOM_TRENCH_Y_MAX = 1.55;
+    public static final double TOP_TRENCH_Y_MIN = FieldMap.Trenches.TOP_TRENCH_MIN_Y;
+    public static final double TOP_TRENCH_Y_MAX = FieldMap.FIELD_WIDTH;
+    public static final double BOTTOM_TRENCH_Y_MIN = FieldMap.Trenches.BOT_TRENCH_MIN_Y;
+    public static final double BOTTOM_TRENCH_Y_MAX = FieldMap.Trenches.BOT_TRENCH_MAX_Y;
 
-    public static final double Y_TOP_CENTERLINE = GlideConstants.Y_TOP_LANE;
-    public static final double Y_BOT_CENTERLINE = GlideConstants.Y_BOT_LANE;
+    public static final double Y_TOP_CENTERLINE = FieldMap.Trenches.TOP_CORRIDOR_Y;
+    public static final double Y_BOT_CENTERLINE = FieldMap.Trenches.BOT_CORRIDOR_Y;
 
     /**
      * Checks if dynamic obstacles are currently blocking the specified trench corridor.

@@ -11,7 +11,9 @@ import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import frc.robot.Auto.DynamicObstacle;
 import frc.robot.Auto.DynamicRouter;
+import frc.robot.Auto.StaticPathfinder;
 import frc.robot.Data.Constants;
+import frc.robot.Data.FieldMap;
 import frc.robot.Data.GlideConstants;
 import frc.robot.Data.GlideConstants.GlidePoint;
 import frc.robot.Utils.AllianceFlipUtil;
@@ -95,12 +97,10 @@ public class JevDecisionEngine {
         }
     }
 
-    // Strategic Field Landmarks in standard Blue-origin coordinates (meters)
-    public static final Translation2d BLUE_HUB_POS = new Translation2d(
-            Constants.BLUE_HUB_LOCATION.getX(),
-            Constants.BLUE_HUB_LOCATION.getY());
-    public static final Translation2d BLUE_DEPOT_POS = new Translation2d(1.50, 6.50);
-    public static final double CENTERLINE_X = 8.27; // Midfield dividing line
+    // Strategic Field Landmarks (Consolidated via FieldMap)
+    public static final Translation2d BLUE_HUB_POS = FieldMap.Hubs.BLUE_HUB_2D;
+    public static final Translation2d BLUE_DEPOT_POS = FieldMap.Depots.BLUE_DEPOT_CONTEST;
+    public static final double CENTERLINE_X = FieldMap.CENTERLINE_X;
     public static final double RETREAT_X = 12.0;
 
     private static JevDecisionEngine instance;
@@ -223,16 +223,18 @@ public class JevDecisionEngine {
                 break;
 
             case RETREAT_DEFENSE:
-                // Protect home defensive quadrant
-                double retreatX = isRedAlliance ? (AllianceFlipUtil.FIELD_LENGTH - RETREAT_X) : RETREAT_X;
-                targetPose = new Pose2d(retreatX, 4.0, Rotation2d.fromDegrees(isRedAlliance ? 0 : 180));
+                // Protect home defensive quadrant for the opponent AI
+                boolean opponentIsRed = !isRedAlliance;
+                double retreatX = opponentIsRed ? (AllianceFlipUtil.FIELD_LENGTH - RETREAT_X) : RETREAT_X;
+                targetPose = new Pose2d(retreatX, 4.0, Rotation2d.fromDegrees(opponentIsRed ? 180 : 0));
                 rationale = isHubActive ? "Falling back to alliance defense perimeter." : "Hub inactive; holding defensive position.";
                 break;
 
             case SHADOW_PLAYER:
             default:
-                // Position at field centerline tracking player's Y coordinate
-                double shadowX = isRedAlliance ? (CENTERLINE_X + 0.8) : (CENTERLINE_X - 0.8);
+                // Position at field centerline tracking player's Y coordinate on opponent's side
+                boolean oppIsRed = !isRedAlliance;
+                double shadowX = oppIsRed ? (CENTERLINE_X + 0.8) : (CENTERLINE_X - 0.8);
                 double clampedY = Math.max(1.0, Math.min(AllianceFlipUtil.FIELD_WIDTH - 1.0, playerPose.getY()));
                 Rotation2d facePlayer = playerPose.getTranslation().minus(new Translation2d(shadowX, clampedY)).getAngle();
                 targetPose = new Pose2d(shadowX, clampedY, facePlayer);

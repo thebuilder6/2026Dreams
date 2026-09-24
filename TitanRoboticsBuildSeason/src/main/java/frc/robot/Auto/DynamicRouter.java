@@ -12,6 +12,7 @@ import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import frc.robot.Data.Constants;
+import frc.robot.Data.FieldMap;
 import org.littletonrobotics.junction.Logger;
 
 /**
@@ -42,18 +43,18 @@ public class DynamicRouter {
     private static final int GRID_ROWS = 33; // 8.25m / 0.25m
     private static final boolean[][] STATIC_BLOCKED_GRID = new boolean[GRID_COLS][GRID_ROWS];
 
-    // Static Field Constants (Field boundaries, Hubs, Climbing Poles, Trench dividers)
-    public static final double FIELD_LENGTH_METERS = 16.54;
-    public static final double FIELD_WIDTH_METERS = 8.21;
-    public static final double WALL_SAFETY_MARGIN_METERS = 0.65; // Repulsion active within 65cm of field border
+    // Static Field Constants (Consolidated via FieldMap)
+    public static final double FIELD_LENGTH_METERS = FieldMap.FIELD_LENGTH;
+    public static final double FIELD_WIDTH_METERS = FieldMap.FIELD_WIDTH;
+    public static final double WALL_SAFETY_MARGIN_METERS = FieldMap.WALL_SAFETY_MARGIN;
 
-    public static final Translation2d BLUE_HUB_CENTER = new Translation2d(4.60, 4.035);
-    public static final Translation2d RED_HUB_CENTER = new Translation2d(11.94, 4.035);
+    public static final Translation2d BLUE_HUB_CENTER = FieldMap.Hubs.BLUE_HUB_2D;
+    public static final Translation2d RED_HUB_CENTER = FieldMap.Hubs.RED_HUB_2D;
     public static final double HUB_RADIUS = 1.10;
 
-    public static final Translation2d BLUE_CLIMB_POLE = new Translation2d(1.07, 4.04);
-    public static final Translation2d RED_CLIMB_POLE = new Translation2d(15.47, 4.04);
-    public static final double POLE_RADIUS = 0.40;
+    public static final Translation2d BLUE_CLIMB_POLE = FieldMap.ClimbingTowers.BLUE_TOWER_POLE;
+    public static final Translation2d RED_CLIMB_POLE = FieldMap.ClimbingTowers.RED_TOWER_POLE;
+    public static final double POLE_RADIUS = FieldMap.ClimbingTowers.POLE_RADIUS;
 
     static {
         // Initialize static obstacle mask (Field boundaries, Hubs, Climb poles)

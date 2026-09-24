@@ -11,10 +11,10 @@ public class Constants {
     public static final boolean TUNING_MODE = true;
 
     public static final class FieldConstants {
-        public static final Translation3d RED_GOAL_LOCATION = new Translation3d(11.938, 4.035, 1.575);
-        public static final Translation3d BLUE_GOAL_LOCATION = new Translation3d(4.597, 4.035, 1.575);
+        public static final Translation3d RED_GOAL_LOCATION = FieldMap.Hubs.RED_HUB_3D;
+        public static final Translation3d BLUE_GOAL_LOCATION = FieldMap.Hubs.BLUE_HUB_3D;
 
-        public static final double GOAL_HEIGHT_METERS = 1.575;
+        public static final double GOAL_HEIGHT_METERS = FieldMap.Hubs.GOAL_HEIGHT;
     }
 
     // Root-level constants from physical robot
@@ -58,15 +58,6 @@ public class Constants {
     public static final double FLYWHEEL_KD = 0.000;
     /** Full nominal voltage applied to kicker feed motor (volts). */
     public static final double KICKER_VOLTAGE = 12.0;
-
-    // Legacy aliases for backwards compatibility
-    public static final double kFLYWHEELs = FLYWHEEL_KS;
-    public static final double kFLYWHEELv = FLYWHEEL_KV;
-    public static final double kFLYWHEELa = FLYWHEEL_KA;
-    public static final double kFLYWHEELp = FLYWHEEL_KP;
-    public static final double kFLYWHEELi = FLYWHEEL_KI;
-    public static final double kFLYWHEELd = FLYWHEEL_KD;
-    public static final double KICKERMOTOR = KICKER_VOLTAGE;
 
     // Intake physical parameters
     /** Intake pivot proportional gain. */
@@ -191,9 +182,9 @@ public class Constants {
     }
 
     public static final class IntakeConstants {
-        public static final boolean INTAKE_ARM_INVERTED = Constants.INTAKE_ARM_INVERTED;
-        public static final boolean INTAKE_WHEELS_INVERTED = Constants.INTAKE_WHEELS_INVERTED;
-        public static final double INTAKE_POSITION_OFFSET = Constants.INTAKE_POSITION_OFFSET;
+        public static final boolean INTAKE_ARM_INVERTED = true;
+        public static final boolean INTAKE_WHEELS_INVERTED = true;
+        public static final double INTAKE_POSITION_OFFSET = 276.0;
 
         public static final double STALL_CURRENT_LIMIT = 30.0; // Amps
         public static final double STALL_TIME = 0.5; // Seconds to trigger unjam
@@ -211,13 +202,14 @@ public class Constants {
         public static final TunableNumber ARM_KV = new TunableNumber("Intake/kArmV", INTAKE_ARM_KV);
         public static final TunableNumber ARM_KA = new TunableNumber("Intake/kArmA", INTAKE_ARM_KA);
 
-        public static final double MAX_ARM_VELOCITY = Constants.MAX_ARM_VELOCITY;
-        public static final double MAX_ARM_ACCELERATION = Constants.MAX_ARM_ACCELERATION;
+        public static final double MAX_ARM_VELOCITY = 400.0;
+        public static final double MAX_ARM_ACCELERATION = 400.0;
 
         public static final double ARM_INTAKE_POS = INTAKE_DOWN_POSITION;
         public static final double ARM_IDLE_POS = INTAKE_UP_POSITION;
 
         // Simulation
+        public static final int MAX_HELD_BALLS = 30;
         public static final double SIM_ARM_GEARING = 100.0;
         public static final double SIM_ARM_LENGTH = 0.4; // meters
         public static final double SIM_ARM_MASS = 3.0; // kg

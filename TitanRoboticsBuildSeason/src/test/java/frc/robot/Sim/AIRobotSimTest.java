@@ -8,11 +8,16 @@ import org.junit.jupiter.api.Test;
 import edu.wpi.first.hal.HAL;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
+import edu.wpi.first.math.geometry.Translation2d;
+import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import frc.robot.Auto.DynamicRouter;
 import frc.robot.Sim.AIRobotSim.AIMode;
 import frc.robot.Sim.AIRobotSim.CyclerPhase;
 import frc.robot.Subsystems.Dashboard;
+import swervelib.simulation.ironmaple.simulation.SimulatedArena;
+import swervelib.simulation.ironmaple.simulation.seasonspecific.rebuilt2026.Arena2026Rebuilt;
+import swervelib.simulation.ironmaple.simulation.seasonspecific.rebuilt2026.RebuiltFuelOnField;
 
 public class AIRobotSimTest {
 
@@ -24,6 +29,9 @@ public class AIRobotSimTest {
         aiSim = AIRobotSim.getInstance();
         aiSim.reset();
         DynamicRouter.clearObstacles();
+        if (SimulatedArena.getInstance() instanceof Arena2026Rebuilt arena) {
+            arena.setShouldRunClock(false);
+        }
     }
 
     @Test
@@ -88,6 +96,39 @@ public class AIRobotSimTest {
         Pose2d detour = path.get(0);
         assertTrue(Math.abs(detour.getY() - 4.035) > 1.0,
                 "Detour waypoint must route around the Hub (Y diff > 1.0m, actual Y: " + detour.getY() + ")");
+        // Detour must route via trench corridor (Y >= 7.0m or Y <= 1.05m)
+        boolean inTrenchCorridor = detour.getY() >= 7.0 || detour.getY() <= 1.05;
+        assertTrue(inTrenchCorridor, "Detour waypoint must route via Trench corridors (Y: " + detour.getY() + ")");
+    }
+
+    @Test
+    public void testHubAndRampObstacleAvoidanceInPathfinder() {
+        // Line across the Blue ramp should be completely blocked
+        Translation2d blueAllianceSide = new Translation2d(3.0, 5.75);
+        Translation2d blueMidfieldSide = new Translation2d(6.2, 5.75);
+        assertFalse(frc.robot.Auto.StaticPathfinder.isLineOfSightClear(blueAllianceSide, blueMidfieldSide),
+                "Line of sight crossing the Blue Ramp must be blocked");
+
+        // Line across the Red ramp should be completely blocked
+        Translation2d redAllianceSide = new Translation2d(13.5, 5.75);
+        Translation2d redMidfieldSide = new Translation2d(10.34, 5.75);
+        assertFalse(frc.robot.Auto.StaticPathfinder.isLineOfSightClear(redAllianceSide, redMidfieldSide),
+                "Line of sight crossing the Red Ramp must be blocked");
+
+        // Full path from Blue Alliance Center to Midfield Center
+        var path = frc.robot.Auto.StaticPathfinder.findPath(
+                new Pose2d(2.40, 4.035, new Rotation2d()),
+                new Pose2d(8.27, 4.035, new Rotation2d())
+        );
+
+        assertFalse(path.isEmpty(), "Generated path should not be empty");
+        // Verify no waypoint is inside the Blue Hub & Ramps collider ([3.55, 5.65] x [1.05, 7.00])
+        for (Pose2d wp : path) {
+            double x = wp.getX();
+            double y = wp.getY();
+            boolean insideRamp = (x >= 3.55 && x <= 5.65 && y >= 1.05 && y <= 7.00);
+            assertFalse(insideRamp, "Waypoint at (" + x + ", " + y + ") must NOT be inside the Hub and Ramp collider");
+        }
     }
 
     @Test
@@ -119,5 +160,377 @@ public class AIRobotSimTest {
         }
 
         assertTrue(aiSim.isStalled(), "Watchdog should detect stall after being stationary under command for > 350ms");
+    }
+
+    @Test
+    public void testFindBestFuelTarget() {
+        Pose2d currentPose = new Pose2d(8.0, 4.0, new Rotation2d());
+        Pose2d target = aiSim.findBestFuelTarget(currentPose, true);
+        assertNotNull(target);
+        assertTrue(target.getX() >= 4.0 && target.getX() <= 16.2, "Target must be a valid field fuel position");
+        assertTrue(target.getY() >= 0.3 && target.getY() <= 7.9, "Target Y must be within field boundaries");
+    }
+
+    @Test
+    public void testFuelCountManagement() {
+        aiSim.setFuelCount(0);
+        assertEquals(0, aiSim.getFuelCount());
+
+        aiSim.setFuelCount(5);
+        assertEquals(5, aiSim.getFuelCount());
+    }
+
+    @Test
+    public void testLaunchOpponentShotDoesNotThrow() {
+        Pose2d firingPose = new Pose2d(9.5, 4.035, new Rotation2d(0));
+        Translation2d redHub = frc.robot.Data.Constants.RED_HUB_LOCATION.toTranslation2d();
+
+        assertDoesNotThrow(() -> aiSim.launchOpponentShot(firingPose, redHub, true));
+    }
+
+    @Test
+    public void testCyclerShootingPhaseTransition() {
+        aiSim.setFuelCount(3);
+        aiSim.setCyclerPhase(CyclerPhase.SHOOTING);
+        assertEquals(CyclerPhase.SHOOTING, aiSim.getCyclerPhase());
+
+        SmartDashboard.putBoolean("Features/Opponent Robot", true);
+        SmartDashboard.putString("Simulation/AIMode", AIMode.AUTONOMOUS_CYCLER.name());
+        aiSim.getDriveSimulation().setSimulationWorldPose(new Pose2d(14.34, 4.035, Rotation2d.fromDegrees(180)));
+
+        aiSim.simulationUpdate();
+        assertNotNull(aiSim.getCyclerPhase());
+    }
+
+    @Test
+    public void testIsPoseInLowClearanceZone() {
+        // Red Trench zone: X in [10.44, 13.34], Y >= 6.50 or Y <= 1.55
+        assertTrue(aiSim.isPoseInLowClearanceZone(new Pose2d(11.5, 7.0, new Rotation2d())),
+                "Pose at (11.5, 7.0) should be inside Red low-clearance trench");
+        assertTrue(aiSim.isPoseInLowClearanceZone(new Pose2d(11.5, 1.2, new Rotation2d())),
+                "Pose at (11.5, 1.2) should be inside Red bottom low-clearance trench");
+
+        // Blue Trench zone: X in [3.20, 6.10], Y >= 6.50 or Y <= 1.55
+        assertTrue(aiSim.isPoseInLowClearanceZone(new Pose2d(4.5, 7.0, new Rotation2d())),
+                "Pose at (4.5, 7.0) should be inside Blue low-clearance trench");
+        assertTrue(aiSim.isPoseInLowClearanceZone(new Pose2d(4.5, 1.2, new Rotation2d())),
+                "Pose at (4.5, 1.2) should be inside Blue bottom low-clearance trench");
+
+        // Open field between trenches (Y = 4.035) should NOT be low clearance
+        assertFalse(aiSim.isPoseInLowClearanceZone(new Pose2d(11.5, 4.035, new Rotation2d())),
+                "Center field between trenches must not be low clearance");
+        assertFalse(aiSim.isPoseInLowClearanceZone(new Pose2d(4.5, 4.035, new Rotation2d())),
+                "Center field between trenches must not be low clearance");
+    }
+
+    @Test
+    public void testIsValidShootingLocation() {
+        // Valid Red shooting location: ~2.40m from Red Hub (11.94, 4.035) strictly inside Red Alliance Zone (X >= 11.94)
+        Pose2d validRed = new Pose2d(14.34, 4.035, Rotation2d.fromDegrees(180));
+        assertTrue(aiSim.isValidShootingLocation(validRed, true),
+                "Position at 14.34m in Red Alliance Zone should be a valid Red shooting location");
+
+        // Midfield position (~2.34m from Red Hub, but outside Red Alliance Zone, X < 11.94) -> MUST BE INVALID
+        Pose2d midfieldRed = new Pose2d(9.60, 4.035, new Rotation2d());
+        assertFalse(aiSim.isValidShootingLocation(midfieldRed, true),
+                "Position at 9.60m is in midfield (outside Red Alliance Zone), shooting must be rejected");
+
+        // Too close (< 1.40m from Red Hub)
+        Pose2d tooCloseRed = new Pose2d(12.50, 4.035, Rotation2d.fromDegrees(180));
+        assertFalse(aiSim.isValidShootingLocation(tooCloseRed, true),
+                "Position at 0.56m is too close to Hub (min distance is 1.40m)");
+
+        // Too far (> 4.00m from Red Hub)
+        Pose2d tooFarRed = new Pose2d(16.00, 4.035, Rotation2d.fromDegrees(180));
+        assertFalse(aiSim.isValidShootingLocation(tooFarRed, true),
+                "Position at 4.06m is too far from Hub (max distance is 4.00m)");
+
+        // Under Trench ceiling truss (low clearance)
+        Pose2d trenchRed = new Pose2d(12.50, 7.0, Rotation2d.fromDegrees(180));
+        assertFalse(aiSim.isValidShootingLocation(trenchRed, true),
+                "Position under low-clearance trench ceiling truss must not be a valid shooting location");
+
+        // Wrong side of field for Red Hub (X < 8.0)
+        Pose2d wrongSideRed = new Pose2d(3.0, 4.035, new Rotation2d());
+        assertFalse(aiSim.isValidShootingLocation(wrongSideRed, true),
+                "Opposite side of field should not be valid for Red Hub shooting");
+
+        // Valid Blue shooting location: ~2.00m from Blue Hub (4.60, 4.035) strictly inside Blue Alliance Zone (X <= 4.60)
+        Pose2d validBlue = new Pose2d(2.60, 4.035, new Rotation2d());
+        assertTrue(aiSim.isValidShootingLocation(validBlue, false),
+                "Position at 2.60m in Blue Alliance Zone should be a valid Blue shooting location");
+
+        // Midfield position for Blue (~2.30m from Blue Hub, but X = 6.90 > 4.60 in Midfield) -> MUST BE INVALID
+        Pose2d midfieldBlue = new Pose2d(6.90, 4.035, Rotation2d.fromDegrees(180));
+        assertFalse(aiSim.isValidShootingLocation(midfieldBlue, false),
+                "Position at 6.90m is in midfield (outside Blue Alliance Zone), shooting must be rejected");
+
+        // Blue trench low clearance
+        Pose2d trenchBlue = new Pose2d(3.50, 7.0, new Rotation2d());
+        assertFalse(aiSim.isValidShootingLocation(trenchBlue, false),
+                "Position under Blue trench ceiling truss must not be a valid shooting location");
+    }
+
+    @Test
+    public void testIsShootingLaneBlocked() {
+        Pose2d shooterPose = new Pose2d(14.34, 4.035, Rotation2d.fromDegrees(180));
+        Translation2d redHub = frc.robot.Data.Constants.RED_HUB_LOCATION.toTranslation2d();
+
+        // Place player robot directly in the shooting corridor between shooter and Hub (dist = 1.34m, angle diff = 0)
+        frc.robot.Subsystems.SwerveBase.getInstance().resetOdometry(new Pose2d(13.0, 4.035, new Rotation2d()));
+        assertTrue(aiSim.isShootingLaneBlocked(shooterPose, redHub),
+                "Shooting lane should be blocked when player robot defends directly in front of shooter");
+
+        // Move player robot away to a non-blocking position
+        frc.robot.Subsystems.SwerveBase.getInstance().resetOdometry(new Pose2d(3.0, 1.0, new Rotation2d()));
+        assertFalse(aiSim.isShootingLaneBlocked(shooterPose, redHub),
+                "Shooting lane should be clear when player robot is far from the shooting corridor");
+    }
+
+    @Test
+    public void testCanShootNowEvaluation() {
+        // Red shooter at 14.34m (inside Red Alliance Zone), aimed directly along -X at Red Hub (11.94, 4.035)
+        Pose2d shootingPose = new Pose2d(14.34, 4.035, Rotation2d.fromDegrees(180));
+        frc.robot.Subsystems.SwerveBase.getInstance().resetOdometry(new Pose2d(3.0, 1.0, new Rotation2d()));
+
+        // Case 1: No fuel held -> cannot shoot
+        aiSim.setFuelCount(0);
+        assertFalse(aiSim.canShootNow(shootingPose, true), "Cannot shoot when held fuel count is 0");
+
+        // Case 2: Has fuel, valid location in alliance zone, clear lane, aligned heading -> can shoot!
+        aiSim.setFuelCount(3);
+        assertTrue(aiSim.canShootNow(shootingPose, true), "Should be able to shoot when fuel > 0, lane clear, and aimed");
+
+        // Case 3: Heading misaligned (facing 0 degrees away from Red Hub) -> cannot shoot
+        Pose2d misalignedPose = new Pose2d(14.34, 4.035, Rotation2d.fromDegrees(0));
+        assertFalse(aiSim.canShootNow(misalignedPose, true), "Cannot shoot when heading is misaligned from Hub");
+
+        // Case 4: Midfield pose (even if aimed at Hub) -> cannot shoot because outside alliance zone
+        Pose2d midfieldPose = new Pose2d(9.60, 4.035, Rotation2d.fromDegrees(0));
+        assertFalse(aiSim.canShootNow(midfieldPose, true), "Cannot shoot from midfield outside alliance zone");
+
+        // Case 5: Defender blocks lane -> cannot shoot
+        frc.robot.Subsystems.SwerveBase.getInstance().resetOdometry(new Pose2d(13.0, 4.035, new Rotation2d()));
+        assertFalse(aiSim.canShootNow(shootingPose, true), "Cannot shoot when player defender blocks shooting lane");
+    }
+
+    @Test
+    public void testOptimalShootingPose() {
+        frc.robot.Subsystems.SwerveBase.getInstance().resetOdometry(new Pose2d(3.0, 1.0, new Rotation2d()));
+
+        // Test 1: For Red Opponent from midfield (X = 7.0), optimal pose MUST project into Red Alliance Zone (X >= 11.94)
+        Pose2d farPose = new Pose2d(7.0, 4.035, new Rotation2d());
+        Pose2d optimalRed = aiSim.getOptimalShootingPose(farPose, true);
+
+        assertNotNull(optimalRed);
+        assertTrue(optimalRed.getX() >= 12.60 && optimalRed.getX() <= 14.80,
+                "Optimal shooting pose X must be inside Red Alliance Zone (X in [12.60, 14.80]), actual: " + optimalRed.getX());
+        assertTrue(optimalRed.getY() >= 2.2 && optimalRed.getY() <= 5.8,
+                "Optimal shooting pose Y must avoid low-clearance trenches (Y in [2.2, 5.8]), actual: " + optimalRed.getY());
+        assertEquals(180.0, Math.abs(optimalRed.getRotation().getDegrees()), 15.0,
+                "Optimal Red shooting pose must face toward the Red Hub (approx 180 deg)");
+
+        // Test 2: For Blue Opponent, optimal pose MUST project into Blue Alliance Zone (X <= 4.60)
+        Pose2d optimalBlue = aiSim.getOptimalShootingPose(farPose, false);
+        assertNotNull(optimalBlue);
+        assertTrue(optimalBlue.getX() >= 1.80 && optimalBlue.getX() <= 3.90,
+                "Optimal shooting pose X must be inside Blue Alliance Zone (X in [1.80, 3.90]), actual: " + optimalBlue.getX());
+        assertEquals(0.0, optimalBlue.getRotation().getDegrees(), 15.0,
+                "Optimal Blue shooting pose must face toward the Blue Hub (approx 0 deg)");
+
+        // Test 3: If already at a valid, unblocked shooting pose inside alliance zone, getOptimalShootingPose uses current position
+        Pose2d alreadyValid = new Pose2d(14.34, 4.035, Rotation2d.fromDegrees(180));
+        Pose2d optFromValid = aiSim.getOptimalShootingPose(alreadyValid, true);
+        assertEquals(alreadyValid.getX(), optFromValid.getX(), 0.05, "Should preserve current valid X location");
+        assertEquals(alreadyValid.getY(), optFromValid.getY(), 0.05, "Should preserve current valid Y location");
+    }
+
+    @Test
+    public void testAllianceZoneShootingEnforcement() {
+        // Test AllianceFlipUtil zone checking
+        assertTrue(frc.robot.Utils.AllianceFlipUtil.isPoseInAllianceZone(new Pose2d(2.5, 4.0, new Rotation2d()), false),
+                "Pose at X=2.5m should be in Blue Alliance Zone");
+        assertFalse(frc.robot.Utils.AllianceFlipUtil.isPoseInAllianceZone(new Pose2d(6.0, 4.0, new Rotation2d()), false),
+                "Pose at X=6.0m should NOT be in Blue Alliance Zone (in Midfield)");
+
+        assertTrue(frc.robot.Utils.AllianceFlipUtil.isPoseInAllianceZone(new Pose2d(14.0, 4.0, new Rotation2d()), true),
+                "Pose at X=14.0m should be in Red Alliance Zone");
+        assertFalse(frc.robot.Utils.AllianceFlipUtil.isPoseInAllianceZone(new Pose2d(9.0, 4.0, new Rotation2d()), true),
+                "Pose at X=9.0m should NOT be in Red Alliance Zone (in Midfield)");
+
+        // Test Shooter calculation enforces alliance zone
+        frc.robot.Subsystems.Shooter shooter = frc.robot.Subsystems.Shooter.getInstance();
+
+        // When in Blue Alliance Zone (X = 3.0), shot is possible
+        var validSolution = shooter.calculateShootingSolution(new Pose2d(3.0, 4.0, new Rotation2d()));
+        assertTrue(validSolution.shotPossibility(), "Shooter solution should be possible inside Blue Alliance Zone");
+
+        // When in Midfield (X = 6.0), shot is rejected
+        var midfieldSolution = shooter.calculateShootingSolution(new Pose2d(6.0, 4.0, new Rotation2d()));
+        assertFalse(midfieldSolution.shotPossibility(), "Shooter solution must be rejected when outside Alliance Zone");
+    }
+
+    @Test
+    public void testTrenchTransitLockoutAndCentering() {
+        // Place bot in Blue Top Trench (X=4.5, Y=7.60), target downstream at (8.0, 7.42)
+        Pose2d trenchPose = new Pose2d(4.5, 7.60, Rotation2d.fromDegrees(15.0));
+        Pose2d targetPose = new Pose2d(8.0, 7.42, new Rotation2d());
+
+        // Player robot placed nearby in front of trench
+        frc.robot.Subsystems.SwerveBase.getInstance().resetOdometry(new Pose2d(5.0, 7.42, new Rotation2d()));
+
+        edu.wpi.first.math.kinematics.ChassisSpeeds speeds = aiSim.computeDriveToPoseSpeeds(trenchPose, targetPose, 3.0);
+        assertNotNull(speeds);
+
+        // 1. Cross-track centering: Bot is at Y=7.60, centerline is 7.42 -> Vy should be negative (steers down to center)
+        assertTrue(speeds.vyMetersPerSecond < -0.1,
+                "Cross-track centering must steer robot towards trench centerline (Y=7.42), vy: " + speeds.vyMetersPerSecond);
+
+        // 2. Heading alignment: Should drive with heading aligned parallel to trench walls (0 deg)
+        // With current rotation at 15 deg and target at 0 deg, omega should steer back towards 0
+        assertTrue(speeds.omegaRadiansPerSecond < 0.0,
+                "Heading controller must correct towards 0 deg parallel to trench wall");
+
+        // 3. APF player repulsion must be suppressed in trench to prevent wall pinning
+        // Positive forward velocity maintained despite player at X=5.0
+        assertTrue(speeds.vxMetersPerSecond > 0.5,
+                "Forward motion along trench corridor must be preserved without APF wall collisions");
+    }
+
+    @Test
+    public void testTrapezoidalDecelerationProfile() {
+        Pose2d startPose = new Pose2d(2.0, 4.0, new Rotation2d());
+        Pose2d targetPose = new Pose2d(8.0, 4.0, new Rotation2d());
+
+        // Far away (d=6.0m): speeds should be at maxSpeed (3.0 m/s)
+        var farSpeeds = aiSim.computeDriveToPoseSpeeds(startPose, targetPose, 3.0);
+        assertEquals(3.0, Math.hypot(farSpeeds.vxMetersPerSecond, farSpeeds.vyMetersPerSecond), 0.25,
+                "Speed far from target should reach maxSpeed");
+
+        // Close to goal (d=0.25m): speed should be clamped by sqrt(2 * a * d)
+        Pose2d closePose = new Pose2d(7.75, 4.0, new Rotation2d());
+        var closeSpeeds = aiSim.computeDriveToPoseSpeeds(closePose, targetPose, 3.0);
+        double closeSpeed = Math.hypot(closeSpeeds.vxMetersPerSecond, closeSpeeds.vyMetersPerSecond);
+        assertTrue(closeSpeed < 2.0 && closeSpeed > 0.2,
+                "Speed close to goal must be decelerating smoothly via trapezoidal profile, actual: " + closeSpeed);
+
+        // Within goal deadband (d=0.02m): commanded speed should drop to 0
+        Pose2d arrivalPose = new Pose2d(7.99, 4.0, new Rotation2d());
+        var arrivalSpeeds = aiSim.computeDriveToPoseSpeeds(arrivalPose, targetPose, 3.0);
+        assertEquals(0.0, Math.hypot(arrivalSpeeds.vxMetersPerSecond, arrivalSpeeds.vyMetersPerSecond), 0.01,
+                "Speed within goal deadband must be 0");
+    }
+
+    @Test
+    public void testMonotonicPathProgressionAndGoalDeadband() {
+        // Initial plan from (14.0, 4.035) to (8.27, 4.035)
+        Pose2d startPose = new Pose2d(14.0, 4.035, new Rotation2d());
+        Pose2d targetPose = new Pose2d(8.27, 4.035, new Rotation2d());
+
+        aiSim.computeDriveToPoseSpeeds(startPose, targetPose, 3.0);
+        var initialPath = aiSim.getCurrentPath();
+        assertFalse(initialPath.isEmpty());
+        int initialSize = initialPath.size();
+
+        // Slight perturbation of target within deadband (0.25m shift)
+        Pose2d perturbedTarget = new Pose2d(8.52, 4.035, new Rotation2d());
+        aiSim.computeDriveToPoseSpeeds(startPose, perturbedTarget, 3.0);
+
+        // Path size should remain identical (not blown away / re-planned from scratch)
+        assertEquals(initialSize, aiSim.getCurrentPath().size(),
+                "Target movement within deadband (<0.85m) should preserve existing waypoint route");
+
+        // Final waypoint should be updated to perturbed target
+        Pose2d finalWp = aiSim.getCurrentPath().get(aiSim.getCurrentPath().size() - 1);
+        assertEquals(perturbedTarget.getX(), finalWp.getX(), 0.01);
+    }
+
+    @Test
+    public void testOpponentSpawnPoseOppositeFromPlayer() {
+        // 1. When player is Blue (playerIsRed == false), Opponent AI is Red and must spawn on Red side
+        Pose2d bluePlayerOpponentSpawn = AIRobotSim.getOpponentSpawnPose(false);
+        assertTrue(bluePlayerOpponentSpawn.getX() > 10.0,
+                "When player is on Blue Alliance, opponent AI must spawn on Red side of field (X > 10.0), actual: " + bluePlayerOpponentSpawn.getX());
+        assertEquals(180.0, bluePlayerOpponentSpawn.getRotation().getDegrees(), 5.0,
+                "Opponent AI on Red side must face inward toward Blue (180 deg)");
+
+        // 2. When player is Red (playerIsRed == true), Opponent AI is Blue and must spawn on Blue side
+        Pose2d redPlayerOpponentSpawn = AIRobotSim.getOpponentSpawnPose(true);
+        assertTrue(redPlayerOpponentSpawn.getX() < 5.0,
+                "When player is on Red Alliance, opponent AI must spawn on Blue side of field (X < 5.0), actual: " + redPlayerOpponentSpawn.getX());
+        assertEquals(0.0, redPlayerOpponentSpawn.getRotation().getDegrees(), 5.0,
+                "Opponent AI on Blue side must face inward toward Red (0 deg)");
+
+        // 3. Trajectory mirroring preserves opposite side guarantee
+        Pose2d redSideTraj = new Pose2d(13.88, 2.53, Rotation2d.fromDegrees(142.0));
+
+        // When player is Blue (opponent is Red), redSideTraj is already on Red side -> stays on Red side
+        Pose2d mirroredForBlue = AIRobotSim.mirrorPoseForOpponent(redSideTraj, false);
+        assertTrue(mirroredForBlue.getX() > 10.0, "Trajectory on Red side stays on Red side for Blue player");
+
+        // When player is Red (opponent is Blue), redSideTraj is mirrored to Blue side
+        Pose2d mirroredForRed = AIRobotSim.mirrorPoseForOpponent(redSideTraj, true);
+        assertTrue(mirroredForRed.getX() < 5.0, "Trajectory on Red side mirrors to Blue side for Red player");
+    }
+
+    @Test
+    public void testSetRobotPoseSynchronizesFrames() {
+        Pose2d testPose = new Pose2d(14.54, 4.035, Rotation2d.fromDegrees(180));
+        aiSim.setRobotPose(testPose);
+
+        Pose2d actualWorld = aiSim.getDriveSimulation().getActualPoseInSimulationWorld();
+        assertEquals(testPose.getX(), actualWorld.getX(), 0.05);
+        assertEquals(testPose.getY(), actualWorld.getY(), 0.05);
+        assertEquals(testPose.getRotation().getDegrees(), actualWorld.getRotation().getDegrees(), 1.0);
+
+        Pose2d odoEstimated = aiSim.getDriveSimulation().getOdometryEstimatedPose();
+        assertEquals(testPose.getX(), odoEstimated.getX(), 0.1);
+        assertEquals(testPose.getY(), odoEstimated.getY(), 0.1);
+        assertEquals(testPose.getRotation().getDegrees(), odoEstimated.getRotation().getDegrees(), 5.0);
+    }
+
+    @Test
+    public void testFieldToRobotRelativeConversionPreservesTravelDirection() {
+        // When opponent is facing 180 degrees (toward -X in field frame)
+        Rotation2d facingOpposite = Rotation2d.fromDegrees(180);
+        // Field speed commanded: move towards Blue (-X) at 2.0 m/s
+        ChassisSpeeds fieldSpeeds = new ChassisSpeeds(-2.0, 0.0, 0.0);
+
+        ChassisSpeeds robotSpeeds = ChassisSpeeds.fromFieldRelativeSpeeds(fieldSpeeds, facingOpposite);
+        // In robot frame: since robot faces -X, moving towards -X is forward relative to robot (+X robot)
+        assertTrue(robotSpeeds.vxMetersPerSecond > 1.9,
+                "Moving along -X field direction when facing 180 deg must command positive robot-relative vx (forward): " + robotSpeeds.vxMetersPerSecond);
+        assertEquals(0.0, robotSpeeds.vyMetersPerSecond, 0.01);
+
+        // When opponent is facing 0 degrees (toward +X in field frame)
+        Rotation2d facingZero = Rotation2d.fromDegrees(0);
+        ChassisSpeeds fieldSpeedsPlusX = new ChassisSpeeds(2.0, 0.0, 0.0);
+        ChassisSpeeds robotSpeedsPlusX = ChassisSpeeds.fromFieldRelativeSpeeds(fieldSpeedsPlusX, facingZero);
+        assertTrue(robotSpeedsPlusX.vxMetersPerSecond > 1.9,
+                "Moving along +X field direction when facing 0 deg must command positive robot-relative vx: " + robotSpeedsPlusX.vxMetersPerSecond);
+
+        // When opponent is facing 90 degrees (toward +Y in field frame)
+        Rotation2d facing90 = Rotation2d.fromDegrees(90);
+        ChassisSpeeds fieldSpeedsPlusY = new ChassisSpeeds(0.0, 2.0, 0.0);
+        ChassisSpeeds robotSpeedsPlusY = ChassisSpeeds.fromFieldRelativeSpeeds(fieldSpeedsPlusY, facing90);
+        assertTrue(robotSpeedsPlusY.vxMetersPerSecond > 1.9,
+                "Moving along +Y field direction when facing 90 deg must command positive robot-relative vx: " + robotSpeedsPlusY.vxMetersPerSecond);
+    }
+
+    @Test
+    public void testMidlinePatrolFallbackOrientationFacingFieldInward() {
+        // When opponent is Red (on Red side at X ~ 14.5m), fallback midline target must face 180 deg (toward Blue / midfield)
+        Pose2d redOpponentPose = new Pose2d(14.0, 4.0, Rotation2d.fromDegrees(180));
+        Pose2d redFallback = aiSim.findBestFuelTarget(redOpponentPose, true);
+        assertNotNull(redFallback);
+        assertEquals(180.0, redFallback.getRotation().getDegrees(), 5.0,
+                "Red opponent fallback midline patrol must face inward toward midfield (180 deg)");
+
+        // When opponent is Blue (on Blue side at X ~ 2.0m), fallback midline target must face 0 deg (toward Red / midfield)
+        Pose2d blueOpponentPose = new Pose2d(2.0, 4.0, Rotation2d.fromDegrees(0));
+        Pose2d blueFallback = aiSim.findBestFuelTarget(blueOpponentPose, false);
+        assertNotNull(blueFallback);
+        assertEquals(0.0, blueFallback.getRotation().getDegrees(), 5.0,
+                "Blue opponent fallback midline patrol must face inward toward midfield (0 deg)");
     }
 }

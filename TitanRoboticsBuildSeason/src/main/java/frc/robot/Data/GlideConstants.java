@@ -16,12 +16,12 @@ import frc.robot.Utils.AllianceFlipUtil;
  */
 public class GlideConstants {
 
-    public static final double FIELD_LENGTH = AllianceFlipUtil.FIELD_LENGTH;
-    public static final double FIELD_WIDTH = AllianceFlipUtil.FIELD_WIDTH;
+    public static final double FIELD_LENGTH = FieldMap.FIELD_LENGTH;
+    public static final double FIELD_WIDTH = FieldMap.FIELD_WIDTH;
 
     // Y-Coordinates for Lanes
-    public static final double Y_BOT_LANE = 0.65;
-    public static final double Y_TOP_LANE = FIELD_WIDTH - 0.65;
+    public static final double Y_BOT_LANE = FieldMap.Trenches.BOT_CORRIDOR_Y;
+    public static final double Y_TOP_LANE = FieldMap.Trenches.TOP_CORRIDOR_Y;
 
     public static class GlidePoint {
         public final String name;

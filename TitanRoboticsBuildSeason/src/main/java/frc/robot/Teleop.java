@@ -457,9 +457,10 @@ public class Teleop {
 
     public void shooterControl() {
         ShootingSolution solution = shooter.getLatestShootingSolution();
+        boolean inAllianceZone = AllianceFlipUtil.isPoseInAllianceZone(swerveBase.getPose());
         boolean autoAimRequested = rightTrigger > 0.3 && Dashboard.isAutoAimEnabled();
-        boolean autoAimActive = autoAimRequested && solution != null && solution.shotPossibility();
-        boolean manualRequested = rightTrigger > 0.3 && !autoAimActive;
+        boolean autoAimActive = autoAimRequested && solution != null && solution.shotPossibility() && inAllianceZone;
+        boolean manualRequested = rightTrigger > 0.3 && !autoAimActive && inAllianceZone;
 
         if (autoAimActive) {
             // Spool up flywheels to distance solution
@@ -467,7 +468,7 @@ public class Teleop {
 
             double headingError = Math.abs(solution.shootingAngle().minus(swerveBase.getHeading()).getDegrees());
             boolean headingAligned = headingError <= Constants.ShooterConstants.ALIGNMENT_HEADING_TOLERANCE_DEG;
-            boolean flywheelsReady = shooter.isAtTargetVelocity();
+            boolean flywheelsReady = shooter.isAtCorrectSpeed();
             boolean hubActive = Dashboard.getInstance().isHubActive();
             boolean targetLocked = headingAligned && flywheelsReady && hubActive;
 
@@ -477,7 +478,7 @@ public class Teleop {
             }
             wasTargetLocked = targetLocked;
 
-            if (headingAligned && hubActive) {
+            if (headingAligned && hubActive && inAllianceZone) {
                 shooter.shoot();
             } else {
                 shooter.prepareToShoot();

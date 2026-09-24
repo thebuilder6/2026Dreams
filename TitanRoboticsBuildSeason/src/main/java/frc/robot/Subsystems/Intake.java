@@ -17,6 +17,7 @@ import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import frc.robot.Data.Constants;
 import frc.robot.Data.Constants.IntakeConstants;
+import frc.robot.Data.FieldMap;
 import frc.robot.Interfaces.Subsystem;
 import frc.robot.Subsystems.intake.IntakeIO;
 import frc.robot.Subsystems.intake.IntakeIO.IntakeIOInputs;
@@ -134,7 +135,7 @@ public class Intake implements Subsystem {
                 Constants.INTAKE_ARM_KP,
                 Constants.INTAKE_ARM_KI,
                 Constants.INTAKE_ARM_KD,
-                new TrapezoidProfile.Constraints(Constants.MAX_ARM_VELOCITY, Constants.MAX_ARM_ACCELERATION));
+                new TrapezoidProfile.Constraints(IntakeConstants.MAX_ARM_VELOCITY, IntakeConstants.MAX_ARM_ACCELERATION));
 
         // Tell the PID controller that 0 and 360 are continuous
         pivotProfiledPIDController.enableContinuousInput(0, 360);
@@ -501,20 +502,7 @@ public class Intake implements Subsystem {
      * arm must be stowed low.
      */
     public static boolean isPoseInTrenchLowClearanceZone(Pose2d pose) {
-        if (pose == null)
-            return false;
-        double x = pose.getX();
-        double y = pose.getY();
-
-        // Blue Trench corridors (X in [3.20, 6.10])
-        boolean inBlueTrenchX = (x >= 3.20 && x <= 6.10);
-        // Red Trench corridors (X in [10.44, 13.34])
-        boolean inRedTrenchX = (x >= 10.44 && x <= 13.34);
-
-        boolean inTopTrenchY = (y >= 6.50);
-        boolean inBottomTrenchY = (y <= 1.55);
-
-        return (inBlueTrenchX || inRedTrenchX) && (inTopTrenchY || inBottomTrenchY);
+        return FieldMap.Trenches.isLowClearance(pose);
     }
 
     @Override

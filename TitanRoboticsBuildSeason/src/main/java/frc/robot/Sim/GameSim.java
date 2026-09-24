@@ -22,6 +22,8 @@ import edu.wpi.first.networktables.StructArrayPublisher;
 import edu.wpi.first.wpilibj.RobotBase;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
+import frc.robot.Data.Constants;
+import frc.robot.Data.FieldMap;
 import frc.robot.Interfaces.Subsystem;
 import frc.robot.Subsystems.Intake;
 import frc.robot.Subsystems.Shooter;
@@ -40,7 +42,7 @@ public class GameSim implements Subsystem {
         static final double MATCH_DURATION_SEC = 150.0;
         static final double PICKUP_RADIUS_M = 0.45;
         static final double PICKUP_ANGLE_RAD = Math.PI / 2; // 90 degrees
-        static final int MAX_HELD_BALLS = 50;
+        static final int MAX_HELD_BALLS = Constants.IntakeConstants.MAX_HELD_BALLS;
         static final int PICKUP_PER_CHECK_LIMIT = 10;
         static final double MIN_RESPAWN_INTERVAL = 0.2;
         static final double PUBLISH_INTERVAL_SEC = 0.1; // 10Hz
@@ -53,16 +55,31 @@ public class GameSim implements Subsystem {
         static final double CENTER_HALF_Y_MIN = 2.0;
         static final double CENTER_HALF_Y_MAX = 6.0;
         
-        // Field boundaries for validation
+        // Field boundaries for validation (Consolidated via FieldMap)
         static final double FIELD_X_MIN = 0.0;
-        static final double FIELD_X_MAX = 16.54;
+        static final double FIELD_X_MAX = FieldMap.FIELD_LENGTH;
         static final double FIELD_Y_MIN = 0.0;
-        static final double FIELD_Y_MAX = 8.02;
+        static final double FIELD_Y_MAX = FieldMap.FIELD_WIDTH;
         
         // Initial game state
         static final int INITIAL_HELD_BALLS = 8;
         static final int LIGHTWEIGHT_BALL_COUNT = 54; // Strategic balanced physics mode (54 balls: 12 Blue, 12 Red, 30 Center)
         static final String DEFAULT_GAME_MESSAGE = "R";
+
+        // Official 2026 Rebuilt Depot coordinates (meters, from FieldMap.Depots)
+        // Blue Depot (Top-Left inside Blue driver station wall X ~ 0m, Y ~ 5.53m - 6.44m)
+        static final double BLUE_DEPOT_X = FieldMap.Depots.BLUE_DEPOT_LOAD_POINT.getX();
+        static final double BLUE_DEPOT_Y = FieldMap.Depots.BLUE_DEPOT_LOAD_POINT.getY(); // Centered 3-row start
+        static final double BLUE_DEPOT_FULL_Y = 5.58; // Full 6-row start
+
+        // Red Depot (Bottom-Right inside Red driver station wall X ~ 16.54m, Y ~ 1.65m - 2.56m)
+        static final double RED_DEPOT_X = FieldMap.Depots.RED_DEPOT_LOAD_POINT.getX();
+        static final double RED_DEPOT_Y = FieldMap.Depots.RED_DEPOT_LOAD_POINT.getY(); // Centered 3-row start
+        static final double RED_DEPOT_FULL_Y = 1.72; // Full 6-row start
+
+        // Grid spacing for Fuel balls
+        static final double BALL_SPACING_X = 0.152;
+        static final double BALL_SPACING_Y = 0.151;
     }
 
     private static final AtomicReference<GameSim> instance = new AtomicReference<>();
@@ -306,15 +323,15 @@ public class GameSim implements Subsystem {
         }
 
         try {
-            if (Intake.getInstance().getState() != Intake.IntakeState.INTAKING) {
-                return;
-            }
-
             // Primary: Check MapleSim physics-based IntakeSimulation
             var mapleIntake = Intake.getInstance().getMapleIntakeSim();
             if (mapleIntake != null) {
                 // Synchronize heldBalls directly with MapleSim intake piece count
                 heldBalls = mapleIntake.getGamePiecesAmount();
+                return;
+            }
+
+            if (Intake.getInstance().getState() != Intake.IntakeState.INTAKING) {
                 return;
             }
 
@@ -448,7 +465,8 @@ public class GameSim implements Subsystem {
     }
 
     /**
-     * Spawns pickup balls using lightweight strategic distribution (20 balls) or full density.
+     * Spawns pickup balls using lightweight strategic distribution (54 balls) or full density.
+     * Accurately places depot balls inside official 2026 Rebuilt human player depot bays.
      */
     private void spawnPickupBalls() {
         try {
@@ -456,44 +474,38 @@ public class GameSim implements Subsystem {
             arena.clearGamePieces();
 
             boolean fullDensity = SmartDashboard.getBoolean("Simulation/FullMatchBallDensity", false);
+            int depotRows = fullDensity ? 6 : 3;
 
-            if (fullDensity) {
-                arena.placeGamePiecesOnField();
-                Set<GamePieceOnFieldSimulation> pieces = arena.gamePiecesOnField();
-                List<GamePieceOnFieldSimulation> toRemove = new ArrayList<>();
-
-                for (var piece : pieces) {
-                    Translation2d pos = piece.getPoseOnField().getTranslation();
-                    double x = pos.getX();
-                    double y = pos.getY();
-
-                    // Remove anything outside the field boundaries
-                    if (x < Config.FIELD_X_MIN || x > Config.FIELD_X_MAX || 
-                        y < Config.FIELD_Y_MIN || y > Config.FIELD_Y_MAX) {
-                        toRemove.add(piece);
-                    }
+            // 1. Blue Alliance Depot (Top-Left corner against driver station wall X ~ 0m, Y ~ 5.53m - 6.44m)
+            for (int i = 0; i < 4; i++) {
+                double x = Config.BLUE_DEPOT_X + (i * Config.BALL_SPACING_X);
+                for (int j = 0; j < depotRows; j++) {
+                    double y = (fullDensity ? Config.BLUE_DEPOT_FULL_Y : Config.BLUE_DEPOT_Y) + (j * Config.BALL_SPACING_Y);
+                    arena.addGamePiece(new RebuiltFuelOnField(new Translation2d(x, y)));
                 }
+            }
 
-                for (var piece : toRemove) {
-                    arena.removeGamePiece(piece);
+            // 2. Red Alliance Depot (Bottom-Right corner against driver station wall X ~ 16.54m, Y ~ 1.65m - 2.56m)
+            for (int i = 0; i < 4; i++) {
+                double x = Config.RED_DEPOT_X + (i * Config.BALL_SPACING_X);
+                for (int j = 0; j < depotRows; j++) {
+                    double y = (fullDensity ? Config.RED_DEPOT_FULL_Y : Config.RED_DEPOT_Y) + (j * Config.BALL_SPACING_Y);
+                    arena.addGamePiece(new RebuiltFuelOnField(new Translation2d(x, y)));
+                }
+            }
+
+            // 3. Center Neutral Zone (Full or lightweight 3x10 grid along the centerline)
+            if (fullDensity) {
+                // Full center grid: 12 columns x 30 rows
+                for (int col = 0; col < 12; col++) {
+                    double x = 7.36 + (col * Config.BALL_SPACING_X);
+                    for (int row = 0; row < 30; row++) {
+                        double y = 1.72 + (row * Config.BALL_SPACING_Y);
+                        arena.addGamePiece(new RebuiltFuelOnField(new Translation2d(x, y)));
+                    }
                 }
             } else {
-                // Strategic Balanced Physics Mode (54 balls total: 12 Blue Depot, 12 Red Depot, 30 Center):
-                // 1. Blue Depot (12 balls: 4x3 cluster)
-                for (int i = 0; i < 4; i++) {
-                    for (int j = 0; j < 3; j++) {
-                        arena.addGamePiece(new RebuiltFuelOnField(new Translation2d(1.7 + (i * 0.22), 6.4 + (j * 0.22))));
-                    }
-                }
-
-                // 2. Red Depot (12 balls: 4x3 cluster)
-                for (int i = 0; i < 4; i++) {
-                    for (int j = 0; j < 3; j++) {
-                        arena.addGamePiece(new RebuiltFuelOnField(new Translation2d(14.8 - (i * 0.22), 1.6 - (j * 0.22))));
-                    }
-                }
-
-                // 3. Center Neutral Zone (30 balls: 3x10 grid along the centerline)
+                // Strategic Balanced Physics Mode (30 balls: 3x10 grid along the centerline)
                 for (int col = 0; col < 3; col++) {
                     double x = 8.02 + (col * 0.25);
                     for (int row = 0; row < 10; row++) {

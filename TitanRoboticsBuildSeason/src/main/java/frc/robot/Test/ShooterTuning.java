@@ -112,7 +112,7 @@ public class ShooterTuning {
         double targetVelocity = testVelocity.get() * trigger;
         
         if (trigger > 0.1) {
-            shooter.setFlywheelVelocity(targetVelocity);
+            shooter.setTargetRPM(targetVelocity);
             
             if (!testRunning) {
                 testRunning = true;
@@ -171,7 +171,7 @@ public class ShooterTuning {
             var solution = shooter.calculateShootingSolution(testPose, swerve.getFieldVelocity());
             
             if (solution.possible()) {
-                shooter.setFlywheelVelocity(solution.flywheelRPM());
+                shooter.setTargetRPM(solution.flywheelRPM());
                 
                 // Check if ready to fire
                 if (shooter.isReadyToFire(solution.turretAngle())) {
@@ -212,7 +212,7 @@ public class ShooterTuning {
         
         // Test step response
         if (driverController.getRightTriggerAxis() > 0.5) {
-            shooter.setFlywheelVelocity(testVelocity.get());
+            shooter.setTargetRPM(testVelocity.get());
             
             if (!testRunning) {
                 testRunning = true;

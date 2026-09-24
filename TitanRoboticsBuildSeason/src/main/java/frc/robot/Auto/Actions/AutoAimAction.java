@@ -83,7 +83,7 @@ public class AutoAimAction implements Actions {
         SmartDashboard.putNumber("AutoAim/TargetYaw", solution.turretAngle().getDegrees());
 
         if (solution.possible()) {
-            shooter.setFlywheelVelocity(solution.flywheelRPM());
+            shooter.setTargetRPM(solution.flywheelRPM());
 
             // 3. Handle Aiming (Path Override vs Manual Drive)
             double headingErrorDegrees = Math.abs(swerve.getHeading().minus(solution.turretAngle()).getDegrees());
@@ -121,7 +121,7 @@ public class AutoAimAction implements Actions {
         } else {
             // Shot Impossible (e.g. too close/far)
             shooter.setKickerSpeed(0);
-            shooter.setFlywheelVelocity(Constants.ShooterConstants.IDLE_RPM);
+            shooter.setTargetRPM(Constants.ShooterConstants.IDLE_RPM);
             SmartDashboard.putString("AutoAim/Status", "Solution Impossible");
 
             // If path is done and we can't shoot, stop moving
@@ -152,7 +152,7 @@ public class AutoAimAction implements Actions {
         // shooter.stop();
 
         // Better yet: Set to IDLE speed so it doesn't take 0.5s to spin up again later
-        shooter.setFlywheelVelocity(Constants.ShooterConstants.IDLE_RPM);
+        shooter.setTargetRPM(Constants.ShooterConstants.IDLE_RPM);
 
         timer.stop();
         swerve.stop();

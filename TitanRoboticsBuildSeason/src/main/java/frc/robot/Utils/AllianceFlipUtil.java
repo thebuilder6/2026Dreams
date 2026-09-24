@@ -7,6 +7,7 @@ import edu.wpi.first.math.geometry.Translation3d;
 import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.DriverStation.Alliance;
 import frc.robot.Data.Constants;
+import frc.robot.Data.FieldMap;
 
 /**
  * Standardizes coordinate geometry to Blue-origin coordinates across the entire codebase.
@@ -14,8 +15,8 @@ import frc.robot.Data.Constants;
  */
 public class AllianceFlipUtil {
 
-    public static final double FIELD_LENGTH = 16.535; // 4.597 + 11.938
-    public static final double FIELD_WIDTH = 8.070;
+    public static final double FIELD_LENGTH = FieldMap.FIELD_LENGTH;
+    public static final double FIELD_WIDTH = FieldMap.FIELD_WIDTH;
 
     /**
      * @return true if currently on Red alliance.
@@ -105,5 +106,40 @@ public class AllianceFlipUtil {
             return driverHeading.plus(Rotation2d.fromDegrees(180));
         }
         return driverHeading;
+    }
+
+    /**
+     * Checks if a given field translation is inside the specified alliance's scoring zone.
+     * Blue Alliance Zone: X <= 4.597m (Blue Alliance Wall to Blue Hub)
+     * Red Alliance Zone: X >= 11.938m (Red Hub to Red Alliance Wall)
+     * 
+     * @param translation Field translation in standard Blue-origin coordinates
+     * @param isRedAlliance True if checking Red Alliance zone, false for Blue Alliance zone
+     * @return True if translation is within the alliance zone
+     */
+    public static boolean isTranslationInAllianceZone(Translation2d translation, boolean isRedAlliance) {
+        return FieldMap.AllianceZones.isInAllianceZone(translation, isRedAlliance);
+    }
+
+    /**
+     * Checks if a given field pose is inside the specified alliance's scoring zone.
+     * 
+     * @param pose Field pose in standard Blue-origin coordinates
+     * @param isRedAlliance True if checking Red Alliance zone, false for Blue Alliance zone
+     * @return True if pose is within the alliance zone
+     */
+    public static boolean isPoseInAllianceZone(Pose2d pose, boolean isRedAlliance) {
+        if (pose == null) return false;
+        return isTranslationInAllianceZone(pose.getTranslation(), isRedAlliance);
+    }
+
+    /**
+     * Checks if a given field pose is inside the current robot alliance's scoring zone.
+     * 
+     * @param pose Field pose in standard Blue-origin coordinates
+     * @return True if pose is within the current alliance zone
+     */
+    public static boolean isPoseInAllianceZone(Pose2d pose) {
+        return isPoseInAllianceZone(pose, isRedAlliance());
     }
 }

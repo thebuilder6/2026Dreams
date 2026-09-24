@@ -5,6 +5,7 @@ import frc.robot.Interfaces.Actions;
 import frc.robot.Subsystems.Shooter;
 import frc.robot.Subsystems.Shooter.ShootingSolution;
 import frc.robot.Subsystems.SwerveBase;
+import frc.robot.Utils.AllianceFlipUtil;
 
 /*
  * Class: ShootAction
@@ -64,7 +65,8 @@ public class ShootAction implements Actions {
                 shooter.stop();
             }
         } else {
-            if (shooter.isAtTargetVelocity()) {
+            boolean inAllianceZone = AllianceFlipUtil.isPoseInAllianceZone(swerveBase.getPose());
+            if (shooter.isAtCorrectSpeed() && inAllianceZone) {
                 shooter.shoot();
             } else {
                 shooter.prepareToShoot();

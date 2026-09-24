@@ -23,6 +23,7 @@ import edu.wpi.first.wpilibj.Filesystem;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.smartdashboard.Field2d;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
+import frc.robot.Auto.CollisionDetector;
 import frc.robot.Auto.DynamicRouter;
 import frc.robot.Data.Constants;
 import frc.robot.Data.GlideConstants;
@@ -79,18 +80,7 @@ public class SwerveBase implements Subsystem {
 
     private boolean isPitMode = false;
 
-    // IMU Accelerometer Jerk & Collision Detection
-    private double filteredAccelX = 0.0;
-    private double filteredAccelY = 0.0;
-    private double prevFilteredAccelX = 0.0;
-    private double prevFilteredAccelY = 0.0;
-    private double lastAccelTimestamp = 0.0;
-    private double lastCollisionTimestamp = -1.0;
-    private double collisionJerkMagnitude = 0.0;
-    private ChassisSpeeds prevRobotSpeeds = new ChassisSpeeds();
-    private static final double COLLISION_JERK_THRESHOLD = 120.0; // m/s^3
-    private static final double COLLISION_DECEL_THRESHOLD = 10.0; // m/s^2 (~1.0G deceleration)
-    private static final double COLLISION_DEBOUNCE_SEC = 0.35;
+    private final CollisionDetector collisionDetector = new CollisionDetector();
 
     /**
      * Gets the singleton instance of SwerveBase.
@@ -607,106 +597,21 @@ public class SwerveBase implements Subsystem {
         // Explicitly update the field object with the current pose
         field.setRobotPose(truthPose);
 
-        updateCollisionDetection();
+        collisionDetector.update(
+                truthPose,
+                getRobotVelocity(),
+                getFieldVelocity(),
+                inputs.accelXG,
+                inputs.accelYG,
+                getAverageDriveCurrent());
     }
 
-    private void updateCollisionDetection() {
-        double now = Timer.getFPGATimestamp();
-        double dt = lastAccelTimestamp > 0.0 ? (now - lastAccelTimestamp) : 0.02;
-        if (dt < 1e-4) {
-            dt = 0.02;
-        }
-
-        ChassisSpeeds robotSpeeds = getRobotVelocity();
-
-        // Compute raw acceleration from IMU (in m/s^2, 1G = 9.80665 m/s^2)
-        double rawAccelX = inputs.accelXG * 9.80665;
-        double rawAccelY = inputs.accelYG * 9.80665;
-
-        // If IMU accel is negligible (e.g. simulation or uncalibrated IMU),
-        // fallback to numerical differentiation of robot velocity
-        if (Math.hypot(inputs.accelXG, inputs.accelYG) < 1e-3) {
-            rawAccelX = (robotSpeeds.vxMetersPerSecond - prevRobotSpeeds.vxMetersPerSecond) / dt;
-            rawAccelY = (robotSpeeds.vyMetersPerSecond - prevRobotSpeeds.vyMetersPerSecond) / dt;
-        }
-
-        // Apply 1st-order low-pass filter (cutoff ~15Hz) to suppress discrete step noise
-        double alpha = 0.35;
-        filteredAccelX = alpha * rawAccelX + (1.0 - alpha) * filteredAccelX;
-        filteredAccelY = alpha * rawAccelY + (1.0 - alpha) * filteredAccelY;
-
-        // Calculate Jerk vector = da / dt
-        double jerkX = (filteredAccelX - prevFilteredAccelX) / dt;
-        double jerkY = (filteredAccelY - prevFilteredAccelY) / dt;
-        collisionJerkMagnitude = Math.hypot(jerkX, jerkY);
-
-        double prevSpeed = Math.hypot(prevRobotSpeeds.vxMetersPerSecond, prevRobotSpeeds.vyMetersPerSecond);
-        boolean isImpact = false;
-
-        if (prevSpeed > 0.40) {
-            // Case 1: Robot was moving and experienced sudden deceleration opposing its velocity
-            double uVx = prevRobotSpeeds.vxMetersPerSecond / prevSpeed;
-            double uVy = prevRobotSpeeds.vyMetersPerSecond / prevSpeed;
-
-            // Deceleration along velocity vector (positive when slowing down)
-            double decelOpposing = -(filteredAccelX * uVx + filteredAccelY * uVy);
-            double jerkOpposing = -(jerkX * uVx + jerkY * uVy);
-
-            if (decelOpposing > COLLISION_DECEL_THRESHOLD && jerkOpposing > COLLISION_JERK_THRESHOLD) {
-                isImpact = true;
-            }
-        } else {
-            // Case 2: Robot was stationary / slow and experienced a severe external blow (T-bone ram)
-            double accelMag = Math.hypot(filteredAccelX, filteredAccelY);
-            if (accelMag > 15.0 && collisionJerkMagnitude > (COLLISION_JERK_THRESHOLD * 1.5)) {
-                isImpact = true;
-            }
-        }
-
-        if (isImpact && (now - lastCollisionTimestamp > COLLISION_DEBOUNCE_SEC)) {
-            lastCollisionTimestamp = now;
-
-            // Determine collision vector direction (direction of obstacle relative to robot)
-            Translation2d impactDir;
-            if (prevSpeed > 0.40) {
-                // Obstacle is in the direction we were driving
-                impactDir = new Translation2d(prevRobotSpeeds.vxMetersPerSecond, prevRobotSpeeds.vyMetersPerSecond).div(prevSpeed);
-            } else {
-                // Obstacle pushed into us from opposing direction of acceleration
-                impactDir = new Translation2d(-filteredAccelX, -filteredAccelY);
-                if (impactDir.getNorm() > 1e-3) {
-                    impactDir = impactDir.div(impactDir.getNorm());
-                } else {
-                    impactDir = new Translation2d(1.0, 0.0);
-                }
-            }
-
-            // Register dynamic contact obstacle 0.65m along impact vector
-            Pose2d currentPose = getPose();
-            Translation2d worldImpactOffset = impactDir.rotateBy(currentPose.getRotation()).times(0.65);
-            Translation2d obstacleLocation = currentPose.getTranslation().plus(worldImpactOffset);
-            DynamicRouter.registerObstacle(obstacleLocation, new Translation2d(), 0.55, 0.65, true);
-        }
-
-        prevFilteredAccelX = filteredAccelX;
-        prevFilteredAccelY = filteredAccelY;
-        prevRobotSpeeds = robotSpeeds;
-        lastAccelTimestamp = now;
-
-        org.littletonrobotics.junction.Logger.recordOutput("DynamicAvoidance/CollisionJerkMagnitude", collisionJerkMagnitude);
-        org.littletonrobotics.junction.Logger.recordOutput("DynamicAvoidance/CollisionImpactDetected", isCollisionDetected());
+    public CollisionDetector getCollisionDetector() {
+        return collisionDetector;
     }
 
     public boolean isCollisionDetected() {
-        return (Timer.getFPGATimestamp() - lastCollisionTimestamp) < 0.20;
-    }
-
-    public double getLastCollisionTimestamp() {
-        return lastCollisionTimestamp;
-    }
-
-    public double getCollisionJerkMagnitude() {
-        return collisionJerkMagnitude;
+        return collisionDetector.isImpactDetected();
     }
 
     @Override
@@ -1012,6 +917,9 @@ public class SwerveBase implements Subsystem {
      */
     public void setPose(Pose2d pose) {
         swerveDrive.resetOdometry(pose);
+    }
+    public double getCollisionJerkMagnitude() {
+        return collisionDetector.getLastJerkMagnitude();
     }
 
 }

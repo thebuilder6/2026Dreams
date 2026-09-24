@@ -9,7 +9,7 @@
       "type": "wpilib",
       "name": "WPILib Desktop Debug",
       "request": "launch",
-      "desktop": true,
+      "desktop": true
     },
     {
       "type": "wpilib",
@@ -23,7 +23,8 @@
       "request": "launch",
       "mainClass": "frc.robot.Main",
       "projectName": "TitanRoboticsBuildSeason",
-      "javaExec": "C:\\Users\\Public\\wpilib\\2026\\jdk\\bin\\java.exe"
+      "javaExec": "C:\\Users\\Public\\wpilib\\2026\\jdk\\bin\\java.exe",
+      "vmArgs": "-XX:TieredStopAtLevel=1"
     }
   ]
 }

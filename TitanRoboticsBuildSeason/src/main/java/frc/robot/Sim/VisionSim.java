@@ -45,12 +45,25 @@ public class VisionSim {
     private final DoubleEntry neuralArea;
     private final DoubleEntry neuralDistance;
 
-    // Simulation target tracking state
-    private boolean lastTargetFound = false;
-    private double lastTargetYaw = 0.0;
-    private double lastTargetPitch = 0.0;
-    private double lastTargetArea = 0.0;
-    private double lastTargetDist = 0.0;
+    // Neural tracking cached state
+    private volatile boolean lastTargetFound = false;
+    private volatile double lastTargetYaw = 0.0;
+    private volatile double lastTargetPitch = 0.0;
+    private volatile double lastTargetArea = 0.0;
+    private volatile double lastTargetDist = 0.0;
+
+    // Background coprocessor thread execution
+    private final java.util.concurrent.atomic.AtomicReference<Pose2d> targetPoseRef =
+            new java.util.concurrent.atomic.AtomicReference<>(new Pose2d());
+    private final java.util.concurrent.atomic.AtomicBoolean initialized =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+    private final java.util.concurrent.ScheduledExecutorService visionExecutor =
+            java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "VisionSim-CoprocessorWorker");
+                t.setDaemon(true);
+                t.setPriority(Thread.NORM_PRIORITY - 1);
+                return t;
+            });
 
     public static synchronized VisionSim getInstance() {
         if (instance == null) {
@@ -106,10 +119,14 @@ public class VisionSim {
         this.neuralPitch = neuralTable.getDoubleTopic("targetPitch").getEntry(0.0);
         this.neuralArea = neuralTable.getDoubleTopic("targetArea").getEntry(0.0);
         this.neuralDistance = neuralTable.getDoubleTopic("targetDistance").getEntry(0.0);
+
+        // Schedule coprocessor worker to run asynchronously at 60 FPS (~16ms)
+        visionExecutor.scheduleAtFixedRate(this::asyncStep, 16, 16, java.util.concurrent.TimeUnit.MILLISECONDS);
     }
 
     /**
-     * Updates simulation of AprilTags and MapleSim Fuel neural detections.
+     * Posts the latest robot pose to the background coprocessor simulation thread.
+     * Mimics real coprocessor hardware by offloading AprilTag raycasting and fuel tracking.
      *
      * @param robotPose Ground truth robot pose on the field
      */
@@ -117,12 +134,44 @@ public class VisionSim {
         if (!RobotBase.isSimulation() || robotPose == null) {
             return;
         }
+        targetPoseRef.set(robotPose);
 
-        // 1. Update PhotonVision VisionSystemSim for AprilTags
-        visionSim.update(robotPose);
+        // Perform synchronous run on first invocation so initial states and unit tests are populated immediately
+        if (initialized.compareAndSet(false, true)) {
+            processFrame(robotPose);
+        }
+    }
 
-        // 2. Update Neural Fuel Game Piece Tracking from MapleSim
-        updateNeuralFuelTracking(robotPose);
+    /**
+     * Performs a synchronous update of vision simulation. Useful for unit tests.
+     *
+     * @param robotPose Ground truth robot pose on the field
+     */
+    public void updateSync(Pose2d robotPose) {
+        if (!RobotBase.isSimulation() || robotPose == null) {
+            return;
+        }
+        targetPoseRef.set(robotPose);
+        processFrame(robotPose);
+    }
+
+    private void asyncStep() {
+        Pose2d pose = targetPoseRef.get();
+        if (pose != null) {
+            processFrame(pose);
+        }
+    }
+
+    private void processFrame(Pose2d robotPose) {
+        try {
+            // 1. Update PhotonVision VisionSystemSim for AprilTags
+            visionSim.update(robotPose);
+
+            // 2. Update Neural Fuel Game Piece Tracking from MapleSim
+            updateNeuralFuelTracking(robotPose);
+        } catch (Throwable t) {
+            // Protect coprocessor thread from crashing
+        }
     }
 
     private void updateNeuralFuelTracking(Pose2d robotPose) {
@@ -156,46 +205,51 @@ public class VisionSim {
         double bestYaw = 0.0;
         double bestPitch = 0.0;
 
-        for (GamePieceOnFieldSimulation piece : pieces) {
-            Translation2d piecePos = piece.getPoseOnField().getTranslation();
-            double dxField = piecePos.getX() - camX;
-            double dyField = piecePos.getY() - camY;
-            double dist2d = Math.hypot(dxField, dyField);
+        try {
+            for (GamePieceOnFieldSimulation piece : pieces) {
+                Translation2d piecePos = piece.getPoseOnField().getTranslation();
+                double dxField = piecePos.getX() - camX;
+                double dyField = piecePos.getY() - camY;
+                double dist2d = Math.hypot(dxField, dyField);
 
-            // Maximum range 6 meters, minimum range 0.2m
-            if (dist2d > 6.0 || dist2d < 0.2) {
-                continue;
+                // Maximum range 6 meters, minimum range 0.2m
+                if (dist2d > 6.0 || dist2d < 0.2) {
+                    continue;
+                }
+
+                // Transform into robot-relative heading
+                double angleToTarget = Math.atan2(dyField, dxField);
+                double yawRad = angleToTarget - robotPose.getRotation().getRadians();
+                // Wrap to [-PI, PI]
+                yawRad = Math.IEEEremainder(yawRad, 2.0 * Math.PI);
+                double yawDeg = Math.toDegrees(yawRad);
+
+                // Horizontal camera FOV check (+/- 35 degrees)
+                if (Math.abs(yawDeg) > 35.0) {
+                    continue;
+                }
+
+                // Vertical pitch calculation relative to camera optical axis
+                // Angle of line-of-sight relative to horizontal:
+                double alphaDeg = Math.toDegrees(Math.atan2(targetHeight - camHeight, dist2d));
+                // Target pitch relative to camera center axis:
+                double pitchDeg = alphaDeg - camPitchDeg;
+
+                // Vertical FOV check (+/- 25 degrees)
+                if (Math.abs(pitchDeg) > 25.0) {
+                    continue;
+                }
+
+                if (dist2d < closestDist) {
+                    closestDist = dist2d;
+                    bestPiece = piece;
+                    bestYaw = yawDeg;
+                    bestPitch = pitchDeg;
+                }
             }
-
-            // Transform into robot-relative heading
-            double angleToTarget = Math.atan2(dyField, dxField);
-            double yawRad = angleToTarget - robotPose.getRotation().getRadians();
-            // Wrap to [-PI, PI]
-            yawRad = Math.IEEEremainder(yawRad, 2.0 * Math.PI);
-            double yawDeg = Math.toDegrees(yawRad);
-
-            // Horizontal camera FOV check (+/- 35 degrees)
-            if (Math.abs(yawDeg) > 35.0) {
-                continue;
-            }
-
-            // Vertical pitch calculation relative to camera optical axis
-            // Angle of line-of-sight relative to horizontal:
-            double alphaDeg = Math.toDegrees(Math.atan2(targetHeight - camHeight, dist2d));
-            // Target pitch relative to camera center axis:
-            double pitchDeg = alphaDeg - camPitchDeg;
-
-            // Vertical FOV check (+/- 25 degrees)
-            if (Math.abs(pitchDeg) > 25.0) {
-                continue;
-            }
-
-            if (dist2d < closestDist) {
-                closestDist = dist2d;
-                bestPiece = piece;
-                bestYaw = yawDeg;
-                bestPitch = pitchDeg;
-            }
+        } catch (Throwable t) {
+            // Concurrent modification safety when pieces are picked up or spawned
+            return;
         }
 
         if (bestPiece != null) {

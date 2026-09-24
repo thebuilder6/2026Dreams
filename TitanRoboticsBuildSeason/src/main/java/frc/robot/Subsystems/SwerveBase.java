@@ -23,6 +23,7 @@ import edu.wpi.first.wpilibj.Filesystem;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.smartdashboard.Field2d;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
+import frc.robot.Auto.DynamicRouter;
 import frc.robot.Data.Constants;
 import frc.robot.Data.GlideConstants;
 import frc.robot.Interfaces.Subsystem;
@@ -77,6 +78,19 @@ public class SwerveBase implements Subsystem {
     private boolean isVisionDegraded = false;
 
     private boolean isPitMode = false;
+
+    // IMU Accelerometer Jerk & Collision Detection
+    private double filteredAccelX = 0.0;
+    private double filteredAccelY = 0.0;
+    private double prevFilteredAccelX = 0.0;
+    private double prevFilteredAccelY = 0.0;
+    private double lastAccelTimestamp = 0.0;
+    private double lastCollisionTimestamp = -1.0;
+    private double collisionJerkMagnitude = 0.0;
+    private ChassisSpeeds prevRobotSpeeds = new ChassisSpeeds();
+    private static final double COLLISION_JERK_THRESHOLD = 120.0; // m/s^3
+    private static final double COLLISION_DECEL_THRESHOLD = 10.0; // m/s^2 (~1.0G deceleration)
+    private static final double COLLISION_DEBOUNCE_SEC = 0.35;
 
     /**
      * Gets the singleton instance of SwerveBase.
@@ -193,22 +207,10 @@ public class SwerveBase implements Subsystem {
         return swerveDrive.kinematics;
     }
 
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    //
-    // Function: resetOdometry
-    //
-    // Author: Austin :)
-    //
-    // Use: Reads position changes of robot continuosly. Usefull for autonomous and
-    // corrections of drift.
-    //
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     /**
      * Resets odometry to the given pose. Gyro angle and module positions do not
-     * need to be reset when calling this
-     * method. However, if either gyro angle or module position is reset, this must
-     * be called in order for odometry to
-     * keep working.
+     * need to be reset when calling this method. However, if either gyro angle or
+     * module position is reset, this must be called in order for odometry to keep working.
      *
      * @param initialHolonomicPose The pose to set the odometry to
      */
@@ -216,21 +218,10 @@ public class SwerveBase implements Subsystem {
         swerveDrive.resetOdometry(initialHolonomicPose);
     }
 
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    //
-    // Function: getPose
-    //
-    // Author: Austin :)
-    //
-    // Use: Gets position based on change from the starting point. For autonomous
-    // and driver assistance.
-    //
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     /**
-     * Gets the current pose (position and rotation) of the robot, as reported by
-     * odometry.
+     * Gets the current pose (position and rotation) of the robot, as reported by odometry.
      *
-     * @return The robot's pose
+     * @return The robot's current estimated Pose2d.
      */
     public Pose2d getPose() {
         return swerveDrive.getPose();
@@ -295,12 +286,11 @@ public class SwerveBase implements Subsystem {
      * If red alliance rotate the robot 180 after the drviebase zero command
      */
     public void zeroGyroWithAlliance() {
+        zeroGyro();
         if (isRedAlliance()) {
-            zeroGyro();
-            // Set the pose 180 degrees
             resetOdometry(new Pose2d(getPose().getTranslation(), Rotation2d.fromDegrees(180)));
         } else {
-            zeroGyro();
+            resetOdometry(new Pose2d(getPose().getTranslation(), Rotation2d.fromDegrees(0)));
         }
     }
 
@@ -513,21 +503,8 @@ public class SwerveBase implements Subsystem {
                 Constants.MAX_SPEED);
     }
 
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    //
-    // Function: getFieldVelocity
-    //
-    // Author: Austin :)
-    //
-    // Use: This function retrieves the robot's current motion as a Field-Relative
-    // velocity vector, encapsulated in a ChassisSpeeds object. This velocity is
-    // relative to the field's coordinate system (e.g., V x
-    // is velocity along the field's X-axis, not the robot's nose), providing
-    // crucial feedback for closed-loop control and logging.
-    //
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     /**
-     * Gets the current field-relative velocity (x, y and omega) of the robot
+     * Gets the current field-relative velocity (x, y and omega) of the robot.
      *
      * @return A ChassisSpeeds object of the current field-relative velocity
      */
@@ -535,21 +512,8 @@ public class SwerveBase implements Subsystem {
         return swerveDrive.getFieldVelocity();
     }
 
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    //
-    // Function: getRobotVelocity
-    //
-    // Author: Austin :)
-    //
-    // Use: This function retrieves the robot's current motion as a ChassisSpeeds
-    // object, representing its velocity relative to its own frame of reference
-    // (Robot-Relative). It reports the instantaneous forward/backward (V x),
-    // sideways (V y), and angular (ω) speeds, providing the raw movement data used
-    // for debugging and low-level control.
-    //
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     /**
-     * Gets the current velocity (x, y and omega) of the robot
+     * Gets the current robot-relative velocity (x, y and omega) of the robot.
      *
      * @return A {@link ChassisSpeeds} object of the current velocity
      */
@@ -557,20 +521,6 @@ public class SwerveBase implements Subsystem {
         return swerveDrive.getRobotVelocity();
     }
 
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    //
-    // Function: getSwerveController
-    //
-    // Author: Austin :)
-    //
-    // Use: This function provides direct access to the robot's SwerveController
-    // object, which is the high-level brain responsible for calculating the precise
-    // commands for all swerve modules. By returning this controller, it allows
-    // other subsystems or control loops (like an autonomous path follower) to
-    // interact directly with the drive logic or retrieve its complex state
-    // information.
-    //
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     /**
      * Get the {@link SwerveController} in the swerve drive.
      *
@@ -580,21 +530,9 @@ public class SwerveBase implements Subsystem {
         return swerveDrive.swerveController;
     }
 
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    //
-    // Function: getSwerveDriveConfiguration
-    //
-    // Author: Austin :)
-    //
-    // Use: This function serves as an accessor to retrieve the
-    // SwerveDriveConfiguration object, which holds all the critical, unchanging
-    // physical parameters of the robot's drive base. This configuration includes
-    // essential data like wheel base width, track width, gear ratios, wheel
-    // circumference, and motor ID assignments, enabling all other drive logic to
-    // function correctly.
-    //
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     /**
+     * Gets the {@link SwerveDriveConfiguration} containing physical drive dimensions and gear ratios.
+     * 
      * @return The {@link SwerveDriveConfiguration} for the current drive.
      */
     public SwerveDriveConfiguration getSwerveDriveConfiguration() {
@@ -649,8 +587,6 @@ public class SwerveBase implements Subsystem {
         Pose2d truthPose = SwerveDriveTelemetry.isSimulation ? getSimulationPose() : estimatedPose;
 
         if (SwerveDriveTelemetry.isSimulation) {
-            LimelightSim.update(truthPose);
-            VisionSim.getInstance().update(truthPose);
             field.getObject("OdometryGhost").setPose(estimatedPose);
         } else {
             // Vision measurements and MegaTag2 gating are handled by Vision subsystem
@@ -670,6 +606,107 @@ public class SwerveBase implements Subsystem {
 
         // Explicitly update the field object with the current pose
         field.setRobotPose(truthPose);
+
+        updateCollisionDetection();
+    }
+
+    private void updateCollisionDetection() {
+        double now = Timer.getFPGATimestamp();
+        double dt = lastAccelTimestamp > 0.0 ? (now - lastAccelTimestamp) : 0.02;
+        if (dt < 1e-4) {
+            dt = 0.02;
+        }
+
+        ChassisSpeeds robotSpeeds = getRobotVelocity();
+
+        // Compute raw acceleration from IMU (in m/s^2, 1G = 9.80665 m/s^2)
+        double rawAccelX = inputs.accelXG * 9.80665;
+        double rawAccelY = inputs.accelYG * 9.80665;
+
+        // If IMU accel is negligible (e.g. simulation or uncalibrated IMU),
+        // fallback to numerical differentiation of robot velocity
+        if (Math.hypot(inputs.accelXG, inputs.accelYG) < 1e-3) {
+            rawAccelX = (robotSpeeds.vxMetersPerSecond - prevRobotSpeeds.vxMetersPerSecond) / dt;
+            rawAccelY = (robotSpeeds.vyMetersPerSecond - prevRobotSpeeds.vyMetersPerSecond) / dt;
+        }
+
+        // Apply 1st-order low-pass filter (cutoff ~15Hz) to suppress discrete step noise
+        double alpha = 0.35;
+        filteredAccelX = alpha * rawAccelX + (1.0 - alpha) * filteredAccelX;
+        filteredAccelY = alpha * rawAccelY + (1.0 - alpha) * filteredAccelY;
+
+        // Calculate Jerk vector = da / dt
+        double jerkX = (filteredAccelX - prevFilteredAccelX) / dt;
+        double jerkY = (filteredAccelY - prevFilteredAccelY) / dt;
+        collisionJerkMagnitude = Math.hypot(jerkX, jerkY);
+
+        double prevSpeed = Math.hypot(prevRobotSpeeds.vxMetersPerSecond, prevRobotSpeeds.vyMetersPerSecond);
+        boolean isImpact = false;
+
+        if (prevSpeed > 0.40) {
+            // Case 1: Robot was moving and experienced sudden deceleration opposing its velocity
+            double uVx = prevRobotSpeeds.vxMetersPerSecond / prevSpeed;
+            double uVy = prevRobotSpeeds.vyMetersPerSecond / prevSpeed;
+
+            // Deceleration along velocity vector (positive when slowing down)
+            double decelOpposing = -(filteredAccelX * uVx + filteredAccelY * uVy);
+            double jerkOpposing = -(jerkX * uVx + jerkY * uVy);
+
+            if (decelOpposing > COLLISION_DECEL_THRESHOLD && jerkOpposing > COLLISION_JERK_THRESHOLD) {
+                isImpact = true;
+            }
+        } else {
+            // Case 2: Robot was stationary / slow and experienced a severe external blow (T-bone ram)
+            double accelMag = Math.hypot(filteredAccelX, filteredAccelY);
+            if (accelMag > 15.0 && collisionJerkMagnitude > (COLLISION_JERK_THRESHOLD * 1.5)) {
+                isImpact = true;
+            }
+        }
+
+        if (isImpact && (now - lastCollisionTimestamp > COLLISION_DEBOUNCE_SEC)) {
+            lastCollisionTimestamp = now;
+
+            // Determine collision vector direction (direction of obstacle relative to robot)
+            Translation2d impactDir;
+            if (prevSpeed > 0.40) {
+                // Obstacle is in the direction we were driving
+                impactDir = new Translation2d(prevRobotSpeeds.vxMetersPerSecond, prevRobotSpeeds.vyMetersPerSecond).div(prevSpeed);
+            } else {
+                // Obstacle pushed into us from opposing direction of acceleration
+                impactDir = new Translation2d(-filteredAccelX, -filteredAccelY);
+                if (impactDir.getNorm() > 1e-3) {
+                    impactDir = impactDir.div(impactDir.getNorm());
+                } else {
+                    impactDir = new Translation2d(1.0, 0.0);
+                }
+            }
+
+            // Register dynamic contact obstacle 0.65m along impact vector
+            Pose2d currentPose = getPose();
+            Translation2d worldImpactOffset = impactDir.rotateBy(currentPose.getRotation()).times(0.65);
+            Translation2d obstacleLocation = currentPose.getTranslation().plus(worldImpactOffset);
+            DynamicRouter.registerObstacle(obstacleLocation, new Translation2d(), 0.55, 0.65, true);
+        }
+
+        prevFilteredAccelX = filteredAccelX;
+        prevFilteredAccelY = filteredAccelY;
+        prevRobotSpeeds = robotSpeeds;
+        lastAccelTimestamp = now;
+
+        org.littletonrobotics.junction.Logger.recordOutput("DynamicAvoidance/CollisionJerkMagnitude", collisionJerkMagnitude);
+        org.littletonrobotics.junction.Logger.recordOutput("DynamicAvoidance/CollisionImpactDetected", isCollisionDetected());
+    }
+
+    public boolean isCollisionDetected() {
+        return (Timer.getFPGATimestamp() - lastCollisionTimestamp) < 0.20;
+    }
+
+    public double getLastCollisionTimestamp() {
+        return lastCollisionTimestamp;
+    }
+
+    public double getCollisionJerkMagnitude() {
+        return collisionJerkMagnitude;
     }
 
     @Override
@@ -710,6 +747,44 @@ public class SwerveBase implements Subsystem {
                 + turnCurrent;
     }
 
+    private double simDriveCurrent = -1.0;
+
+    /**
+     * Sets a simulated drive motor current for testing proprioceptive stall detection.
+     */
+    public void setSimulatedDriveCurrent(double currentAmps) {
+        this.simDriveCurrent = currentAmps;
+    }
+
+    /**
+     * Gets average current draw across the drive motors for proprioceptive stall detection.
+     */
+    public double getAverageDriveCurrent() {
+        if (simDriveCurrent >= 0) {
+            return simDriveCurrent;
+        }
+        if (edu.wpi.first.wpilibj.RobotBase.isSimulation()) {
+            return getSimulationCurrentDraw();
+        }
+        try {
+            double totalCurrent = 0.0;
+            var modules = swerveDrive.getModules();
+            if (modules != null && modules.length > 0) {
+                for (var mod : modules) {
+                    if (mod != null && mod.getDriveMotor() != null) {
+                        Object nativeMotor = mod.getDriveMotor().getMotor();
+                        if (nativeMotor instanceof com.revrobotics.spark.SparkMax) {
+                            totalCurrent += ((com.revrobotics.spark.SparkMax) nativeMotor).getOutputCurrent();
+                        }
+                    }
+                }
+                return totalCurrent / modules.length;
+            }
+        } catch (Throwable ignored) {
+        }
+        return getSimulationCurrentDraw();
+    }
+
     @Override
     public boolean isEnabled() {
         return true;
@@ -747,23 +822,26 @@ public class SwerveBase implements Subsystem {
     }
 
     /**
-     * Sets the voltage to all drive motors for SysId characterization,
-     * ensuring steering angles are locked forward at 0 degrees.
+     * Sets the voltage to all drive motors with steering modules locked straight ahead (0 deg)
+     * for linear SysId characterization.
      */
     public void setSysIdDriveVoltage(double volts) {
-        for (swervelib.SwerveModule module : swerveDrive.getModules()) {
+        swervelib.SwerveModule[] modules = swerveDrive.getModules();
+        for (swervelib.SwerveModule module : modules) {
             module.setAngle(0.0);
             module.getDriveMotor().setVoltage(volts);
         }
     }
 
     /**
-     * Sets the voltage to all drive motors oriented tangentially to characterize
-     * chassis yaw moment of inertia (MoI) and angular feedforward.
+     * Sets the voltage to drive motors with modules oriented tangent to the rotation circle
+     * for angular (rotational moment of inertia) SysId characterization.
      */
     public void setSysIdRotationVoltage(double volts) {
-        var states = swerveDrive.kinematics.toSwerveModuleStates(new ChassisSpeeds(0, 0, 1.0));
-        var modules = swerveDrive.getModules();
+        // Calculate tangent module angles for pure yaw spin
+        edu.wpi.first.math.kinematics.SwerveModuleState[] states = 
+                swerveDrive.kinematics.toSwerveModuleStates(new edu.wpi.first.math.kinematics.ChassisSpeeds(0, 0, 1.0));
+        swervelib.SwerveModule[] modules = swerveDrive.getModules();
         for (int i = 0; i < Math.min(modules.length, states.length); i++) {
             modules[i].setAngle(states[i].angle.getDegrees());
             modules[i].getDriveMotor().setVoltage(volts);
@@ -771,7 +849,7 @@ public class SwerveBase implements Subsystem {
     }
 
     /**
-     * Sets the voltage to all drive motors.
+     * Sets the voltage to all drive motors for SysId characterization (legacy alias).
      */
     public void setDriveVoltage(double volts) {
         setSysIdDriveVoltage(volts);
@@ -864,27 +942,40 @@ public class SwerveBase implements Subsystem {
     /**
      * Sets the voltage to all steer motors for SysId characterization.
      */
-    public void setSysIdSteerVoltage(double volts) {
+    public void setSteerVoltage(double volts) {
         for (swervelib.SwerveModule module : swerveDrive.getModules()) {
             module.getAngleMotor().setVoltage(volts);
         }
     }
 
-    public void setSteerVoltage(double volts) {
-        setSysIdSteerVoltage(volts);
+    public void setSysIdSteerVoltage(double volts) {
+        setSteerVoltage(volts);
     }
 
     /**
-     * Checks all module absolute encoders for hardware/read faults.
-     * @return boolean array indicating fault status for [FL, FR, BL, BR]
+     * Checks if any swerve module has CANcoder absolute encoder read issues.
      */
-    public boolean[] getAbsoluteEncoderFaults() {
-        var modules = swerveDrive.getModules();
-        boolean[] faults = new boolean[modules.length];
-        for (int i = 0; i < modules.length; i++) {
-            faults[i] = modules[i].getAbsoluteEncoderReadIssue();
+    public boolean hasAbsoluteEncoderIssues() {
+        for (swervelib.SwerveModule module : swerveDrive.getModules()) {
+            if (module.getAbsoluteEncoderReadIssue()) {
+                return true;
+            }
         }
-        return faults;
+        return false;
+    }
+
+    /**
+     * Gets gyro yaw rate in degrees per second from cached IO inputs.
+     */
+    public double getGyroYawVelocityDegPerSec() {
+        return inputs.gyroYawVelocityDegPerSec;
+    }
+
+    /**
+     * Gets gyro yaw rate in radians per second for rotational SysId.
+     */
+    public double getGyroYawRateRadsPerSec() {
+        return Math.toRadians(inputs.gyroYawVelocityDegPerSec);
     }
 
     /**

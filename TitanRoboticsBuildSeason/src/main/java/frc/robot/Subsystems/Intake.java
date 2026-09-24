@@ -5,6 +5,7 @@ import com.revrobotics.spark.config.SparkMaxConfig;
 import edu.wpi.first.math.MathUtil;
 import edu.wpi.first.math.controller.ArmFeedforward;
 import edu.wpi.first.math.controller.ProfiledPIDController;
+import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Pose3d;
 import edu.wpi.first.math.geometry.Rotation3d;
 import edu.wpi.first.math.geometry.Transform3d;
@@ -24,11 +25,11 @@ import frc.robot.Subsystems.intake.IntakeIOSparkMax;
 import frc.robot.Utils.Alert;
 import frc.robot.Utils.Alert.AlertType;
 
-/*
- * Class: Intake
- * Description: Ground intake mechanism with articulated pivot arm, feedforward gravity compensation,
- *              closed-loop continuous profiled PID, jam detection, and 3D simulation.
- * Authors: Mai, InfiniteQuery
+/**
+ * Ground intake mechanism featuring an articulated pivot arm with feedforward
+ * gravity compensation,
+ * closed-loop continuous profiled PID control, automated jam
+ * detection/ejection, and physics simulation.
  */
 public class Intake implements Subsystem {
 
@@ -38,40 +39,64 @@ public class Intake implements Subsystem {
     private final IntakeIO io;
     private final IntakeIOInputs inputs = new IntakeIOInputs();
 
+    /**
+     * Discrete operational states for intake pivot and roller mechanisms.
+     */
     public enum IntakeState {
-        DISABLED,
-        STANDBY,
-        STANDBY_INTAKING,
-        STANDBY_REVERSED,
-        INTAKING,
-        DOWN,
-        REVERSED,
-        MANUAL,
-        IDLE,
-        FEEDING,
-        EJECTING,
-        CHARACTERIZATION
+        DISABLED("Disabled"),
+        STANDBY("Standby"),
+        STANDBY_INTAKING("StandbyIntaking"),
+        STANDBY_REVERSED("StandbyReversed"),
+        INTAKING("Intaking"),
+        DOWN("Down"),
+        REVERSED("Reversed"),
+        MANUAL("Manual"),
+        IDLE("Standby"),
+        FEEDING("Intaking"),
+        EJECTING("Reversed"),
+        CHARACTERIZATION("Characterization");
+
+        private final String stateName;
+
+        IntakeState(String stateName) {
+            this.stateName = stateName;
+        }
+
+        public String getStateName() {
+            return stateName;
+        }
+
+        public static IntakeState fromString(String name) {
+            if (name == null)
+                return STANDBY;
+            for (IntakeState s : values()) {
+                if (s.name().equalsIgnoreCase(name) || s.stateName.equalsIgnoreCase(name)) {
+                    return s;
+                }
+            }
+            return STANDBY;
+        }
     }
 
-    private String stateStr = "Disabled";
+    private IntakeState state = IntakeState.DISABLED;
     private double power = -0.5;
     private double armVoltage = 0.0;
 
     private final ProfiledPIDController pivotProfiledPIDController;
-    private final ArmFeedforward feedforward;
+    private ArmFeedforward feedforward;
 
     private double currentPosition = 128.0;
-    private double unmodifiedAbsolutePosition = 0.0;
     private double upPosition = Constants.INTAKE_UP_POSITION;
     private double downPosition = Constants.INTAKE_DOWN_POSITION;
     private double goal = Constants.INTAKE_UP_POSITION;
-    private double manualPosition;
+    private double manualPosition = Constants.INTAKE_UP_POSITION;
 
     // Jam detection & Alerts
     private final Timer stallTimer = new Timer();
     private final Timer ejectTimer = new Timer();
     private boolean isEjectingJam = false;
-    private final Alert intakeEncoderAlert = new Alert("Intake", "Absolute Encoder Disconnected: Fallback Active", AlertType.ERROR);
+    private final Alert intakeEncoderAlert = new Alert("Intake", "Absolute Encoder Disconnected: Fallback Active",
+            AlertType.ERROR);
     private final Alert intakeJamAlert = new Alert("Intake", "Roller Jam Detected: Auto-Clearing", AlertType.WARNING);
     private double lastValidPosition = Constants.INTAKE_UP_POSITION;
     private double lastMotorRotations = 0.0;
@@ -79,6 +104,10 @@ public class Intake implements Subsystem {
     // Simulation
     private frc.robot.Sim.ArmSim armSim;
 
+    /**
+     * Gets the singleton instance of Intake, instantiating the appropriate IO
+     * layer.
+     */
     public static Intake getInstance() {
         if (instance == null) {
             IntakeIO io = RobotBase.isSimulation() ? new IntakeIOSim() : new IntakeIOSparkMax();
@@ -87,6 +116,11 @@ public class Intake implements Subsystem {
         return instance;
     }
 
+    /**
+     * Constructs the Intake subsystem with the provided IO layer.
+     * 
+     * @param io Hardware or simulation IO abstraction layer.
+     */
     public Intake(IntakeIO io) {
         this.io = io;
 
@@ -114,7 +148,44 @@ public class Intake implements Subsystem {
         SubsystemManager.registerSubsystem(this);
     }
 
-    private void armControlFunction() {
+    /**
+     * Calculates combined PID + gravity feedforward output and commands the pivot
+     * motor.
+     */
+    private void updateArmController() {
+        // Live Tunable Gains Check
+        if (Constants.IntakeConstants.ARM_KP.hasChanged(hashCode())
+                || Constants.IntakeConstants.ARM_KI.hasChanged(hashCode())
+                || Constants.IntakeConstants.ARM_KD.hasChanged(hashCode())) {
+            pivotProfiledPIDController.setPID(
+                    Constants.IntakeConstants.ARM_KP.get(),
+                    Constants.IntakeConstants.ARM_KI.get(),
+                    Constants.IntakeConstants.ARM_KD.get());
+        }
+        if (Constants.IntakeConstants.ARM_KS.hasChanged(hashCode())
+                || Constants.IntakeConstants.ARM_KG.hasChanged(hashCode())
+                || Constants.IntakeConstants.ARM_KV.hasChanged(hashCode())
+                || Constants.IntakeConstants.ARM_KA.hasChanged(hashCode())) {
+            feedforward = new ArmFeedforward(
+                    Constants.IntakeConstants.ARM_KS.get(),
+                    Constants.IntakeConstants.ARM_KG.get(),
+                    Constants.IntakeConstants.ARM_KV.get(),
+                    Constants.IntakeConstants.ARM_KA.get());
+        }
+
+        // Geofenced Low-Ceiling Intake Arm Protection (Trench Auto-Stow)
+        try {
+            Pose2d robotPose = SwerveBase.getInstance().getPose();
+            boolean inTrench = isPoseInTrenchLowClearanceZone(robotPose);
+            if (inTrench && goal > Constants.INTAKE_HORIZONTAL_POSITION) {
+                goal = Constants.INTAKE_HORIZONTAL_POSITION;
+                SmartDashboard.putBoolean("Intake/TrenchSafetyClamped", true);
+            } else {
+                SmartDashboard.putBoolean("Intake/TrenchSafetyClamped", false);
+            }
+        } catch (Exception ignored) {
+        }
+
         pivotProfiledPIDController.setGoal(goal);
 
         double pidOutput = pivotProfiledPIDController.calculate(currentPosition);
@@ -128,75 +199,42 @@ public class Intake implements Subsystem {
         io.setArmVoltage(armVoltage);
     }
 
-    public void setState(String state) {
-        if (this.stateStr.equals("Disabled") && !state.equals("Disabled")) {
+    /**
+     * Sets the state using a string identifier.
+     */
+    public void setState(String stateName) {
+        setState(IntakeState.fromString(stateName));
+    }
+
+    /**
+     * Sets the state using the type-safe {@link IntakeState} enum.
+     */
+    public void setState(IntakeState newState) {
+        if (this.state == IntakeState.DISABLED && newState != IntakeState.DISABLED) {
             pivotProfiledPIDController.reset(currentPosition);
         }
-        this.stateStr = state;
+        this.state = newState;
     }
 
-    public void setState(IntakeState state) {
-        switch (state) {
-            case INTAKING:
-                setState("Intaking");
-                break;
-            case DOWN:
-                setState("Down");
-                break;
-            case REVERSED:
-            case EJECTING:
-                setState("Reversed");
-                break;
-            case STANDBY_INTAKING:
-                setState("StandbyIntaking");
-                break;
-            case STANDBY_REVERSED:
-                setState("StandbyReversed");
-                break;
-            case DISABLED:
-                setState("Disabled");
-                break;
-            case CHARACTERIZATION:
-                setState("Characterization");
-                break;
-            case STANDBY:
-            case IDLE:
-            default:
-                setState("Standby");
-                break;
-        }
-    }
-
+    /**
+     * Gets the current state string representation.
+     */
     public String getStateString() {
-        return stateStr;
+        return state.getStateName();
     }
 
+    /**
+     * Gets the current {@link IntakeState}.
+     */
     public IntakeState getState() {
-        switch (stateStr) {
-            case "Intaking":
-                return IntakeState.INTAKING;
-            case "Down":
-                return IntakeState.DOWN;
-            case "Reversed":
-                return IntakeState.REVERSED;
-            case "StandbyIntaking":
-                return IntakeState.STANDBY_INTAKING;
-            case "StandbyReversed":
-                return IntakeState.STANDBY_REVERSED;
-            case "Disabled":
-                return IntakeState.DISABLED;
-            case "Manual":
-                return IntakeState.MANUAL;
-            case "Characterization":
-                return IntakeState.CHARACTERIZATION;
-            case "Standby":
-            default:
-                return IntakeState.STANDBY;
-        }
+        return state;
     }
 
+    /**
+     * Drives arm position based on normalized manual joystick input [-1.0, 1.0].
+     */
     public void manualIntakeControl(double manualInput) {
-        setState("Manual");
+        this.state = IntakeState.MANUAL;
         double normalizedInput = (manualInput + 1.0) / 2.0;
         double modifiedManualPosition = Constants.INTAKE_DOWN_POSITION
                 + (normalizedInput * (Constants.INTAKE_UP_POSITION - Constants.INTAKE_DOWN_POSITION));
@@ -205,9 +243,12 @@ public class Intake implements Subsystem {
                 Math.max(Constants.INTAKE_DOWN_POSITION, Constants.INTAKE_UP_POSITION));
     }
 
+    /**
+     * Directly sets target arm position in degrees.
+     */
     public void setArmPosition(double positionDeg) {
         goal = positionDeg;
-        stateStr = "Manual";
+        state = IntakeState.MANUAL;
         manualPosition = positionDeg;
     }
 
@@ -215,15 +256,16 @@ public class Intake implements Subsystem {
         return currentPosition;
     }
 
+    /**
+     * Commands open-loop voltage to the arm pivot with hard software stop limits.
+     */
     public void setArmVoltage(double volts) {
-        stateStr = "Characterization";
-        // Mechanical angle safety boundaries:
-        // Physical travel is roughly 245 deg (down) to 350 deg (up).
-        // If arm position is at or beyond boundary, clamp voltage driving into mechanical stop.
-        if (currentPosition <= 242.0 && volts < 0.0) {
-            volts = 0.0;
-        } else if (currentPosition >= 353.0 && volts > 0.0) {
-            volts = 0.0;
+        state = IntakeState.CHARACTERIZATION;
+        // Enforce hard software safety boundaries [240 deg, 355 deg]
+        if (currentPosition < 240.0 && volts < 0.0) {
+            volts = 0.0; // Cut voltage if driving further down past mechanical ground stop
+        } else if (currentPosition > 355.0 && volts > 0.0) {
+            volts = 0.0; // Cut voltage if driving further past top mechanical stop
         }
         armVoltage = volts;
         io.setArmVoltage(volts);
@@ -278,8 +320,7 @@ public class Intake implements Subsystem {
     }
 
     public void stop() {
-        setState("Disabled");
-        armVoltage = 0.0;
+        setState(IntakeState.DISABLED);
         io.stop();
     }
 
@@ -292,7 +333,8 @@ public class Intake implements Subsystem {
     }
 
     public double getCurrentDraw() {
-        return Math.abs(inputs.armCurrentAmps) + Math.abs(inputs.rollerCurrentAmps) + Math.abs(inputs.hopperCurrentAmps);
+        return Math.abs(inputs.armCurrentAmps) + Math.abs(inputs.rollerCurrentAmps)
+                + Math.abs(inputs.hopperCurrentAmps);
     }
 
     public IntakeIO getIO() {
@@ -315,13 +357,14 @@ public class Intake implements Subsystem {
             lastValidPosition = currentPosition;
             lastMotorRotations = inputs.armMotorRotations;
         } else {
-            // Graceful degradation: Track delta rotations from SparkMax internal relative encoder
+            // Graceful degradation: Track delta rotations from SparkMax internal relative
+            // encoder
             double deltaRotations = inputs.armMotorRotations - lastMotorRotations;
             currentPosition = MathUtil.inputModulus(lastValidPosition + (deltaRotations * 3.6), 0, 360);
         }
 
         // Automated Jam Detection and Ejection
-        if (!RobotBase.isSimulation() && Math.abs(inputs.rollerAppliedVolts) > 1.0 
+        if (!RobotBase.isSimulation() && Math.abs(inputs.rollerAppliedVolts) > 1.0
                 && inputs.rollerCurrentAmps > IntakeConstants.STALL_CURRENT_LIMIT) {
             stallTimer.start();
             if (stallTimer.hasElapsed(IntakeConstants.STALL_TIME)) {
@@ -347,59 +390,63 @@ public class Intake implements Subsystem {
             intakeJamAlert.set(false);
         }
 
-        switch (stateStr) {
-            case "Standby":
+        switch (state) {
+            case STANDBY:
+            case IDLE:
                 goal = upPosition;
-                armControlFunction();
+                updateArmController();
                 io.setRollerSpeed(0);
                 io.setHopperSpeed(0);
                 break;
 
-            case "StandbyIntaking":
+            case STANDBY_INTAKING:
                 goal = upPosition;
-                armControlFunction();
+                updateArmController();
                 io.setRollerSpeed(power);
                 io.setHopperSpeed(Constants.IntakeConstants.HOPPER_SPEED);
                 break;
 
-            case "StandbyReversed":
+            case STANDBY_REVERSED:
                 goal = upPosition;
-                armControlFunction();
+                updateArmController();
                 io.setRollerSpeed(-power);
                 io.setHopperSpeed(-Constants.IntakeConstants.HOPPER_SPEED);
                 break;
 
-            case "Intaking":
+            case INTAKING:
+            case FEEDING:
                 goal = downPosition;
-                armControlFunction();
+                updateArmController();
                 io.setRollerSpeed(isEjectingJam ? -power : power);
                 io.setHopperSpeed(Constants.IntakeConstants.HOPPER_SPEED);
                 break;
 
-            case "Down":
+            case DOWN:
                 goal = downPosition;
-                armControlFunction();
+                updateArmController();
                 io.setRollerSpeed(0);
                 io.setHopperSpeed(0);
                 break;
 
-            case "Reversed":
+            case REVERSED:
+            case EJECTING:
                 goal = downPosition;
-                armControlFunction();
+                updateArmController();
                 io.setRollerSpeed(-power);
                 io.setHopperSpeed(-Constants.IntakeConstants.HOPPER_SPEED);
                 break;
 
-            case "Manual":
+            case MANUAL:
                 goal = manualPosition;
-                armControlFunction();
+                updateArmController();
                 break;
 
-            case "Characterization":
-                // Voltages controlled directly by characterization/diagnostic routines
+            case CHARACTERIZATION:
+                // In characterization mode, armVoltage is maintained and not overridden by
+                // ProfiledPID
                 break;
 
-            case "Disabled":
+            case DISABLED:
             default:
                 io.stop();
                 break;
@@ -427,9 +474,47 @@ public class Intake implements Subsystem {
 
     public swervelib.simulation.ironmaple.simulation.IntakeSimulation getMapleIntakeSim() {
         if (io instanceof IntakeIOSim simIO) {
+            if (simIO.getMapleIntakeSim() == null) {
+                SwerveBase.getInstance().getMapleSimDrive().ifPresent(simIO::attachMapleSimDrivetrain);
+            }
             return simIO.getMapleIntakeSim();
         }
         return null;
+    }
+
+    /**
+     * Returns true if the intake/hopper contains fuel (game piece).
+     */
+    public boolean hasFuel() {
+        if (getMapleIntakeSim() != null) {
+            return getMapleIntakeSim().getGamePiecesAmount() > 0;
+        }
+        return inputs.hopperCurrentAmps > 3.0;
+    }
+
+    public boolean hasGamePiece() {
+        return hasFuel();
+    }
+
+    /**
+     * Checks if a given field pose is inside a low-overhead Trench corridor where
+     * arm must be stowed low.
+     */
+    public static boolean isPoseInTrenchLowClearanceZone(Pose2d pose) {
+        if (pose == null)
+            return false;
+        double x = pose.getX();
+        double y = pose.getY();
+
+        // Blue Trench corridors (X in [3.20, 6.10])
+        boolean inBlueTrenchX = (x >= 3.20 && x <= 6.10);
+        // Red Trench corridors (X in [10.44, 13.34])
+        boolean inRedTrenchX = (x >= 10.44 && x <= 13.34);
+
+        boolean inTopTrenchY = (y >= 6.50);
+        boolean inBottomTrenchY = (y <= 1.55);
+
+        return (inBlueTrenchX || inRedTrenchX) && (inTopTrenchY || inBottomTrenchY);
     }
 
     @Override
@@ -439,7 +524,7 @@ public class Intake implements Subsystem {
         SmartDashboard.putNumber("Intake/Arm Applied Output", inputs.armAppliedVolts);
         SmartDashboard.putNumber("Intake/Arm Speed", inputs.armVelocityDegPerSec);
         SmartDashboard.putNumber("Intake/Wheels Applied Output", inputs.rollerAppliedVolts);
-        SmartDashboard.putString("Intake/State", stateStr);
+        SmartDashboard.putString("Intake/State", state.getStateName());
         SmartDashboard.putNumber("Intake/Setpoint Position", pivotProfiledPIDController.getSetpoint().position);
         SmartDashboard.putNumber("Intake/Setpoint Velocity", pivotProfiledPIDController.getSetpoint().velocity);
         SmartDashboard.putNumber("Intake/Arm Voltage", armVoltage);
@@ -449,13 +534,6 @@ public class Intake implements Subsystem {
         Rotation3d armRotation = new Rotation3d(0, -Math.toRadians(currentPosition), 0);
         Pose3d armPose = new Pose3d(armPivot, armRotation);
 
-        SmartDashboard.putNumberArray("Subsystems/Intake/ArmPose3d", new double[] {
-                armPose.getX(), armPose.getY(), armPose.getZ(),
-                armPose.getRotation().getQuaternion().getW(),
-                armPose.getRotation().getQuaternion().getX(),
-                armPose.getRotation().getQuaternion().getY(),
-                armPose.getRotation().getQuaternion().getZ()
-        });
         org.littletonrobotics.junction.Logger.recordOutput("Subsystems/Intake/ArmPose3d", armPose);
     }
 

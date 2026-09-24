@@ -60,4 +60,5 @@ Launch the WPILib SimGUI with our full `IronMaple` arena, simulated game pieces,
 ### 3. Key Documentation Links
 - 📖 [Architecture Specification](ARCHITECTURE.md): Deep-dive into subsystems, vision fusion, and Jev AI.
 - 🎮 [Operator's Guide](OPERATORS_GUIDE.md): Driver and operator controls, Glide Mode navigation, and match rules.
+- 🕹️ [Simulation Setup & User Guide](SIMULATION_GUIDE.md): Step-by-step setup for SimGUI, Elastic Dashboard, AdvantageScope, and AI sparring.
 - 🧪 [Testing & Diagnostics Guide](src/main/java/frc/robot/Test/README.md): Pre-flight checks, SysId characterization, and tuning routines.

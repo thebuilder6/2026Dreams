@@ -14,13 +14,17 @@ public class Controller extends XboxController {
         TARGET_LOCKED,      // Two crisp pulses indicating vision lock
         BALL_ACQUIRED,      // Single confirmation pulse when ball is loaded
         HARDWARE_WARNING,   // Rapid triple buzz for degraded sensors or faults
-        MATCH_TIME_WARNING  // Long deep rumble alerting endgame timing
+        MATCH_TIME_WARNING, // Long deep rumble alerting endgame timing
+        PIN_WARNING,        // Rapid high-frequency vibration warning of imminent G-rule pin foul
+        HUB_PHASE_SHIFT,    // Double rhythm pulse alerting that Hub will shift phase in 3s
+        COLLISION_IMPACT    // Sharp maximum-intensity shock jolt for physical impact/collision
     }
 
     private HashMap<Integer, Boolean> debounceButtons = new HashMap<Integer, Boolean>();
     private RumblePattern currentPattern = RumblePattern.NONE;
     private double patternStartTime = 0.0;
     private double pulseEndTime = 0.0;
+    private double directionalRumbleEndTime = 0.0;
 
     public Controller(int port) {
         super(port);
@@ -103,10 +107,33 @@ public class Controller extends XboxController {
     }
 
     /**
+     * Triggers a directional rumble alert on the left or right controller grip
+     * indicating an opponent robot flanking in a blindspot.
+     *
+     * @param isLeft True for left flank threat, false for right flank threat
+     * @param durationSec Duration of warning vibration
+     */
+    public void triggerDirectionalFlankAlert(boolean isLeft, double durationSec) {
+        directionalRumbleEndTime = Timer.getFPGATimestamp() + durationSec;
+        if (isLeft) {
+            setRumble(RumbleType.kLeftRumble, 0.85);
+            setRumble(RumbleType.kRightRumble, 0.0);
+        } else {
+            setRumble(RumbleType.kLeftRumble, 0.0);
+            setRumble(RumbleType.kRightRumble, 0.85);
+        }
+    }
+
+    /**
      * Non-blocking periodic update for active rumble patterns. Call once per robot loop.
      */
     public void updateRumble() {
         double now = Timer.getFPGATimestamp();
+
+        // Check if directional flank alert is active
+        if (now < directionalRumbleEndTime) {
+            return;
+        }
 
         // Check if an explicit pulse is active
         if (now < pulseEndTime) {
@@ -147,6 +174,38 @@ public class Controller extends XboxController {
                 }
                 break;
 
+            case PIN_WARNING:
+                // Rapid high-frequency double buzz warning of imminent G-rule pin foul
+                if (elapsed < 0.08) {
+                    setRumble(RumbleType.kBothRumble, 1.0);
+                } else if (elapsed < 0.14) {
+                    setRumble(RumbleType.kBothRumble, 0.0);
+                } else if (elapsed < 0.22) {
+                    setRumble(RumbleType.kBothRumble, 1.0);
+                } else if (elapsed < 0.28) {
+                    setRumble(RumbleType.kBothRumble, 0.0);
+                } else if (elapsed < 0.36) {
+                    setRumble(RumbleType.kBothRumble, 1.0);
+                } else {
+                    currentPattern = RumblePattern.NONE;
+                    setRumble(RumbleType.kBothRumble, 0.0);
+                }
+                break;
+
+            case HUB_PHASE_SHIFT:
+                // Double rhythm pulse alerting that Hub will shift phase in 3s
+                if (elapsed < 0.12) {
+                    setRumble(RumbleType.kBothRumble, 0.70);
+                } else if (elapsed < 0.22) {
+                    setRumble(RumbleType.kBothRumble, 0.0);
+                } else if (elapsed < 0.34) {
+                    setRumble(RumbleType.kBothRumble, 0.70);
+                } else {
+                    currentPattern = RumblePattern.NONE;
+                    setRumble(RumbleType.kBothRumble, 0.0);
+                }
+                break;
+
             case HARDWARE_WARNING:
                 // Rapid triple warning pulse
                 if (elapsed < 0.08) {
@@ -169,6 +228,16 @@ public class Controller extends XboxController {
                 // Sustained 0.5s rumble
                 if (elapsed < 0.50) {
                     setRumble(RumbleType.kBothRumble, 0.9);
+                } else {
+                    currentPattern = RumblePattern.NONE;
+                    setRumble(RumbleType.kBothRumble, 0.0);
+                }
+                break;
+
+            case COLLISION_IMPACT:
+                // High-intensity sharp pulse (160ms)
+                if (elapsed < 0.16) {
+                    setRumble(RumbleType.kBothRumble, 1.0);
                 } else {
                     currentPattern = RumblePattern.NONE;
                     setRumble(RumbleType.kBothRumble, 0.0);

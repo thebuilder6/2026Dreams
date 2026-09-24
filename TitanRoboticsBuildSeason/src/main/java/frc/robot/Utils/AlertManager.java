@@ -64,6 +64,11 @@ public class AlertManager {
         return false;
     }
 
+    private static String lastBanner = "";
+    private static int lastErrorCount = -1;
+    private static int lastWarningCount = -1;
+    private static int lastInfoCount = -1;
+
     public static synchronized void update() {
         List<String> errors = new ArrayList<>();
         List<String> warnings = new ArrayList<>();
@@ -86,11 +91,6 @@ public class AlertManager {
             }
         }
 
-        // Publish string arrays for dashboard tables/lists
-        SmartDashboard.putStringArray("Alerts/Errors", errors.toArray(new String[0]));
-        SmartDashboard.putStringArray("Alerts/Warnings", warnings.toArray(new String[0]));
-        SmartDashboard.putStringArray("Alerts/Infos", infos.toArray(new String[0]));
-
         // Construct high-visibility Driver Alert Banner
         String banner;
         if (!errors.isEmpty()) {
@@ -103,10 +103,21 @@ public class AlertManager {
             banner = "[NOMINAL] Systems Operational";
         }
 
-        AlertType highest = getHighestSeverity();
-        SmartDashboard.putString("Driver/AlertBanner", banner);
-        SmartDashboard.putString("Alerts/HighestSeverity", highest != null ? highest.name() : "NONE");
-        SmartDashboard.putBoolean("Alerts/HasErrors", !errors.isEmpty());
-        SmartDashboard.putBoolean("Alerts/HasWarnings", !warnings.isEmpty());
+        // Only publish to NetworkTables if alert state actually changed
+        if (errors.size() != lastErrorCount || warnings.size() != lastWarningCount || infos.size() != lastInfoCount || !banner.equals(lastBanner)) {
+            SmartDashboard.putStringArray("Alerts/Errors", errors.toArray(new String[0]));
+            SmartDashboard.putStringArray("Alerts/Warnings", warnings.toArray(new String[0]));
+            SmartDashboard.putStringArray("Alerts/Infos", infos.toArray(new String[0]));
+            SmartDashboard.putString("Driver/AlertBanner", banner);
+            AlertType highest = getHighestSeverity();
+            SmartDashboard.putString("Alerts/HighestSeverity", highest != null ? highest.name() : "NONE");
+            SmartDashboard.putBoolean("Alerts/HasErrors", !errors.isEmpty());
+            SmartDashboard.putBoolean("Alerts/HasWarnings", !warnings.isEmpty());
+
+            lastErrorCount = errors.size();
+            lastWarningCount = warnings.size();
+            lastInfoCount = infos.size();
+            lastBanner = banner;
+        }
     }
 }

@@ -9,8 +9,13 @@ import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
+import frc.robot.Auto.DynamicObstacle;
+import frc.robot.Auto.DynamicRouter;
 import frc.robot.Data.Constants;
+import frc.robot.Data.GlideConstants;
+import frc.robot.Data.GlideConstants.GlidePoint;
 import frc.robot.Utils.AllianceFlipUtil;
+import org.littletonrobotics.junction.Logger;
 
 /**
  * Jev AI Decision Engine (TypeSafe AI)
@@ -343,5 +348,222 @@ public class JevDecisionEngine {
         SmartDashboard.putNumber("Strategy/Utility", utility);
 
         return new StrategicAdvice(strategy, utility, advice, waypoint);
+    }
+
+    /**
+     * Smart "One-Button Glide" Arbitration:
+     * Arbitrates target waypoint dynamically between:
+     * 1. Hub shooting pose (if robot has fuel AND Hub is active)
+     * 2. Midfield neutral game piece hunt (if robot is empty AND Hub is active)
+     * 3. Feeder / Depot loading station (if Hub is currently inactive)
+     *
+     * @param robotPose Current pose of the robot
+     * @param hasFuel True if robot is holding fuel / game piece
+     * @param isHubActive True if scoring Hub is active
+     * @param isRedAlliance True if on Red Alliance
+     * @return Target Pose2d for autonomous glide navigation
+     */
+    public Pose2d getSmartGlideTarget(
+            Pose2d robotPose,
+            boolean hasFuel,
+            boolean isHubActive,
+            boolean isRedAlliance) {
+
+        Pose2d targetPose;
+        String mode;
+
+        if (hasFuel && isHubActive) {
+            // Mode 1: Hub Shooting Pose
+            String frontKey = isRedAlliance ? "Red Hub Front" : "Blue Hub Front";
+            String backKey = isRedAlliance ? "Red Hub Back" : "Blue Hub Back";
+
+            Pose2d frontPose = GlideConstants.GLIDE_POINTS.containsKey(frontKey) ? 
+                    GlideConstants.GLIDE_POINTS.get(frontKey).pose() : 
+                    new Pose2d(isRedAlliance ? 11.0 : 5.6, 4.10, Rotation2d.fromDegrees(isRedAlliance ? 0 : 180));
+            Pose2d backPose = GlideConstants.GLIDE_POINTS.containsKey(backKey) ? 
+                    GlideConstants.GLIDE_POINTS.get(backKey).pose() : 
+                    new Pose2d(isRedAlliance ? 13.9 : 2.6, 4.10, Rotation2d.fromDegrees(isRedAlliance ? 180 : 0));
+
+            double distFront = robotPose.getTranslation().getDistance(frontPose.getTranslation());
+            double distBack = robotPose.getTranslation().getDistance(backPose.getTranslation());
+
+            targetPose = (distFront <= distBack) ? frontPose : backPose;
+            mode = "SCORE_HUB (" + (distFront <= distBack ? "Front" : "Back") + ")";
+        } else if (!hasFuel && isHubActive) {
+            // Mode 2: Neutral Ball Hunt (Midfield)
+            Pose2d topMid = GlideConstants.GLIDE_POINTS.containsKey("Midfield Top") ?
+                    GlideConstants.GLIDE_POINTS.get("Midfield Top").pose() :
+                    new Pose2d(CENTERLINE_X, 6.10, Rotation2d.fromDegrees(-90));
+            Pose2d botMid = GlideConstants.GLIDE_POINTS.containsKey("Midfield Bottom") ?
+                    GlideConstants.GLIDE_POINTS.get("Midfield Bottom").pose() :
+                    new Pose2d(CENTERLINE_X, 2.00, Rotation2d.fromDegrees(90));
+
+            double distTop = Math.abs(robotPose.getY() - topMid.getY());
+            double distBot = Math.abs(robotPose.getY() - botMid.getY());
+
+            targetPose = (distTop <= distBot) ? topMid : botMid;
+            mode = "BALL_HUNT_MIDFIELD (" + (distTop <= distBot ? "Top" : "Bottom") + ")";
+        } else {
+            // Mode 3: Feeder / Depot Reloading (Hub Inactive)
+            String topFeederKey = isRedAlliance ? "Red Feeder Top" : "Blue Feeder Top";
+            String botFeederKey = isRedAlliance ? "Red Feeder Bottom" : "Blue Feeder Bottom";
+
+            Pose2d topFeeder = GlideConstants.GLIDE_POINTS.containsKey(topFeederKey) ?
+                    GlideConstants.GLIDE_POINTS.get(topFeederKey).pose() :
+                    new Pose2d(isRedAlliance ? 15.0 : 1.5, 6.0, Rotation2d.fromDegrees(isRedAlliance ? -145 : -35));
+            Pose2d botFeeder = GlideConstants.GLIDE_POINTS.containsKey(botFeederKey) ?
+                    GlideConstants.GLIDE_POINTS.get(botFeederKey).pose() :
+                    new Pose2d(isRedAlliance ? 15.0 : 1.5, 2.2, Rotation2d.fromDegrees(isRedAlliance ? 145 : 35));
+
+            double distTop = robotPose.getTranslation().getDistance(topFeeder.getTranslation());
+            double distBot = robotPose.getTranslation().getDistance(botFeeder.getTranslation());
+
+            targetPose = (distTop <= distBot) ? topFeeder : botFeeder;
+            mode = "RELOAD_DEPOT (" + (distTop <= distBot ? "Top" : "Bottom") + ")";
+        }
+
+        SmartDashboard.putString("JevAI/GlideArbitrationMode", mode);
+        SmartDashboard.putNumberArray("JevAI/GlideTarget", new double[] {
+                targetPose.getX(), targetPose.getY(), targetPose.getRotation().getDegrees()
+        });
+        Logger.recordOutput("JevAI/SmartGlideTarget", targetPose);
+
+        return targetPose;
+    }
+
+    /**
+     * Quadratic Lead-Pursuit Interception Solver:
+     * Computes the exact time t and location P(t) where the robot at max speed can intercept
+     * an opponent robot traveling at constant velocity V_opp along ray L(t) = P_opp + V_opp * t.
+     * Solves: ||(P_opp - P_robot) + V_opp * t||^2 = (V_max * t)^2
+     *
+     * @param robotPose Current robot pose
+     * @param opponentPose Current opponent pose
+     * @param opponentVel Opponent field-relative velocity vector (m/s)
+     * @param maxRobotSpeed Maximum available robot velocity (m/s)
+     * @return Optimal intercept Pose2d clamped within legal field borders, facing opponent
+     */
+    public Pose2d solveLeadPursuitIntercept(
+            Pose2d robotPose,
+            Pose2d opponentPose,
+            Translation2d opponentVel,
+            double maxRobotSpeed) {
+
+        if (opponentPose == null) return robotPose;
+        if (opponentVel == null) opponentVel = new Translation2d();
+        if (maxRobotSpeed <= 0.1) maxRobotSpeed = Constants.MAX_SPEED;
+
+        Translation2d delta = opponentPose.getTranslation().minus(robotPose.getTranslation());
+        double dx = delta.getX();
+        double dy = delta.getY();
+        double vx = opponentVel.getX();
+        double vy = opponentVel.getY();
+
+        // Quadratic coefficients: a*t^2 + b*t + c = 0
+        double a = (vx * vx + vy * vy) - (maxRobotSpeed * maxRobotSpeed);
+        double b = 2.0 * (dx * vx + dy * vy);
+        double c = dx * dx + dy * dy;
+
+        double interceptTime = -1.0;
+
+        if (Math.abs(a) < 1e-5) {
+            // Linear case: b*t + c = 0
+            if (Math.abs(b) > 1e-4) {
+                double tLinear = -c / b;
+                if (tLinear > 0.05) {
+                    interceptTime = tLinear;
+                }
+            }
+        } else {
+            double discriminant = (b * b) - (4.0 * a * c);
+            if (discriminant >= 0) {
+                double sqrtD = Math.sqrt(discriminant);
+                double t1 = (-b - sqrtD) / (2.0 * a);
+                double t2 = (-b + sqrtD) / (2.0 * a);
+
+                if (t1 > 0.05 && t2 > 0.05) {
+                    interceptTime = Math.min(t1, t2);
+                } else if (t1 > 0.05) {
+                    interceptTime = t1;
+                } else if (t2 > 0.05) {
+                    interceptTime = t2;
+                }
+            }
+        }
+
+        Translation2d interceptPos;
+        if (interceptTime > 0.05 && interceptTime < 5.0) {
+            interceptPos = opponentPose.getTranslation().plus(opponentVel.times(interceptTime));
+        } else {
+            // Fallback to pure pursuit with minor lead projection
+            interceptPos = opponentPose.getTranslation().plus(opponentVel.times(0.25));
+        }
+
+        // Clamp inside legal field borders
+        double clampedX = Math.max(0.60, Math.min(15.94, interceptPos.getX()));
+        double clampedY = Math.max(0.60, Math.min(7.65, interceptPos.getY()));
+
+        // Face oncoming opponent from intercept waypoint
+        Rotation2d faceOpponent = opponentPose.getTranslation().minus(new Translation2d(clampedX, clampedY)).getAngle();
+        Pose2d target = new Pose2d(clampedX, clampedY, faceOpponent);
+
+        Logger.recordOutput("JevAI/LeadPursuitIntercept", target);
+        return target;
+    }
+
+    /**
+     * Offensive Anti-Defense: Dynamic Trench Corridor Selection.
+     * Evaluates obstacle presence in Top Trench vs Bottom Trench to route through the open corridor.
+     *
+     * @param robotPose Current robot pose
+     * @param outbound True if traveling towards midfield, false if returning to alliance zone
+     * @param isRedAlliance True if on Red Alliance
+     * @return Selected GlidePoint for the trench corridor with least defensive resistance
+     */
+    public GlidePoint selectOptimalTrenchCorridor(
+            Pose2d robotPose,
+            boolean outbound,
+            boolean isRedAlliance) {
+
+        String topKey = isRedAlliance ? "Red Top Trench" : "Blue Top Trench";
+        String botKey = isRedAlliance ? "Red Bottom Trench" : "Blue Bottom Trench";
+
+        GlidePoint topPoint = GlideConstants.GLIDE_POINTS.get(topKey);
+        GlidePoint botPoint = GlideConstants.GLIDE_POINTS.get(botKey);
+
+        // Region of interest for trench obstacles
+        double minX = isRedAlliance ? 10.3 : 3.0;
+        double maxX = isRedAlliance ? 13.6 : 6.3;
+
+        int topObstacleCount = 0;
+        int botObstacleCount = 0;
+
+        for (DynamicObstacle obs : DynamicRouter.getActiveObstacles()) {
+            double ox = obs.position.getX();
+            double oy = obs.position.getY();
+
+            if (ox >= minX && ox <= maxX) {
+                if (oy > 5.5) {
+                    topObstacleCount++;
+                } else if (oy < 2.5) {
+                    botObstacleCount++;
+                }
+            }
+        }
+
+        GlidePoint chosen;
+        if (topObstacleCount < botObstacleCount) {
+            chosen = topPoint;
+        } else if (botObstacleCount < topObstacleCount) {
+            chosen = botPoint;
+        } else {
+            // Tied: pick trench closest in Y to current robot pose
+            double distTop = Math.abs(robotPose.getY() - (topPoint != null ? topPoint.pose.getY() : 7.4));
+            double distBot = Math.abs(robotPose.getY() - (botPoint != null ? botPoint.pose.getY() : 0.65));
+            chosen = (distTop <= distBot) ? topPoint : botPoint;
+        }
+
+        SmartDashboard.putString("JevAI/TrenchCorridorSelected", chosen != null ? chosen.name : "None");
+        return chosen;
     }
 }

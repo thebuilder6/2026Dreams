@@ -64,12 +64,13 @@ public class Vision implements Subsystem {
     @Override
     public void update() {
         SwerveBase swerve = SwerveBase.getInstance();
-        double yawRate = Math.abs(swerve.getSwerveDrive().getGyro().getYawAngularVelocity().in(DegreesPerSecond));
+        double yawRateDegPerSec = swerve.getGyroYawVelocityDegPerSec();
+        double yawRateAbs = Math.abs(yawRateDegPerSec);
 
         // ── 1. Primary Camera (Limelight MegaTag2) ───────────────────────────
         primaryIO.setRobotOrientation(
                 swerve.getHeading().getDegrees(),
-                swerve.getSwerveDrive().getGyro().getYawAngularVelocity().in(DegreesPerSecond),
+                yawRateDegPerSec,
                 swerve.getPitch().getDegrees(),
                 0.0);
 
@@ -77,7 +78,7 @@ public class Vision implements Subsystem {
 
         if (primaryInputs.hasTarget && primaryInputs.tagCount > 0) {
             boolean doReject = false;
-            if (yawRate > DrivebaseConstants.VISION_MAX_YAW_RATE) doReject = true;
+            if (yawRateAbs > DrivebaseConstants.VISION_MAX_YAW_RATE) doReject = true;
             if (primaryInputs.avgTagDist > DrivebaseConstants.VISION_MAX_TAG_DIST) doReject = true;
             if (primaryInputs.latencyMs > 150.0) doReject = true;
 
@@ -99,7 +100,7 @@ public class Vision implements Subsystem {
             secondaryIO.updateInputs(secondaryInputs);
 
             if (secondaryInputs.hasTarget && secondaryInputs.tagCount > 0 && secondaryInputs.latencyMs < 150.0) {
-                if (secondaryInputs.avgTagDist < DrivebaseConstants.VISION_MAX_TAG_DIST && yawRate <= DrivebaseConstants.VISION_MAX_YAW_RATE) {
+                if (secondaryInputs.avgTagDist < DrivebaseConstants.VISION_MAX_TAG_DIST && yawRateAbs <= DrivebaseConstants.VISION_MAX_YAW_RATE) {
                     double secStdDev = DrivebaseConstants.VISION_BASE_STD_DEV + 0.15;
                     if (secondaryInputs.tagCount == 1) secStdDev += DrivebaseConstants.VISION_SINGLE_TAG_PENALTY;
                     secStdDev += (secondaryInputs.avgTagDist * secondaryInputs.avgTagDist) / DrivebaseConstants.VISION_DIST_PENALTY_DIVISOR;
@@ -192,6 +193,45 @@ public class Vision implements Subsystem {
         edu.wpi.first.math.geometry.Translation2d fieldPos = robotPose.getTranslation().plus(
                 robotRel.rotateBy(robotPose.getRotation()));
         return new Pose2d(fieldPos, robotPose.getRotation());
+    }
+
+    /**
+     * Projects a detected robot bumper bounding box onto the field ground plane (Z = 0)
+     * and registers it with DynamicRouter.
+     *
+     * @param targetYaw Camera-relative horizontal angle (degrees, +left)
+     * @param targetPitch Camera-relative vertical angle (degrees, +up)
+     * @param radius Bumper bounding radius (meters)
+     * @return Global field Translation2d of the obstacle center, or null if invalid
+     */
+    public edu.wpi.first.math.geometry.Translation2d registerDetectedBumperObstacle(
+            double targetYaw, double targetPitch, double radius) {
+
+        double cameraHeight = DrivebaseConstants.RUBIK_PI_CAMERA_HEIGHT_METERS; // 0.45m
+        double bumperHeight = 0.12; // Bumper center approx 12cm off carpet
+        double cameraPitchRads = Units.degreesToRadians(DrivebaseConstants.RUBIK_PI_CAMERA_PITCH_DEG); // -15 deg
+        double targetPitchRads = Units.degreesToRadians(targetPitch);
+
+        double totalAngleRads = cameraPitchRads + targetPitchRads;
+        if (totalAngleRads >= 0 || Math.abs(Math.tan(totalAngleRads)) < 0.01) {
+            return null;
+        }
+
+        double groundDist = Math.abs((cameraHeight - bumperHeight) / Math.tan(totalAngleRads));
+        if (groundDist > 7.0 || groundDist < 0.3) {
+            return null;
+        }
+
+        double yawRads = Units.degreesToRadians(targetYaw);
+        double relX = groundDist * Math.cos(yawRads) + DrivebaseConstants.RUBIK_PI_CAMERA_FORWARD_OFFSET_METERS;
+        double relY = groundDist * Math.sin(yawRads);
+
+        Pose2d robotPose = SwerveBase.getInstance().getPose();
+        edu.wpi.first.math.geometry.Translation2d robotRel = new edu.wpi.first.math.geometry.Translation2d(relX, relY);
+        edu.wpi.first.math.geometry.Translation2d fieldPos = robotPose.getTranslation().plus(robotRel.rotateBy(robotPose.getRotation()));
+
+        frc.robot.Auto.DynamicRouter.registerObstacle(fieldPos, new edu.wpi.first.math.geometry.Translation2d(), radius, 0.40);
+        return fieldPos;
     }
 
     public double getTX() {

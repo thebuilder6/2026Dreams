@@ -91,7 +91,8 @@ public class ShooterSim {
             if (ballsToFire > 0) {
                 Pose2d robotPose = SwerveBase.getInstance().getPose();
                 ChassisSpeeds robotVel = SwerveBase.getInstance().getFieldVelocity();
-                double exitVelocity = (flywheelVelocityRPM / 60.0) * ShooterConstants.SHOOTER_WHEEL_CIRCUMFERENCE;
+                double wheelSurfaceVelocity = (flywheelVelocityRPM / 60.0) * ShooterConstants.SHOOTER_WHEEL_CIRCUMFERENCE;
+                double exitVelocity = wheelSurfaceVelocity * ShooterConstants.BALL_LAUNCH_EFFICIENCY.get();
                 Translation3d targetLoc = getGoalLocation();
 
                 for (int i = 0; i < ballsToFire; i++) {
@@ -113,9 +114,12 @@ public class ShooterSim {
                             MetersPerSecond.of(randomExitVelocity),
                             Radians.of(randomPitch));
 
-                    // Probabilistic scoring logic: Swish (tight) vs Rim (loose)
-                    fuelOnFly.withTargetPosition(() -> targetLoc)
-                            .withTargetTolerance(new Translation3d(0.3, 0.4, 0.2)) // Tight swish zone
+                    // Target detection aperture: center of Hub, positioned slightly inside the upper funnel (Z = 1.48m)
+                    // so the ball visibly crosses through the 1.575m rim into the goal before registering the score
+                    Translation3d funnelTarget = new Translation3d(targetLoc.getX(), targetLoc.getY(), 1.48);
+
+                    fuelOnFly.withTargetPosition(() -> funnelTarget)
+                            .withTargetTolerance(new Translation3d(0.35, 0.35, 0.15))
                             .withHitTargetCallBack(() -> {
                                 boolean isBlueGoal = targetLoc.equals(Constants.FieldConstants.BLUE_GOAL_LOCATION);
                                 if (SimulatedArena.getInstance() instanceof Arena2026Rebuilt) {
@@ -131,11 +135,6 @@ public class ShooterSim {
                                 (poses) -> org.littletonrobotics.junction.Logger.recordOutput("FieldSimulation/SuccessfulShotsTrajectory", poses.toArray(edu.wpi.first.math.geometry.Pose3d[]::new)),
                                 (poses) -> org.littletonrobotics.junction.Logger.recordOutput("FieldSimulation/MissedShotsTrajectory", poses.toArray(edu.wpi.first.math.geometry.Pose3d[]::new))
                             );
-
-                    // Secondary "Rim hit" chance (extra wide tolerance but only 40% probability)
-                    if (Math.random() < 0.4) {
-                        fuelOnFly.withTargetTolerance(new Translation3d(0.8, 1.0, 0.4));
-                    }
 
                     SimulatedArena.getInstance().addGamePieceProjectile(fuelOnFly);
                 }

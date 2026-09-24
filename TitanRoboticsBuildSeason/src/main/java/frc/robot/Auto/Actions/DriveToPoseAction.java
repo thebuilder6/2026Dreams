@@ -1,15 +1,26 @@
 package frc.robot.Auto.Actions;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import edu.wpi.first.math.controller.ProfiledPIDController;
 import edu.wpi.first.math.geometry.Pose2d;
+import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import edu.wpi.first.math.trajectory.TrapezoidProfile;
-import frc.robot.Interfaces.Actions;
-import frc.robot.Subsystems.SwerveBase;
+import edu.wpi.first.wpilibj.Timer;
+import frc.robot.Auto.DynamicRouter;
+import frc.robot.Auto.LegalPinningWatchdog;
+import frc.robot.Auto.SmartTunnelRouter;
 import frc.robot.Auto.StaticPathfinder;
+import frc.robot.Data.Constants;
+import frc.robot.Data.GlideConstants;
+import frc.robot.Interfaces.Actions;
+import frc.robot.Subsystems.Intake;
+import frc.robot.Subsystems.SwerveBase;
+import org.littletonrobotics.junction.Logger;
 
 /**
  * Action to drive the robot to a specific pose (or series of waypoints) using
@@ -35,12 +46,66 @@ public class DriveToPoseAction implements Actions {
 
     private int currentWaypointIndex = 0;
 
+    // Proprioceptive stall / pin detection state
+    private double stallStartTime = -1.0;
+    private boolean isPirouetteActive = false;
+    private double pirouetteEndTime = -1.0;
+    private static final double STALL_SPEED_CMD_THRESHOLD = 1.20; // m/s
+    private static final double STALL_MEASURED_VEL_THRESHOLD = 0.20; // m/s
+    private static final double STALL_CURRENT_THRESHOLD_AMPS = 30.0; // Amperes
+    private static final double STALL_MIN_DURATION_SEC = 0.20; // 200 ms
+    private static final double PIROUETTE_SPIN_RATE_RAD_PER_SEC = 8.0; // 720 deg/s spin slip
+
+    // Automated Trench Tunneling Transit state
+    private boolean isTunnelTransit = false;
+    private Rotation2d tunnelHeading = new Rotation2d();
+
     /**
-     * Drives to a single target, with automatic pathfinding around static
-     * obstacles.
+     * Drives to a single target, with automatic pathfinding around static obstacles
+     * and intelligent tunnel sequencing if approaching a trench entrance.
      */
     public DriveToPoseAction(Pose2d targetPose) {
-        this(StaticPathfinder.findPath(SwerveBase.getInstance().getPose(), targetPose), true);
+        this(buildWaypointsForTarget(SwerveBase.getInstance().getPose(), targetPose), true);
+        GlideConstants.GlidePoint tunnel = GlideConstants.getMatchingTunnelEntrance(targetPose);
+        if (tunnel != null) {
+            boolean preferTop = tunnel.name().contains("Top") || targetPose.getY() > 4.0;
+            SmartTunnelRouter.TunnelRoute route = SmartTunnelRouter.planTunnelRoute(SwerveBase.getInstance().getPose(), preferTop);
+            this.isTunnelTransit = true;
+            this.tunnelHeading = route.corridorHeading;
+        }
+    }
+
+    /**
+     * Drives to a designated GlidePoint with intelligent tunnel sequencing if applicable.
+     */
+    public DriveToPoseAction(GlideConstants.GlidePoint glidePoint) {
+        this(buildWaypointsForGlidePoint(SwerveBase.getInstance().getPose(), glidePoint), true);
+        if (glidePoint != null && glidePoint.isTunnelEntrance) {
+            boolean preferTop = glidePoint.name().contains("Top") || glidePoint.pose().getY() > 4.0;
+            SmartTunnelRouter.TunnelRoute route = SmartTunnelRouter.planTunnelRoute(SwerveBase.getInstance().getPose(), preferTop);
+            this.isTunnelTransit = true;
+            this.tunnelHeading = route.corridorHeading;
+        }
+    }
+
+    private static List<Pose2d> buildWaypointsForGlidePoint(Pose2d currentPose, GlideConstants.GlidePoint glidePoint) {
+        if (glidePoint == null) {
+            return List.of(currentPose);
+        }
+        if (glidePoint.isTunnelEntrance) {
+            boolean preferTop = glidePoint.name().contains("Top") || glidePoint.pose().getY() > 4.0;
+            SmartTunnelRouter.TunnelRoute route = SmartTunnelRouter.planTunnelRoute(currentPose, preferTop);
+            return route.getWaypoints();
+        }
+        return StaticPathfinder.findPath(currentPose, glidePoint.pose());
+    }
+
+    private static List<Pose2d> buildWaypointsForTarget(Pose2d currentPose, Pose2d targetPose) {
+        GlideConstants.GlidePoint tunnel = GlideConstants.getMatchingTunnelEntrance(targetPose);
+        if (tunnel != null) {
+            return buildWaypointsForGlidePoint(currentPose, tunnel);
+        }
+        return StaticPathfinder.findPath(currentPose, targetPose);
     }
 
     /**
@@ -121,11 +186,86 @@ public class DriveToPoseAction implements Actions {
         double vy = driveDir.getY() * speed;
 
         // 5. Calculate Rotation
+        double targetDeg = finalTarget.getRotation().getDegrees();
+        if (isTunnelTransit) {
+            boolean inTrenchZone = Intake.isPoseInTrenchLowClearanceZone(currentPose);
+            boolean nearEntrance = !waypoints.isEmpty()
+                    && currentPose.getTranslation().getDistance(waypoints.get(0).getTranslation()) < 1.2;
+            if (inTrenchZone || nearEntrance) {
+                targetDeg = tunnelHeading.getDegrees();
+                Intake.getInstance().setArmPosition(Constants.INTAKE_HORIZONTAL_POSITION);
+            }
+            if (inTrenchZone && !waypoints.isEmpty()) {
+                // High-gain cross-track centering constraint inside the 53-inch corridor
+                double corridorY = waypoints.get(waypoints.size() - 1).getY();
+                double crossTrackError = corridorY - currentPose.getY();
+                vy += crossTrackError * 2.0; // Stiff centering bias
+            }
+        }
+
         double rotationSpeed = rotationController.calculate(
                 currentPose.getRotation().getDegrees(),
-                finalTarget.getRotation().getDegrees());
+                targetDeg);
 
-        swerveBase.driveFieldOriented(new ChassisSpeeds(vx, vy, Math.toRadians(rotationSpeed)));
+        // 6. Proprioceptive Stall / Pin Check
+        double commandedSpeed = Math.hypot(vx, vy);
+        ChassisSpeeds actualSpeeds = swerveBase.getRobotVelocity();
+        double measuredSpeed = Math.hypot(actualSpeeds.vxMetersPerSecond, actualSpeeds.vyMetersPerSecond);
+        double driveCurrent = swerveBase.getAverageDriveCurrent();
+        double now = Timer.getFPGATimestamp();
+
+        boolean stallCondition = (commandedSpeed > STALL_SPEED_CMD_THRESHOLD)
+                && (measuredSpeed < STALL_MEASURED_VEL_THRESHOLD)
+                && (driveCurrent > STALL_CURRENT_THRESHOLD_AMPS);
+
+        if (stallCondition) {
+            if (stallStartTime < 0) {
+                stallStartTime = now;
+            } else if (now - stallStartTime > STALL_MIN_DURATION_SEC) {
+                // Pin / Stall confirmed: Insert virtual obstacle 0.65m in front of robot along drive direction
+                Translation2d virtualObstaclePos = currentPose.getTranslation().plus(driveDir.times(0.65));
+                DynamicRouter.registerObstacle(virtualObstaclePos, new Translation2d(), 0.55, 0.60, true);
+
+                // Trigger Swerve Pirouette Slip for 0.5s to break cloth bumper friction
+                // (Disabled during tunnel transit to avoid wedging against trench walls)
+                if (!isTunnelTransit) {
+                    isPirouetteActive = true;
+                    pirouetteEndTime = now + 0.50;
+                }
+            }
+        } else {
+            stallStartTime = -1.0;
+        }
+
+        if (isPirouetteActive && now > pirouetteEndTime) {
+            isPirouetteActive = false;
+        }
+        Logger.recordOutput("DynamicAvoidance/PirouetteActive", isPirouetteActive);
+        Logger.recordOutput("DynamicAvoidance/TunnelTransitActive", isTunnelTransit);
+
+        // 7. Dynamic Obstacle Avoidance Routing
+        ChassisSpeeds nominalSpeeds = new ChassisSpeeds(vx, vy, Math.toRadians(rotationSpeed));
+        ChassisSpeeds avoidanceSpeeds = DynamicRouter.computeAvoidanceSpeeds(currentPose, nominalSpeeds, lookaheadPoint);
+
+        // 8. Legal Pinning Watchdog Backoff Override
+        LegalPinningWatchdog watchdog = LegalPinningWatchdog.getInstance();
+        watchdog.update(stallCondition, currentPose, null, 0.02);
+        if (watchdog.isForcedBackoffActive()) {
+            Pose2d backoffPose = watchdog.getBackOffTarget(currentPose, null);
+            Translation2d backoffDir = backoffPose.getTranslation().minus(currentPose.getTranslation());
+            if (backoffDir.getNorm() > 1e-4) {
+                backoffDir = backoffDir.div(backoffDir.getNorm());
+            }
+            avoidanceSpeeds = new ChassisSpeeds(backoffDir.getX() * 1.5, backoffDir.getY() * 1.5, 0.0);
+        } else if (isPirouetteActive) {
+            // If Pirouette is active, inject high-rate spin (8.0 rad/s) to break contact
+            avoidanceSpeeds = new ChassisSpeeds(
+                    avoidanceSpeeds.vxMetersPerSecond,
+                    avoidanceSpeeds.vyMetersPerSecond,
+                    PIROUETTE_SPIN_RATE_RAD_PER_SEC);
+        }
+
+        swerveBase.driveFieldOriented(avoidanceSpeeds);
     }
 
     private Translation2d getLookaheadPoint(Translation2d currentPos) {
@@ -204,5 +344,17 @@ public class DriveToPoseAction implements Actions {
     public void done() {
         swerveBase.setPathVisualization(java.util.Collections.emptyList());
         swerveBase.driveFieldOriented(new ChassisSpeeds());
+    }
+
+    public boolean isTunnelTransit() {
+        return isTunnelTransit;
+    }
+
+    public Rotation2d getTunnelHeading() {
+        return tunnelHeading;
+    }
+
+    public List<Pose2d> getWaypoints() {
+        return Collections.unmodifiableList(waypoints);
     }
 }

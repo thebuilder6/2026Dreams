@@ -3,13 +3,10 @@ package frc.robot.Test;
 import static edu.wpi.first.units.Units.Meters;
 import static edu.wpi.first.units.Units.MetersPerSecond;
 import static edu.wpi.first.units.Units.Radians;
+import static edu.wpi.first.units.Units.RadiansPerSecond;
 import static edu.wpi.first.units.Units.RotationsPerSecond;
-import static edu.wpi.first.units.Units.Second;
 import static edu.wpi.first.units.Units.Seconds;
 import static edu.wpi.first.units.Units.Volts;
-
-import java.util.EnumMap;
-import java.util.Map;
 
 import edu.wpi.first.units.measure.Voltage;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
@@ -24,90 +21,76 @@ import frc.robot.Subsystems.SwerveBase;
 
 /**
  * Unified System Identification (SysID) Manager for Team 8334.
- *
- * <p>Supports 5 comprehensive subsystem characterizations:
- * 1. SWERVE_DRIVE_LINEAR: Linear drive dynamics (kS, kV, kA) with modules locked at 0°.
- * 2. SWERVE_DRIVE_ANGULAR: Yaw rotational inertia (MoI) & angular feedforwards with tangent module angles.
- * 3. SWERVE_STEER: Steering azimuth motor dynamics.
- * 4. SHOOTER_FLYWHEELS: Dual flywheel velocity & acceleration response.
- * 5. INTAKE_ARM: Articulated arm dynamics with active mechanical angle safeguards.
- *
- * <p>Safety features:
- * - Voltage limits (7.0V max drive/flywheels, 3.5V max arm).
- * - Hold-to-run semantics & emergency stop.
- * - Headless NetworkTables triggers for pit tuning without controllers.
- * - WPILib DataLog & AdvantageKit deterministic replay recording.
+ * 
+ * Provides rock-solid, hold-to-run characterization routines for:
+ * 1. Swerve Drive Linear (Translational velocity & friction with wheels locked at 0 deg)
+ * 2. Swerve Drive Angular (Rotational Moment of Inertia with wheels oriented tangentially)
+ * 3. Swerve Steer Azimuth (Steering motor dynamics)
+ * 4. Shooter Flywheels (Dual flywheel speed & acceleration feedforwards)
+ * 5. Intake Arm Pivot (Gravity and friction modeling with software angle bounds)
  */
 public class SysIdManager {
 
     private static SysIdManager instance = null;
 
-    public enum Mechanism {
-        SWERVE_DRIVE_LINEAR("Swerve Linear"),
-        SWERVE_DRIVE_ANGULAR("Swerve Angular"),
+    public enum MechanismType {
+        SWERVE_DRIVE_LINEAR("Swerve Drive Linear"),
+        SWERVE_DRIVE_ANGULAR("Swerve Drive Angular"),
         SWERVE_STEER("Swerve Steer"),
         SHOOTER_FLYWHEELS("Shooter Flywheels"),
-        INTAKE_ARM("Intake Arm");
+        INTAKE_ARM("Intake Arm Pivot");
 
         public final String displayName;
 
-        Mechanism(String displayName) {
+        MechanismType(String displayName) {
             this.displayName = displayName;
         }
-    }
-
-    public enum TestType {
-        QUASISTATIC,
-        DYNAMIC
     }
 
     private final SwerveBase swerve;
     private final Shooter shooter;
     private final Intake intake;
 
-    private final Map<Mechanism, SysIdRoutine> routines = new EnumMap<>(Mechanism.class);
-    private Mechanism activeMechanism = Mechanism.SWERVE_DRIVE_LINEAR;
+    private MechanismType activeMechanism = MechanismType.SWERVE_DRIVE_LINEAR;
+
+    // SysId Routines
+    private final SysIdRoutine driveLinearRoutine;
+    private final SysIdRoutine driveAngularRoutine;
+    private final SysIdRoutine steerRoutine;
+    private final SysIdRoutine shooterRoutine;
+    private final SysIdRoutine armRoutine;
+
+    // Active command tracking
     private Command activeCommand = null;
     private String routineState = "IDLE";
-    private boolean isRunning = false;
 
-    // Safety Voltage Caps
-    private static final double MAX_DRIVE_VOLTAGE = 7.0;
-    private static final double MAX_FLYWHEEL_VOLTAGE = 7.0;
-    private static final double MAX_ARM_VOLTAGE = 3.5;
-
-    public static synchronized SysIdManager getInstance() {
+    public static SysIdManager getInstance() {
         if (instance == null) {
-            instance = new SysIdManager();
+            instance = new SysIdManager(Shooter.getInstance(), Intake.getInstance(), SwerveBase.getInstance());
         }
         return instance;
     }
 
-    public SysIdManager() {
-        this(SwerveBase.getInstance(), Shooter.getInstance(), Intake.getInstance());
-    }
-
-    public SysIdManager(SwerveBase swerve, Shooter shooter, Intake intake) {
-        this.swerve = swerve;
+    public SysIdManager(Shooter shooter, Intake intake, SwerveBase swerve) {
         this.shooter = shooter;
         this.intake = intake;
+        this.swerve = swerve;
 
-        buildRoutines();
-        setupDashboard();
-    }
-
-    private void buildRoutines() {
         // 1. Swerve Drive Linear Routine
-        routines.put(Mechanism.SWERVE_DRIVE_LINEAR, new SysIdRoutine(
+        driveLinearRoutine = new SysIdRoutine(
             new SysIdRoutine.Config(
-                Volts.per(Second).of(1.0),
-                Volts.of(MAX_DRIVE_VOLTAGE),
+                Volts.per(Seconds).of(1.0),
+                Volts.of(7.0),
                 Seconds.of(10.0),
-                (state) -> recordState(Mechanism.SWERVE_DRIVE_LINEAR, state)
+                state -> {
+                    routineState = "DriveLinear: " + state.toString();
+                    SmartDashboard.putString("Test/SysId/State", routineState);
+                    org.littletonrobotics.junction.Logger.recordOutput("SysId/State", routineState);
+                }
             ),
             new SysIdRoutine.Mechanism(
                 (Voltage volts) -> swerve.setSysIdDriveVoltage(volts.in(Volts)),
-                (log) -> {
+                log -> {
                     var vels = swerve.getDriveMotorVelocities();
                     var positions = swerve.getDriveMotorPositions();
                     var voltages = swerve.getDriveMotorVoltages();
@@ -123,68 +106,81 @@ public class SysIdManager {
                 },
                 swerve
             )
-        ));
+        );
 
-        // 2. Swerve Drive Angular Routine (Yaw Moment of Inertia)
-        routines.put(Mechanism.SWERVE_DRIVE_ANGULAR, new SysIdRoutine(
+        // 2. Swerve Drive Angular Routine (Rotational Moment of Inertia)
+        driveAngularRoutine = new SysIdRoutine(
             new SysIdRoutine.Config(
-                Volts.per(Second).of(1.0),
-                Volts.of(MAX_DRIVE_VOLTAGE),
-                Seconds.of(10.0),
-                (state) -> recordState(Mechanism.SWERVE_DRIVE_ANGULAR, state)
+                Volts.per(Seconds).of(1.0),
+                Volts.of(6.0),
+                Seconds.of(8.0),
+                state -> {
+                    routineState = "DriveAngular: " + state.toString();
+                    SmartDashboard.putString("Test/SysId/State", routineState);
+                    org.littletonrobotics.junction.Logger.recordOutput("SysId/State", routineState);
+                }
             ),
             new SysIdRoutine.Mechanism(
                 (Voltage volts) -> swerve.setSysIdRotationVoltage(volts.in(Volts)),
-                (log) -> {
+                log -> {
                     var voltages = swerve.getDriveMotorVoltages();
                     double avgVolts = voltages.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
-                    double yawRads = Math.toRadians(swerve.getHeading().getDegrees());
-                    double yawRateRps = swerve.getInputs().gyroYawVelocityDegPerSec / 360.0;
+                    double yawRateRadPerSec = swerve.getGyroYawRateRadsPerSec();
+                    double headingRad = swerve.getHeading().getRadians();
 
                     log.motor("drive-angular")
                         .voltage(Volts.of(avgVolts))
-                        .angularPosition(Radians.of(yawRads))
-                        .angularVelocity(RotationsPerSecond.of(yawRateRps));
+                        .angularPosition(Radians.of(headingRad))
+                        .angularVelocity(RadiansPerSecond.of(yawRateRadPerSec));
                 },
                 swerve
             )
-        ));
+        );
 
         // 3. Swerve Steer Azimuth Routine
-        routines.put(Mechanism.SWERVE_STEER, new SysIdRoutine(
+        steerRoutine = new SysIdRoutine(
             new SysIdRoutine.Config(
-                Volts.per(Second).of(1.0),
-                Volts.of(MAX_DRIVE_VOLTAGE),
-                Seconds.of(8.0),
-                (state) -> recordState(Mechanism.SWERVE_STEER, state)
+                Volts.per(Seconds).of(1.5),
+                Volts.of(5.0),
+                Seconds.of(6.0),
+                state -> {
+                    routineState = "Steer: " + state.toString();
+                    SmartDashboard.putString("Test/SysId/State", routineState);
+                    org.littletonrobotics.junction.Logger.recordOutput("SysId/State", routineState);
+                }
             ),
             new SysIdRoutine.Mechanism(
                 (Voltage volts) -> swerve.setSysIdSteerVoltage(volts.in(Volts)),
-                (log) -> {
+                log -> {
                     var positions = swerve.getSteerMotorPositions();
                     var voltages = swerve.getSteerMotorVoltages();
-                    double avgVolts = voltages.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
-                    double avgPosRads = Math.toRadians(positions.stream().mapToDouble(Double::doubleValue).average().orElse(0.0));
 
-                    log.motor("steer-azimuth-avg")
+                    double avgVolts = voltages.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
+                    double avgPosRad = Math.toRadians(positions.stream().mapToDouble(Double::doubleValue).average().orElse(0.0));
+
+                    log.motor("steer-azimuth")
                         .voltage(Volts.of(avgVolts))
-                        .angularPosition(Radians.of(avgPosRads));
+                        .angularPosition(Radians.of(avgPosRad));
                 },
                 swerve
             )
-        ));
+        );
 
-        // 4. Shooter Dual Flywheels Routine
-        routines.put(Mechanism.SHOOTER_FLYWHEELS, new SysIdRoutine(
+        // 4. Shooter Flywheels Routine
+        shooterRoutine = new SysIdRoutine(
             new SysIdRoutine.Config(
-                Volts.per(Second).of(1.5),
-                Volts.of(MAX_FLYWHEEL_VOLTAGE),
+                Volts.per(Seconds).of(1.5),
+                Volts.of(7.0),
                 Seconds.of(8.0),
-                (state) -> recordState(Mechanism.SHOOTER_FLYWHEELS, state)
+                state -> {
+                    routineState = "Shooter: " + state.toString();
+                    SmartDashboard.putString("Test/SysId/State", routineState);
+                    org.littletonrobotics.junction.Logger.recordOutput("SysId/State", routineState);
+                }
             ),
             new SysIdRoutine.Mechanism(
                 (Voltage volts) -> shooter.setFlywheelCharacterizationVoltage(volts.in(Volts), volts.in(Volts)),
-                (log) -> {
+                log -> {
                     log.motor("flywheel-left")
                         .voltage(Volts.of(shooter.getFlywheelLeftAppliedVoltage()))
                         .angularVelocity(RotationsPerSecond.of(shooter.getFlywheelLeftVelocityRPM() / 60.0));
@@ -194,153 +190,157 @@ public class SysIdManager {
                 },
                 shooter
             )
-        ));
+        );
 
-        // 5. Intake Arm Pivot Routine (with Angle Safeguards)
-        routines.put(Mechanism.INTAKE_ARM, new SysIdRoutine(
+        // 5. Intake Arm Routine
+        armRoutine = new SysIdRoutine(
             new SysIdRoutine.Config(
-                Volts.per(Second).of(0.5),
-                Volts.of(MAX_ARM_VOLTAGE),
-                Seconds.of(6.0),
-                (state) -> recordState(Mechanism.INTAKE_ARM, state)
+                Volts.per(Seconds).of(0.75),
+                Volts.of(3.5),
+                Seconds.of(5.0),
+                state -> {
+                    routineState = "Arm: " + state.toString();
+                    SmartDashboard.putString("Test/SysId/State", routineState);
+                    org.littletonrobotics.junction.Logger.recordOutput("SysId/State", routineState);
+                }
             ),
             new SysIdRoutine.Mechanism(
                 (Voltage volts) -> intake.setCharacterizationVoltage(volts.in(Volts)),
-                (log) -> {
+                log -> {
                     log.motor("arm")
                         .voltage(Volts.of(intake.getArmAppliedVoltage()))
                         .angularPosition(Radians.of(intake.getArmPositionRads()))
-                        .angularVelocity(RotationsPerSecond.of(intake.getArmVelocityRads() / (2.0 * Math.PI)));
+                        .angularVelocity(RadiansPerSecond.of(intake.getArmVelocityRads()));
                 },
                 intake
             )
-        ));
+        );
+
+        setupDashboard();
     }
 
-    private void recordState(Mechanism mechanism, edu.wpi.first.wpilibj.sysid.SysIdRoutineLog.State state) {
-        routineState = state.toString();
-        org.littletonrobotics.junction.Logger.recordOutput("SysId/" + mechanism.name() + "/State", routineState);
-    }
-
-    /**
-     * Schedules a SysId test command for the specified mechanism, type, and direction.
-     */
-    public void startTest(Mechanism mechanism, TestType type, Direction direction) {
-        cancelTest();
-
-        SysIdRoutine routine = routines.get(mechanism);
-        if (routine == null) return;
-
-        activeMechanism = mechanism;
-        if (type == TestType.QUASISTATIC) {
-            activeCommand = routine.quasistatic(direction);
-        } else {
-            activeCommand = routine.dynamic(direction);
-        }
-
-        System.out.printf("[SysIdManager] Starting %s (%s, %s)%n",
-                mechanism.displayName, type.name(), direction.name());
-
-        CommandScheduler.getInstance().schedule(activeCommand);
-        isRunning = true;
-    }
-
-    /**
-     * Aborts any currently running SysId command and halts all actuators.
-     */
-    public void cancelTest() {
-        if (activeCommand != null) {
-            CommandScheduler.getInstance().cancel(activeCommand);
-            activeCommand = null;
-        }
-        isRunning = false;
-        routineState = "CANCELLED / IDLE";
-
-        swerve.stop();
-        shooter.stop();
-        intake.stop();
-    }
-
-    /**
-     * Updates SysId manager from controller inputs with safe hold-to-run semantics.
-     *
-     * <p>Mapping:
-     * - D-pad Up/Down: Cycle mechanisms
-     * - Left Trigger (>0.5): Hold to run Quasistatic Forward
-     * - Left Bumper: Hold to run Quasistatic Reverse
-     * - Right Trigger (>0.5): Hold to run Dynamic Forward
-     * - Right Bumper: Hold to run Dynamic Reverse
-     * - B Button / Start: Emergency Cancel
-     */
-    public void update(Controller controller) {
-        if (controller == null) return;
-
-        // Emergency Cancel
-        if (controller.getBButtonPressed() || controller.getStartButtonPressed()) {
-            cancelTest();
-            return;
-        }
-
-        // Mechanism Selection via D-Pad
-        int pov = controller.getPOV();
-        if (pov == 0) {
-            setActiveMechanism(Mechanism.SWERVE_DRIVE_LINEAR);
-        } else if (pov == 90) {
-            setActiveMechanism(Mechanism.SHOOTER_FLYWHEELS);
-        } else if (pov == 180) {
-            setActiveMechanism(Mechanism.INTAKE_ARM);
-        } else if (pov == 270) {
-            setActiveMechanism(Mechanism.SWERVE_DRIVE_ANGULAR);
-        }
-
-        // Hold-to-Run execution
-        boolean lt = controller.getLeftTriggerAxis() > 0.5;
-        boolean lb = controller.getLeftBumperButton();
-        boolean rt = controller.getRightTriggerAxis() > 0.5;
-        boolean rb = controller.getRightBumperButton();
-
-        if (lt) {
-            if (!isRunning) startTest(activeMechanism, TestType.QUASISTATIC, Direction.kForward);
-        } else if (lb) {
-            if (!isRunning) startTest(activeMechanism, TestType.QUASISTATIC, Direction.kReverse);
-        } else if (rt) {
-            if (!isRunning) startTest(activeMechanism, TestType.DYNAMIC, Direction.kForward);
-        } else if (rb) {
-            if (!isRunning) startTest(activeMechanism, TestType.DYNAMIC, Direction.kReverse);
-        } else {
-            // Releasing all test buttons automatically stops and cancels test
-            if (isRunning) {
-                cancelTest();
-            }
+    public SysIdRoutine getActiveRoutine() {
+        switch (activeMechanism) {
+            case SWERVE_DRIVE_LINEAR: return driveLinearRoutine;
+            case SWERVE_DRIVE_ANGULAR: return driveAngularRoutine;
+            case SWERVE_STEER: return steerRoutine;
+            case SHOOTER_FLYWHEELS: return shooterRoutine;
+            case INTAKE_ARM: return armRoutine;
+            default: return driveLinearRoutine;
         }
     }
 
-    public void setActiveMechanism(Mechanism mechanism) {
+    public void setActiveMechanism(MechanismType mechanism) {
         if (this.activeMechanism != mechanism) {
-            cancelTest();
+            abort();
             this.activeMechanism = mechanism;
-            System.out.println("[SysIdManager] Active Mechanism: " + mechanism.displayName);
+            System.out.println("[SysIdManager] Switched active mechanism to: " + mechanism.displayName);
         }
     }
 
-    public Mechanism getActiveMechanism() {
+    public MechanismType getActiveMechanism() {
         return activeMechanism;
     }
 
+    private boolean isTestRunning = false;
+
     public boolean isRunning() {
-        return isRunning;
+        return isTestRunning;
     }
 
     public String getRoutineState() {
         return routineState;
     }
 
-    public void setupDashboard() {
-        SmartDashboard.putString("Test/SysId/Mechanism", activeMechanism.name());
-        SmartDashboard.putString("Test/SysId/State", routineState);
-        SmartDashboard.putBoolean("Test/SysId/Running", false);
+    /**
+     * Start a SysId routine command with hold-to-run semantics.
+     */
+    public void startQuasistatic(Direction direction) {
+        abort();
+        isTestRunning = true;
+        activeCommand = getActiveRoutine().quasistatic(direction);
+        CommandScheduler.getInstance().schedule(activeCommand);
+        System.out.println("[SysIdManager] Scheduled Quasistatic " + direction.name() + " for " + activeMechanism.displayName);
+    }
 
-        // Headless Test Triggers
+    public void startDynamic(Direction direction) {
+        abort();
+        isTestRunning = true;
+        activeCommand = getActiveRoutine().dynamic(direction);
+        CommandScheduler.getInstance().schedule(activeCommand);
+        System.out.println("[SysIdManager] Scheduled Dynamic " + direction.name() + " for " + activeMechanism.displayName);
+    }
+
+    /**
+     * Abort any active SysId routine immediately and safely zero actuator voltages.
+     */
+    public void abort() {
+        isTestRunning = false;
+        if (activeCommand != null) {
+            CommandScheduler.getInstance().cancel(activeCommand);
+            activeCommand = null;
+        }
+        routineState = "IDLE";
+        SmartDashboard.putString("Test/SysId/State", routineState);
+
+        // Safely stop all actuators
+        swerve.stop();
+        shooter.stop();
+        intake.stop();
+    }
+
+    /**
+     * Update controller hold-to-run handling in Test mode.
+     */
+    public void updateController(Controller controller) {
+        // D-Pad for mechanism selection
+        int pov = controller.getPOV();
+        if (pov == 0) {
+            setActiveMechanism(MechanismType.SWERVE_DRIVE_LINEAR);
+        } else if (pov == 45) {
+            setActiveMechanism(MechanismType.SWERVE_DRIVE_ANGULAR);
+        } else if (pov == 90) {
+            setActiveMechanism(MechanismType.SWERVE_STEER);
+        } else if (pov == 180) {
+            setActiveMechanism(MechanismType.SHOOTER_FLYWHEELS);
+        } else if (pov == 270) {
+            setActiveMechanism(MechanismType.INTAKE_ARM);
+        }
+
+        // B Button / Back: Emergency Stop
+        if (controller.getBButtonPressed() || controller.getBackButton()) {
+            abort();
+            return;
+        }
+
+        // Triggers / Face Buttons for hold-to-run execution
+        boolean runQuasiFwd = controller.getAButton();
+        boolean runQuasiRev = controller.getXButton();
+        boolean runDynFwd = controller.getYButton();
+        boolean runDynRev = controller.getRightBumperButton();
+
+        if (runQuasiFwd) {
+            if (!isRunning()) startQuasistatic(Direction.kForward);
+        } else if (runQuasiRev) {
+            if (!isRunning()) startQuasistatic(Direction.kReverse);
+        } else if (runDynFwd) {
+            if (!isRunning()) startDynamic(Direction.kForward);
+        } else if (runDynRev) {
+            if (!isRunning()) startDynamic(Direction.kReverse);
+        } else {
+            // Releasing buttons cancels test immediately (hold-to-run)
+            if (isRunning()) {
+                abort();
+            }
+        }
+    }
+
+    public void setupDashboard() {
+        SmartDashboard.putString("Test/SysId/ActiveMechanism", activeMechanism.name());
+        SmartDashboard.putString("Test/SysId/State", "IDLE");
+        SmartDashboard.putBoolean("Test/SysId/IsRunning", false);
+
+        // Headless Trigger buttons
         SmartDashboard.putBoolean("Test/SysId/QuasistaticForward", false);
         SmartDashboard.putBoolean("Test/SysId/QuasistaticReverse", false);
         SmartDashboard.putBoolean("Test/SysId/DynamicForward", false);
@@ -348,41 +348,61 @@ public class SysIdManager {
         SmartDashboard.putBoolean("Test/SysId/Abort", false);
     }
 
-    public void updateDashboard() {
-        SmartDashboard.putString("Test/SysId/Mechanism", activeMechanism.name());
+    public void log() {
+        boolean running = isRunning();
+        SmartDashboard.putBoolean("Test/SysId/IsRunning", running);
+        SmartDashboard.putString("Test/SysId/ActiveMechanism", activeMechanism.name());
         SmartDashboard.putString("Test/SysId/State", routineState);
-        SmartDashboard.putBoolean("Test/SysId/Running", isRunning);
 
-        // Read mechanism selector string if set from Elastic
-        String selectedMech = SmartDashboard.getString("Test/SysId/SelectedMechanism", "");
-        if (!selectedMech.isEmpty()) {
-            for (Mechanism m : Mechanism.values()) {
-                if (m.name().equalsIgnoreCase(selectedMech) || m.displayName.equalsIgnoreCase(selectedMech)) {
-                    if (activeMechanism != m) setActiveMechanism(m);
-                    break;
-                }
-            }
+        // Check mechanism switcher from dashboard
+        String mechFromDash = SmartDashboard.getString("Test/SysId/SelectMechanism", "");
+        if (!mechFromDash.isEmpty() && !mechFromDash.equals(activeMechanism.name())) {
+            try {
+                setActiveMechanism(MechanismType.valueOf(mechFromDash));
+                SmartDashboard.putString("Test/SysId/SelectMechanism", "");
+            } catch (IllegalArgumentException ignored) {}
         }
 
-        // Process headless triggers
+        // Headless dashboard trigger processing
         if (SmartDashboard.getBoolean("Test/SysId/Abort", false)) {
             SmartDashboard.putBoolean("Test/SysId/Abort", false);
-            cancelTest();
-            return;
-        }
-
-        if (SmartDashboard.getBoolean("Test/SysId/QuasistaticForward", false)) {
+            abort();
+        } else if (SmartDashboard.getBoolean("Test/SysId/QuasistaticForward", false)) {
             SmartDashboard.putBoolean("Test/SysId/QuasistaticForward", false);
-            startTest(activeMechanism, TestType.QUASISTATIC, Direction.kForward);
+            startQuasistatic(Direction.kForward);
         } else if (SmartDashboard.getBoolean("Test/SysId/QuasistaticReverse", false)) {
             SmartDashboard.putBoolean("Test/SysId/QuasistaticReverse", false);
-            startTest(activeMechanism, TestType.QUASISTATIC, Direction.kReverse);
+            startQuasistatic(Direction.kReverse);
         } else if (SmartDashboard.getBoolean("Test/SysId/DynamicForward", false)) {
             SmartDashboard.putBoolean("Test/SysId/DynamicForward", false);
-            startTest(activeMechanism, TestType.DYNAMIC, Direction.kForward);
+            startDynamic(Direction.kForward);
         } else if (SmartDashboard.getBoolean("Test/SysId/DynamicReverse", false)) {
             SmartDashboard.putBoolean("Test/SysId/DynamicReverse", false);
-            startTest(activeMechanism, TestType.DYNAMIC, Direction.kReverse);
+            startDynamic(Direction.kReverse);
+        }
+
+        // Live telemetry
+        switch (activeMechanism) {
+            case SWERVE_DRIVE_LINEAR:
+                SmartDashboard.putNumber("Test/SysId/LiveVelocity", swerve.getDriveMotorVelocities().stream().mapToDouble(Double::doubleValue).average().orElse(0.0));
+                SmartDashboard.putNumber("Test/SysId/LiveVoltage", swerve.getDriveMotorVoltages().stream().mapToDouble(Double::doubleValue).average().orElse(0.0));
+                break;
+            case SWERVE_DRIVE_ANGULAR:
+                SmartDashboard.putNumber("Test/SysId/LiveVelocity", swerve.getGyroYawRateRadsPerSec());
+                SmartDashboard.putNumber("Test/SysId/LiveVoltage", swerve.getDriveMotorVoltages().stream().mapToDouble(Double::doubleValue).average().orElse(0.0));
+                break;
+            case SWERVE_STEER:
+                SmartDashboard.putNumber("Test/SysId/LiveVelocity", 0.0);
+                SmartDashboard.putNumber("Test/SysId/LiveVoltage", swerve.getSteerMotorVoltages().stream().mapToDouble(Double::doubleValue).average().orElse(0.0));
+                break;
+            case SHOOTER_FLYWHEELS:
+                SmartDashboard.putNumber("Test/SysId/LiveVelocity", (shooter.getFlywheelLeftVelocityRPM() + shooter.getFlywheelRightVelocityRPM()) / 2.0);
+                SmartDashboard.putNumber("Test/SysId/LiveVoltage", shooter.getFlywheelLeftAppliedVoltage());
+                break;
+            case INTAKE_ARM:
+                SmartDashboard.putNumber("Test/SysId/LiveVelocity", intake.getArmVelocityRads());
+                SmartDashboard.putNumber("Test/SysId/LiveVoltage", intake.getArmAppliedVoltage());
+                break;
         }
     }
 }

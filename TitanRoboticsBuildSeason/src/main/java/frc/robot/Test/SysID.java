@@ -1,56 +1,49 @@
 package frc.robot.Test;
 
 import edu.wpi.first.wpilibj.XboxController;
-import edu.wpi.first.wpilibj2.command.sysid.SysIdRoutine.Direction;
 import frc.robot.Devices.Controller;
 import frc.robot.Subsystems.Intake;
 import frc.robot.Subsystems.Shooter;
 import frc.robot.Subsystems.SwerveBase;
-import frc.robot.Test.SysIdManager.Mechanism;
-import frc.robot.Test.SysIdManager.TestType;
 
 /**
- * Legacy SysID compatibility wrapper.
- * Delegates all routines and execution to the unified {@link SysIdManager}.
+ * Legacy wrapper for SysId routines, now delegating to the unified SysIdManager.
  */
 public class SysID {
 
-    private final SysIdManager manager;
+    private final SysIdManager sysIdManager;
 
     public SysID(Shooter shooter, Intake intake, SwerveBase swerve) {
-        this.manager = SysIdManager.getInstance();
+        this.sysIdManager = SysIdManager.getInstance();
     }
 
     public void runTest(XboxController controller) {
-        if (controller instanceof Controller c) {
-            manager.update(c);
-            return;
-        }
+        if (controller instanceof Controller) {
+            sysIdManager.updateController((Controller) controller);
+        } else {
+            // Basic hold-to-run fallback
+            int pov = controller.getPOV();
+            if (pov == 0) {
+                sysIdManager.setActiveMechanism(SysIdManager.MechanismType.SHOOTER_FLYWHEELS);
+            } else if (pov == 180) {
+                sysIdManager.setActiveMechanism(SysIdManager.MechanismType.INTAKE_ARM);
+            } else if (pov == 270) {
+                sysIdManager.setActiveMechanism(SysIdManager.MechanismType.SWERVE_DRIVE_LINEAR);
+            }
 
-        // Direct D-pad mechanism switching
-        if (controller.getPOV() == 0) {
-            manager.setActiveMechanism(Mechanism.SHOOTER_FLYWHEELS);
-        } else if (controller.getPOV() == 180) {
-            manager.setActiveMechanism(Mechanism.INTAKE_ARM);
-        } else if (controller.getPOV() == 270) {
-            manager.setActiveMechanism(Mechanism.SWERVE_DRIVE_LINEAR);
-        } else if (controller.getPOV() == 90) {
-            manager.setActiveMechanism(Mechanism.SWERVE_DRIVE_ANGULAR);
+            if (controller.getAButton()) {
+                if (!sysIdManager.isRunning()) sysIdManager.startQuasistatic(edu.wpi.first.wpilibj2.command.sysid.SysIdRoutine.Direction.kForward);
+            } else if (controller.getXButton()) {
+                if (!sysIdManager.isRunning()) sysIdManager.startQuasistatic(edu.wpi.first.wpilibj2.command.sysid.SysIdRoutine.Direction.kReverse);
+            } else if (controller.getYButton()) {
+                if (!sysIdManager.isRunning()) sysIdManager.startDynamic(edu.wpi.first.wpilibj2.command.sysid.SysIdRoutine.Direction.kForward);
+            } else if (controller.getBButton()) {
+                sysIdManager.abort();
+            } else {
+                if (sysIdManager.isRunning()) {
+                    sysIdManager.abort();
+                }
+            }
         }
-
-        // Button commands
-        if (controller.getAButtonPressed()) {
-            manager.startTest(manager.getActiveMechanism(), TestType.QUASISTATIC, Direction.kForward);
-        } else if (controller.getBButtonPressed()) {
-            manager.cancelTest();
-        } else if (controller.getXButtonPressed()) {
-            manager.startTest(manager.getActiveMechanism(), TestType.DYNAMIC, Direction.kReverse);
-        } else if (controller.getYButtonPressed()) {
-            manager.startTest(manager.getActiveMechanism(), TestType.DYNAMIC, Direction.kForward);
-        }
-    }
-
-    public SysIdManager getManager() {
-        return manager;
     }
 }

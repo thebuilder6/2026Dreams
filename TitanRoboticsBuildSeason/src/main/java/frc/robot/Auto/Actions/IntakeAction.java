@@ -5,22 +5,25 @@ import frc.robot.Interfaces.Actions;
 import frc.robot.Subsystems.Intake;
 
 public class IntakeAction implements Actions {
-    private double seconds;
-    Timer timer;
-    Intake intake;
-    public String state;
+    private final double seconds;
+    private Timer timer;
+    private final Intake intake;
+    public final Intake.IntakeState intakeState;
 
-    /*
-     * Class: Intake Action
-     * Description: This sets the state of the Intake to either "Standby",
-     * "Intaking", "Reverse",
-     * or "Disabled"
-     * Author: Mai
+    /**
+     * Creates an IntakeAction with a duration and string state name.
      */
     public IntakeAction(double seconds, String state) {
+        this(seconds, Intake.IntakeState.fromString(state));
+    }
+
+    /**
+     * Creates an IntakeAction with a duration and type-safe IntakeState.
+     */
+    public IntakeAction(double seconds, Intake.IntakeState state) {
         this.seconds = seconds;
-        this.state = state;
-        intake = Intake.getInstance();
+        this.intakeState = state;
+        this.intake = Intake.getInstance();
     }
 
     @Override
@@ -31,7 +34,7 @@ public class IntakeAction implements Actions {
 
     @Override
     public void update() {
-        intake.setState(state);
+        intake.setState(intakeState);
     }
 
     @Override
@@ -41,9 +44,8 @@ public class IntakeAction implements Actions {
 
     @Override
     public void done() {
-        // Do not force "Down" if the requested state was "Standby" or "Disabled"
-        if ("Intaking".equalsIgnoreCase(state) || "Reversed".equalsIgnoreCase(state)) {
-            intake.setState("Down");
+        if (intakeState == Intake.IntakeState.INTAKING || intakeState == Intake.IntakeState.REVERSED) {
+            intake.setState(Intake.IntakeState.DOWN);
         }
         timer.stop();
     }

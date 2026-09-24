@@ -117,17 +117,27 @@ public class StaticPathfinder {
         OBSTACLES.add(new RectangularObstacle(new Translation2d((651 - 42) * IN_TO_M, 170 * IN_TO_M), 2 * IN_TO_M,
                 47 * IN_TO_M, new Rotation2d()));
 
-        // Hubs (Assume ramps = true for max safety)
-        double hw = 47 * IN_TO_M;
-        double hh = 217 * IN_TO_M;
-        OBSTACLES.add(new RectangularObstacle(new Translation2d(4.60, 4.035), hw, hh, new Rotation2d()));
-        OBSTACLES.add(new RectangularObstacle(new Translation2d(11.94, 4.035), hw, hh, new Rotation2d()));
+        // Hubs (central scoring structure: 47" x 47" ~ 1.19m x 1.19m)
+        double hubSize = 47.0 * IN_TO_M;
+        OBSTACLES.add(new RectangularObstacle(new Translation2d(4.60, 4.035), hubSize, hubSize, new Rotation2d()));
+        OBSTACLES.add(new RectangularObstacle(new Translation2d(11.94, 4.035), hubSize, hubSize, new Rotation2d()));
+    }
+
+    private static Translation2d clampToField(Translation2d p) {
+        double clampedX = Math.max(0.65, Math.min(15.89, p.getX()));
+        double clampedY = Math.max(0.65, Math.min(7.56, p.getY()));
+        return new Translation2d(clampedX, clampedY);
     }
 
     public static List<Pose2d> findPath(Pose2d start, Pose2d target) {
         List<Pose2d> path = new ArrayList<>();
-        Translation2d p1 = start.getTranslation();
-        Translation2d p2 = target.getTranslation();
+        findPathRecursive(start.getTranslation(), target.getTranslation(), target.getRotation(), path, 0);
+        path.add(target);
+        return path;
+    }
+
+    private static void findPathRecursive(Translation2d p1, Translation2d p2, Rotation2d finalRot, List<Pose2d> out, int depth) {
+        if (depth > 2) return;
 
         Obstacle blocker = null;
         for (Obstacle obs : OBSTACLES) {
@@ -136,25 +146,26 @@ public class StaticPathfinder {
                 break;
             }
         }
+        if (blocker == null) return;
 
-        if (blocker == null) {
-            path.add(target);
-            return path;
-        }
-
-        // Generate detour
         Translation2d line = p2.minus(p1);
-        Translation2d normal = new Translation2d(-line.getY(), line.getX()).div(line.getNorm());
-        double dist = blocker.getSafeRadius();
+        double lineLen = line.getNorm();
+        if (lineLen < 1e-4) return;
 
-        Translation2d d1 = blocker.getCenter().plus(normal.times(dist));
-        Translation2d d2 = blocker.getCenter().plus(normal.times(-dist));
+        Translation2d normal = new Translation2d(-line.getY(), line.getX()).div(lineLen);
+        double dist = Math.max(1.65, blocker.getSafeRadius());
 
-        Translation2d mid = p1.plus(p2).div(2.0);
-        Translation2d best = (d1.getDistance(mid) < d2.getDistance(mid)) ? d1 : d2;
+        Translation2d d1 = clampToField(blocker.getCenter().plus(normal.times(dist)));
+        Translation2d d2 = clampToField(blocker.getCenter().plus(normal.times(-dist)));
 
-        path.add(new Pose2d(best, target.getRotation()));
-        path.add(target);
-        return path;
+        double cost1 = p1.getDistance(d1) + d1.getDistance(p2);
+        double cost2 = p1.getDistance(d2) + d2.getDistance(p2);
+        Translation2d best = (cost1 <= cost2) ? d1 : d2;
+
+        // Check if first segment needs detour
+        findPathRecursive(p1, best, finalRot, out, depth + 1);
+        out.add(new Pose2d(best, finalRot));
+        // Check if second segment needs detour
+        findPathRecursive(best, p2, finalRot, out, depth + 1);
     }
 }

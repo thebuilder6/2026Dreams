@@ -4,11 +4,9 @@
 
 package frc.robot;
 
-import org.littletonrobotics.junction.LoggedRobot;
-
 import edu.wpi.first.wpilibj.DataLogManager;
 import edu.wpi.first.wpilibj.DriverStation;
-import edu.wpi.first.wpilibj.TimedRobot;
+import org.littletonrobotics.junction.LoggedRobot;
 import edu.wpi.first.wpilibj.XboxController;
 import edu.wpi.first.wpilibj.simulation.BatterySim;
 import edu.wpi.first.wpilibj.simulation.RoboRioSim;
@@ -56,12 +54,10 @@ public class Robot extends LoggedRobot {
     // AdvantageKit Logger Configuration for AdvantageScope
     org.littletonrobotics.junction.Logger.recordMetadata("ProjectName", "TitanRobotics2026");
     if (isReal()) {
-      org.littletonrobotics.junction.Logger.addDataReceiver(new org.littletonrobotics.junction.wpilog.WPILOGWriter());
-      org.littletonrobotics.junction.Logger
-          .addDataReceiver(new org.littletonrobotics.junction.networktables.NT4Publisher());
+        org.littletonrobotics.junction.Logger.addDataReceiver(new org.littletonrobotics.junction.wpilog.WPILOGWriter());
+        org.littletonrobotics.junction.Logger.addDataReceiver(new org.littletonrobotics.junction.networktables.NT4Publisher());
     } else {
-      org.littletonrobotics.junction.Logger
-          .addDataReceiver(new org.littletonrobotics.junction.networktables.NT4Publisher());
+        org.littletonrobotics.junction.Logger.addDataReceiver(new org.littletonrobotics.junction.networktables.NT4Publisher());
     }
     org.littletonrobotics.junction.Logger.start();
 
@@ -71,8 +67,8 @@ public class Robot extends LoggedRobot {
     Intake.getInstance();
     Dashboard.getInstance();
     if (isSimulation()) {
-      GameSim.getInstance();
-      AIRobotSim.getInstance();
+        GameSim.getInstance();
+        AIRobotSim.getInstance();
     }
     LEDs.getInstance();
     teleop = new Teleop();
@@ -81,6 +77,9 @@ public class Robot extends LoggedRobot {
     swerveBase.update();
 
     testController = new XboxController(0); // Assuming port 0 for testing
+
+    // Silence joystick unplugged warnings to prevent console I/O stalls
+    DriverStation.silenceJoystickConnectionWarning(true);
 
     // Disable LiveWindow to reduce NetworkTable noise
     edu.wpi.first.wpilibj.livewindow.LiveWindow.setEnabled(false);
@@ -99,13 +98,12 @@ public class Robot extends LoggedRobot {
    */
   @Override
   public void robotPeriodic() {
-
     SubsystemManager.updateSubsystems();
     SubsystemManager.logSubsystems();
     AlertManager.update();
-
-    // Update test mode if enabled
-    if (testMode != null) {
+    
+    // Only update test mode when in test mode or when test mode switch is explicitly active
+    if (testMode != null && (DriverStation.isTest() || testMode.isEnabled())) {
       testMode.update();
     }
   }
@@ -168,13 +166,13 @@ public class Robot extends LoggedRobot {
   public void disabledInit() {
     mAutoMissionExecutor.stop();
     teleop.reset();
-    if (testMode != null) {
-      testMode.cleanup();
-    }
     swerveBase.stop();
     Shooter.getInstance().stop();
     Intake.getInstance().stop();
     swerveBase.setMotorBrake(true);
+    if (testMode != null) {
+      testMode.cleanup();
+    }
   }
 
   /** This function is called periodically when disabled. */
@@ -185,6 +183,7 @@ public class Robot extends LoggedRobot {
   /** This function is called once when test mode is enabled. */
   @Override
   public void testInit() {
+    CommandScheduler.getInstance().cancelAll();
     if (testMode != null) {
       testMode.setEnabled(true);
     }

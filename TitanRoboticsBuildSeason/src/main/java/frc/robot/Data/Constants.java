@@ -5,15 +5,16 @@ import edu.wpi.first.math.util.Units;
 import swervelib.math.Matter;
 
 public class Constants {
-    // Global flag for enabling live tuning of PID values/setpoints via NetworkTables.
+    // Global flag for enabling live tuning of PID values/setpoints via
+    // NetworkTables.
     // Set to false for competition to save loop time.
     public static final boolean TUNING_MODE = true;
 
     public static final class FieldConstants {
-        public static final Translation3d RED_GOAL_LOCATION = new Translation3d(11.938, 4.035, 1.829);
-        public static final Translation3d BLUE_GOAL_LOCATION = new Translation3d(4.597, 4.035, 1.829);
+        public static final Translation3d RED_GOAL_LOCATION = new Translation3d(11.938, 4.035, 1.575);
+        public static final Translation3d BLUE_GOAL_LOCATION = new Translation3d(4.597, 4.035, 1.575);
 
-        public static final double GOAL_HEIGHT_METERS = 1.829;
+        public static final double GOAL_HEIGHT_METERS = 1.575;
     }
 
     // Root-level constants from physical robot
@@ -22,51 +23,113 @@ public class Constants {
 
     public static final double ROBOT_MASS = (148 - 20.3) * 0.453592; // 32lbs * kg per pound
     public static final Matter CHASSIS = new Matter(new Translation3d(0, 0, Units.inchesToMeters(8)), ROBOT_MASS);
-    /** Seconds to look ahead for projectile predictive math (accounts for mechanical/CAN latency). */
-    public static final double SHOOTER_PREDICTIVE_LOOK_AHEAD = 0.13; 
+    /**
+     * Seconds to look ahead for projectile predictive math (accounts for
+     * mechanical/CAN latency).
+     */
+    public static final double SHOOTER_PREDICTIVE_LOOK_AHEAD = 0.13;
     public static final double MAX_SPEED = Units.feetToMeters(15);
     public static final double MAX_ROTATION_SPEED = 8.0;
 
     // Shooter physical parameters
+    /** Shooter horizontal mounting offset from robot center (meters). */
     public static final double SHOOTER_OFFSET = -0.2032;
+    /**
+     * Fixed shooter hood/flywheel firing angle relative to horizontal (radians).
+     */
     public static final double FIRING_ANGLE = Units.degreesToRadians(70);
+    /**
+     * Height differential between hub goal opening and shooter exit point (meters).
+     */
     public static final double HEIGHT_DIFFERENCE = RED_HUB_LOCATION.getZ() - 0.53;
-    public static final double kFLYWHEELs = 0.0;
-    public static final double kFLYWHEELv = 0.0022;
-    public static final double kFLYWHEELa = 0.0;
-    public static final double kFLYWHEELp = 0.0007;
-    public static final double kFLYWHEELi = 0.000;
-    public static final double kFLYWHEELd = 0.000;
-    public static final double KICKERMOTOR = 12.0;
+
+    // Flywheel Feedforward and Feedback Gains
+    /** Flywheel static friction voltage feedforward (volts). */
+    public static final double FLYWHEEL_KS = 0.0;
+    /** Flywheel velocity feedforward gain (volts / RPM). */
+    public static final double FLYWHEEL_KV = 0.0022;
+    /** Flywheel acceleration feedforward gain (volts / (RPM/s)). */
+    public static final double FLYWHEEL_KA = 0.0;
+    /** Flywheel proportional feedback gain (volts / RPM error). */
+    public static final double FLYWHEEL_KP = 0.0007;
+    /** Flywheel integral feedback gain. */
+    public static final double FLYWHEEL_KI = 0.000;
+    /** Flywheel derivative feedback gain. */
+    public static final double FLYWHEEL_KD = 0.000;
+    /** Full nominal voltage applied to kicker feed motor (volts). */
+    public static final double KICKER_VOLTAGE = 12.0;
+
+    // Legacy aliases for backwards compatibility
+    public static final double kFLYWHEELs = FLYWHEEL_KS;
+    public static final double kFLYWHEELv = FLYWHEEL_KV;
+    public static final double kFLYWHEELa = FLYWHEEL_KA;
+    public static final double kFLYWHEELp = FLYWHEEL_KP;
+    public static final double kFLYWHEELi = FLYWHEEL_KI;
+    public static final double kFLYWHEELd = FLYWHEEL_KD;
+    public static final double KICKERMOTOR = KICKER_VOLTAGE;
 
     // Intake physical parameters
+    /** Intake pivot proportional gain. */
     public static final double INTAKE_ARM_KP = 0.1;
+    /** Intake pivot integral gain. */
     public static final double INTAKE_ARM_KI = 0.0;
+    /** Intake pivot derivative gain. */
     public static final double INTAKE_ARM_KD = 0.01;
+    /** Intake pivot static friction voltage (volts). */
     public static final double INTAKE_ARM_KS = 0.2;
+    /** Intake pivot gravity compensation feedforward (volts). */
     public static final double INTAKE_ARM_KG = 0.34;
+    /** Intake pivot velocity feedforward gain (volts / (rad/s)). */
     public static final double INTAKE_ARM_KV = 0.0;
+    /** Intake pivot acceleration feedforward gain (volts / (rad/s^2)). */
     public static final double INTAKE_ARM_KA = 0.0;
 
-    public static final double MAX_ARM_VELOCITY = 400.0; // degrees per second
-    public static final double MAX_ARM_ACCELERATION = 400.0; // degrees per second squared
+    /**
+     * Maximum allowed angular velocity for intake pivot trapezoidal motion
+     * profiling (deg/s).
+     */
+    public static final double MAX_ARM_VELOCITY = 400.0;
+    /**
+     * Maximum allowed angular acceleration for intake pivot trapezoidal motion
+     * profiling (deg/s^2).
+     */
+    public static final double MAX_ARM_ACCELERATION = 400.0;
 
+    /** Intake pivot stowed position setpoint (degrees). */
     public static final double INTAKE_UP_POSITION = 347.0;
+    /** Intake pivot ground deployed position setpoint (degrees). */
     public static final double INTAKE_DOWN_POSITION = 250.0;
+    /**
+     * Intake pivot horizontal level position used for gravity cosine calculation
+     * (degrees).
+     */
     public static final double INTAKE_HORIZONTAL_POSITION = 250.0;
+    /** Direction inversion flag for intake pivot motor. */
     public static final boolean INTAKE_ARM_INVERTED = true;
+    /** Direction inversion flag for intake roller motor. */
     public static final boolean INTAKE_WHEELS_INVERTED = true;
+    /** Absolute encoder zero-offset calibration (degrees). */
     public static final double INTAKE_POSITION_OFFSET = 276.0;
 
     public static final class AutonConstants {
-        // PID constants for X, Y, and Rotation
-        public static final double kAutoDriveP = 10.0;
-        public static final double kAutoDriveI = 0.0;
-        public static final double kAutoDriveD = 0.0;
+        // PID constants for X, Y translation
+        public static final double AUTO_DRIVE_KP = 10.0;
+        public static final double AUTO_DRIVE_KI = 0.0;
+        public static final double AUTO_DRIVE_KD = 0.0;
 
-        public static final double kAutoTurnP = 7.5;
-        public static final double kAutoTurnI = 0.0;
-        public static final double kAutoTurnD = 0.0;
+        // PID constants for holonomic heading rotation
+        public static final double AUTO_TURN_KP = 7.5;
+        public static final double AUTO_TURN_KI = 0.0;
+        public static final double AUTO_TURN_KD = 0.0;
+
+        // Dynamic Auton PID Tunables
+        public static final TunableNumber DRIVE_KP = new TunableNumber("Auton/Drive_kP", AUTO_DRIVE_KP);
+        public static final TunableNumber DRIVE_KI = new TunableNumber("Auton/Drive_kI", AUTO_DRIVE_KI);
+        public static final TunableNumber DRIVE_KD = new TunableNumber("Auton/Drive_kD", AUTO_DRIVE_KD);
+
+        public static final TunableNumber TURN_KP = new TunableNumber("Auton/Turn_kP", AUTO_TURN_KP);
+        public static final TunableNumber TURN_KI = new TunableNumber("Auton/Turn_kI", AUTO_TURN_KI);
+        public static final TunableNumber TURN_KD = new TunableNumber("Auton/Turn_kD", AUTO_TURN_KD);
     }
 
     public static final class DrivebaseConstants {
@@ -94,13 +157,22 @@ public class Constants {
         // Physics Constants
         public static final double SHOOTER_ANGLE_RAD = FIRING_ANGLE;
         public static final TunableNumber SHOOTER_HEIGHT_METERS = new TunableNumber("Shooter/HeightMeters", 0.53);
-        public static final TunableNumber SHOOTER_OFFSET_METERS = new TunableNumber("Shooter/OffsetMeters", SHOOTER_OFFSET);
+        public static final TunableNumber SHOOTER_OFFSET_METERS = new TunableNumber("Shooter/OffsetMeters",
+                SHOOTER_OFFSET);
         public static final double IDLE_RPM = 60;
 
         // Tolerances
         public static final double RPM_TOLERANCE = 50.0;
         public static final double ALIGNMENT_HEADING_TOLERANCE_DEG = 3.0;
         public static final double LIMELIGHT_TX_TOLERANCE_DEG = 2.0;
+
+        // Flywheel Feedback & Feedforward Tunables
+        public static final TunableNumber FLYWHEEL_KP = new TunableNumber("Shooter/kP", Constants.FLYWHEEL_KP);
+        public static final TunableNumber FLYWHEEL_KI = new TunableNumber("Shooter/kI", Constants.FLYWHEEL_KI);
+        public static final TunableNumber FLYWHEEL_KD = new TunableNumber("Shooter/kD", Constants.FLYWHEEL_KD);
+        public static final TunableNumber FLYWHEEL_KS = new TunableNumber("Shooter/kS", Constants.FLYWHEEL_KS);
+        public static final TunableNumber FLYWHEEL_KV = new TunableNumber("Shooter/kV", Constants.FLYWHEEL_KV);
+        public static final TunableNumber FLYWHEEL_KA = new TunableNumber("Shooter/kA", Constants.FLYWHEEL_KA);
 
         // Safety
         public static final double FLYWHEEL_CURRENT_LIMIT = 40.0; // Amps
@@ -110,6 +182,12 @@ public class Constants {
         public static final double SIM_MOI = 0.001; // Estimate
         public static final double BALL_SPAWN_INTERVAL = 0.3; // seconds
         public static final double SHOOTER_WHEEL_CIRCUMFERENCE = 0.1016 * Math.PI;
+        /**
+         * Energy transfer and slip efficiency from flywheel surface to ball exit
+         * velocity (~0.42 for dual flywheels).
+         */
+        public static final TunableNumber BALL_LAUNCH_EFFICIENCY = new TunableNumber("Shooter/SimLaunchEfficiency",
+                0.42);
     }
 
     public static final class IntakeConstants {
@@ -125,16 +203,16 @@ public class Constants {
         public static final double HOPPER_SPEED = 0.5;
 
         // Arm Gains (Degrees based) - Physical tuning
-        public static final TunableNumber kArmP = new TunableNumber("Intake/kArmP", INTAKE_ARM_KP);
-        public static final TunableNumber kArmI = new TunableNumber("Intake/kArmI", INTAKE_ARM_KI);
-        public static final TunableNumber kArmD = new TunableNumber("Intake/kArmD", INTAKE_ARM_KD);
-        public static final TunableNumber kArmS = new TunableNumber("Intake/kArmS", INTAKE_ARM_KS);
-        public static final TunableNumber kArmG = new TunableNumber("Intake/kArmG", INTAKE_ARM_KG);
-        public static final TunableNumber kArmV = new TunableNumber("Intake/kArmV", INTAKE_ARM_KV);
-        public static final TunableNumber kArmA = new TunableNumber("Intake/kArmA", INTAKE_ARM_KA);
+        public static final TunableNumber ARM_KP = new TunableNumber("Intake/kArmP", INTAKE_ARM_KP);
+        public static final TunableNumber ARM_KI = new TunableNumber("Intake/kArmI", INTAKE_ARM_KI);
+        public static final TunableNumber ARM_KD = new TunableNumber("Intake/kArmD", INTAKE_ARM_KD);
+        public static final TunableNumber ARM_KS = new TunableNumber("Intake/kArmS", INTAKE_ARM_KS);
+        public static final TunableNumber ARM_KG = new TunableNumber("Intake/kArmG", INTAKE_ARM_KG);
+        public static final TunableNumber ARM_KV = new TunableNumber("Intake/kArmV", INTAKE_ARM_KV);
+        public static final TunableNumber ARM_KA = new TunableNumber("Intake/kArmA", INTAKE_ARM_KA);
 
-        public static final double kMaxArmVelocity = MAX_ARM_VELOCITY;
-        public static final double kMaxArmAcceleration = MAX_ARM_ACCELERATION;
+        public static final double MAX_ARM_VELOCITY = Constants.MAX_ARM_VELOCITY;
+        public static final double MAX_ARM_ACCELERATION = Constants.MAX_ARM_ACCELERATION;
 
         public static final double ARM_INTAKE_POS = INTAKE_DOWN_POSITION;
         public static final double ARM_IDLE_POS = INTAKE_UP_POSITION;
@@ -177,5 +255,9 @@ public class Constants {
 
         // Joystick Deadband
         public static final double DEADBAND = 0.1;
+
+        // Driver Slew Rate Limiters (m/s^2 for translation, rad/s^2 for rotation)
+        public static final TunableNumber TRANSLATION_SLEW_RATE = new TunableNumber("Operator/TranslationSlewRate", 16); // m/s^2
+        public static final TunableNumber ROTATION_SLEW_RATE = new TunableNumber("Operator/RotationSlewRate", 10); // rad/s^2
     }
 }

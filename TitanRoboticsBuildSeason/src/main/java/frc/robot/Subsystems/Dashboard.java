@@ -7,17 +7,39 @@ import java.util.Optional;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
+import edu.wpi.first.networktables.BooleanPublisher;
+import edu.wpi.first.networktables.BooleanSubscriber;
+import edu.wpi.first.networktables.NetworkTable;
+import edu.wpi.first.networktables.NetworkTableInstance;
 import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.DriverStation.Alliance;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import frc.robot.Interfaces.Subsystem;
 import frc.robot.Utils.AllianceFlipUtil;
 
+/**
+ * Subsystem responsible for publishing aggregated driver telemetry, match state,
+ * and caching NT4 feature toggles for high-frequency low-latency access.
+ */
 public class Dashboard implements Subsystem {
 
     private static Dashboard instance = null;
 
     private final frc.robot.Auto.AutoMissionChooser autoMissionChooser;
+
+    // NT4 Cached Subscribers and Table Handle
+    private static final NetworkTable table = NetworkTableInstance.getDefault().getTable("SmartDashboard");
+    private static final BooleanSubscriber snapToTurnSub = table.getBooleanTopic("Features/Snap to Turn").subscribe(true);
+    private static final BooleanSubscriber ballHuntSub = table.getBooleanTopic("Features/Ball Hunt").subscribe(true);
+    private static final BooleanSubscriber glidePointsSub = table.getBooleanTopic("Features/Glide Points").subscribe(true);
+    private static final BooleanSubscriber fieldOrientedSub = table.getBooleanTopic("Features/Field Oriented").subscribe(true);
+    private static final BooleanSubscriber slowModeSub = table.getBooleanTopic("Features/Slow Mode").subscribe(false);
+    private static final BooleanSubscriber autoAimSub = table.getBooleanTopic("Features/Auto Aim").subscribe(true);
+    private static final BooleanSubscriber opponentRobotSub = table.getBooleanTopic("Features/Opponent Robot").subscribe(false);
+    private static final BooleanSubscriber twoPlayerDefenseSub = table.getBooleanTopic("Features/2 Player Defense").subscribe(false);
+    private static final BooleanSubscriber pitModeSub = table.getBooleanTopic("Features/Pit Mode").subscribe(false);
+    private static final BooleanSubscriber hapticCollisionSub = table.getBooleanTopic("Operator/HapticCollisionEnabled")
+            .subscribe(!edu.wpi.first.wpilibj.RobotBase.isSimulation());
 
     // 2026 Game Data Variables
     private String gameData = "";
@@ -43,31 +65,27 @@ public class Dashboard implements Subsystem {
     }
 
     private void setupLayout() {
-        // Auto Routine selection is published to SmartDashboard/Auto Routine by the
-        // chooser automatically
-        // No Shuffleboard specific layout needed for Elastic
+        // Publish default toggle states if not already present on NetworkTables
+        ensureTopicDefault("Features/Snap to Turn", true);
+        ensureTopicDefault("Features/Ball Hunt", true);
+        ensureTopicDefault("Features/Glide Points", true);
+        ensureTopicDefault("Features/Field Oriented", true);
+        ensureTopicDefault("Features/Slow Mode", false);
+        ensureTopicDefault("Features/Auto Aim", true);
+        ensureTopicDefault("Features/Opponent Robot", false);
+        ensureTopicDefault("Features/2 Player Defense", false);
+        ensureTopicDefault("Features/Pit Mode", false);
+        ensureTopicDefault("Operator/HapticCollisionEnabled", !edu.wpi.first.wpilibj.RobotBase.isSimulation());
+    }
 
-        // --- Feature Toggles ---
-        // Initialize with default values if not present
-        if (!SmartDashboard.containsKey("Features/Snap to Turn"))
-            SmartDashboard.putBoolean("Features/Snap to Turn", true);
-        if (!SmartDashboard.containsKey("Features/Ball Hunt"))
-            SmartDashboard.putBoolean("Features/Ball Hunt", true);
-        if (!SmartDashboard.containsKey("Features/Glide Points"))
-            SmartDashboard.putBoolean("Features/Glide Points", true);
-        if (!SmartDashboard.containsKey("Features/Field Oriented"))
-            SmartDashboard.putBoolean("Features/Field Oriented", true);
-        if (!SmartDashboard.containsKey("Features/Slow Mode"))
-            SmartDashboard.putBoolean("Features/Slow Mode", false);
-        if (!SmartDashboard.containsKey("Features/Auto Aim"))
-            SmartDashboard.putBoolean("Features/Auto Aim", true);
-        if (!SmartDashboard.containsKey("Features/Opponent Robot"))
-            SmartDashboard.putBoolean("Features/Opponent Robot", false);
-        if (!SmartDashboard.containsKey("Features/2 Player Defense"))
-            SmartDashboard.putBoolean("Features/2 Player Defense", false);
-        if (!SmartDashboard.containsKey("Features/Pit Mode"))
-            SmartDashboard.putBoolean("Features/Pit Mode", false);
+    public static boolean isHapticCollisionEnabled() {
+        return hapticCollisionSub.get();
+    }
 
+    private void ensureTopicDefault(String topicPath, boolean defaultVal) {
+        if (!table.containsKey(topicPath)) {
+            table.getBooleanTopic(topicPath).publish().set(defaultVal);
+        }
     }
 
     @Override
@@ -80,7 +98,7 @@ public class Dashboard implements Subsystem {
         autoMissionChooser.updateMissionCreator();
 
         // Sync Pit Mode
-        SwerveBase.getInstance().setPitMode(SmartDashboard.getBoolean("Features/Pit Mode", false));
+        SwerveBase.getInstance().setPitMode(isPitModeEnabled());
     }
 
     @Override
@@ -112,22 +130,33 @@ public class Dashboard implements Subsystem {
         SmartDashboard.putString("Match/Alliance", DriverStation.getAlliance().map(Enum::toString).orElse(""));
 
         // --- Driver Aggregation (For Elastic) ---
-        SmartDashboard.putBoolean("Driver/Shooter Ready", Shooter.getInstance().isAtTargetVelocity());
+        boolean shooterAtSpeed = Shooter.getInstance().isAtTargetVelocity();
+        boolean shooterLinedUp = Shooter.getInstance().isLinedUp();
+        boolean canShoot = isMyHubActive && shooterAtSpeed && shooterLinedUp;
+
+        SmartDashboard.putBoolean("Driver/Shooter Ready", shooterAtSpeed);
         SmartDashboard.putBoolean("Driver/Hub Active", isMyHubActive);
         SmartDashboard.putString("Driver/Hub Status", isMyHubActive ? "ACTIVE" : "INACTIVE");
+        SmartDashboard.putNumber("Driver/Hub Shift Time Remaining", timeUntilSwitch);
+        SmartDashboard.putNumber("Driver/Hub Shift Progress", hubSwitchProgress);
 
-        boolean canShoot = isMyHubActive && Shooter.getInstance().isAtTargetVelocity()
-                && Shooter.getInstance().isLinedUp();
         SmartDashboard.putBoolean("Driver/Shoot Alert", canShoot);
         SmartDashboard.putString("Driver/Shoot Message",
-                canShoot ? "READY TO FIRE" : (isMyHubActive ? "WAITING FOR FLYWHEEL/ALIGN" : "HUB INACTIVE"));
+                canShoot ? "READY TO FIRE" : (!isMyHubActive ? "HUB INACTIVE" : (!shooterAtSpeed ? "SPINNING UP" : "ALIGNING")));
 
-        SmartDashboard.putString("Driver/Intake State", Intake.getInstance().getState().toString());
+        // Dual Flywheel RPM breakdown
+        double avgActualRPM = (Shooter.getInstance().getFlywheelLeftVelocityRPM() + Shooter.getInstance().getFlywheelRightVelocityRPM()) / 2.0;
+        var solution = Shooter.getInstance().getLatestShootingSolution();
+        double targetRPM = solution != null ? solution.flywheelRPM() : 0.0;
+        SmartDashboard.putNumber("Driver/Flywheel Actual RPM", avgActualRPM);
+        SmartDashboard.putNumber("Driver/Flywheel Target RPM", targetRPM);
+
+        SmartDashboard.putString("Driver/Intake State", Intake.getInstance().getStateString());
 
         var nearest = SwerveBase.getInstance().getNearestGlidePoint();
         SmartDashboard.putString("Driver/Nearest Glide", nearest == null ? "---" : nearest.name);
 
-        SmartDashboard.putBoolean("Driver/Lined Up", Shooter.getInstance().isLinedUp());
+        SmartDashboard.putBoolean("Driver/Lined Up", shooterLinedUp);
     }
 
     /**
@@ -224,7 +253,6 @@ public class Dashboard implements Subsystem {
         lastGoalPos = goalPos;
 
         // Create a circular "timing ring" around the goal
-        // We use a series of Pose2d objects to represent the progress
         List<Pose2d> ringPoints = new ArrayList<>(activePoints);
         double radius = 1.0; // 1 meter radius around the hub
 
@@ -263,21 +291,25 @@ public class Dashboard implements Subsystem {
         return isMyHubActive;
     }
 
-    // --- Feature Toggle Getters ---
+    public double getTimeUntilSwitch() {
+        return timeUntilSwitch;
+    }
+
+    // --- Fast NT4 Feature Toggle Getters (Zero String Lookup Overhead) ---
     public static boolean isSnapToTurnEnabled() {
-        return SmartDashboard.getBoolean("Features/Snap to Turn", true);
+        return snapToTurnSub.get();
     }
 
     public static boolean isBallHuntEnabled() {
-        return SmartDashboard.getBoolean("Features/Ball Hunt", true);
+        return ballHuntSub.get();
     }
 
     public static boolean isGlidePointsEnabled() {
-        return SmartDashboard.getBoolean("Features/Glide Points", true);
+        return glidePointsSub.get();
     }
 
     public static boolean isFieldOrientedEnabled() {
-        return SmartDashboard.getBoolean("Features/Field Oriented", true);
+        return fieldOrientedSub.get();
     }
 
     public static boolean isFieldOriented() {
@@ -285,18 +317,22 @@ public class Dashboard implements Subsystem {
     }
 
     public static boolean isSlowModeEnabled() {
-        return SmartDashboard.getBoolean("Features/Slow Mode", false);
+        return slowModeSub.get();
     }
 
     public static boolean isAutoAimEnabled() {
-        return SmartDashboard.getBoolean("Features/Auto Aim", true);
+        return autoAimSub.get();
     }
 
     public static boolean isOpponentRobotEnabled() {
-        return SmartDashboard.getBoolean("Features/Opponent Robot", false);
+        return opponentRobotSub.get();
     }
 
     public static boolean is2PlayerDefenseEnabled() {
-        return SmartDashboard.getBoolean("Features/2 Player Defense", false);
+        return twoPlayerDefenseSub.get();
+    }
+
+    public static boolean isPitModeEnabled() {
+        return pitModeSub.get();
     }
 }

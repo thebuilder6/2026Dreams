@@ -14,5 +14,8 @@ public class ControllerHapticsTest {
         assertNotNull(RumblePattern.BALL_ACQUIRED);
         assertNotNull(RumblePattern.HARDWARE_WARNING);
         assertNotNull(RumblePattern.MATCH_TIME_WARNING);
+        assertNotNull(RumblePattern.PIN_WARNING);
+        assertNotNull(RumblePattern.HUB_PHASE_SHIFT);
+        assertNotNull(RumblePattern.COLLISION_IMPACT);
     }
 }

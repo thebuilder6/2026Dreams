@@ -37,6 +37,12 @@ public class DriveIOSparkMax implements DriveIO {
         inputs.gyroRollDeg = swerveDrive.getRoll().getDegrees();
         inputs.gyroYawVelocityDegPerSec = swerveDrive.getGyro().getYawAngularVelocity().in(DegreesPerSecond);
 
+        swerveDrive.getAccel().ifPresent(accel -> {
+            inputs.accelXG = accel.getX();
+            inputs.accelYG = accel.getY();
+            inputs.accelZG = accel.getZ();
+        });
+
         inputs.odometryPose = swerveDrive.getPose();
     }
 

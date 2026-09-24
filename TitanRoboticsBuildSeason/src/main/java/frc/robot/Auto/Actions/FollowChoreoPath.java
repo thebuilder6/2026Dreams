@@ -51,10 +51,10 @@ public class FollowChoreoPath implements Actions {
 
         // Pull Heading PID constants directly from YAGSL SwerveController config
         var config = swerveBase.getSwerveController().config;
-        this.xController = new PIDController(AutonConstants.kAutoDriveP, AutonConstants.kAutoDriveI,
-                AutonConstants.kAutoDriveD);
-        this.yController = new PIDController(AutonConstants.kAutoDriveP, AutonConstants.kAutoDriveI,
-                AutonConstants.kAutoDriveD);
+        this.xController = new PIDController(AutonConstants.AUTO_DRIVE_KP, AutonConstants.AUTO_DRIVE_KI,
+                AutonConstants.AUTO_DRIVE_KD);
+        this.yController = new PIDController(AutonConstants.AUTO_DRIVE_KP, AutonConstants.AUTO_DRIVE_KI,
+                AutonConstants.AUTO_DRIVE_KD);
         this.headingController = new PIDController(config.headingPIDF.p, config.headingPIDF.i, config.headingPIDF.d);
 
         // Rotation2d.getRadians() returns -PI to PI, so continuous input must match

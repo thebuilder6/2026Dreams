@@ -38,6 +38,11 @@ public class DriveIOSim implements DriveIO {
                 inputs.steerAppliedVolts[i] = moduleAngleVolts[i];
             }
             inputs.gyroYawDeg = swerveDrive.getYaw().getDegrees();
+            swerveDrive.getAccel().ifPresent(accel -> {
+                inputs.accelXG = accel.getX();
+                inputs.accelYG = accel.getY();
+                inputs.accelZG = accel.getZ();
+            });
             inputs.odometryPose = swerveDrive.getPose();
         } else {
             inputs.gyroYawDeg = simYawDeg;

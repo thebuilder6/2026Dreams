@@ -36,12 +36,12 @@ public class ShooterTuning {
     private final TunableNumber testVelocity = new TunableNumber("Test/Shooter/VelocityRPM", 3000);
     private final TunableNumber testDistance = new TunableNumber("Test/Shooter/DistanceMeters", 3.0);
     private final TunableNumber testAngle = new TunableNumber("Test/Shooter/AngleDegrees", 45.0);
-    private final TunableNumber kP = new TunableNumber("Test/Shooter/kP", Constants.kFLYWHEELp);
-    private final TunableNumber kI = new TunableNumber("Test/Shooter/kI", Constants.kFLYWHEELi);
-    private final TunableNumber kD = new TunableNumber("Test/Shooter/kD", Constants.kFLYWHEELd);
-    private final TunableNumber kS = new TunableNumber("Test/Shooter/kS", Constants.kFLYWHEELs);
-    private final TunableNumber kV = new TunableNumber("Test/Shooter/kV", Constants.kFLYWHEELv);
-    private final TunableNumber kA = new TunableNumber("Test/Shooter/kA", Constants.kFLYWHEELa);
+    private final TunableNumber kP = new TunableNumber("Test/Shooter/kP", Constants.FLYWHEEL_KP);
+    private final TunableNumber kI = new TunableNumber("Test/Shooter/kI", Constants.FLYWHEEL_KI);
+    private final TunableNumber kD = new TunableNumber("Test/Shooter/kD", Constants.FLYWHEEL_KD);
+    private final TunableNumber kS = new TunableNumber("Test/Shooter/kS", Constants.FLYWHEEL_KS);
+    private final TunableNumber kV = new TunableNumber("Test/Shooter/kV", Constants.FLYWHEEL_KV);
+    private final TunableNumber kA = new TunableNumber("Test/Shooter/kA", Constants.FLYWHEEL_KA);
     
     // Performance tracking
     private double lastVelocityError = 0;

@@ -29,6 +29,11 @@ public interface DriveIO {
         public double gyroRollDeg = 0.0;
         public double gyroYawVelocityDegPerSec = 0.0;
 
+        // Accelerometer data (in Gs)
+        public double accelXG = 0.0;
+        public double accelYG = 0.0;
+        public double accelZG = 1.0;
+
         // Odometry pose
         public Pose2d odometryPose = new Pose2d();
     }

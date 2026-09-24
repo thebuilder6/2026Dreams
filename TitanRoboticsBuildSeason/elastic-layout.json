@@ -64,24 +64,28 @@
             }
           },
           {
-            "title": "Phase",
+            "title": "Hub Shift Countdown",
             "x": 640.0,
             "y": 0.0,
-            "width": 128.0,
+            "width": 384.0,
             "height": 128.0,
-            "type": "Text Display",
+            "type": "Number Bar",
             "properties": {
-              "topic": "/SmartDashboard/Match/Phase",
+              "topic": "/SmartDashboard/Driver/Hub Shift Time Remaining",
               "period": 0.06,
-              "data_type": "string",
-              "show_submit_button": false
+              "min": 0.0,
+              "max": 25.0,
+              "center": 0.0,
+              "show_text": true,
+              "orientation": "HORIZONTAL",
+              "number_color": 4294951168
             }
           },
           {
             "title": "Auto Mission",
-            "x": 768.0,
+            "x": 1024.0,
             "y": 0.0,
-            "width": 512.0,
+            "width": 384.0,
             "height": 128.0,
             "type": "ComboBox Chooser",
             "properties": {
@@ -92,13 +96,27 @@
           },
           {
             "title": "Alliance",
-            "x": 1280.0,
+            "x": 1408.0,
             "y": 0.0,
             "width": 128.0,
             "height": 128.0,
             "type": "Text Display",
             "properties": {
               "topic": "/SmartDashboard/Match/Alliance",
+              "period": 0.06,
+              "data_type": "string",
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Phase",
+            "x": 1536.0,
+            "y": 0.0,
+            "width": 128.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Match/Phase",
               "period": 0.06,
               "data_type": "string",
               "show_submit_button": false
@@ -120,14 +138,14 @@
             }
           },
           {
-            "title": "SHOOTER READY",
+            "title": "SHOOT ALERT",
             "x": 1280.0,
             "y": 128.0,
             "width": 384.0,
             "height": 128.0,
             "type": "Boolean Box",
             "properties": {
-              "topic": "/SmartDashboard/Driver/Shooter Ready",
+              "topic": "/SmartDashboard/Driver/Shoot Alert",
               "period": 0.06,
               "data_type": "boolean",
               "true_color": 4283215696,
@@ -137,26 +155,41 @@
             }
           },
           {
-            "title": "LINED UP",
+            "title": "SHOOT MESSAGE",
             "x": 1280.0,
             "y": 256.0,
             "width": 384.0,
             "height": 128.0,
-            "type": "Boolean Box",
+            "type": "Text Display",
             "properties": {
-              "topic": "/SmartDashboard/Driver/Lined Up",
+              "topic": "/SmartDashboard/Driver/Shoot Message",
               "period": 0.06,
-              "data_type": "boolean",
-              "true_color": 4283215696,
-              "false_color": 4294198070,
-              "true_icon": "None",
-              "false_icon": "None"
+              "data_type": "string",
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Flywheel Actual RPM",
+            "x": 0.0,
+            "y": 384.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Number Bar",
+            "properties": {
+              "topic": "/SmartDashboard/Driver/Flywheel Actual RPM",
+              "period": 0.06,
+              "min": 0.0,
+              "max": 6000.0,
+              "center": 0.0,
+              "show_text": true,
+              "orientation": "HORIZONTAL",
+              "number_color": 4288235263
             }
           },
           {
             "title": "Intake State",
             "x": 0.0,
-            "y": 384.0,
+            "y": 512.0,
             "width": 256.0,
             "height": 128.0,
             "type": "Text Display",
@@ -170,7 +203,7 @@
           {
             "title": "Held Balls",
             "x": 0.0,
-            "y": 512.0,
+            "y": 640.0,
             "width": 256.0,
             "height": 128.0,
             "type": "Text Display",
@@ -179,24 +212,6 @@
               "period": 0.06,
               "data_type": "double",
               "show_submit_button": false
-            }
-          },
-          {
-            "title": "Flywheel RPM",
-            "x": 0.0,
-            "y": 640.0,
-            "width": 256.0,
-            "height": 128.0,
-            "type": "Number Bar",
-            "properties": {
-              "topic": "/SmartDashboard/Subsystems/Shooter/Flywheel Velocity",
-              "period": 0.06,
-              "min": 0.0,
-              "max": 6000.0,
-              "center": 0.0,
-              "show_text": true,
-              "orientation": "HORIZONTAL",
-              "number_color": 4288235263
             }
           },
           {
@@ -338,7 +353,7 @@
             "title": "Overall Status",
             "x": 0.0,
             "y": 0.0,
-            "width": 640.0,
+            "width": 512.0,
             "height": 128.0,
             "type": "Text Display",
             "properties": {
@@ -350,7 +365,7 @@
           },
           {
             "title": "Run Pre-Flight",
-            "x": 640.0,
+            "x": 512.0,
             "y": 0.0,
             "width": 256.0,
             "height": 128.0,
@@ -367,7 +382,7 @@
           },
           {
             "title": "Current Step",
-            "x": 896.0,
+            "x": 768.0,
             "y": 0.0,
             "width": 384.0,
             "height": 128.0,
@@ -381,9 +396,9 @@
           },
           {
             "title": "Progress",
-            "x": 1280.0,
+            "x": 1152.0,
             "y": 0.0,
-            "width": 384.0,
+            "width": 512.0,
             "height": 128.0,
             "type": "Number Bar",
             "properties": {
@@ -398,7 +413,7 @@
             }
           },
           {
-            "title": "CAN Bus Audit",
+            "title": "CAN & Power Audit",
             "x": 0.0,
             "y": 128.0,
             "width": 512.0,
@@ -426,7 +441,7 @@
             }
           },
           {
-            "title": "Steer Alignment",
+            "title": "Steer Alignment Audit",
             "x": 1024.0,
             "y": 128.0,
             "width": 512.0,
@@ -480,12 +495,404 @@
               "data_type": "string",
               "show_submit_button": false
             }
+          },
+          {
+            "title": "Pulse FL Drive",
+            "x": 0.0,
+            "y": 384.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Boolean Box",
+            "properties": {
+              "topic": "/SmartDashboard/Diagnostics/Run Swerve/FL Drive",
+              "period": 0.06,
+              "data_type": "boolean",
+              "true_color": 4283215696,
+              "false_color": 4294198070,
+              "true_icon": "None",
+              "false_icon": "None"
+            }
+          },
+          {
+            "title": "Pulse FR Drive",
+            "x": 256.0,
+            "y": 384.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Boolean Box",
+            "properties": {
+              "topic": "/SmartDashboard/Diagnostics/Run Swerve/FR Drive",
+              "period": 0.06,
+              "data_type": "boolean",
+              "true_color": 4283215696,
+              "false_color": 4294198070,
+              "true_icon": "None",
+              "false_icon": "None"
+            }
+          },
+          {
+            "title": "Pulse BL Drive",
+            "x": 512.0,
+            "y": 384.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Boolean Box",
+            "properties": {
+              "topic": "/SmartDashboard/Diagnostics/Run Swerve/BL Drive",
+              "period": 0.06,
+              "data_type": "boolean",
+              "true_color": 4283215696,
+              "false_color": 4294198070,
+              "true_icon": "None",
+              "false_icon": "None"
+            }
+          },
+          {
+            "title": "Pulse BR Drive",
+            "x": 768.0,
+            "y": 384.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Boolean Box",
+            "properties": {
+              "topic": "/SmartDashboard/Diagnostics/Run Swerve/BR Drive",
+              "period": 0.06,
+              "data_type": "boolean",
+              "true_color": 4283215696,
+              "false_color": 4294198070,
+              "true_icon": "None",
+              "false_icon": "None"
+            }
+          },
+          {
+            "title": "Pulse Arm",
+            "x": 1024.0,
+            "y": 384.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Boolean Box",
+            "properties": {
+              "topic": "/SmartDashboard/Diagnostics/Run Intake/Arm",
+              "period": 0.06,
+              "data_type": "boolean",
+              "true_color": 4283215696,
+              "false_color": 4294198070,
+              "true_icon": "None",
+              "false_icon": "None"
+            }
+          },
+          {
+            "title": "Pulse Rollers",
+            "x": 1280.0,
+            "y": 384.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Boolean Box",
+            "properties": {
+              "topic": "/SmartDashboard/Diagnostics/Run Intake/Roller",
+              "period": 0.06,
+              "data_type": "boolean",
+              "true_color": 4283215696,
+              "false_color": 4294198070,
+              "true_icon": "None",
+              "false_icon": "None"
+            }
+          },
+          {
+            "title": "Last Delta",
+            "x": 1536.0,
+            "y": 384.0,
+            "width": 128.0,
+            "height": 256.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Diagnostics/Last Delta",
+              "period": 0.06,
+              "data_type": "double",
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Pulse FL Steer",
+            "x": 0.0,
+            "y": 512.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Boolean Box",
+            "properties": {
+              "topic": "/SmartDashboard/Diagnostics/Run Swerve/FL Angle",
+              "period": 0.06,
+              "data_type": "boolean",
+              "true_color": 4283215696,
+              "false_color": 4294198070,
+              "true_icon": "None",
+              "false_icon": "None"
+            }
+          },
+          {
+            "title": "Pulse FR Steer",
+            "x": 256.0,
+            "y": 512.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Boolean Box",
+            "properties": {
+              "topic": "/SmartDashboard/Diagnostics/Run Swerve/FR Angle",
+              "period": 0.06,
+              "data_type": "boolean",
+              "true_color": 4283215696,
+              "false_color": 4294198070,
+              "true_icon": "None",
+              "false_icon": "None"
+            }
+          },
+          {
+            "title": "Pulse BL Steer",
+            "x": 512.0,
+            "y": 512.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Boolean Box",
+            "properties": {
+              "topic": "/SmartDashboard/Diagnostics/Run Swerve/BL Angle",
+              "period": 0.06,
+              "data_type": "boolean",
+              "true_color": 4283215696,
+              "false_color": 4294198070,
+              "true_icon": "None",
+              "false_icon": "None"
+            }
+          },
+          {
+            "title": "Pulse BR Steer",
+            "x": 768.0,
+            "y": 512.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Boolean Box",
+            "properties": {
+              "topic": "/SmartDashboard/Diagnostics/Run Swerve/BR Angle",
+              "period": 0.06,
+              "data_type": "boolean",
+              "true_color": 4283215696,
+              "false_color": 4294198070,
+              "true_icon": "None",
+              "false_icon": "None"
+            }
+          },
+          {
+            "title": "Pulse Flywheel Left",
+            "x": 1024.0,
+            "y": 512.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Boolean Box",
+            "properties": {
+              "topic": "/SmartDashboard/Diagnostics/Run Shooter/Flywheel Left",
+              "period": 0.06,
+              "data_type": "boolean",
+              "true_color": 4283215696,
+              "false_color": 4294198070,
+              "true_icon": "None",
+              "false_icon": "None"
+            }
+          },
+          {
+            "title": "Pulse Flywheel Right",
+            "x": 1280.0,
+            "y": 512.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Boolean Box",
+            "properties": {
+              "topic": "/SmartDashboard/Diagnostics/Run Shooter/Flywheel Right",
+              "period": 0.06,
+              "data_type": "boolean",
+              "true_color": 4283215696,
+              "false_color": 4294198070,
+              "true_icon": "None",
+              "false_icon": "None"
+            }
           }
         ]
       }
     },
     {
-      "name": "Simulation \u0026 Match Info",
+      "name": "SysID & Characterization",
+      "grid_layout": {
+        "layouts": [],
+        "containers": [
+          {
+            "title": "Active Mechanism",
+            "x": 0.0,
+            "y": 0.0,
+            "width": 512.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Test/SysId/ActiveMechanism",
+              "period": 0.06,
+              "data_type": "string",
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Routine State",
+            "x": 512.0,
+            "y": 0.0,
+            "width": 384.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Test/SysId/State",
+              "period": 0.06,
+              "data_type": "string",
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Test Running",
+            "x": 896.0,
+            "y": 0.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Boolean Box",
+            "properties": {
+              "topic": "/SmartDashboard/Test/SysId/IsRunning",
+              "period": 0.06,
+              "data_type": "boolean",
+              "true_color": 4283215696,
+              "false_color": 4294198070,
+              "true_icon": "None",
+              "false_icon": "None"
+            }
+          },
+          {
+            "title": "ABORT / E-STOP",
+            "x": 1152.0,
+            "y": 0.0,
+            "width": 384.0,
+            "height": 128.0,
+            "type": "Boolean Box",
+            "properties": {
+              "topic": "/SmartDashboard/Test/SysId/Abort",
+              "period": 0.06,
+              "data_type": "boolean",
+              "true_color": 4294198070,
+              "false_color": 4283215696,
+              "true_icon": "None",
+              "false_icon": "None"
+            }
+          },
+          {
+            "title": "Quasistatic Forward",
+            "x": 0.0,
+            "y": 128.0,
+            "width": 384.0,
+            "height": 128.0,
+            "type": "Boolean Box",
+            "properties": {
+              "topic": "/SmartDashboard/Test/SysId/QuasistaticForward",
+              "period": 0.06,
+              "data_type": "boolean",
+              "true_color": 4283215696,
+              "false_color": 4294198070,
+              "true_icon": "None",
+              "false_icon": "None"
+            }
+          },
+          {
+            "title": "Quasistatic Reverse",
+            "x": 384.0,
+            "y": 128.0,
+            "width": 384.0,
+            "height": 128.0,
+            "type": "Boolean Box",
+            "properties": {
+              "topic": "/SmartDashboard/Test/SysId/QuasistaticReverse",
+              "period": 0.06,
+              "data_type": "boolean",
+              "true_color": 4283215696,
+              "false_color": 4294198070,
+              "true_icon": "None",
+              "false_icon": "None"
+            }
+          },
+          {
+            "title": "Dynamic Forward",
+            "x": 768.0,
+            "y": 128.0,
+            "width": 384.0,
+            "height": 128.0,
+            "type": "Boolean Box",
+            "properties": {
+              "topic": "/SmartDashboard/Test/SysId/DynamicForward",
+              "period": 0.06,
+              "data_type": "boolean",
+              "true_color": 4283215696,
+              "false_color": 4294198070,
+              "true_icon": "None",
+              "false_icon": "None"
+            }
+          },
+          {
+            "title": "Dynamic Reverse",
+            "x": 1152.0,
+            "y": 128.0,
+            "width": 384.0,
+            "height": 128.0,
+            "type": "Boolean Box",
+            "properties": {
+              "topic": "/SmartDashboard/Test/SysId/DynamicReverse",
+              "period": 0.06,
+              "data_type": "boolean",
+              "true_color": 4283215696,
+              "false_color": 4294198070,
+              "true_icon": "None",
+              "false_icon": "None"
+            }
+          },
+          {
+            "title": "Live Applied Voltage",
+            "x": 0.0,
+            "y": 256.0,
+            "width": 768.0,
+            "height": 128.0,
+            "type": "Number Bar",
+            "properties": {
+              "topic": "/SmartDashboard/Test/SysId/LiveVoltage",
+              "period": 0.06,
+              "min": -12.0,
+              "max": 12.0,
+              "center": 0.0,
+              "show_text": true,
+              "orientation": "HORIZONTAL",
+              "number_color": 4288235263
+            }
+          },
+          {
+            "title": "Live Velocity",
+            "x": 768.0,
+            "y": 256.0,
+            "width": 768.0,
+            "height": 128.0,
+            "type": "Number Bar",
+            "properties": {
+              "topic": "/SmartDashboard/Test/SysId/LiveVelocity",
+              "period": 0.06,
+              "min": -6000.0,
+              "max": 6000.0,
+              "center": 0.0,
+              "show_text": true,
+              "orientation": "HORIZONTAL",
+              "number_color": 4283215696
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Simulation & Match Info",
       "grid_layout": {
         "layouts": [],
         "containers": [
@@ -529,6 +936,655 @@
             "type": "Boolean Box",
             "properties": {
               "topic": "/SmartDashboard/Simulation/RespawnBalls",
+              "period": 0.06,
+              "data_type": "boolean",
+              "true_color": 4283215696,
+              "false_color": 4294198070,
+              "true_icon": "None",
+              "false_icon": "None"
+            }
+          },
+          {
+            "title": "Opponent AI Defense",
+            "x": 512.0,
+            "y": 0.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Boolean Box",
+            "properties": {
+              "topic": "/SmartDashboard/Features/Opponent Robot",
+              "period": 0.06,
+              "data_type": "boolean",
+              "true_color": 4283215696,
+              "false_color": 4294198070,
+              "true_icon": "None",
+              "false_icon": "None"
+            }
+          },
+          {
+            "title": "Pit Mode",
+            "x": 768.0,
+            "y": 0.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Boolean Box",
+            "properties": {
+              "topic": "/SmartDashboard/Features/Pit Mode",
+              "period": 0.06,
+              "data_type": "boolean",
+              "true_color": 4283215696,
+              "false_color": 4294198070,
+              "true_icon": "None",
+              "false_icon": "None"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Tuning & PID",
+      "grid_layout": {
+        "layouts": [],
+        "containers": [
+          {
+            "title": "Left Flywheel RPM",
+            "x": 0.0,
+            "y": 0.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Number Bar",
+            "properties": {
+              "topic": "/SmartDashboard/Shooter/Shooter Left Motor Speed",
+              "period": 0.06,
+              "min": 0.0,
+              "max": 5500.0,
+              "center": 0.0,
+              "show_text": true,
+              "orientation": "HORIZONTAL",
+              "number_color": 4283215696
+            }
+          },
+          {
+            "title": "Right Flywheel RPM",
+            "x": 256.0,
+            "y": 0.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Number Bar",
+            "properties": {
+              "topic": "/SmartDashboard/Shooter/Shooter Right Motor Speed",
+              "period": 0.06,
+              "min": 0.0,
+              "max": 5500.0,
+              "center": 0.0,
+              "show_text": true,
+              "orientation": "HORIZONTAL",
+              "number_color": 4283215696
+            }
+          },
+          {
+            "title": "Shooter At Speed",
+            "x": 0.0,
+            "y": 128.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Boolean Box",
+            "properties": {
+              "topic": "/SmartDashboard/Shooter/Shooter At Target Speed",
+              "period": 0.06,
+              "data_type": "boolean",
+              "true_color": 4283215696,
+              "false_color": 4294198070,
+              "true_icon": "None",
+              "false_icon": "None"
+            }
+          },
+          {
+            "title": "Ready to Fire",
+            "x": 256.0,
+            "y": 128.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Boolean Box",
+            "properties": {
+              "topic": "/SmartDashboard/Shooter/Ready to Fire",
+              "period": 0.06,
+              "data_type": "boolean",
+              "true_color": 4283215696,
+              "false_color": 4294198070,
+              "true_icon": "None",
+              "false_icon": "None"
+            }
+          },
+          {
+            "title": "Shooter kP",
+            "x": 0.0,
+            "y": 256.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/TunableNumbers/Shooter/kP",
+              "period": 0.06,
+              "data_type": "double",
+              "show_submit_button": true
+            }
+          },
+          {
+            "title": "Shooter kI",
+            "x": 256.0,
+            "y": 256.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/TunableNumbers/Shooter/kI",
+              "period": 0.06,
+              "data_type": "double",
+              "show_submit_button": true
+            }
+          },
+          {
+            "title": "Shooter kD",
+            "x": 0.0,
+            "y": 384.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/TunableNumbers/Shooter/kD",
+              "period": 0.06,
+              "data_type": "double",
+              "show_submit_button": true
+            }
+          },
+          {
+            "title": "Shooter kS (Static V)",
+            "x": 256.0,
+            "y": 384.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/TunableNumbers/Shooter/kS",
+              "period": 0.06,
+              "data_type": "double",
+              "show_submit_button": true
+            }
+          },
+          {
+            "title": "Shooter kV (V/RPM)",
+            "x": 0.0,
+            "y": 512.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/TunableNumbers/Shooter/kV",
+              "period": 0.06,
+              "data_type": "double",
+              "show_submit_button": true
+            }
+          },
+          {
+            "title": "Shooter kA (V/(RPM/s))",
+            "x": 256.0,
+            "y": 512.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/TunableNumbers/Shooter/kA",
+              "period": 0.06,
+              "data_type": "double",
+              "show_submit_button": true
+            }
+          },
+          {
+            "title": "Sim Launch Efficiency",
+            "x": 0.0,
+            "y": 640.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/TunableNumbers/Shooter/SimLaunchEfficiency",
+              "period": 0.06,
+              "data_type": "double",
+              "show_submit_button": true
+            }
+          },
+          {
+            "title": "Shooter Height (m)",
+            "x": 256.0,
+            "y": 640.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/TunableNumbers/Shooter/HeightMeters",
+              "period": 0.06,
+              "data_type": "double",
+              "show_submit_button": true
+            }
+          },
+          {
+            "title": "Arm Pivot Position Deg",
+            "x": 512.0,
+            "y": 0.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Number Bar",
+            "properties": {
+              "topic": "/SmartDashboard/Intake/Pivot Position",
+              "period": 0.06,
+              "min": 0.0,
+              "max": 360.0,
+              "center": 0.0,
+              "show_text": true,
+              "orientation": "HORIZONTAL",
+              "number_color": 4294951168
+            }
+          },
+          {
+            "title": "Arm Goal Position Deg",
+            "x": 768.0,
+            "y": 0.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Number Bar",
+            "properties": {
+              "topic": "/SmartDashboard/Intake/Pivot Goal",
+              "period": 0.06,
+              "min": 0.0,
+              "max": 360.0,
+              "center": 0.0,
+              "show_text": true,
+              "orientation": "HORIZONTAL",
+              "number_color": 4294951168
+            }
+          },
+          {
+            "title": "Arm Applied Volts",
+            "x": 512.0,
+            "y": 128.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Intake/Arm Voltage",
+              "period": 0.06,
+              "data_type": "double",
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Arm State",
+            "x": 768.0,
+            "y": 128.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Intake/State",
+              "period": 0.06,
+              "data_type": "string",
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Intake Arm kP",
+            "x": 512.0,
+            "y": 256.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/TunableNumbers/Intake/kArmP",
+              "period": 0.06,
+              "data_type": "double",
+              "show_submit_button": true
+            }
+          },
+          {
+            "title": "Intake Arm kI",
+            "x": 768.0,
+            "y": 256.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/TunableNumbers/Intake/kArmI",
+              "period": 0.06,
+              "data_type": "double",
+              "show_submit_button": true
+            }
+          },
+          {
+            "title": "Intake Arm kD",
+            "x": 512.0,
+            "y": 384.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/TunableNumbers/Intake/kArmD",
+              "period": 0.06,
+              "data_type": "double",
+              "show_submit_button": true
+            }
+          },
+          {
+            "title": "Intake Arm kS",
+            "x": 768.0,
+            "y": 384.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/TunableNumbers/Intake/kArmS",
+              "period": 0.06,
+              "data_type": "double",
+              "show_submit_button": true
+            }
+          },
+          {
+            "title": "Intake Arm kG (Gravity)",
+            "x": 512.0,
+            "y": 512.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/TunableNumbers/Intake/kArmG",
+              "period": 0.06,
+              "data_type": "double",
+              "show_submit_button": true
+            }
+          },
+          {
+            "title": "Intake Arm kV",
+            "x": 768.0,
+            "y": 512.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/TunableNumbers/Intake/kArmV",
+              "period": 0.06,
+              "data_type": "double",
+              "show_submit_button": true
+            }
+          },
+          {
+            "title": "Intake Arm kA",
+            "x": 512.0,
+            "y": 640.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/TunableNumbers/Intake/kArmA",
+              "period": 0.06,
+              "data_type": "double",
+              "show_submit_button": true
+            }
+          },
+          {
+            "title": "Shooter Offset (m)",
+            "x": 768.0,
+            "y": 640.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/TunableNumbers/Shooter/OffsetMeters",
+              "period": 0.06,
+              "data_type": "double",
+              "show_submit_button": true
+            }
+          },
+          {
+            "title": "Auto Mission",
+            "x": 1024.0,
+            "y": 0.0,
+            "width": 512.0,
+            "height": 128.0,
+            "type": "ComboBox Chooser",
+            "properties": {
+              "topic": "/SmartDashboard/Auto Mission",
+              "period": 0.06,
+              "sort_options": false
+            }
+          },
+          {
+            "title": "Auto Drive kP",
+            "x": 1024.0,
+            "y": 128.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/TunableNumbers/Auton/Drive_kP",
+              "period": 0.06,
+              "data_type": "double",
+              "show_submit_button": true
+            }
+          },
+          {
+            "title": "Auto Turn kP",
+            "x": 1280.0,
+            "y": 128.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/TunableNumbers/Auton/Turn_kP",
+              "period": 0.06,
+              "data_type": "double",
+              "show_submit_button": true
+            }
+          },
+          {
+            "title": "Auto Drive kI",
+            "x": 1024.0,
+            "y": 256.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/TunableNumbers/Auton/Drive_kI",
+              "period": 0.06,
+              "data_type": "double",
+              "show_submit_button": true
+            }
+          },
+          {
+            "title": "Auto Turn kI",
+            "x": 1280.0,
+            "y": 256.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/TunableNumbers/Auton/Turn_kI",
+              "period": 0.06,
+              "data_type": "double",
+              "show_submit_button": true
+            }
+          },
+          {
+            "title": "Auto Drive kD",
+            "x": 1024.0,
+            "y": 384.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/TunableNumbers/Auton/Drive_kD",
+              "period": 0.06,
+              "data_type": "double",
+              "show_submit_button": true
+            }
+          },
+          {
+            "title": "Auto Turn kD",
+            "x": 1280.0,
+            "y": 384.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/TunableNumbers/Auton/Turn_kD",
+              "period": 0.06,
+              "data_type": "double",
+              "show_submit_button": true
+            }
+          },
+          {
+            "title": "Translation Slew (m/s²)",
+            "x": 1024.0,
+            "y": 512.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/TunableNumbers/Operator/TranslationSlewRate",
+              "period": 0.06,
+              "data_type": "double",
+              "show_submit_button": true
+            }
+          },
+          {
+            "title": "Rotation Slew (rad/s²)",
+            "x": 1280.0,
+            "y": 512.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/TunableNumbers/Operator/RotationSlewRate",
+              "period": 0.06,
+              "data_type": "double",
+              "show_submit_button": true
+            }
+          },
+          {
+            "title": "Slow Mode",
+            "x": 1024.0,
+            "y": 640.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Boolean Box",
+            "properties": {
+              "topic": "/SmartDashboard/Features/Slow Mode",
+              "period": 0.06,
+              "data_type": "boolean",
+              "true_color": 4283215696,
+              "false_color": 4294198070,
+              "true_icon": "None",
+              "false_icon": "None"
+            }
+          },
+          {
+            "title": "Field Oriented",
+            "x": 1280.0,
+            "y": 640.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Boolean Box",
+            "properties": {
+              "topic": "/SmartDashboard/Features/Field Oriented",
+              "period": 0.06,
+              "data_type": "boolean",
+              "true_color": 4283215696,
+              "false_color": 4294198070,
+              "true_icon": "None",
+              "false_icon": "None"
+            }
+          },
+          {
+            "title": "CAN Bus Status",
+            "x": 1536.0,
+            "y": 0.0,
+            "width": 384.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Diagnostics/Scorecard/CAN Bus",
+              "period": 0.06,
+              "data_type": "string",
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Drivebase Status",
+            "x": 1536.0,
+            "y": 128.0,
+            "width": 384.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Diagnostics/Scorecard/Drivebase",
+              "period": 0.06,
+              "data_type": "string",
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Flywheels Status",
+            "x": 1536.0,
+            "y": 256.0,
+            "width": 384.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Diagnostics/Scorecard/Dual Flywheels",
+              "period": 0.06,
+              "data_type": "string",
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Intake Status",
+            "x": 1536.0,
+            "y": 384.0,
+            "width": 384.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Diagnostics/Scorecard/Intake & Jam Protection",
+              "period": 0.06,
+              "data_type": "string",
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Auto Aim",
+            "x": 1536.0,
+            "y": 512.0,
+            "width": 384.0,
+            "height": 128.0,
+            "type": "Boolean Box",
+            "properties": {
+              "topic": "/SmartDashboard/Features/Auto Aim",
+              "period": 0.06,
+              "data_type": "boolean",
+              "true_color": 4283215696,
+              "false_color": 4294198070,
+              "true_icon": "None",
+              "false_icon": "None"
+            }
+          },
+          {
+            "title": "Pit Mode",
+            "x": 1536.0,
+            "y": 640.0,
+            "width": 384.0,
+            "height": 128.0,
+            "type": "Boolean Box",
+            "properties": {
+              "topic": "/SmartDashboard/Features/Pit Mode",
               "period": 0.06,
               "data_type": "boolean",
               "true_color": 4283215696,

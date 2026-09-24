@@ -61,6 +61,7 @@ public class GameSim implements Subsystem {
         
         // Initial game state
         static final int INITIAL_HELD_BALLS = 8;
+        static final int LIGHTWEIGHT_BALL_COUNT = 54; // Strategic balanced physics mode (54 balls: 12 Blue, 12 Red, 30 Center)
         static final String DEFAULT_GAME_MESSAGE = "R";
     }
 
@@ -138,7 +139,20 @@ public class GameSim implements Subsystem {
         int toConsume = Math.min(heldBalls, Math.min(maxToConsume, Config.MAX_HELD_BALLS));
         heldBalls -= toConsume;
         shotsConsumedWithBall += toConsume;
+
+        // Synchronize with MapleSim intake simulation buffer
+        var mapleIntake = Intake.getInstance().getMapleIntakeSim();
+        if (mapleIntake != null) {
+            for (int i = 0; i < toConsume; i++) {
+                mapleIntake.obtainGamePieceFromIntake();
+            }
+        }
+
         return toConsume;
+    }
+
+    public int getHeldBalls() {
+        return heldBalls;
     }
 
     @Override
@@ -299,13 +313,8 @@ public class GameSim implements Subsystem {
             // Primary: Check MapleSim physics-based IntakeSimulation
             var mapleIntake = Intake.getInstance().getMapleIntakeSim();
             if (mapleIntake != null) {
-                while (mapleIntake.getGamePiecesAmount() > 0 && heldBalls < Config.MAX_HELD_BALLS) {
-                    if (mapleIntake.obtainGamePieceFromIntake()) {
-                        heldBalls++;
-                    } else {
-                        break;
-                    }
-                }
+                // Synchronize heldBalls directly with MapleSim intake piece count
+                heldBalls = mapleIntake.getGamePiecesAmount();
                 return;
             }
 
@@ -367,17 +376,10 @@ public class GameSim implements Subsystem {
             if (scoresToApply > 0) {
                 score += scoresToApply;
                 lastShotScored = true;
-                pendingRespawns += scoresToApply;
+                // Note: Disabled center half respawn on scores because MapleSim's RebuiltHub
+                // already physically recycles scored balls back onto the field through its exit chutes.
             } else if (newScores > 0) {
                 lastShotScored = false;
-            }
-
-            // Handle respawn queue with throttling
-            double now = Timer.getFPGATimestamp();
-            if (pendingRespawns > 0 && now - lastRespawnTime >= Config.MIN_RESPAWN_INTERVAL) {
-                spawnBallInCenterHalf();
-                pendingRespawns--;
-                lastRespawnTime = now;
             }
         } catch (Exception e) {
             System.err.println("GameSim: Error in handleShotsAndScoring: " + e.getMessage());
@@ -390,6 +392,10 @@ public class GameSim implements Subsystem {
     public void resetGame() {
         try {
             heldBalls = Config.INITIAL_HELD_BALLS;
+            var mapleIntake = Intake.getInstance().getMapleIntakeSim();
+            if (mapleIntake != null) {
+                mapleIntake.setGamePiecesCount(Config.INITIAL_HELD_BALLS);
+            }
             score = 0;
             simTimeRemainingSec = Config.MATCH_DURATION_SEC;
             simRunning = false;
@@ -442,33 +448,59 @@ public class GameSim implements Subsystem {
     }
 
     /**
-     * Spawns pickup balls using official 2026 layout with field boundary validation.
+     * Spawns pickup balls using lightweight strategic distribution (20 balls) or full density.
      */
     private void spawnPickupBalls() {
         try {
             SimulatedArena arena = SimulatedArena.getInstance();
             arena.clearGamePieces();
-            arena.placeGamePiecesOnField();
 
-            // Pruning: Remove "Outpost" balls in the corners (human player stations)
-            // while keeping the ground balls (center) and staging balls (depots).
-            Set<GamePieceOnFieldSimulation> pieces = arena.gamePiecesOnField();
-            List<GamePieceOnFieldSimulation> toRemove = new ArrayList<>();
+            boolean fullDensity = SmartDashboard.getBoolean("Simulation/FullMatchBallDensity", false);
 
-            for (var piece : pieces) {
-                Translation2d pos = piece.getPoseOnField().getTranslation();
-                double x = pos.getX();
-                double y = pos.getY();
+            if (fullDensity) {
+                arena.placeGamePiecesOnField();
+                Set<GamePieceOnFieldSimulation> pieces = arena.gamePiecesOnField();
+                List<GamePieceOnFieldSimulation> toRemove = new ArrayList<>();
 
-                // Remove anything literally outside the field boundaries (safety)
-                if (x < Config.FIELD_X_MIN || x > Config.FIELD_X_MAX || 
-                    y < Config.FIELD_Y_MIN || y > Config.FIELD_Y_MAX) {
-                    toRemove.add(piece);
+                for (var piece : pieces) {
+                    Translation2d pos = piece.getPoseOnField().getTranslation();
+                    double x = pos.getX();
+                    double y = pos.getY();
+
+                    // Remove anything outside the field boundaries
+                    if (x < Config.FIELD_X_MIN || x > Config.FIELD_X_MAX || 
+                        y < Config.FIELD_Y_MIN || y > Config.FIELD_Y_MAX) {
+                        toRemove.add(piece);
+                    }
                 }
-            }
 
-            for (var piece : toRemove) {
-                arena.removeGamePiece(piece);
+                for (var piece : toRemove) {
+                    arena.removeGamePiece(piece);
+                }
+            } else {
+                // Strategic Balanced Physics Mode (54 balls total: 12 Blue Depot, 12 Red Depot, 30 Center):
+                // 1. Blue Depot (12 balls: 4x3 cluster)
+                for (int i = 0; i < 4; i++) {
+                    for (int j = 0; j < 3; j++) {
+                        arena.addGamePiece(new RebuiltFuelOnField(new Translation2d(1.7 + (i * 0.22), 6.4 + (j * 0.22))));
+                    }
+                }
+
+                // 2. Red Depot (12 balls: 4x3 cluster)
+                for (int i = 0; i < 4; i++) {
+                    for (int j = 0; j < 3; j++) {
+                        arena.addGamePiece(new RebuiltFuelOnField(new Translation2d(14.8 - (i * 0.22), 1.6 - (j * 0.22))));
+                    }
+                }
+
+                // 3. Center Neutral Zone (30 balls: 3x10 grid along the centerline)
+                for (int col = 0; col < 3; col++) {
+                    double x = 8.02 + (col * 0.25);
+                    for (int row = 0; row < 10; row++) {
+                        double y = 1.6 + (row * 0.53);
+                        arena.addGamePiece(new RebuiltFuelOnField(new Translation2d(x, y)));
+                    }
+                }
             }
         } catch (Exception e) {
             System.err.println("GameSim: Error in spawnPickupBalls: " + e.getMessage());

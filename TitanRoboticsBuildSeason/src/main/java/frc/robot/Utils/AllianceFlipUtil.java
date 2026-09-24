@@ -91,4 +91,19 @@ public class AllianceFlipUtil {
     public static Pose2d apply(Pose2d pose) {
         return apply(pose, isRedAlliance());
     }
+
+    /**
+     * Converts a driver-relative heading intent into an absolute global field-relative Rotation2d.
+     * On Blue Alliance: Heading 0° is facing away from Blue DS (+X).
+     * On Red Alliance: Heading 0° relative to driver is facing away from Red DS (-X, or 180° in field coordinates).
+     * 
+     * @param driverHeading Relative heading angle from driver's perspective (0° = away, 90° = left, 180° = toward, -90° = right)
+     * @return Canonical field-relative Rotation2d in standard Blue-origin coordinates
+     */
+    public static Rotation2d getDriverRelativeHeading(Rotation2d driverHeading) {
+        if (isRedAlliance()) {
+            return driverHeading.plus(Rotation2d.fromDegrees(180));
+        }
+        return driverHeading;
+    }
 }

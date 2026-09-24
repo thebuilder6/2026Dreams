@@ -35,8 +35,9 @@ public class IntakeIOSim implements IntakeIO {
                     Meters.of(0.65), // 65cm width across bumper
                     Meters.of(0.25), // 25cm extension
                     IntakeSimulation.IntakeSide.FRONT,
-                    20 // 20 fuel capacity
+                    50 // 50 fuel capacity
             );
+            this.mapleIntakeSim.setGamePiecesCount(frc.robot.Sim.GameSim.getInstance().getHeldBalls());
             mapleIntakeSim.register(SimulatedArena.getInstance());
         }
     }
@@ -88,7 +89,7 @@ public class IntakeIOSim implements IntakeIO {
 
     private void updateMapleIntakeRunning() {
         if (mapleIntakeSim != null) {
-            if (Math.abs(rollerAppliedVolts) > 1.0) {
+            if (Math.abs(rollerAppliedVolts) > 0.1) {
                 if (!mapleIntakeSim.isRunning()) {
                     mapleIntakeSim.startIntake();
                 }

@@ -20,7 +20,7 @@ public class DiagnosticsTest {
     @Test
     public void testPreFlightStepsEnum() {
         assertEquals("Idle", PreFlightStep.IDLE.displayName);
-        assertEquals("1. CAN Bus & Power Audit", PreFlightStep.CAN_BUS_AUDIT.displayName);
+        assertEquals("1. CAN & Power Audit", PreFlightStep.CAN_BUS_AUDIT.displayName);
         assertEquals("2. Swerve Drive Pulse", PreFlightStep.SWERVE_PULSE.displayName);
         assertEquals("3. Steer Alignment Check", PreFlightStep.STEER_ALIGNMENT.displayName);
         assertEquals("4. Intake Profile Check", PreFlightStep.INTAKE_CHECK.displayName);
@@ -55,5 +55,18 @@ public class DiagnosticsTest {
         diag.cancelPreFlightCheck();
         assertFalse(diag.isPreFlightRunning());
         assertEquals(PreFlightStep.IDLE, diag.getPreFlightStep());
+    }
+
+    @Test
+    public void testManualTestRegistrationAndExecution() {
+        Diagnostics diag = Diagnostics.getInstance();
+        diag.registerTests();
+
+        var testNames = diag.getTestNames();
+        assertNotNull(testNames);
+        assertTrue(testNames.iterator().hasNext());
+
+        assertDoesNotThrow(() -> diag.startTest("Shooter/Flywheel Left"));
+        assertDoesNotThrow(() -> diag.initialize());
     }
 }

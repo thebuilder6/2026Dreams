@@ -48,4 +48,25 @@ public class AllianceFlipUtilTest {
         assertEquals(4.035, flippedPose.getY(), 0.001);
         assertEquals(180.0, Math.abs(flippedPose.getRotation().getDegrees()), 0.001);
     }
+
+    @Test
+    public void testDriverRelativeHeadingCalculations() {
+        // Test default / Blue alliance (no DS active defaults to Blue)
+        Rotation2d forward = Rotation2d.fromDegrees(0);
+        Rotation2d left = Rotation2d.fromDegrees(90);
+        Rotation2d backward = Rotation2d.fromDegrees(180);
+        Rotation2d right = Rotation2d.fromDegrees(-90);
+
+        Rotation2d blueForward = AllianceFlipUtil.getDriverRelativeHeading(forward);
+        assertEquals(0.0, blueForward.getDegrees(), 0.001);
+
+        Rotation2d blueLeft = AllianceFlipUtil.getDriverRelativeHeading(left);
+        assertEquals(90.0, blueLeft.getDegrees(), 0.001);
+
+        Rotation2d blueBackward = AllianceFlipUtil.getDriverRelativeHeading(backward);
+        assertEquals(180.0, Math.abs(blueBackward.getDegrees()), 0.001);
+
+        Rotation2d blueRight = AllianceFlipUtil.getDriverRelativeHeading(right);
+        assertEquals(-90.0, blueRight.getDegrees(), 0.001);
+    }
 }

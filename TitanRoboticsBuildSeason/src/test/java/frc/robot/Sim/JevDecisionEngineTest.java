@@ -12,6 +12,7 @@ import frc.robot.Data.Constants;
 import frc.robot.Data.FieldMap;
 import frc.robot.Sim.JevDecisionEngine.DecisionResult;
 import frc.robot.Sim.JevDecisionEngine.TacticalAction;
+import frc.robot.Subsystems.Shooter.ShooterState;
 
 public class JevDecisionEngineTest {
 
@@ -456,5 +457,73 @@ public class JevDecisionEngineTest {
         assertTrue(Archetype.LEAD_PURSUIT_INTERCEPTOR.isDefensive());
         assertFalse(Archetype.AUTONOMOUS_CYCLER.isDefensive());
         assertFalse(Archetype.CO_PILOT.isDefensive());
+    }
+
+    @Test
+    public void testAutonomousModePreventsPrematureRushClimb() {
+        Pose2d botPose = new Pose2d(3.0, 4.0, new Rotation2d());
+        // Autonomous world: 12 seconds remaining in auto, bot has 18 fuel, active hub, isAutonomous = true
+        WorldState autoWorld = new WorldState(
+                botPose,
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                18,
+                new Pose2d(8.0, 4.0, new Rotation2d()),
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                12.0,
+                true,
+                true,
+                15.0,
+                false, // Blue alliance
+                true   // Autonomous mode active!
+        );
+        AIActionIntent autoIntent = engine.evaluatePolicy(autoWorld, Archetype.AUTONOMOUS_CYCLER);
+        assertNotEquals(StrategicObjective.RUSH_CLIMB, autoIntent.objective(),
+                "In autonomous mode, bot must NOT rush to climb even when match time is <= 15 seconds");
+        assertEquals(StrategicObjective.CYCLE_SCORE_HUB, autoIntent.objective(),
+                "In autonomous mode, bot with 18 fuel should prioritize cycling and scoring fuel");
+
+        // Teleop endgame world: 12 seconds remaining in teleop, isAutonomous = false
+        WorldState teleopEndgameWorld = new WorldState(
+                botPose,
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                18,
+                new Pose2d(8.0, 4.0, new Rotation2d()),
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                12.0,
+                true,
+                true,
+                15.0,
+                false, // Blue alliance
+                false  // Teleop mode
+        );
+        AIActionIntent endgameIntent = engine.evaluatePolicy(teleopEndgameWorld, Archetype.AUTONOMOUS_CYCLER);
+        assertEquals(StrategicObjective.RUSH_CLIMB, endgameIntent.objective(),
+                "In teleop endgame (<= 15s), bot should prioritize rush climb");
+    }
+
+    @Test
+    public void testShootingRejectionOutsideAllianceZone() {
+        // Blue Hub is at (4.597, 4.035). Place robot in midfield at (6.0, 4.035).
+        // Distance is ~1.403m (well within 1.4m - 3.6m shooting distance), but outside Blue Alliance Zone (X <= 4.5974)
+        Pose2d midfieldPose = new Pose2d(6.0, 4.035, new Rotation2d(Math.PI)); // Facing Hub
+        WorldState midfieldWorld = new WorldState(
+                midfieldPose,
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                20,
+                new Pose2d(10.0, 4.0, new Rotation2d()),
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                90.0,
+                true,
+                false,
+                15.0,
+                false, // Blue alliance
+                false
+        );
+
+        AIActionIntent intent = engine.evaluatePolicy(midfieldWorld, Archetype.AUTONOMOUS_CYCLER);
+        assertNotEquals(ShooterState.SHOOTING, intent.shooterCommand(),
+                "Bot outside Alliance Zone must not command SHOOTING");
+        assertFalse(intent.triggerFeedKicker(),
+                "Bot outside Alliance Zone must not trigger feed kicker");
     }
 }

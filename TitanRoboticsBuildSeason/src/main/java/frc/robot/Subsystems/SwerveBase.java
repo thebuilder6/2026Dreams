@@ -1110,14 +1110,13 @@ public class SwerveBase implements Subsystem {
 
     /**
      * Estimates total current draw in simulation where no real PDH is available.
-     * Uses a rough heuristic based on commanded speed magnitude.
+     * Uses a realistic physical model: ~0.5A quiescent electronics idle per module,
+     * scaling up to ~20A per module at full sprint (82A total swerve drive).
      */
     public double getSimulationCurrentDraw() {
         ChassisSpeeds speeds = swerveDrive.getRobotVelocity();
         double speedMag = Math.hypot(speeds.vxMetersPerSecond, speeds.vyMetersPerSecond);
-        // Rough estimate: ~15A idle per module (4 modules), scaling up to ~40A at full
-        // speed
-        double perModuleCurrent = 15.0 + 25.0 * Math.min(speedMag / 4.5, 1.0);
+        double perModuleCurrent = 0.5 + 20.0 * Math.min(speedMag / 4.5, 1.0);
         return perModuleCurrent * 4.0;
     }
 

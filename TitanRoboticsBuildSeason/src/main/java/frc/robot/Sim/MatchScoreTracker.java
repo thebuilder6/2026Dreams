@@ -248,8 +248,8 @@ public class MatchScoreTracker implements Subsystem {
         double matchTime = Timer.getMatchTime();
         if (matchTime < 0.0) matchTime = GameSim.getInstance().getSimTimeRemainingSec();
 
-        // Climb evaluation is only valid in the final 20 seconds of the match
-        if (matchTime > 20.0 && matchTime <= 150.0) {
+        // Climb evaluation is only valid in the final 20 seconds of teleop / endgame (never in autonomous)
+        if (DriverStation.isAutonomous() || (matchTime > 20.0 && matchTime <= 150.0)) {
             playerClimbed = false;
             bot0Climbed = false;
             bot1Climbed = false;

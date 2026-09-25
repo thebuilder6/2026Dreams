@@ -222,8 +222,9 @@ public class AutonomousTeleopAgent {
     }
 
     private void manageSubsystems(AIActionIntent intent, WorldState world) {
+        boolean inAllianceZone = FieldMap.AllianceZones.isInAllianceZone(swerve.getPose(), world.isRedAlliance());
         // Pre-spool flywheels during transit if approaching hub or shift is close
-        if (intent.shooterCommand() == Shooter.ShooterState.SHOOTING || intent.triggerFeedKicker()) {
+        if ((intent.shooterCommand() == Shooter.ShooterState.SHOOTING || intent.triggerFeedKicker()) && inAllianceZone) {
             double rpm = intent.targetFlywheelRPM() > 1000 ? intent.targetFlywheelRPM() : 3200.0;
             shooter.setTargetRPM(rpm, rpm);
             shooter.shoot();

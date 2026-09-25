@@ -2,6 +2,7 @@ package frc.robot.Sim;
 
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.kinematics.ChassisSpeeds;
+import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.Timer;
 import frc.robot.Subsystems.Dashboard;
 import frc.robot.Subsystems.SwerveBase;
@@ -52,7 +53,8 @@ public final class WorldStateBuilder {
                 playerHubActive,
                 oppHubActive,
                 timeUntilShift,
-                isPlayerRed
+                isPlayerRed,
+                DriverStation.isAutonomous()
         );
     }
 
@@ -92,7 +94,8 @@ public final class WorldStateBuilder {
                 isSelfHubActive,
                 playerHubActive,
                 timeUntilShift,
-                isOpponentRedAlliance
+                isOpponentRedAlliance,
+                DriverStation.isAutonomous()
         );
     }
 }

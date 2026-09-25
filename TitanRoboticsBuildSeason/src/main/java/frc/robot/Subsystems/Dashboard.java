@@ -153,7 +153,6 @@ public class Dashboard implements Subsystem {
             } else if (!lastSelectedChooserCount.equals(chooserVal)) {
                 lastSelectedChooserCount = chooserVal;
                 manualOpponentCountOverride = chooserVal;
-                table.getDoubleTopic("Simulation/OpponentCount").publish().set(chooserVal);
                 SmartDashboard.putNumber("Simulation/OpponentCount", chooserVal);
             }
         }
@@ -166,7 +165,6 @@ public class Dashboard implements Subsystem {
             } else if (!lastSelectedAllyChooserCount.equals(chooserVal)) {
                 lastSelectedAllyChooserCount = chooserVal;
                 manualAllyCountOverride = chooserVal;
-                table.getDoubleTopic("Simulation/AllyCount").publish().set(chooserVal);
                 SmartDashboard.putNumber("Simulation/AllyCount", chooserVal);
             }
         }
@@ -204,9 +202,12 @@ public class Dashboard implements Subsystem {
         SmartDashboard.putString("Match/Alliance", DriverStation.getAlliance().map(Enum::toString).orElse(""));
 
         // --- Driver Aggregation (For Elastic) ---
+        var solution = Shooter.getInstance().getLatestShootingSolution();
+        boolean inAllianceZone = AllianceFlipUtil.isPoseInAllianceZone(SwerveBase.getInstance().getPose());
         boolean shooterAtSpeed = Shooter.getInstance().isAtTargetVelocity();
-        boolean shooterLinedUp = Shooter.getInstance().isLinedUp();
-        boolean canShoot = isMyHubActive && shooterAtSpeed && shooterLinedUp;
+        boolean shooterLinedUp = Shooter.getInstance().isLinedUp()
+                || (solution != null && solution.possible() && Shooter.getInstance().isReadyToFire(solution.turretAngle()));
+        boolean canShoot = isMyHubActive && shooterAtSpeed && shooterLinedUp && inAllianceZone;
 
         SmartDashboard.putBoolean("Driver/Shooter Ready", shooterAtSpeed);
         SmartDashboard.putBoolean("Driver/Hub Active", isMyHubActive);
@@ -216,11 +217,10 @@ public class Dashboard implements Subsystem {
 
         SmartDashboard.putBoolean("Driver/Shoot Alert", canShoot);
         SmartDashboard.putString("Driver/Shoot Message",
-                canShoot ? "READY TO FIRE" : (!isMyHubActive ? "HUB INACTIVE" : (!shooterAtSpeed ? "SPINNING UP" : "ALIGNING")));
+                canShoot ? "READY TO FIRE" : (!inAllianceZone ? "OUTSIDE ALLIANCE ZONE" : (!isMyHubActive ? "HUB INACTIVE" : (!shooterAtSpeed ? "SPINNING UP" : "ALIGNING"))));
 
         // Dual Flywheel RPM breakdown
         double avgActualRPM = (Shooter.getInstance().getFlywheelLeftVelocityRPM() + Shooter.getInstance().getFlywheelRightVelocityRPM()) / 2.0;
-        var solution = Shooter.getInstance().getLatestShootingSolution();
         double targetRPM = solution != null ? solution.flywheelRPM() : 0.0;
         SmartDashboard.putNumber("Driver/Flywheel Actual RPM", avgActualRPM);
         SmartDashboard.putNumber("Driver/Flywheel Target RPM", targetRPM);

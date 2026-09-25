@@ -424,7 +424,8 @@ public class AIRobotSim implements Subsystem {
                         selfHubActive,
                         oppHubActive,
                         timeUntilShift,
-                        opponentIsRed
+                        opponentIsRed,
+                        DriverStation.isAutonomous()
                 );
 
                 Archetype archetype;

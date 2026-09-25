@@ -12,6 +12,7 @@ import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
 import swervelib.simulation.ironmaple.simulation.SimulatedArena;
 import swervelib.simulation.ironmaple.simulation.gamepieces.GamePieceOnFieldSimulation;
+import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import frc.robot.Auto.DynamicObstacle;
@@ -139,7 +140,7 @@ public class JevDecisionEngine {
 
         // Rush Climb (Endgame priority)
         double climbUtility = 0.0;
-        if (world.matchTimeRemaining() > 0.0 && world.matchTimeRemaining() <= 20.0) {
+        if (!world.isAutonomous() && world.matchTimeRemaining() > 0.0 && world.matchTimeRemaining() <= 20.0) {
             if (world.matchTimeRemaining() <= 15.0) {
                 // Dominant endgame priority: strictly overrides cycling in final 15 seconds
                 climbUtility = 0.99 + (0.01 * (1.0 - world.matchTimeRemaining() / 15.0));
@@ -284,10 +285,11 @@ public class JevDecisionEngine {
 
                 // Fire evaluation if within shooting range
                 boolean inRange = distToSelfHub <= 3.60 && distToSelfHub >= 1.40;
+                boolean inAllianceZone = FieldMap.AllianceZones.isInAllianceZone(world.selfPose(), world.isRedAlliance());
                 boolean openCeiling = !FieldMap.Trenches.isLowClearance(world.selfPose());
                 boolean laneClear = !isShootingLaneBlocked(world.selfPose(), selfHub, world.opponentPose());
 
-                if (inRange && openCeiling && laneClear) {
+                if (inRange && inAllianceZone && openCeiling && laneClear) {
                     Rotation2d faceHub = selfHub.minus(world.selfPose().getTranslation()).getAngle();
                     aimOverride = faceHub;
                     double headingErr = Math.abs(world.selfPose().getRotation().minus(faceHub).getDegrees());
@@ -562,7 +564,7 @@ public class JevDecisionEngine {
         if (!isHubActive) {
             retreatScore = 0.85;
         }
-        if (matchTimeRemaining < 15.0) {
+        if (!DriverStation.isAutonomous() && matchTimeRemaining < 15.0) {
             retreatScore = Math.max(retreatScore, 0.80);
         }
         scores.put(TacticalAction.RETREAT_DEFENSE, retreatScore);

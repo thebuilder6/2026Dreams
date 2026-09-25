@@ -263,8 +263,20 @@
             }
           },
           {
-            "title": "Nearest Glide",
+            "title": "2 Player Defense",
             "x": 1472.0,
+            "y": 640.0,
+            "width": 192.0,
+            "height": 128.0,
+            "type": "Toggle Switch",
+            "properties": {
+              "topic": "/SmartDashboard/Features/2 Player Defense",
+              "period": 0.06
+            }
+          },
+          {
+            "title": "Nearest Glide",
+            "x": 1664.0,
             "y": 640.0,
             "width": 192.0,
             "height": 128.0,
@@ -279,7 +291,7 @@
             "title": "Alert Banner",
             "x": 0.0,
             "y": 768.0,
-            "width": 1280.0,
+            "width": 1472.0,
             "height": 128.0,
             "type": "Text Display",
             "properties": {
@@ -290,7 +302,7 @@
           },
           {
             "title": "Jev AI Strategy",
-            "x": 1280.0,
+            "x": 1472.0,
             "y": 768.0,
             "width": 384.0,
             "height": 128.0,
@@ -567,10 +579,22 @@
             }
           },
           {
-            "title": "Trench Clearance Safe",
+            "title": "2 Player Defense",
             "x": 1600.0,
             "y": 640.0,
-            "width": 320.0,
+            "width": 192.0,
+            "height": 128.0,
+            "type": "Toggle Switch",
+            "properties": {
+              "topic": "/SmartDashboard/Features/2 Player Defense",
+              "period": 0.06
+            }
+          },
+          {
+            "title": "Trench Clearance Safe",
+            "x": 1792.0,
+            "y": 640.0,
+            "width": 128.0,
             "height": 128.0,
             "type": "Boolean Box",
             "properties": {
@@ -1064,21 +1088,73 @@
             }
           },
           {
-            "title": "Opponent AI Active",
+            "title": "2 Player Defense",
             "x": 512.0,
             "y": 0.0,
             "width": 256.0,
             "height": 128.0,
             "type": "Toggle Switch",
             "properties": {
-              "topic": "/SmartDashboard/Features/Opponent Robot",
+              "topic": "/SmartDashboard/Features/2 Player Defense",
               "period": 0.06
             }
           },
           {
-            "title": "Opponent Count",
+            "title": "Pit Mode",
             "x": 768.0,
             "y": 0.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Toggle Switch",
+            "properties": {
+              "topic": "/SmartDashboard/Features/Pit Mode",
+              "period": 0.06
+            }
+          },
+          {
+            "title": "OPPONENT CONTROLS",
+            "x": 1024.0,
+            "y": 0.0,
+            "width": 384.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Simulation/OpponentHeader",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "ALLY CONTROLS",
+            "x": 1408.0,
+            "y": 0.0,
+            "width": 384.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Simulation/AllyHeader",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Opponent AI Active",
+            "x": 1024.0,
+            "y": 128.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Toggle Switch",
+            "properties": {
+              "topic": "/SmartDashboard/Features/Opponent Robot",
+              "period": 0.06,
+              "true_color": 4294901760,
+              "false_color": 4278190335
+            }
+          },
+          {
+            "title": "Opponent Count",
+            "x": 1280.0,
+            "y": 128.0,
             "width": 256.0,
             "height": 128.0,
             "type": "ComboBox Chooser",
@@ -1090,8 +1166,8 @@
           },
           {
             "title": "Opponent Speed %",
-            "x": 1024.0,
-            "y": 0.0,
+            "x": 1536.0,
+            "y": 128.0,
             "width": 256.0,
             "height": 128.0,
             "type": "Number Slider",
@@ -1105,56 +1181,49 @@
             }
           },
           {
-            "title": "Total Opponent Score",
-            "x": 1280.0,
-            "y": 0.0,
+            "title": "Ally Bots Active",
+            "x": 1408.0,
+            "y": 128.0,
             "width": 256.0,
             "height": 128.0,
-            "type": "Text Display",
+            "type": "Toggle Switch",
             "properties": {
-              "topic": "/SmartDashboard/Simulation/TotalOpponentScore",
+              "topic": "/SmartDashboard/Features/Ally Bots",
               "period": 0.06,
-              "show_submit_button": false
+              "true_color": 4294967295,
+              "false_color": 4278190335
             }
           },
           {
-            "title": "Total Opponent Fuel",
-            "x": 1536.0,
-            "y": 0.0,
+            "title": "Ally Count",
+            "x": 1664.0,
+            "y": 128.0,
             "width": 256.0,
             "height": 128.0,
-            "type": "Text Display",
+            "type": "ComboBox Chooser",
             "properties": {
-              "topic": "/SmartDashboard/Simulation/TotalOpponentFuel",
+              "topic": "/SmartDashboard/Simulation/AllyCountChooser",
               "period": 0.06,
-              "show_submit_button": false
+              "sort_options": false
             }
           },
           {
-            "title": "Arena Field View (Multi-Bot)",
+            "title": "OPPONENT BOTS",
             "x": 0.0,
             "y": 128.0,
             "width": 896.0,
-            "height": 512.0,
-            "type": "Field",
+            "height": 128.0,
+            "type": "Text Display",
             "properties": {
-              "topic": "/SmartDashboard/Field",
+              "topic": "/SmartDashboard/Simulation/OpponentBotsHeader",
               "period": 0.06,
-              "field_game": "Rebuilt",
-              "robot_width": 0.85,
-              "robot_length": 0.85,
-              "show_other_objects": true,
-              "show_trajectories": true,
-              "field_rotation": 0.0,
-              "robot_color": 4278222847,
-              "trajectory_color": 4294967295,
-              "show_robot_outside_widget": true
+              "show_submit_button": false
             }
           },
           {
             "title": "Bot 0 Mode (Lead Spar)",
-            "x": 896.0,
-            "y": 128.0,
+            "x": 0.0,
+            "y": 256.0,
             "width": 320.0,
             "height": 128.0,
             "type": "ComboBox Chooser",
@@ -1166,8 +1235,8 @@
           },
           {
             "title": "Bot 0 State & Objective",
-            "x": 1216.0,
-            "y": 128.0,
+            "x": 320.0,
+            "y": 256.0,
             "width": 352.0,
             "height": 128.0,
             "type": "Text Display",
@@ -1179,8 +1248,8 @@
           },
           {
             "title": "Bot 0 Score",
-            "x": 1568.0,
-            "y": 128.0,
+            "x": 672.0,
+            "y": 256.0,
             "width": 224.0,
             "height": 128.0,
             "type": "Text Display",
@@ -1192,8 +1261,8 @@
           },
           {
             "title": "Bot 1 Archetype",
-            "x": 896.0,
-            "y": 256.0,
+            "x": 0.0,
+            "y": 384.0,
             "width": 320.0,
             "height": 128.0,
             "type": "ComboBox Chooser",
@@ -1205,8 +1274,8 @@
           },
           {
             "title": "Bot 1 State & Objective",
-            "x": 1216.0,
-            "y": 256.0,
+            "x": 320.0,
+            "y": 384.0,
             "width": 352.0,
             "height": 128.0,
             "type": "Text Display",
@@ -1218,8 +1287,8 @@
           },
           {
             "title": "Bot 1 Score",
-            "x": 1568.0,
-            "y": 256.0,
+            "x": 672.0,
+            "y": 384.0,
             "width": 224.0,
             "height": 128.0,
             "type": "Text Display",
@@ -1231,8 +1300,8 @@
           },
           {
             "title": "Bot 2 Archetype",
-            "x": 896.0,
-            "y": 384.0,
+            "x": 0.0,
+            "y": 512.0,
             "width": 320.0,
             "height": 128.0,
             "type": "ComboBox Chooser",
@@ -1244,8 +1313,8 @@
           },
           {
             "title": "Bot 2 State & Objective",
-            "x": 1216.0,
-            "y": 384.0,
+            "x": 320.0,
+            "y": 512.0,
             "width": 352.0,
             "height": 128.0,
             "type": "Text Display",
@@ -1257,8 +1326,8 @@
           },
           {
             "title": "Bot 2 Score",
-            "x": 1568.0,
-            "y": 384.0,
+            "x": 672.0,
+            "y": 512.0,
             "width": 224.0,
             "height": 128.0,
             "type": "Text Display",
@@ -1269,41 +1338,146 @@
             }
           },
           {
-            "title": "Avoidance Algorithm",
+            "title": "Total Opponent Score",
+            "x": 0.0,
+            "y": 640.0,
+            "width": 320.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Simulation/TotalOpponentScore",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Total Opponent Fuel",
+            "x": 320.0,
+            "y": 640.0,
+            "width": 352.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Simulation/TotalOpponentFuel",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "ALLY BOTS",
+            "x": 896.0,
+            "y": 128.0,
+            "width": 896.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Simulation/AllyBotsHeader",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Ally Bot 0 Archetype",
+            "x": 896.0,
+            "y": 256.0,
+            "width": 320.0,
+            "height": 128.0,
+            "type": "ComboBox Chooser",
+            "properties": {
+              "topic": "/SmartDashboard/Simulation/AllyBot0/ArchetypeChooser",
+              "period": 0.06,
+              "sort_options": false
+            }
+          },
+          {
+            "title": "Ally Bot 0 State",
+            "x": 1216.0,
+            "y": 256.0,
+            "width": 352.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Simulation/AllyBot0/StateDetail",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Ally Bot 0 Score",
+            "x": 1568.0,
+            "y": 256.0,
+            "width": 224.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Simulation/AllyBot0/Score",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Ally Bot 1 Archetype",
+            "x": 896.0,
+            "y": 384.0,
+            "width": 320.0,
+            "height": 128.0,
+            "type": "ComboBox Chooser",
+            "properties": {
+              "topic": "/SmartDashboard/Simulation/AllyBot1/ArchetypeChooser",
+              "period": 0.06,
+              "sort_options": false
+            }
+          },
+          {
+            "title": "Ally Bot 1 State",
+            "x": 1216.0,
+            "y": 384.0,
+            "width": 352.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Simulation/AllyBot1/StateDetail",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Ally Bot 1 Score",
+            "x": 1568.0,
+            "y": 384.0,
+            "width": 224.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Simulation/AllyBot1/Score",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Total Ally Score",
             "x": 896.0,
             "y": 512.0,
             "width": 320.0,
             "height": 128.0,
             "type": "Text Display",
             "properties": {
-              "topic": "/SmartDashboard/DynamicAvoidance/Algorithm",
+              "topic": "/SmartDashboard/Simulation/TotalAllyScore",
               "period": 0.06,
-              "show_submit_button": true
+              "show_submit_button": false
             }
           },
           {
-            "title": "Active Opponents Count",
+            "title": "Total Ally Fuel",
             "x": 1216.0,
             "y": 512.0,
             "width": 352.0,
             "height": 128.0,
             "type": "Text Display",
             "properties": {
-              "topic": "/SmartDashboard/Simulation/MultiBotActiveCount",
+              "topic": "/SmartDashboard/Simulation/TotalAllyFuel",
               "period": 0.06,
               "show_submit_button": false
-            }
-          },
-          {
-            "title": "Pit Mode",
-            "x": 1568.0,
-            "y": 512.0,
-            "width": 224.0,
-            "height": 128.0,
-            "type": "Toggle Switch",
-            "properties": {
-              "topic": "/SmartDashboard/Features/Pit Mode",
-              "period": 0.06
             }
           }
         ]
@@ -1736,7 +1910,7 @@
             }
           },
           {
-            "title": "Translation Slew (m/s\u00b2)",
+            "title": "Translation Slew (m/s²)",
             "x": 1024.0,
             "y": 512.0,
             "width": 256.0,
@@ -1749,7 +1923,7 @@
             }
           },
           {
-            "title": "Rotation Slew (rad/s\u00b2)",
+            "title": "Rotation Slew (rad/s²)",
             "x": 1280.0,
             "y": 512.0,
             "width": 256.0,
@@ -1841,11 +2015,23 @@
             "title": "Auto Aim",
             "x": 1536.0,
             "y": 512.0,
-            "width": 384.0,
+            "width": 256.0,
             "height": 128.0,
             "type": "Toggle Switch",
             "properties": {
               "topic": "/SmartDashboard/Features/Auto Aim",
+              "period": 0.06
+            }
+          },
+          {
+            "title": "2 Player Defense",
+            "x": 1792.0,
+            "y": 512.0,
+            "width": 128.0,
+            "height": 128.0,
+            "type": "Toggle Switch",
+            "properties": {
+              "topic": "/SmartDashboard/Features/2 Player Defense",
               "period": 0.06
             }
           },

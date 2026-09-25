@@ -3,9 +3,20 @@
 ## Goal
 The primary goal of this restructuring is to **reduce complexity** and **group related systems together**, establishing strict boundaries between Hardware/IO, Physical Simulation, AI/Intelligence, Navigation/Pathing, and Driver Assistance.
 
+## High-Priority "Phase 1" Restructuring
+To minimize disruption while achieving the highest architectural value, the immediate priority is **extracting the AI/Decision Engine out of the `Sim/` folder**. Currently, `Sim/` mixes physical hardware mocks (sandbox) with tactical decision-making logic (the brain).
+
+**Phase 1 Execution:**
+Create an `Intelligence/` folder and move the cognitive files out of `Sim/`:
+*   `JevDecisionEngine.java`
+*   `WorldState.java` & `WorldStateBuilder.java`
+*   `StrategicObjective.java` & `AIActionIntent.java`
+*   `Archetype.java`
+*   `MatchScoreTracker.java`
+
 ## Exhaustive File Mapping (`src/main/java/frc/robot/`)
 
-Below is the exact mapping of every existing file to its proposed new location.
+Below is the exact mapping of every existing file to its proposed new location. *(Note: `Sim/` and `Auto/` will retain their folder names, but their internal responsibilities will be narrowed by extracting AI and Navigation).*
 
 ### Core & Base
 *Files remaining in `frc/robot/` or `frc/robot/Interfaces/`*
@@ -45,13 +56,13 @@ Below is the exact mapping of every existing file to its proposed new location.
 *   `Subsystems/Dashboard.java` -> `Telemetry/Dashboard.java`
 *   `Subsystems/MatchCoach.java` -> `Intelligence/MatchCoach.java` (It's AI)
 
-### 4. `Simulation/` (Extracted from `Sim/`)
-*Strictly physical phenomena and virtual hardware.*
-*   `Sim/ArmSim.java` -> `Simulation/ArmSim.java`
-*   `Sim/ShooterSim.java` -> `Simulation/ShooterSim.java`
-*   `Sim/VisionSim.java` -> `Simulation/VisionSim.java`
-*   `Sim/LimelightSim.java` -> `Simulation/LimelightSim.java`
-*   `Sim/GameSim.java` -> `Simulation/GameSim.java`
+### 4. `Sim/` (Refined Scope)
+*Strictly physical phenomena and virtual hardware. No AI.*
+*   `Sim/ArmSim.java` -> *No Change*
+*   `Sim/ShooterSim.java` -> *No Change*
+*   `Sim/VisionSim.java` -> *No Change*
+*   `Sim/LimelightSim.java` -> *No Change*
+*   `Sim/GameSim.java` -> *No Change*
 
 ### 5. `Intelligence/` (New! Extracted from `Sim/`)
 *The "Brain". Game-agnostic decision-making.*
@@ -76,13 +87,13 @@ Below is the exact mapping of every existing file to its proposed new location.
 *   `Utils/Vector2dSlewRateLimiter.java` -> `Navigation/Math/Vector2dSlewRateLimiter.java`
 *   `Utils/AllianceFlipUtil.java` -> `Navigation/Math/AllianceFlipUtil.java`
 
-### 7. `Autonomous/` (Simplified `Auto/`)
-*Sequential match scripts.*
-*   `Auto/AutoMissionChooser.java` -> `Autonomous/AutoMissionChooser.java`
-*   `Auto/AutoMissionExecutor.java` -> `Autonomous/AutoMissionExecutor.java`
-*   `Auto/AutoMissionEndedException.java` -> `Autonomous/AutoMissionEndedException.java`
-*   `Auto/Missions/*` -> `Autonomous/Missions/*`
-*   `Auto/Actions/*` -> `Autonomous/Actions/*`
+### 7. `Auto/` (Refined Scope)
+*Sequential match scripts. Pathing removed.*
+*   `Auto/AutoMissionChooser.java` -> *No Change*
+*   `Auto/AutoMissionExecutor.java` -> *No Change*
+*   `Auto/AutoMissionEndedException.java` -> *No Change*
+*   `Auto/Missions/*` -> *No Change*
+*   `Auto/Actions/*` -> *No Change*
 
 ### 8. `HMI/` (Human-Machine Interface / Driver Assist)
 *Bridging the gap between code and the Drive Team.*
@@ -117,6 +128,14 @@ To prevent the CI/CD pipeline from breaking, the test suite must mirror the new 
 
 ---
 
+## Proposed Deletions & Cleanup
+The following files are identified as boilerplate or unused resources and should be deleted during the restructuring phase to reduce clutter:
+*   `Auto/Missions/ExampleMission.java` (Boilerplate)
+*   `deploy/choreo/ExamplePath.traj` (Boilerplate)
+*   `deploy/example.txt` (Boilerplate)
+
+---
+
 ## Potential Architecture & Build Risks
 While migrating the file structure, developers must be aware of the following technical constraints:
 
@@ -142,7 +161,7 @@ While migrating the file structure, developers must be aware of the following te
 
 ## Where Future Features Will Go
 
-*   **A new auto routine?** -> `Autonomous/Missions/`
+*   **A new auto routine?** -> `Auto/Missions/`
 *   **A new way for AI to evaluate targets?** -> `Intelligence/ExecutiveStrategy.java`
 *   **A new physical sensor (e.g., Time of Flight)?** -> `Hardware/` to define the IO layer, then used inside the relevant `Subsystems/` file.
 *   **A new dashboard widget for drivers?** -> `Telemetry/` or `HMI/Alerts/`.
@@ -156,12 +175,12 @@ While migrating the file structure, developers must be aware of the following te
 1.  **Hardware Abstraction:** Create `Hardware/Climber/ClimberIO.java`, `ClimberIOSparkMax.java`, and `ClimberIOSim.java`.
 2.  **Logic:** Create `Subsystems/Climber.java` that takes the `ClimberIO` interface. Add states (e.g., `STOWED`, `DEPLOYING`, `CLIMBING`).
 3.  **Constants:** Add motor IDs to `Data/PortMap.java` and gearing/PID data to `Data/MechanismConstants.java`.
-4.  **Simulation:** Create `Simulation/ClimberSim.java` to model the physics (e.g., gravity pulling the robot down) and link it to `ClimberIOSim`.
-5.  **Actions:** Create `Autonomous/Actions/ClimbAction.java` if it needs to happen in Auto.
+4.  **Simulation:** Create `Sim/ClimberSim.java` to model the physics (e.g., gravity pulling the robot down) and link it to `ClimberIOSim`.
+5.  **Actions:** Create `Auto/Actions/ClimbAction.java` if it needs to happen in Auto.
 
 ### 2. How to Change Field Layout or Game Rules
 1.  **Coordinates:** Update POIs (Points of Interest) in `Data/FieldMap.java`.
-2.  **Physics Rules:** If game pieces behave differently (e.g., sliding vs rolling), update `Simulation/GameSim.java`.
+2.  **Physics Rules:** If game pieces behave differently (e.g., sliding vs rolling), update `Sim/GameSim.java`.
 3.  **Pathing Zones:** If new field elements block paths, update boundaries in `Navigation/Routing/DynamicObstacle.java` or update the Choreo trajectory files in `deploy/choreo/`.
 
 ### 3. How to Change AI Behavior

@@ -4,13 +4,18 @@
 
 package frc.robot;
 
-import edu.wpi.first.wpilibj.DataLogManager;
 import edu.wpi.first.wpilibj.DriverStation;
-import org.littletonrobotics.junction.LoggedRobot;
 import edu.wpi.first.wpilibj.XboxController;
 import edu.wpi.first.wpilibj.simulation.BatterySim;
 import edu.wpi.first.wpilibj.simulation.RoboRioSim;
 import edu.wpi.first.wpilibj2.command.CommandScheduler;
+import org.littletonrobotics.junction.LogFileUtil;
+import org.littletonrobotics.junction.LoggedRobot;
+import org.littletonrobotics.junction.Logger;
+import org.littletonrobotics.junction.networktables.NT4Publisher;
+import org.littletonrobotics.junction.wpilog.WPILOGReader;
+import org.littletonrobotics.junction.wpilog.WPILOGWriter;
+import frc.robot.Data.Constants;
 import frc.robot.Auto.AutoMissionExecutor;
 import frc.robot.Auto.Missions.MissionBase;
 import frc.robot.Sim.AIRobotSim;
@@ -48,19 +53,24 @@ public class Robot extends LoggedRobot {
    * initialization code.
    */
   public Robot() {
-    // Start data logging
-    DataLogManager.start();
-    DriverStation.startDataLog(DataLogManager.getLog());
-
-    // AdvantageKit Logger Configuration for AdvantageScope
-    org.littletonrobotics.junction.Logger.recordMetadata("ProjectName", "TitanRobotics2026");
-    if (isReal()) {
-        org.littletonrobotics.junction.Logger.addDataReceiver(new org.littletonrobotics.junction.wpilog.WPILOGWriter());
-        org.littletonrobotics.junction.Logger.addDataReceiver(new org.littletonrobotics.junction.networktables.NT4Publisher());
-    } else {
-        org.littletonrobotics.junction.Logger.addDataReceiver(new org.littletonrobotics.junction.networktables.NT4Publisher());
+    // AdvantageKit Logger Configuration for AdvantageScope & Deterministic Replay
+    Logger.recordMetadata("ProjectName", "TitanRobotics2026");
+    switch (Constants.getMode()) {
+        case REAL:
+            Logger.addDataReceiver(new WPILOGWriter()); // USB stick "/U/logs" or "/home/lvuser/logs"
+            Logger.addDataReceiver(new NT4Publisher());
+            break;
+        case SIM:
+            Logger.addDataReceiver(new NT4Publisher());
+            break;
+        case REPLAY:
+            setUseTiming(false); // Run cycles as fast as possible during replay
+            String logPath = LogFileUtil.findReplayLog();
+            Logger.setReplaySource(new WPILOGReader(logPath));
+            Logger.addDataReceiver(new WPILOGWriter(LogFileUtil.addPathSuffix(logPath, "_sim")));
+            break;
     }
-    org.littletonrobotics.junction.Logger.start();
+    Logger.start();
 
     swerveBase = SwerveBase.getInstance();
     Vision.getInstance();
@@ -86,6 +96,16 @@ public class Robot extends LoggedRobot {
     // Disable LiveWindow to reduce NetworkTable noise
     edu.wpi.first.wpilibj.livewindow.LiveWindow.setEnabled(false);
     edu.wpi.first.wpilibj.livewindow.LiveWindow.disableAllTelemetry();
+  }
+
+  @Override
+  public void robotInit() {
+    // Start WPILib WebServer to serve elastic-layout.json for Elastic Dashboard remote loading (Ctrl+D)
+    try {
+      edu.wpi.first.net.WebServer.start(5800, edu.wpi.first.wpilibj.Filesystem.getDeployDirectory().getPath());
+    } catch (Throwable t) {
+      System.out.println("[WebServer] Notice: Elastic layout WebServer on port 5800 could not be started: " + t.getMessage());
+    }
   }
 
   /**

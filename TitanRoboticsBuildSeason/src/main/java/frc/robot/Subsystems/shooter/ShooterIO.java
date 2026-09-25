@@ -1,11 +1,14 @@
 package frc.robot.Subsystems.shooter;
 
+import org.littletonrobotics.junction.AutoLog;
+
 /**
  * Hardware IO abstraction interface for the dual-flywheel shooter subsystem.
  * Follows the AdvantageKit pattern to cleanly decouple control logic from physical motor hardware.
  */
 public interface ShooterIO {
 
+    @AutoLog
     public static class ShooterIOInputs {
         public double leftVelocityRPM = 0.0;
         public double rightVelocityRPM = 0.0;

@@ -361,7 +361,7 @@ public static boolean isLineOfSightClear(Translation2d p1, Translation2d p2) {
             return true;
         }
         for (DynamicObstacle dynObs : DynamicRouter.getActiveObstacles()) {
-            if (dynObs != null && !dynObs.isExpired(Timer.getFPGATimestamp())) {
+            if (dynObs != null && !dynObs.isExpired(Timer.getTimestamp())) {
                 if (p.getDistance(dynObs.position) < (dynObs.radius + 0.15)) {
                     return true;
                 }
@@ -442,7 +442,7 @@ public static boolean isLineOfSightClear(Translation2d p1, Translation2d p2) {
 
         // 3. Resolve Dynamic Obstacles
         for (DynamicObstacle dynObs : DynamicRouter.getActiveObstacles()) {
-            if (dynObs != null && !dynObs.isExpired(Timer.getFPGATimestamp())) {
+            if (dynObs != null && !dynObs.isExpired(Timer.getTimestamp())) {
                 double safeDist = dynObs.radius + 0.25;
                 if (current.getDistance(dynObs.position) < safeDist) {
                     Translation2d away = current.minus(dynObs.position);

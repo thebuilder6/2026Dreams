@@ -20,7 +20,7 @@ import frc.robot.Data.Constants.IntakeConstants;
 import frc.robot.Data.FieldMap;
 import frc.robot.Interfaces.Subsystem;
 import frc.robot.Subsystems.intake.IntakeIO;
-import frc.robot.Subsystems.intake.IntakeIO.IntakeIOInputs;
+import frc.robot.Subsystems.intake.IntakeIOInputsAutoLogged;
 import frc.robot.Subsystems.intake.IntakeIOSim;
 import frc.robot.Subsystems.intake.IntakeIOSparkMax;
 import frc.robot.Utils.Alert;
@@ -38,7 +38,7 @@ public class Intake implements Subsystem {
 
     // IO Abstraction (AdvantageKit pattern)
     private final IntakeIO io;
-    private final IntakeIOInputs inputs = new IntakeIOInputs();
+    private final IntakeIOInputsAutoLogged inputs = new IntakeIOInputsAutoLogged();
 
     /**
      * Discrete operational states for intake pivot and roller mechanisms.
@@ -342,13 +342,14 @@ public class Intake implements Subsystem {
         return io;
     }
 
-    public IntakeIOInputs getInputs() {
+    public IntakeIOInputsAutoLogged getInputs() {
         return inputs;
     }
 
     @Override
     public void update() {
         io.updateInputs(inputs);
+        org.littletonrobotics.junction.Logger.processInputs("Intake", inputs);
 
         boolean encoderHealthy = RobotBase.isSimulation() || inputs.encoderConnected;
         intakeEncoderAlert.set(!encoderHealthy);

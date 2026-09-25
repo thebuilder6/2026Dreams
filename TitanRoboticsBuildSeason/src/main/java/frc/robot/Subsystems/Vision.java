@@ -13,7 +13,7 @@ import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import frc.robot.Data.Constants.DrivebaseConstants;
 import frc.robot.Interfaces.Subsystem;
 import frc.robot.Subsystems.vision.VisionIO;
-import frc.robot.Subsystems.vision.VisionIO.VisionIOInputs;
+import frc.robot.Subsystems.vision.VisionIOInputsAutoLogged;
 import frc.robot.Subsystems.vision.VisionIOLimelight;
 import frc.robot.Subsystems.vision.VisionIOPhotonVision;
 import frc.robot.Subsystems.vision.VisionIOSim;
@@ -29,8 +29,8 @@ public class Vision implements Subsystem {
 
     private final VisionIO primaryIO;
     private final VisionIO secondaryIO;
-    private final VisionIOInputs primaryInputs = new VisionIOInputs();
-    private final VisionIOInputs secondaryInputs = new VisionIOInputs();
+    private final VisionIOInputsAutoLogged primaryInputs = new VisionIOInputsAutoLogged();
+    private final VisionIOInputsAutoLogged secondaryInputs = new VisionIOInputsAutoLogged();
 
     // Telemetry state
     private double stdDev = 0;
@@ -75,6 +75,7 @@ public class Vision implements Subsystem {
                 0.0);
 
         primaryIO.updateInputs(primaryInputs);
+        org.littletonrobotics.junction.Logger.processInputs("Vision/Primary", primaryInputs);
 
         if (primaryInputs.hasTarget && primaryInputs.tagCount > 0) {
             boolean doReject = false;
@@ -98,6 +99,7 @@ public class Vision implements Subsystem {
         // ── 2. Secondary Coprocessor (Orange Pi 5 PhotonVision) ─────────────
         if (secondaryIO != null) {
             secondaryIO.updateInputs(secondaryInputs);
+            org.littletonrobotics.junction.Logger.processInputs("Vision/Secondary", secondaryInputs);
 
             if (secondaryInputs.hasTarget && secondaryInputs.tagCount > 0 && secondaryInputs.latencyMs < 150.0) {
                 if (secondaryInputs.avgTagDist < DrivebaseConstants.VISION_MAX_TAG_DIST && yawRateAbs <= DrivebaseConstants.VISION_MAX_YAW_RATE) {
@@ -258,11 +260,11 @@ public class Vision implements Subsystem {
         return secondaryIO;
     }
 
-    public VisionIOInputs getInputs() {
+    public VisionIOInputsAutoLogged getInputs() {
         return primaryInputs;
     }
 
-    public VisionIOInputs getSecondaryInputs() {
+    public VisionIOInputsAutoLogged getSecondaryInputs() {
         return secondaryInputs;
     }
 

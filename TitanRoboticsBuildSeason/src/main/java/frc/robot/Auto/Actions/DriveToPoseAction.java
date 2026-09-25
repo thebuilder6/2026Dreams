@@ -25,6 +25,12 @@ public class DriveToPoseAction implements Actions {
     private final boolean isTunnelTransit;
     private final Rotation2d tunnelHeading;
 
+    // Shared Driver Authority & Blending
+    private double driverForward = 0.0;
+    private double driverStrafe = 0.0;
+    private double driverRotation = 0.0;
+    private boolean breakoutRequested = false;
+
     public DriveToPoseAction(Pose2d targetPose) {
         this.swerveBase = SwerveBase.getInstance();
         this.targetPose = targetPose;
@@ -64,9 +70,33 @@ public class DriveToPoseAction implements Actions {
                 new PIDController(config.headingPIDF.p, config.headingPIDF.i, config.headingPIDF.d));
     }
 
+    public void setDriverInput(double forwardField, double strafeField, double rotationCmd) {
+        this.driverForward = forwardField;
+        this.driverStrafe = strafeField;
+        this.driverRotation = rotationCmd;
+
+        double drvSpeed = Math.hypot(driverForward, driverStrafe);
+        double maxSpeed = Math.max(0.1, Constants.MAX_SPEED);
+        double normDriverMag = drvSpeed / maxSpeed;
+        double maxRotSpeed = Math.max(0.1, Constants.MAX_ROTATION_SPEED);
+        double normRotMag = Math.abs(driverRotation) / maxRotSpeed;
+
+        if (normDriverMag > 0.65 || normRotMag > 0.60) {
+            this.breakoutRequested = true;
+        }
+    }
+
+    public boolean isBreakoutRequested() {
+        return breakoutRequested;
+    }
+
     @Override
     public void start() {
         controller.reset();
+        breakoutRequested = false;
+        driverForward = 0.0;
+        driverStrafe = 0.0;
+        driverRotation = 0.0;
         if (!waypoints.isEmpty()) {
             controller.setExplicitWaypoints(waypoints);
         }
@@ -76,6 +106,18 @@ public class DriveToPoseAction implements Actions {
     public void update() {
         Pose2d currentPose = swerveBase.getPose();
         ChassisSpeeds currentSpeeds = swerveBase.getRobotVelocity();
+
+        // 1. Evaluate Driver Authority & Breakout Thresholds
+        double drvSpeed = Math.hypot(driverForward, driverStrafe);
+        double maxSpeed = Math.max(0.1, Constants.MAX_SPEED);
+        double normDriverMag = drvSpeed / maxSpeed;
+        double maxRotSpeed = Math.max(0.1, Constants.MAX_ROTATION_SPEED);
+        double normRotMag = Math.abs(driverRotation) / maxRotSpeed;
+
+        if (normDriverMag > 0.65 || normRotMag > 0.60) {
+            breakoutRequested = true;
+            return;
+        }
 
         boolean isStalled = swerveBase.getCollisionDetector().isStalled();
         LegalPinningWatchdog.getInstance().update(isStalled, currentPose, null, 0.02);
@@ -100,12 +142,29 @@ public class DriveToPoseAction implements Actions {
                     !isTunnelTransit);
         }
 
+        // 2. Apply Shared Authority Nudge Blending (0.10 <= normDriverMag <= 0.65)
+        if (normDriverMag >= 0.10) {
+            double alpha = Math.min(1.0, Math.max(0.0, (normDriverMag - 0.10) / (0.65 - 0.10)));
+            double blendedVx = (1.0 - 0.5 * alpha) * speeds.vxMetersPerSecond + alpha * driverForward;
+            double blendedVy = (1.0 - 0.5 * alpha) * speeds.vyMetersPerSecond + alpha * driverStrafe;
+            speeds = new ChassisSpeeds(blendedVx, blendedVy, speeds.omegaRadiansPerSecond);
+        }
+
+        if (normRotMag >= 0.10) {
+            double alphaRot = Math.min(1.0, Math.max(0.0, (normRotMag - 0.10) / (0.60 - 0.10)));
+            double blendedOmega = (1.0 - alphaRot) * speeds.omegaRadiansPerSecond + alphaRot * driverRotation;
+            speeds = new ChassisSpeeds(speeds.vxMetersPerSecond, speeds.vyMetersPerSecond, blendedOmega);
+        }
+
         swerveBase.setPathVisualization(controller.getWaypoints());
         swerveBase.driveFieldOriented(speeds);
     }
 
     @Override
     public boolean isFinished() {
+        if (breakoutRequested) {
+            return true;
+        }
         Pose2d finalGoal = isTunnelTransit && !waypoints.isEmpty()
                 ? waypoints.get(waypoints.size() - 1)
                 : targetPose;

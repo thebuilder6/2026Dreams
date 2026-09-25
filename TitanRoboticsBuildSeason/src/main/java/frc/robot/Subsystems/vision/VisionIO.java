@@ -1,6 +1,7 @@
 package frc.robot.Subsystems.vision;
 
 import edu.wpi.first.math.geometry.Pose2d;
+import org.littletonrobotics.junction.AutoLog;
 
 /**
  * Hardware IO abstraction interface for Vision coprocessors (Limelight / PhotonVision).
@@ -8,6 +9,7 @@ import edu.wpi.first.math.geometry.Pose2d;
  */
 public interface VisionIO {
 
+    @AutoLog
     public static class VisionIOInputs {
         public boolean hasTarget = false;
         public int tagCount = 0;

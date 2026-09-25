@@ -140,13 +140,50 @@ flowchart TD
 - **Single Source of Truth**: All field coordinates, waypoints, and target structures are defined once in Blue Alliance coordinates ($X=0$ at Blue wall).
 - **Dynamic Field Mirroring**: Automatically transforms coordinates, rotations, and poses across the field midline ($X_{\text{red}} = 16.535 - X_{\text{blue}}$, $\theta_{\text{red}} = 180^\circ - \theta_{\text{blue}}$) when DriverStation is set to Red Alliance.
 
-### J. Jev AI Decision Engine (TypeSafe AI)
-- **Model Architecture**: "System One" fast decision model (single parallel forward pass, sub-20ms inference, schema-validated JSON).
-- **Simulated Defense Sparring Partner (`AIRobotSim`)**:
-  - Receives player pose and match telemetry.
-  - Dynamically evaluates tactical options (`BLOCK_SHOOTING_LANE`, `CONTEST_DEPOT`, `SHADOW_PLAYER`) in real-time.
-- **In-Match Strategy Arbitrator**:
-  - Dynamically scores actions when game shift timers activate/deactivate the scoring Hub.
+### J. Jev AI Unified Cognitive Architecture (System 1 + System 2)
+The decision-making across simulation sparring, teleoperated co-pilot assist, and live match coaching is unified under a deterministic, re-entrant System 1 (Tactical Reflex) + System 2 (Executive Strategy) cognitive architecture:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      SYSTEM 2: EXECUTIVE STRATEGY                           │
+│  - Evaluates macro-utility matrix over candidate StrategicObjectives        │
+│  - Weighted by Archetype (Cycler, Bully, Competitor, Defender, Co-Pilot)   │
+│  - Sub-millisecond execution (<0.5ms) with zero garbage-collection jitter   │
+└──────────────────────────────────────┬──────────────────────────────────────┘
+                                       │ Active Objective
+                                       ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      SYSTEM 1: TACTICAL REFLEX                              │
+│  - Resolves active objective into concrete AIActionIntent                   │
+│  - Cluster-Weighted Scent: Gaussian spatial density kernel (σ=0.5m, R=1.3m)│
+│  - Generates navigation target pose, heading aim override, and kick triggers│
+└──────────────────────────────────────┬──────────────────────────────────────┘
+                                       │ Action Commands
+                                       ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    MULTI-ROBOT & SUBSYSTEM EXECUTION                         │
+│  - AIRobotSim & AIRobotInstance: 1 to 3 concurrent sparring bots in sim     │
+│  - AutonomousTeleopAgent: One-Button Auto-Cycle Co-Pilot on real robot       │
+│  - MatchCoach: Real-time driver coaching HUD recommendations                │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+1. **Game-Agnostic Abstraction Layer**:
+   - [`StrategicObjective`](file:///c:/Users/jumpi/Documents/Github/2026Dreams/TitanRoboticsBuildSeason/src/main/java/frc/robot/Sim/StrategicObjective.java): Universal FRC macro objectives (`STOCKPILE_DEPOT`, `VACUUM_MIDFIELD`, `CYCLE_SCORE_HUB`, `STAGE_STANDOFF`, `DENY_SHOOTING_LANE`, `SHADOW_MIDLINE`, `LEAD_INTERCEPT`, `RUSH_CLIMB`, `IDLE`) with game-agnostic static aliases (`SCORE_GOAL`, `HARVEST_FEEDER`, `HARVEST_FIELD_PIECES`).
+   - [`WorldState`](file:///c:/Users/jumpi/Documents/Github/2026Dreams/TitanRoboticsBuildSeason/src/main/java/frc/robot/Sim/WorldState.java): Immutable snapshot representing the world state, providing game-agnostic accessors (`heldGamePieces()`, `isPrimaryGoalActive()`) alongside 2026 convenience delegates (`heldFuelCount()`, `isAllianceHubActive()`).
+   - [`AIActionIntent`](file:///c:/Users/jumpi/Documents/Github/2026Dreams/TitanRoboticsBuildSeason/src/main/java/frc/robot/Sim/AIActionIntent.java): Concrete subsystem output record linking directly to `IntakeState` and `ShooterState`.
+
+2. **Multi-Robot Simultaneous Execution (`AIRobotSim` & `AIRobotInstance`)**:
+   - `AIRobotInstance`: Encapsulates an independent simulated swerve drive chassis, intake mechanism, PID controllers, and behavior archetype.
+   - `AIRobotSim`: Multi-robot manager that dynamically scales the sparring pool based on `Simulation/OpponentCount` (1 to 3 bots).
+   - **Soft Peer Separation**: Applies inverse-distance repulsive forces ($r < 1.10\text{m}$) across peer robots, preventing clustering or jamming during contested pickups.
+   - **Staggered Spawning**: Staggers initial positions across non-overlapping corridor coordinates ($Y = 4.035\text{m}, 5.80\text{m}, 2.25\text{m}$).
+
+3. **Dual-Use Engine (Simulation Sparring + Real-Robot Co-Pilot)**:
+   - The identical `evaluatePolicy(worldState, archetype)` pipeline drives:
+     - The Sparring Opponents in simulation (`Archetype.AUTONOMOUS_CYCLER`, `DEFENSE_BULLY`, `ADAPTIVE_COMPETITOR`).
+     - The Driver Assist Co-Pilot on the real robot (`Archetype.CO_PILOT` via `AutonomousTeleopAgent`).
+     - The Match Coach in the pit / driver station (`MatchCoach.java`).
 
 ---
 

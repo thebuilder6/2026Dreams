@@ -5,6 +5,22 @@ import edu.wpi.first.math.util.Units;
 import swervelib.math.Matter;
 
 public class Constants {
+    // AdvantageKit execution mode definition
+    public static final Mode currentMode = edu.wpi.first.wpilibj.RobotBase.isReal() ? Mode.REAL : Mode.SIM;
+
+    public static enum Mode {
+        /** Running on a real robot. */
+        REAL,
+        /** Running in desktop simulation. */
+        SIM,
+        /** Replaying from a log file. */
+        REPLAY
+    }
+
+    public static Mode getMode() {
+        return currentMode;
+    }
+
     // Global flag for enabling live tuning of PID values/setpoints via
     // NetworkTables.
     // Set to false for competition to save loop time.

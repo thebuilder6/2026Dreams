@@ -2,182 +2,245 @@ package frc.robot.Auto;
 
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
-import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.Timer;
 import frc.robot.Auto.Actions.*;
-import frc.robot.Data.Constants;
+import frc.robot.Data.FieldMap;
 import frc.robot.Data.GlideConstants;
 import frc.robot.Interfaces.Actions;
+import frc.robot.Sim.AIActionIntent;
+import frc.robot.Sim.Archetype;
 import frc.robot.Sim.JevDecisionEngine;
+import frc.robot.Sim.StrategicObjective;
+import frc.robot.Sim.WorldState;
+import frc.robot.Sim.WorldStateBuilder;
 import frc.robot.Subsystems.*;
+import frc.robot.Utils.AllianceFlipUtil;
+import org.littletonrobotics.junction.Logger;
 
+/**
+ * AutonomousTeleopAgent: Real-Robot Co-Pilot & One-Button Smart Assist.
+ * 
+ * Powered by Jev AI (System 1 Reflex + System 2 Executive Utility).
+ * Features:
+ * - Continuous alliance-aware evaluation via WorldStateBuilder.
+ * - Shared Authority Blending: Feeds driver stick translation/rotation to active trajectory actions.
+ * - Haptic telegraphing: Signals breakout and lock-on.
+ * - Reactive macro-objective switching: Automatically shifts between Polar Standoff Hub, Staging,
+ *   Feeder Restock, and Endgame Alliance Parking.
+ */
 public class AutonomousTeleopAgent {
 
-    public enum AgentState {
-        EVALUATING,
-        BALL_HUNTING,
-        TRANSIT_TO_DEPOT,
-        LOADING_AT_DEPOT,
-        TRANSIT_TO_SHOOT,
-        ALIGN_AND_SHOOT,
-        TRANSIT_TO_CLIMB,
-        CLIMBING,
-        SAFETY_HALT
+    private static AutonomousTeleopAgent instance = null;
+
+    public static AutonomousTeleopAgent getInstance() {
+        if (instance == null) {
+            instance = new AutonomousTeleopAgent();
+        }
+        return instance;
     }
 
-    private AgentState currentState = AgentState.EVALUATING;
     private Actions currentAction = null;
+    private StrategicObjective activeObjective = null;
+    private AIActionIntent latestIntent = null;
+    private boolean assistActive = false;
+    private boolean breakoutTriggered = false;
+
     private final SwerveBase swerve = SwerveBase.getInstance();
     private final Intake intake = Intake.getInstance();
     private final Shooter shooter = Shooter.getInstance();
-    private final Vision vision = Vision.getInstance();
     private final Dashboard dashboard = Dashboard.getInstance();
 
-    // Inventory threshold (target capacity)
-    private static final int MAX_FUEL_CAPACITY = 8;
+    private static final int MAX_FUEL_CAPACITY = WorldState.CO_PILOT_CAPACITY;
     private int estimatedHeldBalls = 0;
 
-    public void update() {
-        double matchTime = DriverStation.getMatchTime();
-        boolean isHubActive = dashboard.isHubActive();
-        Pose2d currentPose = swerve.getPose();
+    /**
+     * Activates Smart Assist mode. Evaluates current WorldState and launches the appropriate action.
+     */
+    public void startSmartAssist() {
+        assistActive = true;
+        breakoutTriggered = false;
+        activeObjective = null;
+        updateSmartAssist(0.0, 0.0, 0.0);
+    }
 
-        // ── 1. Priority 0: Endgame Transition (<= 18s remaining) ───────────
-        if (matchTime > 0.0 && matchTime <= 18.0 && currentState != AgentState.CLIMBING) {
-            transitionTo(AgentState.TRANSIT_TO_CLIMB);
+    /**
+     * Periodic update for Smart Assist while driver holds the assist button.
+     *
+     * @param driverForward Field-relative driver forward velocity command (m/s)
+     * @param driverStrafe Field-relative driver strafe velocity command (m/s)
+     * @param driverRotation Driver rotation rate command (rad/s)
+     * @return true if assist continues running, false if finished or broken out
+     */
+    public boolean updateSmartAssist(double driverForward, double driverStrafe, double driverRotation) {
+        if (!assistActive) return false;
+
+        // 1. Ingest Ground Truth Snapshot
+        int heldCount;
+        if (intake.getMapleIntakeSim() != null) {
+            heldCount = intake.getMapleIntakeSim().getGamePiecesAmount();
+        } else {
+            if (!intake.hasFuel()) {
+                estimatedHeldBalls = 0;
+            }
+            heldCount = intake.hasFuel() ? Math.max(1, estimatedHeldBalls) : estimatedHeldBalls;
+        }
+        WorldState world = WorldStateBuilder.buildForPlayerRobot(heldCount);
+        latestIntent = JevDecisionEngine.getInstance().evaluatePolicy(world, Archetype.CO_PILOT);
+        StrategicObjective objective = latestIntent.objective();
+
+        Logger.recordOutput("CoPilot/ActiveObjective", objective.name());
+        Logger.recordOutput("CoPilot/Confidence", latestIntent.confidence());
+        Logger.recordOutput("CoPilot/Rationale", latestIntent.rationale());
+        Logger.recordOutput("CoPilot/NavigationTarget", latestIntent.navigationTarget());
+
+        // 2. React to Strategic Objective Shifts
+        if (currentAction == null || activeObjective != objective) {
+            transitionToObjective(objective, latestIntent.navigationTarget());
         }
 
-        // ── 2. Run Active Action ───────────────────────────────────────────
+        // 3. Inject Driver Authority into Active Action & Check Breakout
+        double drvSpeed = Math.hypot(driverForward, driverStrafe);
+        double maxSpeed = Math.max(0.1, frc.robot.Data.Constants.MAX_SPEED);
+        double normDriverMag = drvSpeed / maxSpeed;
+        double maxRotSpeed = Math.max(0.1, frc.robot.Data.Constants.MAX_ROTATION_SPEED);
+        double normRotMag = Math.abs(driverRotation) / maxRotSpeed;
+
+        if (normDriverMag > 0.65 || normRotMag > 0.60) {
+            breakoutTriggered = true;
+            stopAssist();
+            return false;
+        }
+
+        if (currentAction instanceof DriveToPoseAction dtp) {
+            dtp.setDriverInput(driverForward, driverStrafe, driverRotation);
+        } else if (currentAction instanceof BallHuntAction bh) {
+            bh.setDriverInput(driverForward, driverStrafe);
+        }
+
+        // 4. Update Active Action
         if (currentAction != null) {
             currentAction.update();
+            if (currentAction instanceof BallHuntAction bh && bh.checkAndClearBallAcquired()) {
+                incrementBallCount();
+            }
+            if (currentAction instanceof DriveToPoseAction dtp && dtp.isBreakoutRequested()) {
+                breakoutTriggered = true;
+                stopAssist();
+                return false;
+            }
             if (currentAction.isFinished()) {
                 currentAction.done();
                 currentAction = null;
+                // If objective was finished (e.g. arrived at parking or finished scoring), evaluate next step
+                if (objective == StrategicObjective.RUSH_CLIMB) {
+                    stopAssist();
+                    return false;
+                }
             }
         }
 
-        // ── 3. Executive State Machine ─────────────────────────────────────
-        switch (currentState) {
-            case EVALUATING:
-                if (estimatedHeldBalls >= 4 && isHubActive) {
-                    transitionTo(AgentState.TRANSIT_TO_SHOOT);
-                } else if (vision.hasGamePiece()) {
-                    transitionTo(AgentState.BALL_HUNTING);
-                } else if (!isHubActive) {
-                    transitionTo(AgentState.TRANSIT_TO_DEPOT);
-                } else {
-                    transitionTo(AgentState.BALL_HUNTING);
-                }
-                break;
+        // 5. Co-Pilot Subsystem Reflex Automation
+        manageSubsystems(latestIntent, world);
 
-            case BALL_HUNTING:
-                // If we acquired target load or ball is no longer visible and timeout elapsed
-                if (estimatedHeldBalls >= MAX_FUEL_CAPACITY) {
-                    transitionTo(isHubActive ? AgentState.TRANSIT_TO_SHOOT : AgentState.TRANSIT_TO_DEPOT);
-                } else if (currentAction == null || !vision.hasGamePiece()) {
-                    transitionTo(AgentState.EVALUATING);
-                }
-                break;
-
-            case TRANSIT_TO_DEPOT:
-                if (currentAction == null) {
-                    transitionTo(AgentState.LOADING_AT_DEPOT);
-                }
-                break;
-
-            case LOADING_AT_DEPOT:
-                // Stay at depot until full or until Hub becomes active
-                intake.setState(Intake.IntakeState.INTAKING);
-                if (estimatedHeldBalls >= MAX_FUEL_CAPACITY || isHubActive) {
-                    transitionTo(AgentState.TRANSIT_TO_SHOOT);
-                }
-                break;
-
-            case TRANSIT_TO_SHOOT:
-                // Pre-spool flywheels during transit
-                var solution = shooter.calculateShootingSolution(currentPose, swerve.getFieldVelocity());
-                if (solution.possible()) {
-                    shooter.setTargetRPM(solution.flywheelRpmLeft(), solution.flywheelRpmRight());
-                    shooter.prepareToShoot();
-                }
-
-                if (currentAction == null || (solution.possible() && solution.turretAngle() != null)) {
-                    transitionTo(AgentState.ALIGN_AND_SHOOT);
-                }
-                break;
-
-            case ALIGN_AND_SHOOT:
-                if (!isHubActive || estimatedHeldBalls == 0) {
-                    shooter.stop();
-                    transitionTo(AgentState.EVALUATING);
-                }
-                break;
-
-            case TRANSIT_TO_CLIMB:
-                if (currentAction == null) {
-                    transitionTo(AgentState.CLIMBING);
-                }
-                break;
-
-            case CLIMBING:
-                swerve.stop();
-                intake.setState(Intake.IntakeState.STANDBY);
-                shooter.stop();
-                break;
-
-            case SAFETY_HALT:
-            default:
-                swerve.stop();
-                intake.stop();
-                shooter.stop();
-                break;
-        }
+        return true;
     }
 
-    private void transitionTo(AgentState nextState) {
+    private void transitionToObjective(StrategicObjective objective, Pose2d targetPose) {
         if (currentAction != null) {
             currentAction.done();
             currentAction = null;
         }
 
-        currentState = nextState;
+        activeObjective = objective;
+        boolean isRed = AllianceFlipUtil.isRedAlliance();
 
-        switch (nextState) {
-            case BALL_HUNTING:
+        switch (objective) {
+            case VACUUM_MIDFIELD:
                 currentAction = new BallHuntAction();
                 currentAction.start();
                 break;
 
-            case TRANSIT_TO_DEPOT:
-                // Auto-route to alliance depot via static pathfinder
-                Pose2d depotPose = GlideConstants.GLIDE_POINTS.get(
-                        dashboard.isHubActive() ? "Blue Feeder Top" : "Blue Feeder Bottom").pose();
+            case STOCKPILE_DEPOT:
+                Pose2d depotPose = targetPose != null ? targetPose :
+                        new Pose2d(FieldMap.Depots.getDepotApproach(isRed),
+                                Rotation2d.fromDegrees(isRed ? 0.0 : 180.0));
                 currentAction = new DriveToPoseAction(depotPose);
                 currentAction.start();
                 break;
 
-            case TRANSIT_TO_SHOOT:
-                // Move towards protected corridor behind Hub
-                Pose2d shootLocation = GlideConstants.GLIDE_POINTS.get("Blue Hub Back").pose();
-                currentAction = new DriveToPoseAction(shootLocation);
+            case CYCLE_SCORE_HUB:
+            case STAGE_STANDOFF:
+                Pose2d standoffPose = targetPose != null ? targetPose :
+                        JevDecisionEngine.getInstance().calculatePolarStandoffPose(swerve.getPose(), isRed);
+                currentAction = new DriveToPoseAction(standoffPose);
                 currentAction.start();
                 break;
 
-            case ALIGN_AND_SHOOT:
-                // Engage AutoAimAction while holding or drifting
-                currentAction = new ShootAction(4.0);
-                currentAction.start();
-                break;
-
-            case TRANSIT_TO_CLIMB:
-                Pose2d climbSpot = GlideConstants.GLIDE_POINTS.get("Blue Right Side Climb").pose();
-                currentAction = new DriveToPoseAction(climbSpot);
+            case RUSH_CLIMB:
+                // Target Alliance Parking Pose (no climber present)
+                String parkKey = isRed ? "Red Right Side Climb" : "Blue Right Side Climb";
+                Pose2d parkPose = GlideConstants.GLIDE_POINTS.containsKey(parkKey) ?
+                        GlideConstants.GLIDE_POINTS.get(parkKey).pose() :
+                        (targetPose != null ? targetPose : new Pose2d(isRed ? 15.48 : 1.05, 2.88, Rotation2d.fromDegrees(isRed ? 0 : 180)));
+                currentAction = new DriveToPoseAction(parkPose);
                 currentAction.start();
                 break;
 
             default:
+                if (targetPose != null) {
+                    currentAction = new DriveToPoseAction(targetPose);
+                    currentAction.start();
+                }
                 break;
         }
+    }
+
+    private void manageSubsystems(AIActionIntent intent, WorldState world) {
+        // Pre-spool flywheels during transit if approaching hub or shift is close
+        if (intent.shooterCommand() == Shooter.ShooterState.PREPARING || 
+            (intent.objective() == StrategicObjective.CYCLE_SCORE_HUB && world.isAllianceHubActive())) {
+            double rpm = intent.targetFlywheelRPM() > 1000 ? intent.targetFlywheelRPM() : 3200.0;
+            shooter.setTargetRPM(rpm, rpm);
+            shooter.prepareToShoot();
+        }
+
+        if (intent.intakeCommand() == Intake.IntakeState.INTAKING || intent.objective() == StrategicObjective.VACUUM_MIDFIELD) {
+            intake.setState(Intake.IntakeState.INTAKING);
+        }
+    }
+
+    /**
+     * Halts Smart Assist and clears any running actions.
+     */
+    public void stopAssist() {
+        assistActive = false;
+        activeObjective = null;
+        if (currentAction != null) {
+            currentAction.done();
+            currentAction = null;
+        }
+    }
+
+    public boolean isAssistActive() {
+        return assistActive;
+    }
+
+    public boolean checkAndClearBreakout() {
+        boolean wasBreakout = breakoutTriggered;
+        breakoutTriggered = false;
+        return wasBreakout;
+    }
+
+    public Actions getCurrentAction() {
+        return currentAction;
+    }
+
+    public StrategicObjective getActiveObjective() {
+        return activeObjective;
+    }
+
+    public AIActionIntent getLatestIntent() {
+        return latestIntent;
     }
 
     public void incrementBallCount() {
@@ -186,5 +249,9 @@ public class AutonomousTeleopAgent {
 
     public void decrementBallCount() {
         estimatedHeldBalls = Math.max(0, estimatedHeldBalls - 1);
+    }
+
+    public int getEstimatedHeldBalls() {
+        return estimatedHeldBalls;
     }
 }

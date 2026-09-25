@@ -69,6 +69,7 @@ public class AIRobotSimTest {
         // Position opponent robot on field in simulation
         aiSim.getDriveSimulation().setSimulationWorldPose(new Pose2d(5.0, 3.0, new Rotation2d()));
         SmartDashboard.putBoolean("Features/Opponent Robot", true);
+        edu.wpi.first.networktables.NetworkTableInstance.getDefault().flush();
 
         aiSim.update();
 

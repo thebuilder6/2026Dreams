@@ -1,11 +1,14 @@
 package frc.robot.Subsystems.intake;
 
+import org.littletonrobotics.junction.AutoLog;
+
 /**
  * Hardware IO abstraction interface for the articulated ground intake subsystem.
  * Follows the AdvantageKit pattern to cleanly isolate motor controllers and encoders.
  */
 public interface IntakeIO {
 
+    @AutoLog
     public static class IntakeIOInputs {
         public double armPositionDeg = 0.0;
         public double armVelocityDegPerSec = 0.0;

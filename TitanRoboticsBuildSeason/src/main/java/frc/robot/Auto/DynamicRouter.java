@@ -139,7 +139,7 @@ public class DynamicRouter {
     }
 
     public static synchronized List<DynamicObstacle> getActiveObstacles() {
-        double now = Timer.getFPGATimestamp();
+        double now = Timer.getTimestamp();
         activeObstacles.removeIf(obs -> obs.isExpired(now));
         return Collections.unmodifiableList(new ArrayList<>(activeObstacles));
     }
@@ -154,7 +154,7 @@ public class DynamicRouter {
      * @return True if an unexpired obstacle intersects the bounding box
      */
     public static synchronized boolean isZoneBlocked(double xMin, double xMax, double yMin, double yMax) {
-        double now = Timer.getFPGATimestamp();
+        double now = Timer.getTimestamp();
         activeObstacles.removeIf(obs -> obs.isExpired(now));
         for (DynamicObstacle obs : activeObstacles) {
             double ox = obs.position.getX();
@@ -180,7 +180,7 @@ public class DynamicRouter {
             ChassisSpeeds nominalSpeeds,
             Translation2d targetWaypoint) {
 
-        double now = Timer.getFPGATimestamp();
+        double now = Timer.getTimestamp();
         activeObstacles.removeIf(obs -> obs.isExpired(now));
 
         // Publish active obstacles to AdvantageScope

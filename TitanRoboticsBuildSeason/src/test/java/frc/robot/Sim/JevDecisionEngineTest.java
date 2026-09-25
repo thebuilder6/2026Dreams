@@ -184,4 +184,145 @@ public class JevDecisionEngineTest {
         assertNotNull(chosen);
         assertEquals("Blue Top Trench", chosen.name);
     }
+
+    @Test
+    public void testSystem2UtilityScoringLatency() {
+        WorldState state = new WorldState(
+                new Pose2d(3.0, 4.0, new Rotation2d()),
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                12,
+                new Pose2d(12.0, 4.0, new Rotation2d()),
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                100.0,
+                true,
+                false,
+                15.0,
+                false
+        );
+
+        // Warm up JIT
+        for (int i = 0; i < 50; i++) {
+            engine.evaluatePolicy(state, Archetype.AUTONOMOUS_CYCLER);
+        }
+
+        long start = System.nanoTime();
+        final int iterations = 1000;
+        for (int i = 0; i < iterations; i++) {
+            AIActionIntent intent = engine.evaluatePolicy(state, Archetype.AUTONOMOUS_CYCLER);
+            assertNotNull(intent);
+        }
+        long duration = System.nanoTime() - start;
+        double avgLatencyMs = (duration / (double) iterations) / 1_000_000.0;
+        assertTrue(avgLatencyMs < 0.50, "Average latency must be sub-millisecond, actual: " + avgLatencyMs + " ms");
+    }
+
+    @Test
+    public void testArchetypePolicyDifferentiation() {
+        WorldState state = new WorldState(
+                new Pose2d(8.0, 4.0, new Rotation2d()),
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                0,
+                new Pose2d(4.0, 4.0, new Rotation2d()), // opponent near their blue hub
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                90.0,
+                false,
+                true, // opponent hub active
+                15.0,
+                true // robot is red
+        );
+
+        AIActionIntent cyclerIntent = engine.evaluatePolicy(state, Archetype.AUTONOMOUS_CYCLER);
+        AIActionIntent bullyIntent = engine.evaluatePolicy(state, Archetype.DEFENSE_BULLY);
+
+        assertNotEquals(cyclerIntent.objective(), bullyIntent.objective());
+        assertTrue(cyclerIntent.objective().isOffensive(), "Cycler should pursue offensive objective");
+        assertTrue(bullyIntent.objective().isDefensive(), "Bully should pursue defensive objective");
+    }
+
+    @Test
+    public void testEndgameRushClimbTransition() {
+        WorldState normalState = new WorldState(
+                new Pose2d(3.0, 4.0, new Rotation2d()),
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                10,
+                new Pose2d(12.0, 4.0, new Rotation2d()),
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                60.0,
+                true,
+                false,
+                20.0,
+                false
+        );
+        AIActionIntent normalIntent = engine.evaluatePolicy(normalState, Archetype.AUTONOMOUS_CYCLER);
+        assertNotEquals(StrategicObjective.RUSH_CLIMB, normalIntent.objective());
+
+        WorldState endgameState = new WorldState(
+                new Pose2d(3.0, 4.0, new Rotation2d()),
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                10,
+                new Pose2d(12.0, 4.0, new Rotation2d()),
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                10.0, // t <= 20s
+                true,
+                false,
+                5.0,
+                false
+        );
+        AIActionIntent endgameIntent = engine.evaluatePolicy(endgameState, Archetype.AUTONOMOUS_CYCLER);
+        assertEquals(StrategicObjective.RUSH_CLIMB, endgameIntent.objective());
+    }
+
+    @Test
+    public void testGameAgnosticNomenclatureAndAliases() {
+        assertEquals(StrategicObjective.CYCLE_SCORE_HUB, StrategicObjective.SCORE_GOAL);
+        assertEquals(StrategicObjective.STOCKPILE_DEPOT, StrategicObjective.HARVEST_FEEDER);
+        assertEquals(StrategicObjective.VACUUM_MIDFIELD, StrategicObjective.HARVEST_FIELD_PIECES);
+        assertEquals(StrategicObjective.STAGE_STANDOFF, StrategicObjective.STAGE_SCORING_WINDOW);
+        assertEquals(StrategicObjective.DENY_SHOOTING_LANE, StrategicObjective.DENY_SCORING_LANE);
+        assertEquals(StrategicObjective.RUSH_CLIMB, StrategicObjective.RUSH_ENDGAME);
+
+        WorldState state = new WorldState(
+                new Pose2d(), new edu.wpi.first.math.kinematics.ChassisSpeeds(), 5, new Pose2d(), new edu.wpi.first.math.kinematics.ChassisSpeeds(), 100.0, true, false, 12.0, false
+        );
+        assertEquals(state.heldFuelCount(), state.heldGamePieceCount());
+        assertEquals(state.isAllianceHubActive(), state.isAllianceGoalActive());
+        assertEquals(state.isOpponentHubActive(), state.isOpponentGoalActive());
+        assertEquals(state.timeUntilHubShift(), state.timeUntilGoalShift());
+    }
+
+    @Test
+    public void testMultiBotSimultaneousExecution() {
+        AIRobotSim sim = AIRobotSim.getInstance();
+        sim.reset();
+
+        assertNotNull(sim.getDriveSimulation());
+        assertEquals(0, sim.getFuelCount());
+
+        edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putBoolean("Features/Opponent Robot", true);
+        edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putNumber("Simulation/OpponentCount", 3);
+        edu.wpi.first.networktables.NetworkTableInstance.getDefault().flush();
+
+        sim.simulationUpdate();
+
+        java.util.List<AIRobotInstance> bots = sim.getAdditionalBots();
+        assertEquals(2, bots.size(), "Should have 2 additional bots for opponentCount=3");
+
+        assertNotSame(sim.getDriveSimulation(), bots.get(0).getDriveSimulation());
+        assertNotSame(bots.get(0).getDriveSimulation(), bots.get(1).getDriveSimulation());
+        assertEquals(Archetype.DEFENSE_BULLY, bots.get(0).getArchetype());
+        assertEquals(Archetype.ADAPTIVE_COMPETITOR, bots.get(1).getArchetype());
+
+        sim.reset();
+        assertEquals(0, sim.getFuelCount());
+        assertEquals(0, bots.get(0).getFuelCount());
+    }
+
+    @Test
+    public void testClusterWeightedBallScentEvaluator() {
+        Pose2d robotPose = new Pose2d(8.27, 4.0, Rotation2d.fromDegrees(0));
+        Pose2d target = engine.findClusterWeightedFuelTarget(robotPose, false);
+        assertNotNull(target);
+        assertTrue(target.getX() > 0.0 && target.getX() < 16.5);
+        assertTrue(target.getY() > 0.0 && target.getY() < 8.1);
+    }
 }

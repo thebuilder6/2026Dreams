@@ -33,6 +33,7 @@ import frc.robot.Data.Constants.AutonConstants;
 import frc.robot.Data.FieldMap;
 import frc.robot.Interfaces.Subsystem;
 import frc.robot.Subsystems.Dashboard;
+import frc.robot.Subsystems.Intake.IntakeState;
 import frc.robot.Subsystems.SubsystemManager;
 import frc.robot.Subsystems.SwerveBase;
 import frc.robot.Utils.AllianceFlipUtil;
@@ -63,13 +64,13 @@ public class AIRobotSim implements Subsystem {
         }
 
         public static AIMode fromString(String name) {
-            if (name == null) return AUTONOMOUS_CYCLER;
+            if (name == null) return TACTICAL_DEFENSE;
             for (AIMode m : values()) {
                 if (m.name().equalsIgnoreCase(name) || m.displayName.equalsIgnoreCase(name)) {
                     return m;
                 }
             }
-            return AUTONOMOUS_CYCLER;
+            return TACTICAL_DEFENSE;
         }
     }
 
@@ -125,6 +126,9 @@ public class AIRobotSim implements Subsystem {
 
     // Periodic diagnostic console printer
     private double lastConsoleDumpTime = 0.0;
+
+    // Multi-robot sparring pool
+    private final List<AIRobotInstance> additionalBots = new ArrayList<>();
 
     public static AIRobotSim getInstance() {
         if (instance == null) {
@@ -199,6 +203,10 @@ public class AIRobotSim implements Subsystem {
         lastPoseTimestamp = -1.0;
         stallDuration = 0.0;
         lastCommandedSpeed = 0.0;
+        currentTargetSpeeds = new ChassisSpeeds();
+        lastRobotRelativeSpeeds = new ChassisSpeeds();
+        lastStallResult = false;
+        lastStallEvalTimestamp = -1.0;
         lastShotTimestamp = 0.0;
         setRobotPose(queuingPose);
         if (intakeSimulation != null) {
@@ -206,6 +214,18 @@ public class AIRobotSim implements Subsystem {
             intakeSimulation.stopIntake();
         }
         latchedShootTarget = null;
+        try {
+            var field = SwerveBase.getInstance().getField();
+            field.getObject("OpponentBot0").setPoses(new ArrayList<>());
+            field.getObject("OpponentTarget0").setPoses(new ArrayList<>());
+            field.getObject("OpponentBot1").setPoses(new ArrayList<>());
+            field.getObject("OpponentTarget1").setPoses(new ArrayList<>());
+            field.getObject("OpponentBot2").setPoses(new ArrayList<>());
+            field.getObject("OpponentTarget2").setPoses(new ArrayList<>());
+        } catch (Exception ignored) {}
+        for (var bot : additionalBots) {
+            bot.reset();
+        }
     }
 
     @Override
@@ -221,164 +241,215 @@ public class AIRobotSim implements Subsystem {
             if (intakeSimulation != null && intakeSimulation.isRunning()) {
                 intakeSimulation.stopIntake();
             }
+            try {
+                var field = SwerveBase.getInstance().getField();
+                field.getObject("OpponentBot0").setPoses(new ArrayList<>());
+                field.getObject("OpponentTarget0").setPoses(new ArrayList<>());
+                field.getObject("OpponentBot1").setPoses(new ArrayList<>());
+                field.getObject("OpponentTarget1").setPoses(new ArrayList<>());
+                field.getObject("OpponentBot2").setPoses(new ArrayList<>());
+                field.getObject("OpponentTarget2").setPoses(new ArrayList<>());
+            } catch (Exception ignored) {}
+            for (var bot : additionalBots) {
+                bot.reset();
+            }
             return;
         }
 
+        // ── 1. Map Dashboard Mode to Jev Archetype ───────────────────────────
         AIMode activeMode;
         if (manualDefenseMode) {
             activeMode = AIMode.MANUAL_2_PLAYER;
         } else if (aiModeChooser != null && aiModeChooser.getSelected() != null) {
             activeMode = aiModeChooser.getSelected();
         } else {
-            String modeStr = SmartDashboard.getString("Simulation/AIMode", AIMode.AUTONOMOUS_CYCLER.name());
+            String modeStr = SmartDashboard.getString("Simulation/Bot0/Archetype",
+                    SmartDashboard.getString("Simulation/AIMode", AIMode.AUTONOMOUS_CYCLER.name()));
             activeMode = AIMode.fromString(modeStr);
         }
 
-        boolean isRedAlliance = AllianceFlipUtil.isRedAlliance();
+        int opponentCount = (int) Math.max(1, Math.min(3, SmartDashboard.getNumber("Simulation/OpponentCount", Dashboard.getOpponentCount())));
+        if (opponentCount >= 2 && additionalBots.isEmpty()) {
+            additionalBots.add(new AIRobotInstance(1, ROBOT_QUEUING_POSITIONS[1], Archetype.DEFENSE_BULLY));
+        }
+        if (opponentCount >= 3 && additionalBots.size() < 2) {
+            additionalBots.add(new AIRobotInstance(2, ROBOT_QUEUING_POSITIONS[2], Archetype.ADAPTIVE_COMPETITOR));
+        }
 
-        if (!wasOpponentEnabled || isRedAlliance != lastSpawnedPlayerIsRed) {
-            Pose2d initialPose = getOpponentSpawnPose(isRedAlliance, activeMode);
+        boolean playerIsRed = AllianceFlipUtil.isRedAlliance();
+        boolean opponentIsRed = !playerIsRed;
+
+        if (!wasOpponentEnabled || playerIsRed != lastSpawnedPlayerIsRed) {
+            Pose2d initialPose = getOpponentSpawnPose(playerIsRed, activeMode);
             setRobotPose(initialPose);
+            if (additionalBots.size() >= 1) {
+                additionalBots.get(0).setRobotPose(getOpponentSpawnPose(1, playerIsRed));
+            }
+            if (additionalBots.size() >= 2) {
+                additionalBots.get(1).setRobotPose(getOpponentSpawnPose(2, playerIsRed));
+            }
             pathTimer.restart();
             cyclerTimer.restart();
             wasOpponentEnabled = true;
-            lastSpawnedPlayerIsRed = isRedAlliance;
-            System.out.printf("[AIRobotSim] Spawned at (%.2f, %.2f, %.1f deg), PlayerIsRed: %b%n",
-                    initialPose.getX(), initialPose.getY(), initialPose.getRotation().getDegrees(), isRedAlliance);
+            lastSpawnedPlayerIsRed = playerIsRed;
         }
 
         try {
             driveSimulation.periodic();
         } catch (Exception ignored) {}
 
-        double speedPercent = SmartDashboard.getNumber("Simulation/OpponentSpeedPercent", 75.0);
+        double speedPercent = Dashboard.getOpponentSpeedPercent();
         double speedScale = Math.max(0.20, Math.min(1.0, speedPercent / 100.0));
         double maxSpeed = Constants.MAX_SPEED * speedScale;
 
         Pose2d playerPose = SwerveBase.getInstance().getPose();
+        ChassisSpeeds playerSpeeds = SwerveBase.getInstance().getFieldVelocity();
         Pose2d currentPose = driveSimulation.getActualPoseInSimulationWorld();
+        ChassisSpeeds currentSpeeds = driveSimulation.getDriveTrainSimulation() != null 
+                ? driveSimulation.getDriveTrainSimulation().getDriveTrainSimulatedChassisSpeedsFieldRelative()
+                : new ChassisSpeeds();
+
         double matchTime = Timer.getMatchTime();
         if (matchTime < 0) matchTime = 150.0;
-        boolean isHubActive = Dashboard.getInstance().isHubActive();
 
-        ChassisSpeeds targetSpeeds;
-        Pose2d targetPose = currentPose;
+        int heldFuel = intakeSimulation != null ? intakeSimulation.getGamePiecesAmount() : 0;
+        boolean selfHubActive = isOpponentHubActive(opponentIsRed);
+        boolean oppHubActive = Dashboard.getInstance().isHubActive();
+        double timeUntilShift = Dashboard.getInstance().getTimeUntilSwitch();
 
-        switch (activeMode) {
-            case MANUAL_2_PLAYER:
-                double x = 0.0;
-                double y = 0.0;
-                double rot = 0.0;
-                if (DriverStation.isJoystickConnected(2)) {
-                    x = -defenseController.getLeftY();
-                    y = -defenseController.getLeftX();
-                    rot = -defenseController.getRightX();
-
-                    x = Math.abs(x) < 0.1 ? 0 : x;
-                    y = Math.abs(y) < 0.1 ? 0 : y;
-                    rot = Math.abs(rot) < 0.1 ? 0 : rot;
-                }
-                targetSpeeds = new ChassisSpeeds(x * maxSpeed, y * maxSpeed, rot * 5.0);
-                targetPose = currentPose.plus(new edu.wpi.first.math.geometry.Transform2d(x, y, new Rotation2d(rot)));
-                currentAIStateDetail = "MANUAL_2_PLAYER";
-                break;
-
-            case LEAD_PURSUIT_INTERCEPT:
-                ChassisSpeeds playerSpeeds = SwerveBase.getInstance().getFieldVelocity();
-                Translation2d playerVel = new Translation2d(playerSpeeds.vxMetersPerSecond, playerSpeeds.vyMetersPerSecond);
-                targetPose = JevDecisionEngine.getInstance().solveLeadPursuitIntercept(
-                        currentPose, playerPose, playerVel, maxSpeed);
-                targetSpeeds = computeDriveToPoseSpeeds(currentPose, targetPose, maxSpeed);
-                currentAIStateDetail = String.format("INTERCEPTING @ (%.1f, %.1f)", targetPose.getX(), targetPose.getY());
-                break;
-
-            case PINNING_BULLY:
-                Rotation2d angleToPlayer = playerPose.getTranslation().minus(currentPose.getTranslation()).getAngle();
-                targetPose = new Pose2d(playerPose.getTranslation(), angleToPlayer);
-                targetSpeeds = computeDriveToPoseSpeeds(currentPose, targetPose, maxSpeed);
-                currentAIStateDetail = "PINNING_BULLY";
-                break;
-
-            case AUTONOMOUS_CYCLER:
-                targetSpeeds = updateAutonomousCycler(currentPose, isRedAlliance, maxSpeed);
-                targetPose = currentTargetPose;
-                break;
-
-            case CHOREO_PATH:
-                if (trajectory.isPresent()) {
-                    double time = pathTimer.get();
-                    if (time > trajectory.get().getTotalTime()) {
-                        pathTimer.restart();
-                        time = 0;
-                    }
-                    Optional<SwerveSample> sampleOpt = trajectory.get().sampleAt(time, false);
-                    if (sampleOpt.isPresent()) {
-                        SwerveSample sample = sampleOpt.get();
-                        Pose2d trajPose = new Pose2d(sample.x, sample.y, new Rotation2d(sample.heading));
-                        targetPose = mirrorPoseForOpponent(trajPose, isRedAlliance);
-
-                        targetSpeeds = new ChassisSpeeds(
-                                sample.vx + xController.calculate(currentPose.getX(), targetPose.getX()),
-                                sample.vy + yController.calculate(currentPose.getY(), targetPose.getY()),
-                                sample.omega + headingController.calculate(currentPose.getRotation().getRadians(),
-                                        targetPose.getRotation().getRadians()));
-                        currentAIStateDetail = String.format("CHOREO (t=%.1fs)", time);
-                    } else {
-                        targetSpeeds = new ChassisSpeeds();
-                        currentAIStateDetail = "CHOREO_EMPTY";
-                    }
-                } else {
-                    targetSpeeds = new ChassisSpeeds();
-                    currentAIStateDetail = "NO_CHOREO_TRAJ";
-                }
-                break;
-
-            case TACTICAL_DEFENSE:
-            default:
-                JevDecisionEngine.DecisionResult decision = JevDecisionEngine.getInstance().evaluate(
-                        playerPose, currentPose, matchTime, isHubActive, isRedAlliance);
-                targetPose = decision.targetPose;
-                targetSpeeds = computeDriveToPoseSpeeds(currentPose, targetPose, maxSpeed);
-                currentAIStateDetail = decision.action.name();
-                break;
+        // ── 2. Handle Manual 2-Player Override ───────────────────────────────
+        if (activeMode == AIMode.MANUAL_2_PLAYER) {
+            double x = 0.0, y = 0.0, rot = 0.0;
+            if (DriverStation.isJoystickConnected(2)) {
+                x = -defenseController.getLeftY();
+                y = -defenseController.getLeftX();
+                rot = -defenseController.getRightX();
+                x = Math.abs(x) < 0.1 ? 0 : x;
+                y = Math.abs(y) < 0.1 ? 0 : y;
+                rot = Math.abs(rot) < 0.1 ? 0 : rot;
+            }
+            currentTargetSpeeds = new ChassisSpeeds(x * maxSpeed, y * maxSpeed, rot * 5.0);
+            currentTargetPose = currentPose.plus(new edu.wpi.first.math.geometry.Transform2d(x, y, new Rotation2d(rot)));
+            currentAIStateDetail = "MANUAL_2_PLAYER";
+            lastRobotRelativeSpeeds = ChassisSpeeds.fromFieldRelativeSpeeds(currentTargetSpeeds, currentPose.getRotation());
+            driveSimulation.runChassisSpeeds(lastRobotRelativeSpeeds, new Translation2d(), false, true);
+            return;
         }
 
-        if (activeMode != AIMode.AUTONOMOUS_CYCLER && intakeSimulation != null) {
-            boolean nearFuel = isNearAnyFuel(currentPose.getTranslation(), 0.85);
-            if (nearFuel) {
+        // ── 3. Build Immutable WorldState Snapshot ───────────────────────────
+        WorldState worldState = new WorldState(
+                currentPose,
+                currentSpeeds,
+                heldFuel,
+                playerPose,
+                playerSpeeds,
+                matchTime,
+                selfHubActive,
+                oppHubActive,
+                timeUntilShift,
+                opponentIsRed
+        );
+
+        // Map mode to Archetype
+        Archetype archetype;
+        switch (activeMode) {
+            case TACTICAL_DEFENSE: archetype = Archetype.TACTICAL_DEFENDER; break;
+            case LEAD_PURSUIT_INTERCEPT: archetype = Archetype.LEAD_PURSUIT_INTERCEPTOR; break;
+            case PINNING_BULLY: archetype = Archetype.DEFENSE_BULLY; break;
+            case AUTONOMOUS_CYCLER:
+            default: archetype = Archetype.AUTONOMOUS_CYCLER; break;
+        }
+
+        // ── 4. Query Jev Policy Evaluator (System 1 + System 2) ──────────────
+        AIActionIntent intent = JevDecisionEngine.getInstance().evaluatePolicy(worldState, archetype);
+
+        currentTargetPose = intent.navigationTarget();
+        currentAIStateDetail = intent.objective().name() + " (" + String.format("%.0f%%", intent.confidence() * 100) + ")";
+
+        // ── 5. Execute Action Commands ───────────────────────────────────────
+        // Intake execution
+        if (intakeSimulation != null) {
+            if (intent.intakeCommand() == IntakeState.INTAKING) {
                 if (!intakeSimulation.isRunning()) intakeSimulation.startIntake();
                 checkProximityPickup(currentPose);
-            } else if (intakeSimulation.isRunning() && activeMode != AIMode.MANUAL_2_PLAYER) {
-                intakeSimulation.stopIntake();
-            }
-
-            boolean opponentIsRed = !isRedAlliance;
-            Translation2d oppHub = opponentIsRed ? Constants.RED_HUB_LOCATION.toTranslation2d() : Constants.BLUE_HUB_LOCATION.toTranslation2d();
-            if (canShootNow(currentPose, opponentIsRed)) {
-                launchOpponentShot(currentPose, oppHub, opponentIsRed);
-                intakeSimulation.obtainGamePieceFromIntake();
-                lastShotTimestamp = Timer.getFPGATimestamp();
+            } else {
+                if (intakeSimulation.isRunning()) intakeSimulation.stopIntake();
             }
         }
 
-        currentTargetPose = targetPose;
-        currentTargetSpeeds = targetSpeeds;
-        lastRobotRelativeSpeeds = ChassisSpeeds.fromFieldRelativeSpeeds(targetSpeeds, currentPose.getRotation());
+        // Shooter execution
+        if (intent.triggerFeedKicker() && heldFuel > 0) {
+            Translation2d hub = FieldMap.Hubs.getHubLocation2d(opponentIsRed);
+            launchOpponentShot(currentPose, hub, opponentIsRed);
+            if (intakeSimulation != null) intakeSimulation.obtainGamePieceFromIntake();
+            lastShotTimestamp = Timer.getFPGATimestamp();
+        }
+
+        // Drivetrain execution
+        if (intent.aimOverride() != null) {
+            aiTrajectoryController.setRotationOverride(intent::aimOverride);
+        } else {
+            aiTrajectoryController.setRotationOverride(null);
+        }
+
+        currentTargetSpeeds = computeDriveToPoseSpeeds(currentPose, currentTargetPose, maxSpeed);
+
+        // Peer soft separation for Bot 0 (avoids jamming and scrums between multi-bots)
+        if (!additionalBots.isEmpty()) {
+            for (var bot : additionalBots) {
+                Pose2d peerPose = bot.getActualPose();
+                double dist = currentPose.getTranslation().getDistance(peerPose.getTranslation());
+                if (dist > 0.05 && dist < 1.10) {
+                    Translation2d diff = currentPose.getTranslation().minus(peerPose.getTranslation());
+                    double scale = (1.10 - dist) / 1.10;
+                    Translation2d nudge = diff.div(dist).times(scale * 1.5);
+                    currentTargetSpeeds.vxMetersPerSecond += nudge.getX();
+                    currentTargetSpeeds.vyMetersPerSecond += nudge.getY();
+                }
+            }
+        }
+
+        lastRobotRelativeSpeeds = ChassisSpeeds.fromFieldRelativeSpeeds(currentTargetSpeeds, currentPose.getRotation());
         driveSimulation.runChassisSpeeds(lastRobotRelativeSpeeds, new Translation2d(), false, true);
+
+        // ── 6. Multi-Bot Simultaneous Execution ──────────────────────────────
+        if (!additionalBots.isEmpty()) {
+            List<Pose2d> peerPoses = new ArrayList<>();
+            peerPoses.add(playerPose);
+            peerPoses.add(currentPose);
+            for (var b : additionalBots) {
+                peerPoses.add(b.getActualPose());
+            }
+
+            for (int i = 0; i < opponentCount - 1 && i < additionalBots.size(); i++) {
+                additionalBots.get(i).update(peerPoses, playerIsRed, maxSpeed);
+            }
+
+            // Reset and park any bots not active under the current opponentCount
+            for (int i = opponentCount - 1; i < additionalBots.size(); i++) {
+                additionalBots.get(i).reset();
+            }
+        }
     }
 
     public ChassisSpeeds computeDriveToPoseSpeeds(Pose2d currentPose, Pose2d targetPose, double maxSpeed) {
-        boolean isStalled = isStalled();
-        return aiTrajectoryController.calculate(
+        boolean isStalled = isStalled(currentPose);
+        ChassisSpeeds speeds = aiTrajectoryController.calculate(
                 currentPose,
                 currentTargetSpeeds,
                 targetPose,
                 maxSpeed,
                 isStalled,
                 true);
+        currentTargetSpeeds = speeds;
+        return speeds;
     }
 
     public boolean isStalled() {
+        return isStalled(driveSimulation.getActualPoseInSimulationWorld());
+    }
+
+    public boolean isStalled(Pose2d currentWorldPose) {
         double now = Timer.getFPGATimestamp();
         if (now - lastStallEvalTimestamp < 0.015 && lastStallEvalTimestamp > 0.0) {
             return lastStallResult;
@@ -387,7 +458,9 @@ public class AIRobotSim implements Subsystem {
         double dt = lastStallEvalTimestamp > 0.0 ? (now - lastStallEvalTimestamp) : 0.02;
         lastStallEvalTimestamp = now;
 
-        Pose2d currentWorldPose = driveSimulation.getActualPoseInSimulationWorld();
+        if (currentWorldPose == null) {
+            currentWorldPose = driveSimulation.getActualPoseInSimulationWorld();
+        }
         double actualMoveDist = currentWorldPose.getTranslation().getDistance(lastActualPose.getTranslation());
         double actualSpeed = actualMoveDist / dt;
         double commandedSpeed = Math.hypot(currentTargetSpeeds.vxMetersPerSecond, currentTargetSpeeds.vyMetersPerSecond);
@@ -589,34 +662,7 @@ public class AIRobotSim implements Subsystem {
      * Guarantees target is strictly outside the Hub ramps and inside the Alliance Zone.
      */
     public Pose2d calculatePolarStandoffPose(Pose2d robotPose, boolean opponentIsRed) {
-        Translation2d hub = FieldMap.Hubs.getHubLocation2d(opponentIsRed);
-        Translation2d toRobot = robotPose.getTranslation().minus(hub);
-
-        double approachAngleRad = Math.atan2(toRobot.getY(), toRobot.getX());
-        double clampedAngleRad;
-        if (opponentIsRed) {
-            clampedAngleRad = Math.max(-Math.PI / 4.0, Math.min(Math.PI / 4.0, approachAngleRad));
-        } else {
-            double angleFromWest = Math.IEEEremainder(approachAngleRad - Math.PI, 2 * Math.PI);
-            double clampedFromWest = Math.max(-Math.PI / 4.0, Math.min(Math.PI / 4.0, angleFromWest));
-            clampedAngleRad = Math.PI + clampedFromWest;
-        }
-
-        double targetX = hub.getX() + FieldMap.Hubs.OPTIMAL_STANDOFF_DISTANCE * Math.cos(clampedAngleRad);
-        double targetY = hub.getY() + FieldMap.Hubs.OPTIMAL_STANDOFF_DISTANCE * Math.sin(clampedAngleRad);
-
-        targetY = Math.max(2.20, Math.min(5.80, targetY));
-
-        if (opponentIsRed) {
-            targetX = Math.max(13.60, Math.min(15.00, targetX));
-        } else {
-            targetX = Math.max(1.60, Math.min(2.90, targetX));
-        }
-
-        Translation2d standoffPos = new Translation2d(targetX, targetY);
-        Rotation2d faceHubAngle = hub.minus(standoffPos).getAngle();
-
-        return new Pose2d(standoffPos, faceHubAngle);
+        return JevDecisionEngine.getInstance().calculatePolarStandoffPose(robotPose, opponentIsRed);
     }
 
     /**
@@ -624,6 +670,12 @@ public class AIRobotSim implements Subsystem {
      * supporting unit tests and legacy callers.
      */
     public Pose2d getOptimalShootingPose(Pose2d currentPose, boolean opponentIsRed) {
+        if (isValidShootingLocation(currentPose, opponentIsRed)) {
+            Translation2d hub = FieldMap.Hubs.getHubLocation2d(opponentIsRed);
+            if (!isShootingLaneBlocked(currentPose, hub)) {
+                return currentPose;
+            }
+        }
         return calculatePolarStandoffPose(currentPose, opponentIsRed);
     }
 
@@ -853,6 +905,43 @@ public class AIRobotSim implements Subsystem {
         SmartDashboard.putNumber("Simulation/OpponentFuelCount", intakeSimulation != null ? intakeSimulation.getGamePiecesAmount() : 0);
         SmartDashboard.putBoolean("Simulation/OpponentStalled", isStalled());
 
+        if (active) {
+            try {
+                var field = SwerveBase.getInstance().getField();
+                field.getObject("OpponentBot0").setPose(pose);
+                field.getObject("OpponentTarget0").setPose(currentTargetPose);
+            } catch (Exception ignored) {}
+        }
+
+        // Standardized Bot 0 telemetry
+        Logger.recordOutput("AI_Telemetry/Bot0/ActualPose", pose);
+        Logger.recordOutput("AI_Telemetry/Bot0/TargetPose", currentTargetPose);
+        Logger.recordOutput("AI_Telemetry/Bot0/StateDetail", currentAIStateDetail);
+        Logger.recordOutput("AI_Telemetry/Bot0/Score", aiScoreCount);
+        Logger.recordOutput("AI_Telemetry/Bot0/HeldFuel", intakeSimulation != null ? intakeSimulation.getGamePiecesAmount() : 0);
+        Logger.recordOutput("AI_Telemetry/Bot0/Archetype", getAIMode().name());
+
+        SmartDashboard.putNumberArray("Simulation/Bot0/Pose", new double[] { pose.getX(), pose.getY(), pose.getRotation().getDegrees() });
+        SmartDashboard.putNumberArray("Simulation/Bot0/TargetPose", new double[] { currentTargetPose.getX(), currentTargetPose.getY(), currentTargetPose.getRotation().getDegrees() });
+        SmartDashboard.putString("Simulation/Bot0/StateDetail", currentAIStateDetail);
+        SmartDashboard.putString("Simulation/Bot0/Objective", getAIMode().name());
+        SmartDashboard.putNumber("Simulation/Bot0/Score", aiScoreCount);
+        SmartDashboard.putNumber("Simulation/Bot0/Fuel", intakeSimulation != null ? intakeSimulation.getGamePiecesAmount() : 0);
+        SmartDashboard.putBoolean("Simulation/Bot0/Stalled", isStalled());
+        SmartDashboard.putString("Simulation/Bot0/Archetype", getAIMode().name());
+
+        // Multi-bot aggregate telemetry
+        int totalScore = aiScoreCount;
+        int totalFuel = intakeSimulation != null ? intakeSimulation.getGamePiecesAmount() : 0;
+        int opponentCount = Dashboard.getOpponentCount();
+        for (int i = 0; i < opponentCount - 1 && i < additionalBots.size(); i++) {
+            totalScore += additionalBots.get(i).getScoreCount();
+            totalFuel += additionalBots.get(i).getFuelCount();
+        }
+        SmartDashboard.putNumber("Simulation/TotalOpponentScore", totalScore);
+        SmartDashboard.putNumber("Simulation/TotalOpponentFuel", totalFuel);
+        SmartDashboard.putNumber("Simulation/MultiBotActiveCount", opponentCount);
+
         double now = Timer.getFPGATimestamp();
         double commandedMag = Math.hypot(currentTargetSpeeds.vxMetersPerSecond, currentTargetSpeeds.vyMetersPerSecond);
         double actualMag = Math.hypot(actualPhysicsSpeeds.vxMetersPerSecond, actualPhysicsSpeeds.vyMetersPerSecond);
@@ -891,19 +980,34 @@ public class AIRobotSim implements Subsystem {
         aiModeChooser.setDefaultOption(AIMode.AUTONOMOUS_CYCLER.displayName, AIMode.AUTONOMOUS_CYCLER);
         SmartDashboard.putData("Simulation/AIModeChooser", aiModeChooser);
         SmartDashboard.setDefaultString("Simulation/AIMode", AIMode.AUTONOMOUS_CYCLER.name());
+        SmartDashboard.setDefaultNumber("Simulation/OpponentCount", 1.0);
         SmartDashboard.setDefaultNumber("Simulation/OpponentSpeedPercent", 75.0);
+        SmartDashboard.setDefaultString("Simulation/Bot0/Archetype", AIMode.AUTONOMOUS_CYCLER.name());
+        SmartDashboard.setDefaultString("Simulation/Bot1/Archetype", Archetype.DEFENSE_BULLY.name());
+        SmartDashboard.setDefaultString("Simulation/Bot2/Archetype", Archetype.ADAPTIVE_COMPETITOR.name());
     }
 
-    public static Pose2d getOpponentSpawnPose(boolean playerIsRed) {
+    public static Pose2d getOpponentSpawnPose(int botIndex, boolean playerIsRed) {
+        double y;
+        switch (botIndex) {
+            case 1: y = 5.80; break;
+            case 2: y = 2.25; break;
+            case 0:
+            default: y = 4.035; break;
+        }
         if (playerIsRed) {
-            return new Pose2d(2.00, 4.035, Rotation2d.fromDegrees(0));
+            return new Pose2d(2.00, y, Rotation2d.fromDegrees(0));
         } else {
-            return new Pose2d(AllianceFlipUtil.FIELD_LENGTH - 2.00, 4.035, Rotation2d.fromDegrees(180));
+            return new Pose2d(AllianceFlipUtil.FIELD_LENGTH - 2.00, y, Rotation2d.fromDegrees(180));
         }
     }
 
-    public Pose2d getOpponentSpawnPose(boolean playerIsRed, AIMode activeMode) {
-        if (activeMode == AIMode.CHOREO_PATH && trajectory.isPresent()) {
+    public static Pose2d getOpponentSpawnPose(boolean playerIsRed) {
+        return getOpponentSpawnPose(0, playerIsRed);
+    }
+
+    public Pose2d getOpponentSpawnPose(int botIndex, boolean playerIsRed, AIMode activeMode) {
+        if (botIndex == 0 && activeMode == AIMode.CHOREO_PATH && trajectory.isPresent()) {
             Optional<SwerveSample> initialSample = trajectory.get().sampleAt(0, false);
             if (initialSample.isPresent()) {
                 SwerveSample sample = initialSample.get();
@@ -911,7 +1015,11 @@ public class AIRobotSim implements Subsystem {
                 return mirrorPoseForOpponent(startPose, playerIsRed);
             }
         }
-        return getOpponentSpawnPose(playerIsRed);
+        return getOpponentSpawnPose(botIndex, playerIsRed);
+    }
+
+    public Pose2d getOpponentSpawnPose(boolean playerIsRed, AIMode activeMode) {
+        return getOpponentSpawnPose(0, playerIsRed, activeMode);
     }
 
     public static Pose2d mirrorPoseForOpponent(Pose2d pose, boolean playerIsRed) {
@@ -986,5 +1094,9 @@ public class AIRobotSim implements Subsystem {
 
     public int getCurrentPathIndex() {
         return aiTrajectoryController.getCurrentWaypointIndex();
+    }
+
+    public List<AIRobotInstance> getAdditionalBots() {
+        return Collections.unmodifiableList(additionalBots);
     }
 }

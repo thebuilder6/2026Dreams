@@ -78,21 +78,27 @@ To control the robot with a physical gamepad:
 
 ## 📊 Connecting Elastic Dashboard
 
-Elastic Dashboard is pre-configured with 6 tabs tailored for this robot:
+Elastic Dashboard is pre-configured with 6 specialized tabs adhering strictly to the official [Elastic Widget Reference](https://frc-elastic.gitbook.io/docs/additional-features-and-references/widgets-list-and-properties-reference).
 
+### Instant Setup via Remote Layout Downloading (Recommended)
+Our robot code serves the official layout directly over HTTP port 5800 (`edu.wpi.first.net.WebServer`):
 1. Launch **Elastic Dashboard**.
-2. Go to **Settings** (gear icon in upper right) and set:
-   - **Server Address**: `127.0.0.1` (or `localhost`)
-   - **Port**: `5810` (NT4 default)
-3. Click the layout dropdown and select **Open Layout File**.
-4. Open the pre-built layout: `TitanRoboticsBuildSeason/elastic-layout.json`.
-5. You will now have 6 synchronized tabs:
-   - **Driver Dashboard**: 3D field overview, match clock, Hub countdown timer, auto-aim lock indicator, Jev strategy, and feature switches.
-   - **AI Coach & Practice**: Real-time driver grading ($A+$ to $D$), cycle timing gauges, shooting accuracy bar, practice drill selector, 1-click arena reset, and contextual AI coaching directives.
-   - **Pre-Flight Diagnostics**: Automated 15-second scorecard and manual motor test bench.
-   - **SysID & Characterization**: Routine selectors and execution controls.
-   - **Simulation & Match Info**: Live score counter, held ball count, respawn trigger, and opponent AI defense toggle.
-   - **Tuning & PID**: Live-tunable gains for flywheels ($kP, kI, kD, kS, kV, kA$), intake arm, auton pathfinding, and driver slew rates ($4.5\text{ m/s}^2$ translation, $7.0\text{ rad/s}^2$ rotation).
+2. Connect to the robot / simulation (`127.0.0.1` on port `5810`).
+3. Press **`Ctrl + D`** (or go to **File -> Load Layout From Robot**).
+4. Select `elastic-layout.json` and choose **Full Reload** (or **Overwrite**).
+5. Elastic will pull the exact, validated layout directly from the robot deploy directory!
+
+### Manual Setup (Alternative)
+1. In Elastic Dashboard, click the layout dropdown (or File menu) and select **Open Layout File**.
+2. Open `TitanRoboticsBuildSeason/elastic-layout.json` (or `src/main/deploy/elastic-layout.json`).
+
+### Widget Features Across Tabs
+- **Tab 1: Driver Dashboard**: Dedicated `Match Time` countdown clock (auto-transitions Blue -> Green -> Yellow at 30s -> Red at 15s), 3D Field2d view, live Hub active indicator, `Graph` widget displaying live Flywheel RPM response, held fuel `Number Bar`, and clickable `Toggle Switch` controls for Snap Turn, Auto Aim, Ball Hunt, Glide Points, and Slow Mode.
+- **Tab 2: AI Coach & Practice**: Real-time driver grading ($A+$ to $D$), cycle timing bars, shooting accuracy bar, drill mode chooser, `Toggle Button` for 1-click arena reset, `Toggle Switch` for haptic collision rumble, and Jev AI coaching directives.
+- **Tab 3: Pre-Flight Diagnostics**: Automated 15-second scorecard with progress bar and individual `Toggle Button` widgets to pulse each swerve steer/drive motor, intake arm, intake rollers, and flywheels.
+- **Tab 4: SysID & Characterization**: `Toggle Button` for Quasistatic / Dynamic Forward / Reverse and ABORT / E-STOP, with real-time `Graph` widgets for live applied voltage and velocity response waves.
+- **Tab 5: Simulation & Match Info**: Interactive `Number Slider` widgets to dynamically drag opponent bot count (1-3 bots) and speed (20-100%), interactive `Toggle Button` controls for Sim Reset and Respawn Balls, multi-bot state/score telemetry, and `Toggle Switch` for Opponent AI.
+- **Tab 6: Tuning & PID**: Flywheel dual-RPM bars, pivot arm setpoint/goal bars, interactive `Toggle Switch` settings, and text displays with `show_submit_button: true` to edit PID constants live.
 
 ---
 
@@ -151,44 +157,59 @@ In the WPILib SimGUI:
 - **Hold Right Bumper**: The robot autonomously plans a path and navigates to the nearest tactical waypoint (Alliance Feeder, Hub perimeter, Trench auto-tunnel, or Midfield crossing).
 - Deflecting any manual joystick (>15%) instantly cancels Glide mode and restores full driver control.
 
-### 6. Sparring Against Opponent AI (Autonomous Offense & Defense)
-- In Elastic Dashboard (`Simulation & Match Info` tab), check **`Opponent AI Defense`** (or toggle `Features/Opponent Robot`).
-- An opponent robot will spawn on the field with active bumper collision physics and realistic game piece intake/shooting capabilities.
-- Select the opponent's behavior via **`Simulation/AIModeChooser`** (defaults to **`Autonomous Fuel Cycler`**):
-  - **`Autonomous Fuel Cycler`**: Full offense mode with comprehensive **WHERE & WHEN** shooting intelligence:
-    - **WHERE It Shoots**:
-      - *Alliance Zone Enforcement*: Strictly fires only when inside its designated Alliance Zone ($X \le 4.60\text{m}$ for Blue, $X \ge 11.94\text{m}$ for Red). Shots from Midfield are strictly prohibited.
-      - *Distance Window*: Strictly validates firing distance ($1.60\text{m} \le d \le 4.20\text{m}$) within the Alliance Zone to clear Hub base collision while maintaining high parabolic ballistic accuracy.
-      - *Low-Clearance Trench Exclusion*: Evaluates field geofencing (`Intake.isPoseInTrenchLowClearanceZone`) to never fire under low-overhead steel trusses ($Z < 1.2\text{m}$), preventing ceiling deflections.
-      - *Dynamic Standoff & Lateral Evasion*: Projects to an optimal $2.40\text{m}$ standoff arc within the Alliance Zone, clamped to the open trench-free corridor ($Y \in [2.2, 5.8]$). If a defender guards the spot or blocks the direct shooting lane, the bot executes a lateral strafe to re-open line of sight.
-      - *Opportunistic Transitions*: If the bot gathers fuel and enters an unblocked valid shooting window within its Alliance Zone while the Hub is active, it fires immediately without driving to a rigid static waypoint.
-    - **WHEN It Shoots**:
-      - *Hub Active State Discipline*: Verifies ground-truth Hub scoring state (`Arena2026Rebuilt.isActive` and match shift timing). If the Hub is inactive, the bot hoards up to 5 Fuel pieces or stages at the standoff line instead of wasting game pieces.
-      - *Fuel Inventory & Cooldown*: Requires held fuel ($> 0$) and enforces a $0.30\text{s}$ firing cadence between shots.
-      - *Aim Alignment*: Verifies heading alignment within $< 8^\circ$ of the target Hub funnel.
-      - *Shoot-On-The-Fly (SOTF) Ballistics*: Automatically applies virtual target motion compensation ($\vec{P}_{\text{virtual}} = \vec{P}_{\text{goal}} - \vec{v}_{\text{chassis}} \cdot t_{\text{tof}}$) so shots fired on the move arc directly into the center funnel ($Z = 1.48\text{m}$) without tangential drift.
-  - **`Tactical Defense (Jev AI)`**: High-frequency defensive decision engine that shadows the player along midfield, blocks player shooting lanes, contests neutral depots, and opportunistically intakes loose balls and fires them into its Hub when in range.
-  - **`Lead Pursuit Intercept`**: Intercepts player travel paths using quadratic lead pursuit.
-  - **`Aggressive Pinning Bully`**: Charges player bumpers to practice spin-outs and test the 2-second legal pinning watchdog.
-  - **`Manual 2-Player (Port 2)`**: Connect a second controller to Joystick Port 2 to drive the opponent robot manually against your teammate.
-- **Topological Roadmap & Pure Pursuit Navigation Architecture**:
-  - *AABB Obstacle Modeling & Topological Visibility Graph* ([`StaticPathfinder.java`](file:///c:/Users/jumpi/Documents/Github/2026Dreams/TitanRoboticsBuildSeason/src/main/java/frc/robot/Auto/StaticPathfinder.java)):
-    - Full 2026 field obstacle geometry represented via axis-aligned bounding boxes (AABBs) with $O(1)$ Liang-Barsky line-box intersection testing.
-    - Preserves dedicated 53-inch Trench corridors ($Y = 7.42\text{m}$ Top, $Y = 0.65\text{m}$ Bottom) with $>0.42\text{m}$ bumper clearance from divider walls.
-    - Deterministic A* graph search over 34 strategic nodes with string-pulling line-of-sight shortcutting.
-  - *Resilient Pure Pursuit Lookahead Tracker* ([`AIRobotSim.java`](file:///c:/Users/jumpi/Documents/Github/2026Dreams/TitanRoboticsBuildSeason/src/main/java/frc/robot/Sim/AIRobotSim.java)):
-    - Computes lookahead point $P_{\text{look}}$ along polyline path with adaptive lookahead radius $R_{\text{look}} \in [0.45\text{m}, 0.85\text{m}]$.
-    - Monotonic path progression advances waypoints only when the robot crosses the segment tangent normal plane or reaches within $0.45\text{m}$.
-    - Goal deadband and replan hysteresis ($0.85\text{m}$ / $0.5\text{s}$) prevent waypoint index resets and rubber-banding during continuous target tracking.
-    - Trapezoidal deceleration profiling ($V_{\text{target}} = \min(V_{\text{max}}, \sqrt{2 \cdot A_{\text{max}} \cdot d_{\text{remaining}}})$) ensures smooth deceleration into targets with zero overshoot.
-  - *Trench Passage Lockout*:
-    - Automatically activates inside Trench corridors ($X \in [3.20, 6.10]$ or $[10.40, 13.30]$ with $Y \ge 6.50$ or $Y \le 1.55$).
-    - Locks heading parallel to the corridor ($0^\circ$ or $180^\circ$) to eliminate corner catch.
-    - Applies active cross-track centering ($V_y = -3.0 \cdot (Y - Y_{\text{centerline}})$) to keep the bot centered along the corridor centerline.
-    - Suppresses Artificial Potential Field (APF) player repulsion while inside trenches to prevent wall pinning.
-- **AdvantageScope Visualizations**:
-  - Add `/FieldSimulation/OpponentSuccessfulShotsTrajectory` and `/FieldSimulation/OpponentMissedShotsTrajectory` to the 3D Field tab to see the AI's 3D parabolic projectile arcs in real-time.
-  - Monitor `/Simulation/OpponentScoreCount`, `/Simulation/OpponentFuelCount`, and `/Simulation/OpponentCyclerPhase` for live AI offensive stats.
+### 6. Sparring Against Multiple Opponent AI Robots (1 to 3 Autonomous Agents)
+
+The simulation engine supports scaling from a single sparring opponent up to **3 simultaneous AI robots** running concurrently on the field, powered by the unified System 1 (Tactical Reflex) + System 2 (Executive Strategy) Jev cognitive architecture:
+
+- **Activating Multi-Bot Simulation**:
+  - In Elastic Dashboard (`Simulation & Match Info` tab), toggle **`Opponent AI Active`** (`Features/Opponent Robot`).
+  - Set the number of active opponent bots via the **`Opponent Count (1-3)`** bar (`Simulation/OpponentCount`). Select `1`, `2`, or `3`.
+  - Adjust sparring speed with **`Opponent Speed %`** (`Simulation/OpponentSpeedPercent`, 20% to 100%, defaults to 75%).
+  - Bots spawn at staggered, non-overlapping starting coordinates along their alliance wall:
+    - **Bot 0**: Centerline spawn ($X=2.00\text{m}, Y=4.035\text{m}$ for Blue)
+    - **Bot 1**: Upper corridor spawn ($X=2.00\text{m}, Y=5.80\text{m}$ for Blue)
+    - **Bot 2**: Lower corridor spawn ($X=2.00\text{m}, Y=2.25\text{m}$ for Blue)
+
+- **Selectable AI Behavioral Archetypes**:
+  Each bot can be independently configured with distinct behavioral strategies via SmartDashboard or the Elastic Dashboard:
+  - **Bot 0** (`Simulation/AIModeChooser` / `Simulation/Bot0/Archetype`): Defaults to `Autonomous Fuel Cycler`.
+  - **Bot 1** (`Simulation/Bot1/Archetype`): Defaults to `DEFENSE_BULLY`.
+  - **Bot 2** (`Simulation/Bot2/Archetype`): Defaults to `ADAPTIVE_COMPETITOR`.
+
+  | Archetype | Macro Strategy | Tactical Behaviors |
+  | :--- | :--- | :--- |
+  | **`AUTONOMOUS_CYCLER`** | High-Throughput Fuel Scoring | Evaluates Gaussian cluster density scent to target rich fuel patches. Adheres to Alliance Zone firing geofencing, standoff arcs ($2.40\text{m}$), and shoot-on-the-fly ballistics. |
+  | **`DEFENSE_BULLY`** | Aggressive Physical Harassment | Pursues player bumpers, pins against walls up to the 2-second legal limit, and disrupts player intake lanes. |
+  | **`ADAPTIVE_COMPETITOR`** | Hybrid Two-Way Play | Scavenges loose balls when the Hub is active; transitions to lane denial and player harassment when its Hub is inactive. |
+  | **`TACTICAL_DEFENDER`** | Positional Lane & Depot Denial | Shadows player along the midfield boundary ($X = 8.27\text{m}$), blocks direct shooting corridors to the Hub, and contests neutral depots. |
+  | **`LEAD_PURSUIT_INTERCEPTOR`** | Predictive Path Interception | Projects the player's instantaneous velocity vector and executes quadratic lead intercept to cut off travel routes. |
+  | **`MANUAL_2_PLAYER`** | Human Sparring Partner | Map Joystick Port 2 to drive Bot 0 directly against the primary driver using standard gamepad controls. |
+
+- **Multi-Robot Collision Avoidance & Flocking Separation**:
+  - **Soft Peer Separation**: All AI instances evaluate peer robot distances in real time. If another robot approaches within $1.10\text{m}$ (bumper-to-bumper proximity), a smooth inverse-distance repulsive force is applied, preventing multi-bot scrums or mechanical lockups.
+  - **Obstacle Registration**: Each active bot registers its pose and velocity in [`DynamicRouter`](file:///c:/Users/jumpi/Documents/Github/2026Dreams/TitanRoboticsBuildSeason/src/main/java/frc/robot/Auto/DynamicRouter.java), enabling player trajectory pathfinding to cleanly circumnavigate moving opponents.
+
+- **Elastic Dashboard Multi-Bot Controls (`Simulation & Match Info` Tab)**:
+  - **Arena Field View**: Embedded 2D field widget displaying the player robot alongside `OpponentBot0`, `OpponentBot1`, and `OpponentBot2` with live heading orientations and lookahead target markers.
+  - **Per-Bot Status Cards**:
+    - **Mode & Objective**: Live displays for Bot 0, Bot 1, and Bot 2 active states (e.g. `CYCLE_SCORE_HUB`, `DENY_SHOOTING_LANE`, `STAGE_STANDOFF`).
+    - **Held Fuel & Scores**: Dedicated counters tracking individual fuel counts and points scored per bot.
+  - **Aggregate Telemetry**: Live indicators for `Total Opponent Score`, `Total Opponent Fuel`, and `Active Opponents Count`.
+
+- **AdvantageScope 3D Multi-Robot Scrimmage Setup**:
+  - Load the pre-configured layout: Open AdvantageScope -> **File -> Open Layout** -> select [`advantagescope-layout.json`](file:///c:/Users/jumpi/Documents/Github/2026Dreams/TitanRoboticsBuildSeason/advantagescope-layout.json).
+  - Pre-configured views include:
+    - **3D Arena Scrimmage**: Complete 3D field rendering with player (Blue) and up to 3 opponents (Orange, Coral, Crimson) driving with 3D projectile arcs and dynamic fuel balls.
+    - **2D Tactical Field Map**: Simultaneous tracking of all robot poses, navigation waypoints, glide points, and pathfinder detours.
+    - **Multi-Bot Scrimmage Scoring**: Real-time line graphs comparing player scoring throughput against individual and aggregate AI bot scores.
+    - **Fuel Inventory & Drive Dynamics**: Multi-bot hopper tracking and flywheel RPM response.
+
+- **NetworkTables Telemetry Reference**:
+  - *Bot 0*: `/AI_Telemetry/Bot0/ActualPose`, `/Simulation/Bot0/StateDetail`, `/Simulation/Bot0/Score`, `/Simulation/Bot0/Fuel`, `/Simulation/Bot0/Archetype`
+  - *Bot 1*: `/AI_Telemetry/Bot1/ActualPose`, `/Simulation/Bot1/StateDetail`, `/Simulation/Bot1/Score`, `/Simulation/Bot1/Fuel`, `/Simulation/Bot1/Archetype`
+  - *Bot 2*: `/AI_Telemetry/Bot2/ActualPose`, `/Simulation/Bot2/StateDetail`, `/Simulation/Bot2/Score`, `/Simulation/Bot2/Fuel`, `/Simulation/Bot2/Archetype`
+  - *Aggregates*: `/Simulation/TotalOpponentScore`, `/Simulation/TotalOpponentFuel`, `/Simulation/MultiBotActiveCount`
+  - *Field2d Objects*: `/SmartDashboard/Field/OpponentBot0`, `/SmartDashboard/Field/OpponentBot1`, `/SmartDashboard/Field/OpponentBot2`
 
 ### 7. AI Coach & Practice Proving Ground
 Switch to the **`AI Coach & Practice`** tab in Elastic Dashboard for focused driver training:

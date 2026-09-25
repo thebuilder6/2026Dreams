@@ -35,7 +35,7 @@ public class Alert {
         if (this.active != active) {
             this.active = active;
             if (active) {
-                this.activeStartTime = Timer.getFPGATimestamp();
+                this.activeStartTime = Timer.getTimestamp();
             }
         }
     }

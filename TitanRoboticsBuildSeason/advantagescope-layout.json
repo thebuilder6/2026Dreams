@@ -1,0 +1,167 @@
+{
+  "version": 1.0,
+  "tabs": [
+    {
+      "type": "3d-field",
+      "title": "3D Arena Scrimmage",
+      "field": "2026 Rebuilt",
+      "robot": {
+        "source": "NT4",
+        "topic": "/SmartDashboard/Field/Robot",
+        "model": "KitBot",
+        "color": "#1E90FF"
+      },
+      "objects": [
+        {
+          "title": "Opponent Bot 0 (Lead)",
+          "topic": "/AI_Telemetry/Bot0/ActualPose",
+          "model": "KitBot",
+          "color": "#FF4500"
+        },
+        {
+          "title": "Opponent Bot 1 (Bully)",
+          "topic": "/AI_Telemetry/Bot1/ActualPose",
+          "model": "KitBot",
+          "color": "#FF6347"
+        },
+        {
+          "title": "Opponent Bot 2 (Adaptive)",
+          "topic": "/AI_Telemetry/Bot2/ActualPose",
+          "model": "KitBot",
+          "color": "#DC143C"
+        },
+        {
+          "title": "Field Fuel Pieces",
+          "topic": "/SmartDashboard/FieldSim/GamePieces",
+          "model": "Sphere",
+          "color": "#FFD700"
+        },
+        {
+          "title": "AI Successful Shots",
+          "topic": "/FieldSimulation/OpponentSuccessfulShotsTrajectory",
+          "model": "Trajectory",
+          "color": "#00FF7F"
+        },
+        {
+          "title": "AI Missed Shots",
+          "topic": "/FieldSimulation/OpponentMissedShotsTrajectory",
+          "model": "Trajectory",
+          "color": "#FF0000"
+        }
+      ]
+    },
+    {
+      "type": "odometry",
+      "title": "2D Tactical Field Map",
+      "field": "2026 Rebuilt",
+      "robot": {
+        "topic": "/SmartDashboard/Field/Robot",
+        "color": "#1E90FF"
+      },
+      "objects": [
+        {
+          "title": "Opponent Bot 0",
+          "topic": "/SmartDashboard/Field/OpponentBot0",
+          "color": "#FF4500"
+        },
+        {
+          "title": "Opponent Bot 1",
+          "topic": "/SmartDashboard/Field/OpponentBot1",
+          "color": "#FF6347"
+        },
+        {
+          "title": "Opponent Bot 2",
+          "topic": "/SmartDashboard/Field/OpponentBot2",
+          "color": "#DC143C"
+        },
+        {
+          "title": "Bot 0 Target",
+          "topic": "/SmartDashboard/Field/OpponentTarget0",
+          "color": "#FFA500"
+        },
+        {
+          "title": "Bot 1 Target",
+          "topic": "/SmartDashboard/Field/OpponentTarget1",
+          "color": "#FF8C00"
+        },
+        {
+          "title": "Bot 2 Target",
+          "topic": "/SmartDashboard/Field/OpponentTarget2",
+          "color": "#FF7F50"
+        },
+        {
+          "title": "Tactical Glide Points",
+          "topic": "/SmartDashboard/Field/GlidePoints",
+          "color": "#00FFFF"
+        },
+        {
+          "title": "Player Path",
+          "topic": "/SmartDashboard/Field/CurrentPath",
+          "color": "#ADFF2F"
+        }
+      ]
+    },
+    {
+      "type": "line-graph",
+      "title": "Multi-Bot Scrimmage Scoring",
+      "series": [
+        {
+          "title": "Player Score",
+          "topic": "/SmartDashboard/Simulation/Score",
+          "color": "#1E90FF"
+        },
+        {
+          "title": "Total Opponents Score",
+          "topic": "/SmartDashboard/Simulation/TotalOpponentScore",
+          "color": "#FF4500"
+        },
+        {
+          "title": "Bot 0 Score",
+          "topic": "/SmartDashboard/Simulation/Bot0/Score",
+          "color": "#FFA500"
+        },
+        {
+          "title": "Bot 1 Score",
+          "topic": "/SmartDashboard/Simulation/Bot1/Score",
+          "color": "#FF6347"
+        },
+        {
+          "title": "Bot 2 Score",
+          "topic": "/SmartDashboard/Simulation/Bot2/Score",
+          "color": "#DC143C"
+        }
+      ]
+    },
+    {
+      "type": "line-graph",
+      "title": "Fuel Inventory & Drive Dynamics",
+      "series": [
+        {
+          "title": "Bot 0 Held Fuel",
+          "topic": "/SmartDashboard/Simulation/Bot0/Fuel",
+          "color": "#FFA500"
+        },
+        {
+          "title": "Bot 1 Held Fuel",
+          "topic": "/SmartDashboard/Simulation/Bot1/Fuel",
+          "color": "#FF6347"
+        },
+        {
+          "title": "Bot 2 Held Fuel",
+          "topic": "/SmartDashboard/Simulation/Bot2/Fuel",
+          "color": "#DC143C"
+        },
+        {
+          "title": "Flywheel Actual RPM",
+          "topic": "/SmartDashboard/Driver/Flywheel Actual RPM",
+          "color": "#00FF7F"
+        },
+        {
+          "title": "Flywheel Target RPM",
+          "topic": "/SmartDashboard/Driver/Flywheel Target RPM",
+          "color": "#FFFF00"
+        }
+      ]
+    }
+  ]
+}

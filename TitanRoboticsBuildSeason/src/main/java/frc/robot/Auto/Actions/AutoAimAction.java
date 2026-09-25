@@ -55,7 +55,7 @@ public class AutoAimAction implements Actions {
 
     @Override
     public void update() {
-        double currentTime = Timer.getFPGATimestamp();
+        double currentTime = Timer.getTimestamp();
         double lookAhead = Constants.SHOOTER_PREDICTIVE_LOOK_AHEAD;
         Optional<SwerveSample> sample = (path != null) ? path.getSampleAtRelativeTime(lookAhead) : Optional.empty();
 

@@ -17,7 +17,9 @@ public class Controller extends XboxController {
         MATCH_TIME_WARNING, // Long deep rumble alerting endgame timing
         PIN_WARNING,        // Rapid high-frequency vibration warning of imminent G-rule pin foul
         HUB_PHASE_SHIFT,    // Double rhythm pulse alerting that Hub will shift phase in 3s
-        COLLISION_IMPACT    // Sharp maximum-intensity shock jolt for physical impact/collision
+        COLLISION_IMPACT,   // Sharp maximum-intensity shock jolt for physical impact/collision
+        MODE_ENGAGED,       // Short crisp click when assist mode engages
+        OVERRIDE_DISENGAGED // Soft downward buzz when driver breakout disengages assist
     }
 
     private HashMap<Integer, Boolean> debounceButtons = new HashMap<Integer, Boolean>();
@@ -92,7 +94,7 @@ public class Controller extends XboxController {
      * @param durationSec Duration in seconds
      */
     public void pulseRumble(double intensity, double durationSec) {
-        pulseEndTime = Timer.getFPGATimestamp() + durationSec;
+        pulseEndTime = Timer.getTimestamp() + durationSec;
         setRumble(RumbleType.kBothRumble, intensity);
     }
 
@@ -103,7 +105,7 @@ public class Controller extends XboxController {
      */
     public void triggerRumblePattern(RumblePattern pattern) {
         currentPattern = pattern;
-        patternStartTime = Timer.getFPGATimestamp();
+        patternStartTime = Timer.getTimestamp();
     }
 
     /**
@@ -114,7 +116,7 @@ public class Controller extends XboxController {
      * @param durationSec Duration of warning vibration
      */
     public void triggerDirectionalFlankAlert(boolean isLeft, double durationSec) {
-        directionalRumbleEndTime = Timer.getFPGATimestamp() + durationSec;
+        directionalRumbleEndTime = Timer.getTimestamp() + durationSec;
         if (isLeft) {
             setRumble(RumbleType.kLeftRumble, 0.85);
             setRumble(RumbleType.kRightRumble, 0.0);
@@ -128,7 +130,7 @@ public class Controller extends XboxController {
      * Non-blocking periodic update for active rumble patterns. Call once per robot loop.
      */
     public void updateRumble() {
-        double now = Timer.getFPGATimestamp();
+        double now = Timer.getTimestamp();
 
         // Check if directional flank alert is active
         if (now < directionalRumbleEndTime) {
@@ -238,6 +240,27 @@ public class Controller extends XboxController {
                 // High-intensity sharp pulse (160ms)
                 if (elapsed < 0.16) {
                     setRumble(RumbleType.kBothRumble, 1.0);
+                } else {
+                    currentPattern = RumblePattern.NONE;
+                    setRumble(RumbleType.kBothRumble, 0.0);
+                }
+                break;
+
+            case MODE_ENGAGED:
+                // Short crisp click (60ms)
+                if (elapsed < 0.06) {
+                    setRumble(RumbleType.kBothRumble, 0.40);
+                } else {
+                    currentPattern = RumblePattern.NONE;
+                    setRumble(RumbleType.kBothRumble, 0.0);
+                }
+                break;
+
+            case OVERRIDE_DISENGAGED:
+                // Soft downward right-motor buzz (80ms)
+                if (elapsed < 0.08) {
+                    setRumble(RumbleType.kRightRumble, 0.50);
+                    setRumble(RumbleType.kLeftRumble, 0.0);
                 } else {
                     currentPattern = RumblePattern.NONE;
                     setRumble(RumbleType.kBothRumble, 0.0);

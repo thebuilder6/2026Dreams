@@ -79,7 +79,7 @@ public class TrajectoryController {
         waypoints.clear();
         waypoints.addAll(path);
         currentWaypointIndex = 0;
-        lastPlanTimestamp = Timer.getFPGATimestamp();
+        lastPlanTimestamp = Timer.getTimestamp();
         isExplicitPath = true;
         if (!path.isEmpty()) {
             lastPathTarget = path.get(path.size() - 1);
@@ -114,7 +114,7 @@ public class TrajectoryController {
             boolean isStalled,
             boolean allowDynamicAvoidance) {
 
-        double now = Timer.getFPGATimestamp();
+        double now = Timer.getTimestamp();
         double dt = lastCalculationTime > 0 ? Math.max(0.001, now - lastCalculationTime) : 0.02;
         lastCalculationTime = now;
 
@@ -207,13 +207,7 @@ public class TrajectoryController {
             targetSpeed = 0.25; // Carpet friction breakout floor
         }
 
-        // Acceleration limiter (traction control)
-        double maxDeltaV = MAX_ACCELERATION_MPS2 * dt;
-        if (targetSpeed > currentCommandedSpeed + maxDeltaV) {
-            currentCommandedSpeed += maxDeltaV;
-        } else {
-            currentCommandedSpeed = targetSpeed;
-        }
+        currentCommandedSpeed = targetSpeed;
 
         // ── 6. Lookahead Vector & Translation ───────────────────────────────
         double lookaheadDist = Math.max(0.40, Math.min(0.85, 0.35 + 0.12 * currentCommandedSpeed));
@@ -237,10 +231,8 @@ public class TrajectoryController {
 
         // ── 8. Trench Virtual Rail Damper ───────────────────────────────────
         boolean inTrench = FieldMap.Trenches.isLowClearance(currentPose.getTranslation());
-        boolean targetInTrench = FieldMap.Trenches.isLowClearance(lookaheadPoint);
 
-        // Only lock cross-track to centerline if BOTH robot and lookahead are transiting the trench!
-        if (inTrench && targetInTrench) {
+        if (inTrench) {
             double deg = currentPose.getRotation().getDegrees();
             Rotation2d trenchHeading = Math.abs(deg) <= 90.0 ? Rotation2d.fromDegrees(0) : Rotation2d.fromDegrees(180);
             if (rotationOverride == null) {
@@ -255,10 +247,6 @@ public class TrajectoryController {
             if (Math.abs(signX) < 0.10) signX = targetPose.getX() > currentPose.getX() ? 1.0 : -1.0;
             vx = signX * Math.sqrt(Math.max(0.0, currentCommandedSpeed * currentCommandedSpeed - vy * vy));
 
-            Intake.getInstance().setArmPosition(Constants.INTAKE_HORIZONTAL_POSITION);
-            allowDynamicAvoidance = false;
-        } else if (inTrench && !targetInTrench) {
-            // Robot is exiting the trench into open carpet: allow normal vy movement!
             Intake.getInstance().setArmPosition(Constants.INTAKE_HORIZONTAL_POSITION);
             allowDynamicAvoidance = false;
         }
@@ -331,6 +319,6 @@ public class TrajectoryController {
     }
 
     public boolean isStalledActive() {
-        return Timer.getFPGATimestamp() < unstickEndTime;
+        return Timer.getTimestamp() < unstickEndTime;
     }
 }

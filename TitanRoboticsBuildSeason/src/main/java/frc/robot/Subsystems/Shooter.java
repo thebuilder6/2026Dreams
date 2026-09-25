@@ -20,7 +20,7 @@ import frc.robot.Data.Constants;
 import frc.robot.Data.Constants.ShooterConstants;
 import frc.robot.Interfaces.Subsystem;
 import frc.robot.Subsystems.shooter.ShooterIO;
-import frc.robot.Subsystems.shooter.ShooterIO.ShooterIOInputs;
+import frc.robot.Subsystems.shooter.ShooterIOInputsAutoLogged;
 import frc.robot.Subsystems.shooter.ShooterIOSim;
 import frc.robot.Subsystems.shooter.ShooterIOSparkMax;
 import frc.robot.Utils.AllianceFlipUtil;
@@ -59,7 +59,7 @@ public class Shooter implements Subsystem {
 
     // IO Abstraction (AdvantageKit pattern)
     private final ShooterIO io;
-    private final ShooterIOInputs inputs = new ShooterIOInputs();
+    private final ShooterIOInputsAutoLogged inputs = new ShooterIOInputsAutoLogged();
 
     // Feedforward & PID Controllers
     private SimpleMotorFeedforward flywheelFeedForwardLeft;
@@ -380,7 +380,7 @@ public class Shooter implements Subsystem {
         return io;
     }
 
-    public ShooterIOInputs getInputs() {
+    public ShooterIOInputsAutoLogged getInputs() {
         return inputs;
     }
 
@@ -475,6 +475,7 @@ public class Shooter implements Subsystem {
     @Override
     public void update() {
         io.updateInputs(inputs);
+        Logger.processInputs("Shooter", inputs);
         processShooterState();
         latestShootingSolution = calculateShootingSolution(
                 SwerveBase.getInstance().getPose(),

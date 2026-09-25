@@ -15,8 +15,13 @@ import frc.robot.Data.GlideConstants;
 import frc.robot.Interfaces.Subsystem;
 import frc.robot.Sim.AIRobotSim;
 import frc.robot.Sim.AIRobotSim.AIMode;
+import frc.robot.Sim.AIActionIntent;
+import frc.robot.Sim.Archetype;
 import frc.robot.Sim.GameSim;
 import frc.robot.Sim.JevDecisionEngine;
+import frc.robot.Sim.StrategicObjective;
+import frc.robot.Sim.WorldState;
+import frc.robot.Sim.WorldStateBuilder;
 import frc.robot.Utils.AllianceFlipUtil;
 import org.littletonrobotics.junction.Logger;
 
@@ -141,7 +146,7 @@ public class MatchCoach implements Subsystem {
         trenchDiversionsCount = 0;
         wasInTrench = false;
 
-        drillStartTime = Timer.getFPGATimestamp();
+        drillStartTime = Timer.getTimestamp();
         isDrillActive = true;
         driverGrade = "A";
         activeCoachingTip = "Session reset. Execute cycles to begin coaching.";
@@ -149,7 +154,7 @@ public class MatchCoach implements Subsystem {
 
     @Override
     public void update() {
-        double now = Timer.getFPGATimestamp();
+        double now = Timer.getTimestamp();
 
         // 1. Check for Dashboard Practice Reset Trigger
         if (SmartDashboard.getBoolean("Coaching/ResetPractice", false)) {
@@ -242,17 +247,44 @@ public class MatchCoach implements Subsystem {
 
     private void updateTacticalCoachingTip(Pose2d robotPose, double now) {
         double timeUntilSwitch = dashboard.getTimeUntilSwitch();
-        boolean hubActive = dashboard.isHubActive();
-        boolean hasFuel = intake.hasFuel();
-
         if (timeUntilSwitch <= 3.5 && timeUntilSwitch > 0.1) {
             activeCoachingTip = String.format("[HUB SHIFT] Hub shifting in %.1fs! Disengage lane and rotate to Depot.", timeUntilSwitch);
-        } else if (hasFuel && hubActive) {
-            activeCoachingTip = "[SCORING READY] Fuel loaded & Hub active! Hold Right Bumper to Glide to Hub.";
-        } else if (!hasFuel && hubActive && !wasShooting) {
-            activeCoachingTip = "[HUNTING] Empty hopper! Tap Left Bumper for Auto Ball Hunt.";
-        } else if (!hubActive && !hasFuel) {
-            activeCoachingTip = "[RELOAD] Hub inactive. Restock inventory at Alliance Depot loading station.";
+            return;
+        }
+
+        try {
+            int heldFuelEstimate = intake.hasFuel() ? 6 : 0;
+            WorldState world = WorldStateBuilder.buildForPlayerRobot(heldFuelEstimate);
+            AIActionIntent intent = JevDecisionEngine.getInstance().evaluatePolicy(world, Archetype.CO_PILOT);
+
+            switch (intent.objective()) {
+                case RUSH_CLIMB:
+                    activeCoachingTip = "[ENDGAME] Match ending! Hold Right Bumper to Glide to Alliance Parking now!";
+                    break;
+                case CYCLE_SCORE_HUB:
+                    activeCoachingTip = "[SCORING READY] " + intent.rationale() + " Hold Right Bumper to Glide to Hub.";
+                    break;
+                case STAGE_STANDOFF:
+                    activeCoachingTip = "[STAGE STANDOFF] " + intent.rationale() + " Wait at standoff arc.";
+                    break;
+                case STOCKPILE_DEPOT:
+                    activeCoachingTip = "[RELOAD] " + intent.rationale() + " Restock inventory at Alliance Depot.";
+                    break;
+                case VACUUM_MIDFIELD:
+                default:
+                    activeCoachingTip = "[HUNTING] " + intent.rationale() + " Tap Left Bumper for Auto Ball Hunt.";
+                    break;
+            }
+        } catch (Exception e) {
+            boolean hubActive = dashboard.isHubActive();
+            boolean hasFuel = intake.hasFuel();
+            if (hasFuel && hubActive) {
+                activeCoachingTip = "[SCORING READY] Fuel loaded & Hub active! Hold Right Bumper to Glide to Hub.";
+            } else if (!hasFuel && hubActive && !wasShooting) {
+                activeCoachingTip = "[HUNTING] Empty hopper! Tap Left Bumper for Auto Ball Hunt.";
+            } else if (!hubActive && !hasFuel) {
+                activeCoachingTip = "[RELOAD] Hub inactive. Restock inventory at Alliance Depot loading station.";
+            }
         }
     }
 

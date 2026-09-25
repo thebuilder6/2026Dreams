@@ -12,6 +12,7 @@ import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.Filesystem;
 import edu.wpi.first.wpilibj.smartdashboard.SendableChooser;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
+import org.littletonrobotics.junction.networktables.LoggedDashboardChooser;
 
 /*
     Class: AutoMissionChooser
@@ -21,7 +22,7 @@ import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
  */
 
 public class AutoMissionChooser {
-    private final SendableChooser<String> missionChooser;
+    private final LoggedDashboardChooser<String> missionChooser;
     private final Map<String, Supplier<MissionBase>> missionRegistry = new HashMap<>();
 
     public static double delay;
@@ -29,7 +30,7 @@ public class AutoMissionChooser {
     private Optional<MissionBase> autoMission = Optional.empty();
 
     public AutoMissionChooser() {
-        missionChooser = new SendableChooser<>();
+        missionChooser = new LoggedDashboardChooser<>("Auto Mission");
 
         // 1. Register specialized Java missions
         registerMission(DepotShootMission.class);
@@ -41,13 +42,12 @@ public class AutoMissionChooser {
         registerChoreoMissions();
 
         // 3. Setup the chooser
-        missionChooser.setDefaultOption("Do Nothing", "Do Nothing");
+        missionChooser.addDefaultOption("Do Nothing", "Do Nothing");
         for (String name : missionRegistry.keySet()) {
             missionChooser.addOption(name, name);
         }
 
         SmartDashboard.putNumber("Auto Delay (seconds)", 0);
-        SmartDashboard.putData("Auto Mission", missionChooser);
         SmartDashboard.putString("Current Action System", "None");
     }
 
@@ -87,8 +87,8 @@ public class AutoMissionChooser {
     }
 
     public void updateMissionCreator() {
-        delay = SmartDashboard.getNumber("Auto Delay", 0);
-        String selected = missionChooser.getSelected();
+        delay = SmartDashboard.getNumber("Auto Delay (seconds)", SmartDashboard.getNumber("Auto Delay", 0));
+        String selected = missionChooser.get();
 
         if (selected == null) {
             selected = "Do Nothing";
@@ -124,11 +124,11 @@ public class AutoMissionChooser {
     }
 
     public SendableChooser<String> getRawChooser() {
-        return missionChooser;
+        return missionChooser.getSendableChooser();
     }
 
     public String getSelected() {
-        String selected = missionChooser.getSelected();
+        String selected = missionChooser.get();
         return selected == null ? "Do Nothing" : selected;
     }
 

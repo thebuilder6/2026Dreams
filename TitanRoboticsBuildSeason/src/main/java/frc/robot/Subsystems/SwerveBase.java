@@ -31,7 +31,7 @@ import frc.robot.Interfaces.Subsystem;
 import frc.robot.Sim.LimelightSim;
 import frc.robot.Sim.VisionSim;
 import frc.robot.Subsystems.drive.DriveIO;
-import frc.robot.Subsystems.drive.DriveIO.DriveIOInputs;
+import frc.robot.Subsystems.drive.DriveIOInputsAutoLogged;
 import frc.robot.Subsystems.drive.DriveIOSparkMax;
 import frc.robot.Subsystems.drive.DriveIOSim;
 import frc.robot.Utils.Alert;
@@ -50,7 +50,7 @@ public class SwerveBase implements Subsystem {
 
     // AdvantageKit Hardware IO Abstraction
     private final DriveIO io;
-    private final DriveIOInputs inputs = new DriveIOInputs();
+    private final DriveIOInputsAutoLogged inputs = new DriveIOInputsAutoLogged();
 
     // Unified field object from YAGSL
     private Field2d field;
@@ -571,6 +571,7 @@ public class SwerveBase implements Subsystem {
     @Override
     public void update() {
         io.updateInputs(inputs);
+        org.littletonrobotics.junction.Logger.processInputs("Drive", inputs);
         swerveDrive.updateOdometry();
 
         Pose2d estimatedPose = getPose();
@@ -580,7 +581,7 @@ public class SwerveBase implements Subsystem {
             field.getObject("OdometryGhost").setPose(estimatedPose);
         } else {
             // Vision measurements and MegaTag2 gating are handled by Vision subsystem
-            if (Timer.getFPGATimestamp() - lastVisionTimestamp > VISION_TIMEOUT_SEC) {
+            if (Timer.getTimestamp() - lastVisionTimestamp > VISION_TIMEOUT_SEC) {
                 isVisionDegraded = true;
                 lastLimelightAccepted = false;
                 visionDegradedAlert.set(true);
@@ -778,7 +779,7 @@ public class SwerveBase implements Subsystem {
         return io;
     }
 
-    public DriveIOInputs getInputs() {
+    public DriveIOInputsAutoLogged getInputs() {
         return inputs;
     }
 
@@ -837,7 +838,7 @@ public class SwerveBase implements Subsystem {
      */
     public void addVisionMeasurement(Pose2d pose, double timestamp, Matrix<N3, N1> stdDevs) {
         swerveDrive.addVisionMeasurement(pose, timestamp, stdDevs);
-        lastVisionTimestamp = Timer.getFPGATimestamp();
+        lastVisionTimestamp = Timer.getTimestamp();
         isVisionDegraded = false;
         lastLimelightAccepted = true;
         visionDegradedAlert.set(false);

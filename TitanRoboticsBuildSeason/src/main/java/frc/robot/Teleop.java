@@ -6,6 +6,7 @@ import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.Joystick;
+import frc.robot.Auto.AutonomousTeleopAgent;
 import frc.robot.Auto.Actions.BallHuntAction;
 import frc.robot.Auto.Actions.DriveToPoseAction;
 import frc.robot.Data.Constants;
@@ -14,6 +15,7 @@ import frc.robot.Data.PortMap;
 import frc.robot.Devices.Controller;
 import frc.robot.Devices.Controller.RumblePattern;
 import frc.robot.Sim.JevDecisionEngine;
+import frc.robot.Sim.StrategicObjective;
 import frc.robot.Subsystems.Dashboard;
 import frc.robot.Subsystems.Intake;
 import frc.robot.Subsystems.Shooter;
@@ -79,6 +81,7 @@ public class Teleop {
     private double driverRotation;
 
     // Advanced Actions (Glide / Ball Hunt)
+    private final AutonomousTeleopAgent coPilot = AutonomousTeleopAgent.getInstance();
     private frc.robot.Interfaces.Actions activeAction = null;
     private boolean wasGlideHeld = false;
 
@@ -109,6 +112,7 @@ public class Teleop {
         snapTargetHeading = null;
         intake.setState("Disabled");
         shooter.stop();
+        coPilot.stopAssist();
         if (activeAction != null) {
             activeAction.done();
             activeAction = null;
@@ -147,6 +151,8 @@ public class Teleop {
             intake.setState("Disabled");
             shooter.stop();
             swerveBase.stop();
+            coPilot.stopAssist();
+            wasGlideHeld = false;
             if (activeAction != null) {
                 activeAction.done();
                 activeAction = null;
@@ -281,65 +287,79 @@ public class Teleop {
     }
 
     private boolean handleActiveAction() {
-        // Advanced Modes: Glide (Right Bumper) / Ball Hunt (Left Bumper)
+        // Advanced Modes: Smart Assist / Glide (Right Bumper) / Ball Hunt (Left Bumper)
         boolean isGlideHeld = !joystickEnabled && rightBumper && Dashboard.isGlidePointsEnabled();
         boolean isBallHuntHeld = !joystickEnabled && leftBumper && Dashboard.isBallHuntEnabled();
 
-        // Start Glide Action if newly triggered (Arbitrated by Jev Decision Engine)
-        if (isGlideHeld && !wasGlideHeld && activeAction == null) {
-            Pose2d smartTarget = JevDecisionEngine.getInstance().getSmartGlideTarget(
-                    swerveBase.getPose(),
-                    intake.hasFuel(),
-                    Dashboard.getInstance().isHubActive(),
-                    AllianceFlipUtil.isRedAlliance());
-            activeAction = new DriveToPoseAction(smartTarget);
-            activeAction.start();
-        }
-        wasGlideHeld = isGlideHeld;
+        // Calculate driver inputs in field coordinates for shared authority blending
+        double shapedY = shapeInput(leftY);
+        double shapedX = shapeInput(leftX);
+        double shapedRot = shapeInput(rightX);
+        boolean isSlow = slowModeActive || Dashboard.isSlowModeEnabled();
+        double transScale = isSlow ? 0.35 : 1.0;
+        double rotScale = isSlow ? 0.50 : 1.0;
+        boolean isRed = AllianceFlipUtil.isRedAlliance();
+        double driverFieldForward = (isRed ? -shapedY : shapedY) * Constants.MAX_SPEED * transScale;
+        double driverFieldStrafe  = (isRed ? -shapedX : shapedX) * Constants.MAX_SPEED * transScale;
+        double driverFieldRot     = shapedRot * Constants.MAX_ROTATION_SPEED * rotScale;
 
-        // Start Ball Hunt Action if newly triggered
+        // ── 1. Smart Assist (Right Bumper: Jev-Powered Co-Pilot) ─────────────
+        if (isGlideHeld) {
+            if (!wasGlideHeld) {
+                coPilot.startSmartAssist();
+                triggerRumble(RumblePattern.MODE_ENGAGED);
+            }
+            wasGlideHeld = true;
+
+            boolean running = coPilot.updateSmartAssist(driverFieldForward, driverFieldStrafe, driverFieldRot);
+            if (!running) {
+                if (coPilot.checkAndClearBreakout()) {
+                    triggerRumble(RumblePattern.OVERRIDE_DISENGAGED);
+                }
+                return false;
+            }
+            return true;
+        } else if (wasGlideHeld) {
+            coPilot.stopAssist();
+            wasGlideHeld = false;
+        }
+
+        // ── 2. Ball Hunt Assist (Left Bumper: Vision Target Pursuit) ─────────
         if (isBallHuntHeld && activeAction == null) {
             activeAction = new BallHuntAction();
             activeAction.start();
+            triggerRumble(RumblePattern.MODE_ENGAGED);
         }
 
-        if (activeAction == null) return false;
-
-        // Shared Driver Authority & Haptic feedback for Ball Hunt
         if (activeAction instanceof BallHuntAction ballHunt) {
-            double shapedY = shapeInput(leftY);
-            double shapedX = shapeInput(leftX);
-            boolean isSlow = slowModeActive || Dashboard.isSlowModeEnabled();
-            double scale = isSlow ? 0.35 : 1.0;
-            boolean isRed = AllianceFlipUtil.isRedAlliance();
-            double driverForward = (isRed ? -shapedY : shapedY) * scale * Constants.MAX_SPEED;
-            double driverStrafe = (isRed ? -shapedX : shapedX) * scale * Constants.MAX_SPEED;
-
-            ballHunt.setDriverInput(driverForward, driverStrafe);
+            ballHunt.setDriverInput(driverFieldForward, driverFieldStrafe);
 
             if (ballHunt.checkAndClearBallAcquired()) {
                 triggerRumble(RumblePattern.BALL_ACQUIRED);
+                coPilot.incrementBallCount();
             }
+
+            if (!isBallHuntHeld || ballHunt.isFinished()) {
+                ballHunt.done();
+                activeAction = null;
+                return false;
+            }
+
+            ballHunt.update();
+            return true;
         }
 
-        // Driver override logic:
-        // For DriveToPoseAction (Glide/Tunnel): intentional stick deflection (> 0.30) cancels navigation
-        // For BallHuntAction: stick input guides search/pursuit and does not cancel while Left Bumper is held
-        boolean isDriverOverride = false;
-        if (activeAction instanceof DriveToPoseAction) {
-            isDriverOverride = Math.abs(leftY) > 0.30 || Math.abs(leftX) > 0.30 || Math.abs(rightX) > 0.30;
+        if (activeAction != null) {
+            if (activeAction.isFinished()) {
+                activeAction.done();
+                activeAction = null;
+                return false;
+            }
+            activeAction.update();
+            return true;
         }
 
-        boolean modeHeld = (activeAction instanceof BallHuntAction) ? isBallHuntHeld : isGlideHeld;
-
-        if (!modeHeld || activeAction.isFinished() || isDriverOverride) {
-            activeAction.done();
-            activeAction = null;
-            return false;
-        }
-
-        activeAction.update();
-        return true;
+        return false;
     }
 
     public void driveBaseControl() {
@@ -417,6 +437,11 @@ public class Teleop {
             edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putNumber("Driver/Snap Target Angle", snapTargetHeading.getDegrees());
         }
 
+        edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putBoolean("CoPilot/AssistActive", coPilot.isAssistActive());
+        if (coPilot.getActiveObjective() != null) {
+            edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putString("CoPilot/Objective", coPilot.getActiveObjective().name());
+        }
+
         if (autoAimActive) {
             swerveBase.driveFieldOriented(swerveBase.getTargetSpeeds(driverForward, driverStrafe, solution.shootingAngle()));
         } else if (snapTargetHeading != null) {
@@ -487,13 +512,19 @@ public class Teleop {
             wasTargetLocked = false;
             shooter.manualFire(rightTrigger);
         } else {
-            // Predictive Flywheel Pre-Spooling (Hub Phase Anticipation)
+            // Predictive Flywheel Pre-Spooling (Hub Phase Anticipation or Co-Pilot transit)
             boolean hubActive = Dashboard.getInstance().isHubActive();
             double timeUntilSwitch = Dashboard.getInstance().getTimeUntilSwitch();
             boolean hasFuel = intake.hasFuel();
+            boolean coPilotPreSpool = coPilot.isAssistActive() && coPilot.getActiveObjective() == StrategicObjective.CYCLE_SCORE_HUB;
 
-            if (!hubActive && timeUntilSwitch <= 2.5 && timeUntilSwitch > 0.05 && hasFuel && solution != null && solution.shotPossibility()) {
-                shooter.setTargetRPM(solution.flywheelRpmLeft(), solution.flywheelRpmRight());
+            if ((!hubActive && timeUntilSwitch <= 2.5 && timeUntilSwitch > 0.05 && hasFuel && solution != null && solution.shotPossibility())
+                || coPilotPreSpool) {
+                if (solution != null && solution.shotPossibility()) {
+                    shooter.setTargetRPM(solution.flywheelRpmLeft(), solution.flywheelRpmRight());
+                } else {
+                    shooter.setTargetRPM(3200.0, 3200.0);
+                }
                 shooter.prepareToShoot();
                 edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putBoolean("Shooter/PreSpoolingActive", true);
             } else {

@@ -75,13 +75,14 @@ Holding **Right Bumper** calculates a smooth, obstacle-aware trajectory:
 
 ## 📊 Elastic Dashboard Telemetry & Controls
 
-The Elastic Dashboard (`elastic-layout.json`) provides real-time situational awareness across 6 tabs:
+The Elastic Dashboard (`elastic-layout.json`) provides real-time situational awareness across 6 specialized tabs. The layout can be loaded directly from the robot or simulation via **`Ctrl + D`** (Remote Layout Downloading over HTTP port 5800) or by opening `elastic-layout.json`:
 
 ### 1. Driver Dashboard HUD
-- **Shooter Ready Status**: Green light when flywheels are within $\pm 50\text{ RPM}$ of target.
-- **Lined Up Indicator**: Green when Limelight tag tracking is within $\pm 2.0^\circ$.
-- **Alliance Hub Status Banner**: Live countdown timer showing remaining seconds before the next 25-second Hub scoring shift ('R' / 'B' shift rules).
-- **Nearest Glide Target**: Displays the target waypoint name before trigger engagement.
+- **Match Time Countdown**: Dedicated large-format clock widget with automatic color transitions (Blue > 60s, Green < 60s, Yellow <= 30s, Red <= 15s).
+- **Shooter Ready Status & Hub Active**: Large status indicators showing Hub state and shoot lock.
+- **Flywheel RPM Live Graph**: Real-time time-series wave graph displaying instantaneous flywheel spool-up, recovery after firing, and target stability.
+- **Held Fuel Gauge**: Visual 0-5 ball fullness bar.
+- **Assist Feature Toggles**: Interactive `Toggle Switch` controls for Snap Turn, Auto Aim, Ball Hunt, Glide Points, and Slow Mode.
 - **3D Robot Field View**: Live holonomic pose, vision ghost, trajectory pathing, and Hub timing ring.
 
 ### 2. AI Coach & Practice Proving Ground
@@ -89,24 +90,31 @@ The Elastic Dashboard (`elastic-layout.json`) provides real-time situational awa
 - **Live Shooting Accuracy Bar**: Percentage of shots taken with locked heading and target RPM during active Hub periods.
 - **Cycle Timing Gauges**: Real-time display of average cycle duration, fastest cycle record, and total completed cycles.
 - **Practice Drill Chooser**: Switch between `Free Play Match`, `Rapid Cycling Sprint`, `Trench Defense`, and `Anti-Defense SOTF` drills.
-- **Reset Practice Arena**: 1-click button to clear stats, respawn all field balls, and teleport robot to starting line.
-- **Haptic Collision Alert Switch**: Quick toggle for controller collision rumble.
+- **Reset Practice Arena**: Interactive `Toggle Button` to clear stats, respawn all field balls, and teleport robot to starting line.
+- **Haptic Collision Alert Switch**: Interactive `Toggle Switch` for controller collision rumble.
 
 ### 3. Pre-Flight Diagnostics
 - Live Scorecard displaying **CAN Bus**, **Drivebase**, **Steer Alignment**, **Intake & Jam Protection**, **Dual Flywheels**, and **Vision Links**.
-- 12-motor manual jog testing bench.
+- Automated 15-second pre-flight routine with progress bar.
+- 12-motor manual jog test bench with interactive `Toggle Button` controls to pulse individual steer/drive azimuths, intake arm, rollers, and flywheels.
 
 ### 4. SysID & Characterization
-- Dedicated execution buttons for **Drive Linear**, **Drive Angular**, **Steer Azimuth**, **Flywheels**, and **Intake Arm**.
+- Dedicated execution buttons (`Toggle Button`) for **Quasistatic Forward / Reverse**, **Dynamic Forward / Reverse**, and **ABORT / E-STOP**.
+- Real-time `Graph` widgets for **Live Applied Voltage** (-12V to +12V) and **Live Velocity** for instant waveform visualization.
 
-### 5. Simulation & Match Telemetry
-- MapleSim 3D physics feed, battery sag estimator, ball respawner, opponent AI defense toggle, and match clock.
+### 5. Simulation & Multi-Bot Match Telemetry
+- **Embedded Arena Field View**: 2D holonomic field tracking the player robot alongside up to 3 AI opponent bots (`OpponentBot0`, `OpponentBot1`, `OpponentBot2`) with target waypoints and heading vectors.
+- **Multi-Bot Dynamic Sliders**: Interactive `Number Slider` widgets for `Opponent Count (1-3)` and `Opponent Speed %` (20% to 100%).
+- **Interactive Action Triggers**: `Toggle Button` controls to Reset Simulation and Respawn Fuel Balls.
+- **Independent Bot Archetype Selectors**: Per-bot strategy assignments (Bot 0 Lead, Bot 1 Bully, Bot 2 Adaptive) with live status rationale.
+- **Multi-Bot Scoring & Ball Count**: Live tally of individual bot scores and total opponent points scored against the driver.
+- **Pit Mode**: Interactive `Toggle Switch` to lock swerve wheels in X-brake configuration.
 
 ### 6. Tuning & PID (Live Tuning Hub)
-- **Shooter Dual Flywheels**: Real-time RPM telemetry & live PID ($kP, kI, kD$) + Feedforward ($kS, kV, kA$) inputs, physical dimensions, and launch efficiency coefficients.
-- **Intake Arm Pivot**: Real-time angle telemetry vs goal & live Profiled PID ($kP, kI, kD$) + Gravity Feedforward ($kS, kG, kV, kA$).
+- **Shooter Dual Flywheels**: Real-time RPM telemetry & live PID ($kP, kI, kD$) + Feedforward ($kS, kV, kA$) text inputs with submit buttons.
+- **Intake Arm Pivot**: Real-time angle telemetry bars vs goal & live Profiled PID ($kP, kI, kD$) + Gravity Feedforward ($kS, kG, kV, kA$).
 - **Autonomous Holonomic Pathfinding**: Live Choreo/Pure Pursuit Drive ($kP, kI, kD$) and Heading Turn ($kP, kI, kD$) controllers.
-- **Driver Response Shaping**: Live Slew Rate Limiters ($4.5\text{ m/s}^2$ translation, $7.0\text{ rad/s}^2$ rotation) and assist toggles.
+- **Driver Response Shaping**: Live Slew Rate Limiters ($4.5\text{ m/s}^2$ translation, $7.0\text{ rad/s}^2$ rotation) and assist toggles (`Toggle Switch`).
 
 ---
 
@@ -119,6 +127,8 @@ The robot codebase integrates an automated driver training system (`MatchCoach.j
 2. **Rapid Cycling Sprint (`RAPID_CYCLING`)**: Defense disabled with automatic ball respawning for solo cycle time-trials.
 3. **Trench Defense & Pirouette Drill (`TRENCH_DEFENSE`)**: Defense sparring partner patrolling trenches at 80% speed to practice trench funneling and contact-breaking pirouettes.
 4. **Anti-Defense SOTF Drill (`ANTI_DEFENSE_SHOOTING`)**: 85% speed lead-pursuit defender to train moving shots under heavy pursuit.
+5. **Triple Threat Scrum (`3-Bot Cycling`)**: Set Opponent Count to 3 with all bots on `AUTONOMOUS_CYCLER`. Trains fast visual identification and contested ground pick-up reaction time when 3 opponents are actively harvesting midfield fuel clusters.
+6. **2-on-1 Gauntlet Defense**: Set Opponent Count to 2 with Bot 0 as `DEFENSE_BULLY` and Bot 1 as `LEAD_PURSUIT_INTERCEPTOR`. Practice escape spins, legal pin evasion (<2.0s), and finding narrow shooting windows while under coordinated double-team pressure.
 
 ### External AI Coach Tool (`tools/coaching/jev_coach.py`)
 Run the standalone coaching tool during practice sessions:

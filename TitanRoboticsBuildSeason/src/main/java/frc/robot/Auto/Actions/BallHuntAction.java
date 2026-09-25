@@ -87,7 +87,7 @@ public class BallHuntAction implements Actions {
         }
         wasHoldingFuel = currentlyHoldingFuel;
 
-        double now = Timer.getFPGATimestamp();
+        double now = Timer.getTimestamp();
         boolean hasBall = vision.hasGamePiece();
         double driverSpeedCmd = Math.hypot(driverForward, driverStrafe);
 
@@ -115,9 +115,14 @@ public class BallHuntAction implements Actions {
             // Speed Scaling: Smooth deceleration with distance, but maintaining vigorous ingestion velocity
             double pursuitSpeed = Math.min(MAX_PURSUIT_SPEED, Math.max(MIN_INGESTION_SPEED, distance * 1.8));
 
-            // If driver is pressing stick forward in the general direction, boost speed
-            if (driverForward > 0.15) {
-                pursuitSpeed = Math.min(Constants.MAX_SPEED * 0.85, pursuitSpeed + driverForward * 1.5);
+            // Translate field-relative driver input into robot coordinates to evaluate if driver is pressing towards target
+            Translation2d driverField = new Translation2d(driverForward, driverStrafe);
+            Translation2d driverRobot = driverField.rotateBy(swerve.getPose().getRotation().unaryMinus());
+            double driverAlongBall = (normDir.getX() * driverRobot.getX()) + (normDir.getY() * driverRobot.getY());
+
+            // If driver is pressing stick towards the ball, boost pursuit speed
+            if (driverAlongBall > 0.15) {
+                pursuitSpeed = Math.min(Constants.MAX_SPEED * 0.85, pursuitSpeed + driverAlongBall * 1.5);
             }
 
             double forwardSpeed = normDir.getX() * pursuitSpeed;

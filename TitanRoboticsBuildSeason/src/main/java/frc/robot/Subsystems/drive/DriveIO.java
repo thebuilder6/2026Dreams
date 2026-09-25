@@ -2,6 +2,7 @@ package frc.robot.Subsystems.drive;
 
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.kinematics.ChassisSpeeds;
+import org.littletonrobotics.junction.AutoLog;
 
 /**
  * Hardware IO abstraction interface for the Swerve Drivebase.
@@ -10,6 +11,7 @@ import edu.wpi.first.math.kinematics.ChassisSpeeds;
  */
 public interface DriveIO {
 
+    @AutoLog
     public static class DriveIOInputs {
         // Module Drive data (FL, FR, BL, BR)
         public double[] drivePositionsMeters = new double[4];

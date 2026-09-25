@@ -1,12 +1,17 @@
 package frc.robot.Sim;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
+import swervelib.simulation.ironmaple.simulation.SimulatedArena;
+import swervelib.simulation.ironmaple.simulation.gamepieces.GamePieceOnFieldSimulation;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import frc.robot.Auto.DynamicObstacle;
@@ -16,23 +21,27 @@ import frc.robot.Data.Constants;
 import frc.robot.Data.FieldMap;
 import frc.robot.Data.GlideConstants;
 import frc.robot.Data.GlideConstants.GlidePoint;
+import frc.robot.Subsystems.Intake.IntakeState;
+import frc.robot.Subsystems.Shooter.ShooterState;
 import frc.robot.Utils.AllianceFlipUtil;
 import org.littletonrobotics.junction.Logger;
 
 /**
  * Jev AI Decision Engine (TypeSafe AI)
  * 
- * High-frequency "System One" decision model:
- * - Single parallel forward pass
- * - Sub-20ms deterministic execution latency guarantee
- * - Real-time tactical utility scoring:
- *   1. BLOCK_SHOOTING_LANE: Intercepts player shooting path to active Hub
- *   2. CONTEST_DEPOT: Denies game piece loading at human player depot
- *   3. SHADOW_PLAYER: Mirrors player Y movement along field midline
- *   4. RETREAT_DEFENSE: Falls back to protect alliance zone when hub shifts/deactivates
- * - Emits schema-validated structured JSON for AdvantageScope and telemetry.
+ * Cognitive Architecture:
+ * - System 2: Strategic utility model evaluating match time, Hub active phase, and fuel inventory.
+ * - System 1: High-frequency (<1ms) tactical policy generating concrete mechanism and drive intents.
  */
 public class JevDecisionEngine {
+
+    public enum AIArchetype {
+        AUTONOMOUS_CYCLER,
+        TACTICAL_DEFENDER,
+        LEAD_PURSUIT_INTERCEPTOR,
+        PINNING_BULLY,
+        ADAPTIVE_COMPETITOR
+    }
 
     public enum TacticalAction {
         BLOCK_SHOOTING_LANE,
@@ -41,9 +50,6 @@ public class JevDecisionEngine {
         RETREAT_DEFENSE
     }
 
-    /**
-     * Immutable decision result produced by the tactical evaluation.
-     */
     public static class DecisionResult {
         public final TacticalAction action;
         public final Pose2d targetPose;
@@ -70,9 +76,6 @@ public class JevDecisionEngine {
             this.timestamp = timestamp;
         }
 
-        /**
-         * Emits structured JSON adhering to the Jev AI schema.
-         */
         public String toSchemaJson() {
             StringBuilder sb = new StringBuilder();
             sb.append("{");
@@ -97,7 +100,6 @@ public class JevDecisionEngine {
         }
     }
 
-    // Strategic Field Landmarks (Consolidated via FieldMap)
     public static final Translation2d BLUE_HUB_POS = FieldMap.Hubs.BLUE_HUB_2D;
     public static final Translation2d BLUE_DEPOT_POS = FieldMap.Depots.BLUE_DEPOT_CONTEST;
     public static final double CENTERLINE_X = FieldMap.CENTERLINE_X;
@@ -114,16 +116,389 @@ public class JevDecisionEngine {
 
     private DecisionResult lastDecision = null;
 
+    // =========================================================================
+    // JEV TYPE-SAFE POLICY ENGINE (Option A & Option B)
+    // =========================================================================
+
     /**
-     * Evaluates all tactical candidates in a single pass (< 20ms) and returns the optimal action.
+     * Evaluates WorldState through the Jev Macro Utility Matrix and outputs a concrete AIActionIntent.
+     * Guaranteed deterministic, stateless (re-entrant for multi-bot simulations), and sub-millisecond latency.
      *
-     * @param playerPose Current pose of the player robot (Blue-origin)
-     * @param opponentPose Current pose of the AI sparring robot
-     * @param matchTimeRemaining Seconds remaining in match
-     * @param isHubActive Whether the target scoring Hub is active
-     * @param isRedAlliance True if player is on Red Alliance (coordinates will be flipped for opponent)
-     * @return DecisionResult containing selected action, target pose, and telemetry.
+     * @param world State snapshot of the match and robots
+     * @param archetype AI persona / behavior profile
+     * @return Fully specified AIActionIntent
      */
+    public AIActionIntent evaluatePolicy(WorldState world, Archetype archetype) {
+        long startNanos = System.nanoTime();
+
+        Translation2d selfHub = FieldMap.Hubs.getHubLocation2d(world.isRedAlliance());
+        double distToSelfHub = world.selfPose().getTranslation().getDistance(selfHub);
+
+        // ── 1. Evaluate Utility Scores Across Objectives ─────────────────────
+        Map<StrategicObjective, Double> utilities = new LinkedHashMap<>();
+
+        // Rush Climb (Endgame priority)
+        double climbUtility = 0.0;
+        if (world.matchTimeRemaining() > 0.0 && world.matchTimeRemaining() <= 20.0) {
+            if (world.matchTimeRemaining() <= 15.0) {
+                // Dominant endgame priority: strictly overrides cycling in final 15 seconds
+                climbUtility = 0.99 + (0.01 * (1.0 - world.matchTimeRemaining() / 15.0));
+            } else {
+                climbUtility = 0.85 + (0.13 * (1.0 - (world.matchTimeRemaining() - 15.0) / 5.0));
+            }
+        }
+        utilities.put(StrategicObjective.RUSH_CLIMB, climbUtility);
+
+        // Cycle Score Hub
+        double scoreUtility = 0.0;
+        int minFuelToScore = (archetype == Archetype.CO_PILOT) ? 1 : 3;
+        if (world.isAllianceHubActive() && world.heldFuelCount() >= minFuelToScore) {
+            double loadRatio = (archetype == Archetype.CO_PILOT)
+                    ? 1.0
+                    : Math.min(1.0, world.heldFuelCount() / 14.0);
+            scoreUtility = 0.70 + (0.28 * loadRatio); // 0.70 to 0.98
+        }
+        utilities.put(StrategicObjective.CYCLE_SCORE_HUB, scoreUtility);
+
+        // Stage Standoff
+        double stageUtility = 0.0;
+        int minFuelToStage = (archetype == Archetype.CO_PILOT) ? 1 : 10;
+        if (!world.isAllianceHubActive() && world.heldFuelCount() >= minFuelToStage) {
+            stageUtility = 0.82;
+            if (world.timeUntilHubShift() <= 3.5 && world.timeUntilHubShift() > 0.0) {
+                stageUtility = (archetype == Archetype.CO_PILOT) ? 0.99 : 0.94; // Anticipate imminent shift
+            }
+        }
+        utilities.put(StrategicObjective.STAGE_STANDOFF, stageUtility);
+
+        // Vacuum Midfield (Field fuel harvest)
+        double vacuumUtility = 0.0;
+        if (!world.isInventoryFull()) {
+            if (!world.isAllianceHubActive()) {
+                // Stockpile while hub is locked
+                vacuumUtility = 0.88 + (0.10 * (1.0 - world.heldFuelCount() / 30.0));
+            } else if (world.heldFuelCount() < 6) {
+                vacuumUtility = 0.78 + (0.18 * (1.0 - world.heldFuelCount() / 6.0));
+            } else {
+                vacuumUtility = 0.40;
+            }
+        }
+        utilities.put(StrategicObjective.VACUUM_MIDFIELD, vacuumUtility);
+
+        // Stockpile Depot (Feeder station restock)
+        double stockpileUtility = 0.0;
+        if (!world.isInventoryFull() && !world.isAllianceHubActive()) {
+            stockpileUtility = 0.84 + (0.10 * (1.0 - world.heldFuelCount() / 30.0));
+        }
+        utilities.put(StrategicObjective.STOCKPILE_DEPOT, stockpileUtility);
+
+        // Defense Objectives
+        double laneDenialUtility = 0.0;
+        double shadowUtility = 0.0;
+        double interceptUtility = 0.0;
+
+        if (archetype == Archetype.TACTICAL_DEFENDER || archetype == Archetype.DEFENSE_BULLY || archetype == Archetype.ADAPTIVE_COMPETITOR) {
+            Translation2d oppHub = FieldMap.Hubs.getHubLocation2d(!world.isRedAlliance());
+            double oppDistToHub = world.opponentPose().getTranslation().getDistance(oppHub);
+
+            if (world.isOpponentHubActive() && oppDistToHub < 6.5) {
+                laneDenialUtility = 0.86;
+            }
+            shadowUtility = 0.65;
+            interceptUtility = 0.75;
+        }
+
+        // Apply Archetype Multipliers
+        if (archetype == Archetype.AUTONOMOUS_CYCLER) {
+            laneDenialUtility = 0.0;
+            shadowUtility = 0.0;
+            interceptUtility = 0.0;
+        } else if (archetype == Archetype.TACTICAL_DEFENDER) {
+            scoreUtility = 0.0;
+            stageUtility = 0.0;
+            vacuumUtility *= 0.20;
+            stockpileUtility *= 0.20;
+            laneDenialUtility *= 1.15;
+            shadowUtility *= 1.10;
+        } else if (archetype == Archetype.LEAD_PURSUIT_INTERCEPTOR) {
+            interceptUtility = 0.99;
+            scoreUtility = 0.0;
+            vacuumUtility = 0.0;
+            stockpileUtility = 0.0;
+        } else if (archetype == Archetype.DEFENSE_BULLY) {
+            interceptUtility = 0.99;
+            scoreUtility = 0.0;
+        } else if (archetype == Archetype.CO_PILOT) {
+            laneDenialUtility = 0.0;
+            shadowUtility = 0.0;
+            interceptUtility = 0.0;
+        }
+
+        utilities.put(StrategicObjective.DENY_SHOOTING_LANE, laneDenialUtility);
+        utilities.put(StrategicObjective.SHADOW_MIDLINE, shadowUtility);
+        utilities.put(StrategicObjective.LEAD_INTERCEPT, interceptUtility);
+
+        // ── 2. Select Highest Utility Objective ──────────────────────────────
+        StrategicObjective bestObjective = StrategicObjective.VACUUM_MIDFIELD;
+        double maxUtility = -1.0;
+        for (Map.Entry<StrategicObjective, Double> entry : utilities.entrySet()) {
+            if (entry.getValue() > maxUtility) {
+                maxUtility = entry.getValue();
+                bestObjective = entry.getKey();
+            }
+        }
+
+        // ── 3. Resolve Concrete Tactical Action Intent ───────────────────────
+        Pose2d navTarget;
+        Rotation2d aimOverride = null;
+        IntakeState intakeCmd = IntakeState.STANDBY;
+        ShooterState shooterCmd = ShooterState.STOPPED;
+        double targetRPM = 0.0;
+        boolean triggerKicker = false;
+        String rationale;
+
+        switch (bestObjective) {
+            case CYCLE_SCORE_HUB:
+                navTarget = calculatePolarStandoffPose(world.selfPose(), world.isRedAlliance());
+                intakeCmd = IntakeState.STANDBY;
+
+                // Pre-spool flywheels during transit
+                shooterCmd = ShooterState.PREPARING;
+                targetRPM = 3200.0;
+
+                // Fire evaluation if within shooting range
+                boolean inRange = distToSelfHub <= 3.60 && distToSelfHub >= 1.40;
+                boolean openCeiling = !FieldMap.Trenches.isLowClearance(world.selfPose());
+                boolean laneClear = !isShootingLaneBlocked(world.selfPose(), selfHub, world.opponentPose());
+
+                if (inRange && openCeiling && laneClear) {
+                    Rotation2d faceHub = selfHub.minus(world.selfPose().getTranslation()).getAngle();
+                    aimOverride = faceHub;
+                    double headingErr = Math.abs(world.selfPose().getRotation().minus(faceHub).getDegrees());
+                    if (headingErr < 8.0) {
+                        shooterCmd = ShooterState.SHOOTING;
+                        triggerKicker = true;
+                    }
+                }
+                rationale = String.format("Hub Active. Cycling %d fuel to Hub.", world.heldFuelCount());
+                break;
+
+            case STAGE_STANDOFF:
+                navTarget = calculatePolarStandoffPose(world.selfPose(), world.isRedAlliance());
+                intakeCmd = IntakeState.STANDBY;
+                shooterCmd = ShooterState.STOPPED;
+                rationale = String.format("Hub Inactive (shifts in %.1fs). Staging with %d fuel.", 
+                        world.timeUntilHubShift(), world.heldFuelCount());
+                break;
+
+            case STOCKPILE_DEPOT:
+                Translation2d depotApproach = FieldMap.Depots.getDepotApproach(world.isRedAlliance());
+                Rotation2d faceWall = Rotation2d.fromDegrees(world.isRedAlliance() ? 0.0 : 180.0);
+                navTarget = new Pose2d(depotApproach, faceWall);
+                intakeCmd = IntakeState.INTAKING;
+                shooterCmd = ShooterState.STOPPED;
+                rationale = String.format("Stockpiling at Alliance Depot (%d/30).", world.heldFuelCount());
+                break;
+
+            case VACUUM_MIDFIELD:
+                navTarget = findClusterWeightedFuelTarget(world.selfPose(), world.isRedAlliance());
+                intakeCmd = IntakeState.INTAKING;
+                shooterCmd = ShooterState.STOPPED;
+                rationale = String.format("Hunting fuel (%d/30). Hopper capacity available.", world.heldFuelCount());
+                break;
+
+            case LEAD_INTERCEPT:
+                navTarget = solveLeadPursuitIntercept(
+                        world.selfPose(), world.opponentPose(),
+                        new Translation2d(world.opponentVelocity().vxMetersPerSecond, world.opponentVelocity().vyMetersPerSecond),
+                        Constants.MAX_SPEED);
+                intakeCmd = IntakeState.STANDBY;
+                shooterCmd = ShooterState.STOPPED;
+                rationale = "Pursuing and intercepting opponent trajectory.";
+                break;
+
+            case DENY_SHOOTING_LANE:
+                Translation2d oppGoal = FieldMap.Hubs.getHubLocation2d(!world.isRedAlliance());
+                Translation2d dir = oppGoal.minus(world.opponentPose().getTranslation());
+                if (dir.getNorm() > 1e-3) dir = dir.div(dir.getNorm());
+                Translation2d blockPos = world.opponentPose().getTranslation().plus(dir.times(1.5));
+                Rotation2d faceOpp = world.opponentPose().getTranslation().minus(blockPos).getAngle();
+                navTarget = new Pose2d(blockPos, faceOpp);
+                intakeCmd = IntakeState.STANDBY;
+                shooterCmd = ShooterState.STOPPED;
+                rationale = "Blocking opponent shooting corridor.";
+                break;
+
+            case SHADOW_MIDLINE:
+                double shadowX = world.isRedAlliance() ? (CENTERLINE_X + 0.8) : (CENTERLINE_X - 0.8);
+                double clampedY = Math.max(1.0, Math.min(FieldMap.FIELD_WIDTH - 1.0, world.opponentPose().getY()));
+                Rotation2d face = world.opponentPose().getTranslation().minus(new Translation2d(shadowX, clampedY)).getAngle();
+                navTarget = new Pose2d(shadowX, clampedY, face);
+                intakeCmd = IntakeState.STANDBY;
+                shooterCmd = ShooterState.STOPPED;
+                rationale = "Shadowing opponent across field midline.";
+                break;
+
+            case RUSH_CLIMB:
+                String parkKey = world.isRedAlliance() ? "Red Right Side Climb" : "Blue Right Side Climb";
+                if (GlideConstants.GLIDE_POINTS.containsKey(parkKey)) {
+                    navTarget = GlideConstants.GLIDE_POINTS.get(parkKey).pose();
+                } else {
+                    Translation2d pole = FieldMap.ClimbingTowers.getTowerPole(world.isRedAlliance());
+                    navTarget = new Pose2d(pole.plus(new Translation2d(world.isRedAlliance() ? -0.8 : 0.8, 0.0)), 
+                            Rotation2d.fromDegrees(world.isRedAlliance() ? 0 : 180));
+                }
+                intakeCmd = IntakeState.STANDBY;
+                shooterCmd = ShooterState.STOPPED;
+                rationale = String.format("Endgame (%.1fs remaining). Navigating to Alliance Parking.", world.matchTimeRemaining());
+                break;
+
+            case IDLE:
+            default:
+                navTarget = world.selfPose();
+                intakeCmd = IntakeState.STANDBY;
+                shooterCmd = ShooterState.STOPPED;
+                rationale = "Idle.";
+                break;
+        }
+
+        double latencyMs = (System.nanoTime() - startNanos) / 1_000_000.0;
+        Logger.recordOutput("JevAI/ActiveObjective", bestObjective.name());
+        Logger.recordOutput("JevAI/Confidence", maxUtility);
+        Logger.recordOutput("JevAI/Rationale", rationale);
+        Logger.recordOutput("JevAI/PolicyLatencyMs", latencyMs);
+
+        return new AIActionIntent(
+                bestObjective, navTarget, aimOverride, intakeCmd, shooterCmd, targetRPM, triggerKicker, maxUtility, rationale);
+    }
+
+    /**
+     * Backward-compatible overload accepting legacy AIArchetype.
+     */
+    public AIActionIntent evaluatePolicy(WorldState world, AIArchetype archetype) {
+        return evaluatePolicy(world, Archetype.fromString(archetype.name()));
+    }
+
+    /**
+     * Spatial cluster-density piece scent algorithm (Option B).
+     * Replaces single closest ball search with a Gaussian density field evaluator that targets
+     * dense rows/clusters of 3-6 pieces (depot lines, centerline grid) in continuous sweeps.
+     *
+     * @param robotPose Current pose of the robot seeking fuel
+     * @param isRedAlliance True if robot is on Red Alliance
+     * @return Target Pose2d on carpet facing the highest-density fuel cluster
+     */
+    public Pose2d findClusterWeightedFuelTarget(Pose2d robotPose, boolean isRedAlliance) {
+        SimulatedArena arena = SimulatedArena.getInstance();
+        Translation2d bestTarget = null;
+        double highestScent = -1.0;
+
+        List<Translation2d> candidates = new ArrayList<>();
+
+        if (arena != null) {
+            try {
+                Set<GamePieceOnFieldSimulation> pieces = arena.gamePiecesOnField();
+                if (pieces != null && !pieces.isEmpty()) {
+                    for (var piece : pieces) {
+                        if (piece == null || !"Fuel".equals(piece.getType())) continue;
+                        Translation2d pos = piece.getPoseOnField().getTranslation();
+
+                        // Field boundaries & obstacle avoidance
+                        if (pos.getX() < 0.05 || pos.getX() > 16.48 || pos.getY() < 0.05 || pos.getY() > 8.00) continue;
+                        if (StaticPathfinder.isPointInObstacle(pos)) continue;
+
+                        // Restrict opposing driver wall zone
+                        if (isRedAlliance && pos.getX() < 3.5) continue;
+                        if (!isRedAlliance && pos.getX() > 13.0) continue;
+
+                        candidates.add(pos);
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+
+        if (!candidates.isEmpty()) {
+            final double clusterRadius = 1.30;
+            final double twoSigmaSq = 2.0 * 0.50 * 0.50; // sigma = 0.50m
+
+            for (int i = 0; i < candidates.size(); i++) {
+                Translation2d cand = candidates.get(i);
+                double density = 1.0;
+
+                for (int j = 0; j < candidates.size(); j++) {
+                    if (i == j) continue;
+                    double d = cand.getDistance(candidates.get(j));
+                    if (d <= clusterRadius) {
+                        density += Math.exp(-(d * d) / twoSigmaSq);
+                    }
+                }
+
+                double dist = robotPose.getTranslation().getDistance(cand);
+                Translation2d delta = cand.minus(robotPose.getTranslation());
+                double angleDiff = Math.abs(robotPose.getRotation().minus(delta.getAngle()).getRadians());
+                double alignBonus = 0.70 + 0.30 * Math.max(0.0, Math.cos(angleDiff));
+
+                double scent = (Math.pow(density, 1.5) / (dist + 0.40)) * alignBonus;
+
+                if (scent > highestScent) {
+                    highestScent = scent;
+                    bestTarget = cand;
+                }
+            }
+        }
+
+        if (bestTarget != null) {
+            double approachX = bestTarget.getX();
+            double approachY = bestTarget.getY();
+            Rotation2d targetHeading;
+
+            if (bestTarget.getX() > 15.60) {
+                approachX = Math.min(15.98, bestTarget.getX() - 0.48);
+                targetHeading = Rotation2d.fromDegrees(0);
+            } else if (bestTarget.getX() < 0.90) {
+                approachX = Math.max(0.55, bestTarget.getX() + 0.48);
+                targetHeading = Rotation2d.fromDegrees(180);
+            } else if (bestTarget.getY() < 0.90) {
+                approachY = Math.max(0.55, bestTarget.getY() + 0.48);
+                targetHeading = Rotation2d.fromDegrees(-90);
+            } else if (bestTarget.getY() > 7.15) {
+                approachY = Math.min(7.50, bestTarget.getY() - 0.48);
+                targetHeading = Rotation2d.fromDegrees(90);
+            } else {
+                targetHeading = bestTarget.minus(robotPose.getTranslation()).getAngle();
+                Translation2d offset = new Translation2d(0.35, 0).rotateBy(targetHeading);
+                approachX = bestTarget.getX() - offset.getX();
+                approachY = bestTarget.getY() - offset.getY();
+            }
+
+            Translation2d targetPos = new Translation2d(approachX, approachY);
+            return StaticPathfinder.ensurePoseOutsideObstacles(new Pose2d(targetPos, targetHeading), robotPose.getTranslation());
+        }
+
+        // Fallback: Midline patrol
+        double midX = CENTERLINE_X;
+        double midY = (robotPose.getY() > 4.0) ? 5.80 : 2.40;
+        return StaticPathfinder.ensurePoseOutsideObstacles(
+                new Pose2d(midX, midY, Rotation2d.fromDegrees(isRedAlliance ? 180 : 0)), robotPose.getTranslation());
+    }
+
+    private boolean isShootingLaneBlocked(Pose2d shooterPose, Translation2d targetHub, Pose2d opponentPose) {
+        Translation2d botPos = shooterPose.getTranslation();
+        Translation2d toHub = targetHub.minus(botPos);
+        Translation2d toOpp = opponentPose.getTranslation().minus(botPos);
+
+        double dist = toOpp.getNorm();
+        if (dist < 1.60 && dist > 0.05) {
+            double angleDiff = Math.abs(toHub.getAngle().minus(toOpp.getAngle()).getRadians());
+            return angleDiff < Math.toRadians(25.0);
+        }
+        return false;
+    }
+
+    // =========================================================================
+    // LEGACY & SPECIALIZED UTILITY METHODS (Full Backwards Compatibility)
+    // =========================================================================
+
     public DecisionResult evaluate(
             Pose2d playerPose,
             Pose2d opponentPose,
@@ -134,11 +509,9 @@ public class JevDecisionEngine {
         long startNanos = System.nanoTime();
         double now = Timer.getFPGATimestamp();
 
-        // 1. Calculate distances to strategic structures
         Translation2d targetHub = isRedAlliance ? 
                 new Translation2d(Constants.RED_HUB_LOCATION.getX(), Constants.RED_HUB_LOCATION.getY()) : 
                 BLUE_HUB_POS;
-
         Translation2d targetDepot = AllianceFlipUtil.apply(BLUE_DEPOT_POS, isRedAlliance);
 
         double distToHub = playerPose.getTranslation().getDistance(targetHub);
@@ -146,28 +519,22 @@ public class JevDecisionEngine {
 
         Map<TacticalAction, Double> scores = new LinkedHashMap<>();
 
-        // 2. Score candidate A: BLOCK_SHOOTING_LANE
-        // High utility when player is within shooting range (< 6m) and Hub is active
         double blockScore = 0.20;
         if (isHubActive && distToHub < 6.5) {
             double proximityWeight = Math.max(0.0, 1.0 - (distToHub / 6.5));
-            blockScore = 0.65 + (0.30 * proximityWeight); // 0.65 to 0.95
+            blockScore = 0.65 + (0.30 * proximityWeight);
         } else if (!isHubActive) {
-            blockScore = 0.10; // Hub inactive, blocking lane is low priority
+            blockScore = 0.10;
         }
         scores.put(TacticalAction.BLOCK_SHOOTING_LANE, blockScore);
 
-        // 3. Score candidate B: CONTEST_DEPOT
-        // High utility when player is approaching loading station / depot
         double depotScore = 0.25;
         if (distToDepot < 4.0) {
             double depotWeight = Math.max(0.0, 1.0 - (distToDepot / 4.0));
-            depotScore = 0.60 + (0.35 * depotWeight); // 0.60 to 0.95
+            depotScore = 0.60 + (0.35 * depotWeight);
         }
         scores.put(TacticalAction.CONTEST_DEPOT, depotScore);
 
-        // 4. Score candidate C: SHADOW_PLAYER
-        // Midfield denial: mirrors player's Y axis to prevent transitions when Hub is active
         double shadowScore = isHubActive ? 0.50 : 0.20;
         double midfieldDist = Math.abs(playerPose.getX() - CENTERLINE_X);
         if (isHubActive && midfieldDist < 3.0) {
@@ -175,18 +542,15 @@ public class JevDecisionEngine {
         }
         scores.put(TacticalAction.SHADOW_PLAYER, shadowScore);
 
-        // 5. Score candidate D: RETREAT_DEFENSE
-        // High utility if Hub is inactive or opponent needs to fall back to home quadrant
         double retreatScore = 0.15;
         if (!isHubActive) {
             retreatScore = 0.85;
         }
         if (matchTimeRemaining < 15.0) {
-            retreatScore = Math.max(retreatScore, 0.80); // End-game defense
+            retreatScore = Math.max(retreatScore, 0.80);
         }
         scores.put(TacticalAction.RETREAT_DEFENSE, retreatScore);
 
-        // 6. Select highest utility action
         TacticalAction selected = TacticalAction.SHADOW_PLAYER;
         double maxScore = -1.0;
         for (Map.Entry<TacticalAction, Double> entry : scores.entrySet()) {
@@ -196,26 +560,21 @@ public class JevDecisionEngine {
             }
         }
 
-        // 7. Compute target pose for selected tactical action
         Pose2d targetPose;
         String rationale;
 
         switch (selected) {
             case BLOCK_SHOOTING_LANE:
-                // Position opponent robot between player and Hub, 1.5m in front of player
                 Translation2d dirToHub = targetHub.minus(playerPose.getTranslation());
                 double norm = dirToHub.getNorm();
                 Translation2d unitDir = norm > 1e-4 ? dirToHub.times(1.0 / norm) : new Translation2d(1, 0);
                 Translation2d blockPos = playerPose.getTranslation().plus(unitDir.times(1.5));
-
-                // Angle opponent robot directly facing player
                 Rotation2d angleToPlayer = playerPose.getTranslation().minus(blockPos).getAngle();
                 targetPose = new Pose2d(blockPos, angleToPlayer);
                 rationale = String.format("Player is %.2fm from active Hub; blocking shooting corridor.", distToHub);
                 break;
 
             case CONTEST_DEPOT:
-                // Intercept route between player and depot
                 Translation2d contestPos = targetDepot.plus(new Translation2d(0.8, -0.5));
                 Rotation2d angleFacingDepot = targetDepot.minus(contestPos).getAngle();
                 targetPose = new Pose2d(contestPos, angleFacingDepot);
@@ -223,7 +582,6 @@ public class JevDecisionEngine {
                 break;
 
             case RETREAT_DEFENSE:
-                // Protect home defensive quadrant for the opponent AI
                 boolean opponentIsRed = !isRedAlliance;
                 double retreatX = opponentIsRed ? (AllianceFlipUtil.FIELD_LENGTH - RETREAT_X) : RETREAT_X;
                 targetPose = new Pose2d(retreatX, 4.0, Rotation2d.fromDegrees(opponentIsRed ? 180 : 0));
@@ -232,12 +590,11 @@ public class JevDecisionEngine {
 
             case SHADOW_PLAYER:
             default:
-                // Position at field centerline tracking player's Y coordinate on opponent's side
                 boolean oppIsRed = !isRedAlliance;
-                double shadowX = oppIsRed ? (CENTERLINE_X + 0.8) : (CENTERLINE_X - 0.8);
+                double sX = oppIsRed ? (CENTERLINE_X + 0.8) : (CENTERLINE_X - 0.8);
                 double clampedY = Math.max(1.0, Math.min(AllianceFlipUtil.FIELD_WIDTH - 1.0, playerPose.getY()));
-                Rotation2d facePlayer = playerPose.getTranslation().minus(new Translation2d(shadowX, clampedY)).getAngle();
-                targetPose = new Pose2d(shadowX, clampedY, facePlayer);
+                Rotation2d facePlayer = playerPose.getTranslation().minus(new Translation2d(sX, clampedY)).getAngle();
+                targetPose = new Pose2d(sX, clampedY, facePlayer);
                 rationale = String.format("Shadowing player transition at midline (Y=%.2fm).", clampedY);
                 break;
         }
@@ -299,9 +656,6 @@ public class JevDecisionEngine {
         }
     }
 
-    /**
-     * In-Match Strategy Arbitrator: Evaluates offensive priorities based on Hub status and field geometry.
-     */
     public StrategicAdvice evaluateOffensiveStrategy(
             Pose2d robotPose,
             double matchTimeRemaining,
@@ -352,19 +706,6 @@ public class JevDecisionEngine {
         return new StrategicAdvice(strategy, utility, advice, waypoint);
     }
 
-    /**
-     * Smart "One-Button Glide" Arbitration:
-     * Arbitrates target waypoint dynamically between:
-     * 1. Hub shooting pose (if robot has fuel AND Hub is active)
-     * 2. Midfield neutral game piece hunt (if robot is empty AND Hub is active)
-     * 3. Feeder / Depot loading station (if Hub is currently inactive)
-     *
-     * @param robotPose Current pose of the robot
-     * @param hasFuel True if robot is holding fuel / game piece
-     * @param isHubActive True if scoring Hub is active
-     * @param isRedAlliance True if on Red Alliance
-     * @return Target Pose2d for autonomous glide navigation
-     */
     public Pose2d getSmartGlideTarget(
             Pose2d robotPose,
             boolean hasFuel,
@@ -374,8 +715,14 @@ public class JevDecisionEngine {
         Pose2d targetPose;
         String mode;
 
-        if (hasFuel && isHubActive) {
-            // Mode 1: Hub Shooting Pose
+        double matchTime = Timer.getMatchTime();
+        if (matchTime > 0.0 && matchTime <= 20.0) {
+            String parkKey = isRedAlliance ? "Red Right Side Climb" : "Blue Right Side Climb";
+            targetPose = GlideConstants.GLIDE_POINTS.containsKey(parkKey) ?
+                    GlideConstants.GLIDE_POINTS.get(parkKey).pose() :
+                    new Pose2d(isRedAlliance ? 15.48 : 1.05, 2.88, Rotation2d.fromDegrees(isRedAlliance ? 0 : 180));
+            mode = "ENDGAME_PARK (" + (isRedAlliance ? "Red" : "Blue") + ")";
+        } else if (hasFuel && isHubActive) {
             String frontKey = isRedAlliance ? "Red Hub Front" : "Blue Hub Front";
             String backKey = isRedAlliance ? "Red Hub Back" : "Blue Hub Back";
 
@@ -392,7 +739,6 @@ public class JevDecisionEngine {
             targetPose = (distFront <= distBack) ? frontPose : backPose;
             mode = "SCORE_HUB (" + (distFront <= distBack ? "Front" : "Back") + ")";
         } else if (!hasFuel && isHubActive) {
-            // Mode 2: Neutral Ball Hunt (Midfield)
             Pose2d topMid = GlideConstants.GLIDE_POINTS.containsKey("Midfield Top") ?
                     GlideConstants.GLIDE_POINTS.get("Midfield Top").pose() :
                     new Pose2d(CENTERLINE_X, 6.10, Rotation2d.fromDegrees(-90));
@@ -406,7 +752,6 @@ public class JevDecisionEngine {
             targetPose = (distTop <= distBot) ? topMid : botMid;
             mode = "BALL_HUNT_MIDFIELD (" + (distTop <= distBot ? "Top" : "Bottom") + ")";
         } else {
-            // Mode 3: Feeder / Depot Reloading (Hub Inactive)
             String topFeederKey = isRedAlliance ? "Red Feeder Top" : "Blue Feeder Top";
             String botFeederKey = isRedAlliance ? "Red Feeder Bottom" : "Blue Feeder Bottom";
 
@@ -433,18 +778,6 @@ public class JevDecisionEngine {
         return targetPose;
     }
 
-    /**
-     * Quadratic Lead-Pursuit Interception Solver:
-     * Computes the exact time t and location P(t) where the robot at max speed can intercept
-     * an opponent robot traveling at constant velocity V_opp along ray L(t) = P_opp + V_opp * t.
-     * Solves: ||(P_opp - P_robot) + V_opp * t||^2 = (V_max * t)^2
-     *
-     * @param robotPose Current robot pose
-     * @param opponentPose Current opponent pose
-     * @param opponentVel Opponent field-relative velocity vector (m/s)
-     * @param maxRobotSpeed Maximum available robot velocity (m/s)
-     * @return Optimal intercept Pose2d clamped within legal field borders, facing opponent
-     */
     public Pose2d solveLeadPursuitIntercept(
             Pose2d robotPose,
             Pose2d opponentPose,
@@ -461,7 +794,6 @@ public class JevDecisionEngine {
         double vx = opponentVel.getX();
         double vy = opponentVel.getY();
 
-        // Quadratic coefficients: a*t^2 + b*t + c = 0
         double a = (vx * vx + vy * vy) - (maxRobotSpeed * maxRobotSpeed);
         double b = 2.0 * (dx * vx + dy * vy);
         double c = dx * dx + dy * dy;
@@ -469,7 +801,6 @@ public class JevDecisionEngine {
         double interceptTime = -1.0;
 
         if (Math.abs(a) < 1e-5) {
-            // Linear case: b*t + c = 0
             if (Math.abs(b) > 1e-4) {
                 double tLinear = -c / b;
                 if (tLinear > 0.05) {
@@ -497,15 +828,12 @@ public class JevDecisionEngine {
         if (interceptTime > 0.05 && interceptTime < 5.0) {
             interceptPos = opponentPose.getTranslation().plus(opponentVel.times(interceptTime));
         } else {
-            // Fallback to pure pursuit with minor lead projection
             interceptPos = opponentPose.getTranslation().plus(opponentVel.times(0.25));
         }
 
-        // Clamp inside legal field borders
         double clampedX = Math.max(0.60, Math.min(15.94, interceptPos.getX()));
         double clampedY = Math.max(0.60, Math.min(7.65, interceptPos.getY()));
 
-        // Face oncoming opponent from intercept waypoint
         Rotation2d faceOpponent = opponentPose.getTranslation().minus(new Translation2d(clampedX, clampedY)).getAngle();
         Pose2d target = new Pose2d(clampedX, clampedY, faceOpponent);
 
@@ -513,15 +841,38 @@ public class JevDecisionEngine {
         return target;
     }
 
-    /**
-     * Offensive Anti-Defense: Dynamic Trench Corridor Selection.
-     * Evaluates obstacle presence in Top Trench vs Bottom Trench to route through the open corridor.
-     *
-     * @param robotPose Current robot pose
-     * @param outbound True if traveling towards midfield, false if returning to alliance zone
-     * @param isRedAlliance True if on Red Alliance
-     * @return Selected GlidePoint for the trench corridor with least defensive resistance
-     */
+    public Pose2d calculatePolarStandoffPose(Pose2d robotPose, boolean isRedAlliance) {
+        Translation2d hub = FieldMap.Hubs.getHubLocation2d(isRedAlliance);
+        Translation2d toRobot = robotPose.getTranslation().minus(hub);
+
+        double clampedAngleRad;
+        if (isRedAlliance) {
+            double angleFromEast = Math.atan2(toRobot.getY(), Math.abs(toRobot.getX()));
+            clampedAngleRad = Math.max(-Math.PI / 4.0, Math.min(Math.PI / 4.0, angleFromEast));
+        } else {
+            double angleFromWest = Math.atan2(toRobot.getY(), -Math.abs(toRobot.getX()));
+            double angleDiff = Math.IEEEremainder(angleFromWest - Math.PI, 2 * Math.PI);
+            double clampedFromWest = Math.max(-Math.PI / 4.0, Math.min(Math.PI / 4.0, angleDiff));
+            clampedAngleRad = Math.PI + clampedFromWest;
+        }
+
+        double targetX = hub.getX() + FieldMap.Hubs.OPTIMAL_STANDOFF_DISTANCE * Math.cos(clampedAngleRad);
+        double targetY = hub.getY() + FieldMap.Hubs.OPTIMAL_STANDOFF_DISTANCE * Math.sin(clampedAngleRad);
+
+        targetY = Math.max(2.20, Math.min(5.80, targetY));
+
+        if (isRedAlliance) {
+            targetX = Math.max(12.60, Math.min(14.80, targetX));
+        } else {
+            targetX = Math.max(1.80, Math.min(3.90, targetX));
+        }
+
+        Translation2d standoffPos = new Translation2d(targetX, targetY);
+        Rotation2d faceHubAngle = hub.minus(standoffPos).getAngle();
+
+        return new Pose2d(standoffPos, faceHubAngle);
+    }
+
     public GlidePoint selectOptimalTrenchCorridor(
             Pose2d robotPose,
             boolean outbound,
@@ -533,7 +884,6 @@ public class JevDecisionEngine {
         GlidePoint topPoint = GlideConstants.GLIDE_POINTS.get(topKey);
         GlidePoint botPoint = GlideConstants.GLIDE_POINTS.get(botKey);
 
-        // Region of interest for trench obstacles
         double minX = isRedAlliance ? 10.3 : 3.0;
         double maxX = isRedAlliance ? 13.6 : 6.3;
 
@@ -559,7 +909,6 @@ public class JevDecisionEngine {
         } else if (botObstacleCount < topObstacleCount) {
             chosen = botPoint;
         } else {
-            // Tied: pick trench closest in Y to current robot pose
             double distTop = Math.abs(robotPose.getY() - (topPoint != null ? topPoint.pose.getY() : 7.4));
             double distBot = Math.abs(robotPose.getY() - (botPoint != null ? botPoint.pose.getY() : 0.65));
             chosen = (distTop <= distBot) ? topPoint : botPoint;

@@ -3,22 +3,19 @@ package frc.robot.Data;
 import java.util.HashMap;
 import java.util.Map;
 
-import edu.wpi.first.networktables.DoublePublisher;
-import edu.wpi.first.networktables.DoubleSubscriber;
-import edu.wpi.first.networktables.DoubleTopic;
-import edu.wpi.first.networktables.NetworkTableInstance;
+import org.littletonrobotics.junction.networktables.LoggedNetworkNumber;
 
 /**
  * Class for a tunable number. Gets value from dashboard in tuning mode,
  * returns default if not or if tuning mode is disabled.
+ * Uses AdvantageKit LoggedNetworkNumber for deterministic log replay.
  */
 public class TunableNumber {
   private static final String tableKey = "TunableNumbers";
 
   private final String key;
   private double defaultValue;
-  private DoubleSubscriber subscriber;
-  private DoublePublisher publisher;
+  private LoggedNetworkNumber loggedNumber;
   private boolean hasDefault = false;
   private final Map<Integer, Double> lastHasChangedValues = new HashMap<>();
 
@@ -59,18 +56,10 @@ public class TunableNumber {
   public void setDefault(double defaultValue) {
     this.defaultValue = defaultValue;
     if (Constants.TUNING_MODE) {
-      DoubleTopic topic = NetworkTableInstance.getDefault().getDoubleTopic(tableKey + "/" + key);
-      
-      // Close previous publisher if it exists to avoid leaks
-      if (publisher != null) {
-        publisher.close();
-      }
-      publisher = topic.publish();
-      publisher.set(defaultValue);
-      
-      // We only subscribe if we are in tuning mode
-      if (subscriber == null) {
-        subscriber = topic.subscribe(defaultValue);
+      if (loggedNumber == null) {
+        loggedNumber = new LoggedNetworkNumber(tableKey + "/" + key, defaultValue);
+      } else {
+        loggedNumber.setDefault(defaultValue);
       }
     }
     hasDefault = true;
@@ -86,7 +75,7 @@ public class TunableNumber {
       return 0.0;
     }
 
-    return Constants.TUNING_MODE ? subscriber.get() : defaultValue;
+    return (Constants.TUNING_MODE && loggedNumber != null) ? loggedNumber.get() : defaultValue;
   }
 
   /**

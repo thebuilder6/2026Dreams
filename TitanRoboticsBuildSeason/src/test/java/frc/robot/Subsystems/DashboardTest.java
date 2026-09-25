@@ -36,4 +36,12 @@ public class DashboardTest {
         assertTrue(SmartDashboard.containsKey("Driver/Shoot Alert"));
         assertTrue(SmartDashboard.containsKey("Driver/Hub Shift Time Remaining"));
     }
+
+    @Test
+    public void testMultiBotSimulationControls() {
+        Dashboard.setOpponentCount(2);
+        assertTrue(Dashboard.getOpponentCount() >= 1 && Dashboard.getOpponentCount() <= 3);
+        Dashboard.setOpponentCount(1);
+        assertTrue(Dashboard.getOpponentSpeedPercent() >= 20.0 && Dashboard.getOpponentSpeedPercent() <= 100.0);
+    }
 }

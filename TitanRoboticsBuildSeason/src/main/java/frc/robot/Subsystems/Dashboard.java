@@ -11,6 +11,7 @@ import edu.wpi.first.networktables.BooleanPublisher;
 import edu.wpi.first.networktables.BooleanSubscriber;
 import edu.wpi.first.networktables.NetworkTable;
 import edu.wpi.first.networktables.NetworkTableInstance;
+import edu.wpi.first.networktables.DoubleSubscriber;
 import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.DriverStation.Alliance;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
@@ -40,6 +41,8 @@ public class Dashboard implements Subsystem {
     private static final BooleanSubscriber pitModeSub = table.getBooleanTopic("Features/Pit Mode").subscribe(false);
     private static final BooleanSubscriber hapticCollisionSub = table.getBooleanTopic("Operator/HapticCollisionEnabled")
             .subscribe(!edu.wpi.first.wpilibj.RobotBase.isSimulation());
+    private static final DoubleSubscriber opponentCountSub = table.getDoubleTopic("Simulation/OpponentCount").subscribe(1.0);
+    private static final DoubleSubscriber opponentSpeedSub = table.getDoubleTopic("Simulation/OpponentSpeedPercent").subscribe(75.0);
 
     // 2026 Game Data Variables
     private String gameData = "";
@@ -76,6 +79,8 @@ public class Dashboard implements Subsystem {
         ensureTopicDefault("Features/2 Player Defense", false);
         ensureTopicDefault("Features/Pit Mode", false);
         ensureTopicDefault("Operator/HapticCollisionEnabled", !edu.wpi.first.wpilibj.RobotBase.isSimulation());
+        ensureNumberDefault("Simulation/OpponentCount", 1.0);
+        ensureNumberDefault("Simulation/OpponentSpeedPercent", 75.0);
     }
 
     public static boolean isHapticCollisionEnabled() {
@@ -85,6 +90,12 @@ public class Dashboard implements Subsystem {
     private void ensureTopicDefault(String topicPath, boolean defaultVal) {
         if (!table.containsKey(topicPath)) {
             table.getBooleanTopic(topicPath).publish().set(defaultVal);
+        }
+    }
+
+    private void ensureNumberDefault(String topicPath, double defaultVal) {
+        if (!table.containsKey(topicPath)) {
+            table.getDoubleTopic(topicPath).publish().set(defaultVal);
         }
     }
 
@@ -334,5 +345,17 @@ public class Dashboard implements Subsystem {
 
     public static boolean isPitModeEnabled() {
         return pitModeSub.get();
+    }
+
+    public static int getOpponentCount() {
+        return (int) Math.max(1, Math.min(3, Math.round(opponentCountSub.get())));
+    }
+
+    public static void setOpponentCount(int count) {
+        table.getDoubleTopic("Simulation/OpponentCount").publish().set(Math.max(1, Math.min(3, count)));
+    }
+
+    public static double getOpponentSpeedPercent() {
+        return Math.max(20.0, Math.min(100.0, opponentSpeedSub.get()));
     }
 }

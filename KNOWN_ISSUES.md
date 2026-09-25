@@ -8,6 +8,10 @@ Status tags: `[OPEN]`, `[EXPLAINED]` (working as designed, UX problem), `[STALE]
 - [x] `[RESOLVED]` Robot drives slowly on manual controls; suspect brownout logic. **Fixed: Simulation current draw model retuned.**
   - `SwerveBase.getSimulationCurrentDraw()` previously used an exaggerated heuristic (15A idle per module = 60A at rest, up to 160A drive alone). When summed with shooter and intake in `Robot.simulationPeriodic()`, the simulated battery voltage dropped below 9.5V, triggering brownout speed scaling down to 0.35 and slow recovery (+0.03/cycle).
   - Retuned `SwerveBase.getSimulationCurrentDraw()` to realistic physics (~0.5A idle per module quiescent, ~20A per module at full sprint = 82A max). Simulated battery voltage now rests at ~12.4V and drops to ~10.5V under full sprint with flywheels running, preserving full speed (scale 1.0) while protecting against real brownout spikes.
+- [x] `[RESOLVED]` Smart Assist / Glide pathfinding issues (differs from AI sparring bots). **Fixed: Restored StaticPathfinder roadmap, eliminated Virtual Rail damper, and prevented 50Hz action reset thrashing.**
+  - `DriveToPoseAction` constructor previously added `targetPose` to `waypoints` and passed it to `setExplicitWaypoints()`, which set `isExplicitPath = true` in `TrajectoryController`, permanently disabling `StaticPathfinder.findPath(...)` and driving blindly in a straight line into Hub/Ramp obstacles.
+  - The Trench "Virtual Rail Damper" in `TrajectoryController` was overriding `vx`, `vy`, and `desiredHeading` while disabling dynamic avoidance whenever touching `y <= 1.55` or `y >= 6.50`, severely fighting both the pathfinder and the driver's shared-authority stick inputs. Replaced with clean heading alignment in low-clearance areas without corrupting holonomic translation or dynamic avoidance.
+  - `AutonomousTeleopAgent` previously allowed `DriveToPoseAction` to finish immediately upon reaching 0.12m of standoff, destroying and recreating actions 50 times/sec. Added `setHoldPosition(true)` and dynamic `setTargetPose()` streaming so the robot holds its standoff stance smoothly, aims at the Hub on the fly, and transitions naturally when balls are depleted.
 - [ ] `[OPEN]` Console/dashboard log spam from AI diagnostics + brownout. **Partially checked, needs a riolog capture to confirm.**
   - No per-loop `System.out/err` found in `Sim/`, `MatchCoach`, `Utils/`, `Teleop`: `Alert` (`Utils/Alert.java`) never touches console; `Diagnostics` prints are event-driven (`Test/Diagnostics.java:350-491`); `Vision` prints are setter-driven (`Subsystems/Vision.java:340-354`); `GameSim`/`AIRobot*` print only on caught exceptions.
   - Two real spam risks remain: (a) exception-path `System.err` fires every loop if the same exception recurs (e.g. `GameSim: Error in ...`, `AIRobotSim: ...`); (b) per-loop SmartDashboard/NT writes (`SwerveBase.log()` ~15 `Power/*` keys, `MatchScoreTracker.publishTelemetry()` ~30 `Scoreboard/*` keys, bot telemetry) — noisy in NT logs, not console.
@@ -33,12 +37,15 @@ Status tags: `[OPEN]`, `[EXPLAINED]` (working as designed, UX problem), `[STALE]
 ## D. JVM crashes (stale — keep logs, close on no repro)
 
 - [ ] `[STALE]` Debug-sim JVM crash (`hs_err_pid12944.log`, Sep 23): C2 `refcount has gone to zero` under JDWP + Temurin 17.0.16+8 (wrong JDK). No recurrence since; always run sim under `JAVA_HOME=C:\Users\Public\wpilib\2026\jdk` per `AGENTS.md`.
-- [ ] `[STALE]` Test-worker crash (`hs_err_pid51348.log`, Sep 23): `EXCEPTION_ACCESS_VIOLATION` in `wpiHal.dll` from `AllianceFlipUtilTest` under Temurin. Full suite is green since (144/144 pass, Sep 25 run), so treat as wrong-JDK artifact unless it recurs under the WPILib JDK.
+- [x] `[RESOLVED]` Test-worker crash (`hs_err_pid51348.log`, `hs_err_pid55220.log`): `EXCEPTION_ACCESS_VIOLATION` in `wpiHal.dll`. **Fixed: Pinned Gradle test worker JVM to WPILib 2026 JDK.**
+  - Gradle test workers (`forkEvery = 1`) previously defaulted to the system Eclipse Temurin JDK, which failed native JNI calls in WPILib HAL. Explicitly set `executable = wpilibJava.absolutePath` in `build.gradle`, ensuring all test forks run on `C:\Users\Public\wpilib\2026\jdk\bin\java.exe`.
 - [ ] `[EXPLAINED]` Sim prints `bind() to port 1181 failed` on startup. Non-fatal (CameraServer vs PhotonVision/Limelight sim ports; see `SIMULATION_GUIDE.md`). Ignore; listed so nobody "fixes" it.
 
 ## E. Desired features (annotated with what already exists)
 
-- [ ] Referee/penalty awareness in sim. `[PARTIAL]` 2 s pin rule exists (`LegalPinningWatchdog`, tested). Missing: auto/defense-rule knowledge for bots.
+- [x] `[RESOLVED]` Referee/penalty awareness in sim & penalty score tracking. **Implemented: `RefereeSim` & `MatchScoreTracker` penalty subsystem.**
+  - Created `RefereeSim` enforcing FRC G401 (pinning duration >2.4s without 3ft backoff) and G201 (autonomous centerline crossing >0.40m past midfield).
+  - Integrated Minor Foul (2 pts) and Tech Foul (5 pts) tracking in `MatchScoreTracker`, cleanly awarding penalty points to the opponent alliance score total and publishing `Scoreboard/Referee/*` telemetry. Full unit test coverage in `RefereeSimTest`.
 - [ ] Coordinated bot autonomous plans + starting positions. `[PARTIAL]` staggered spawns exist (`AIRobotSim.java:333-354`). Missing: distinct auto objectives (blocked by §C endgame bug), coordinated multi-bot plans.
 - [ ] Smarter Jev strategy/tactics (lookahead, allies, opponent modeling). `[OPEN]` Engine is unit-tested (`JevDecisionEngineTest`, 17 tests) but purely reactive single-step policy.
 - [ ] Headless AI-vs-AI training matches + scenario control. `[OPEN]`

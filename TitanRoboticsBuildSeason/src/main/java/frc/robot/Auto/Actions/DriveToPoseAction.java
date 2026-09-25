@@ -23,8 +23,8 @@ public class DriveToPoseAction implements Actions {
     private Pose2d targetPose;
     private final List<Pose2d> waypoints = new ArrayList<>();
     private final boolean isTunnelTransit;
-    private final boolean isExplicitPath;
     private final Rotation2d tunnelHeading;
+    private boolean holdPosition = false;
 
     // Shared Driver Authority & Blending
     private double driverForward = 0.0;
@@ -44,16 +44,15 @@ public class DriveToPoseAction implements Actions {
         boolean isTunnel = SmartTunnelRouter.isTunnelTarget(targetPose);
         if (isTunnel) {
             this.isTunnelTransit = true;
-            this.isExplicitPath = true;
             boolean preferTop = targetPose.getY() >= 4.0;
             TunnelRoute route = SmartTunnelRouter.planTunnelRoute(swerveBase.getPose(), preferTop);
             this.tunnelHeading = route.corridorHeading;
             this.waypoints.addAll(route.getWaypoints());
         } else {
             this.isTunnelTransit = false;
-            this.isExplicitPath = false;
             this.tunnelHeading = targetPose.getRotation();
-            this.waypoints.add(targetPose);
+            // Free-pathfinding mode: do NOT add single targetPose to waypoints!
+            // Leaving waypoints empty allows TrajectoryController to dynamically invoke StaticPathfinder.
         }
     }
 
@@ -65,7 +64,6 @@ public class DriveToPoseAction implements Actions {
         this.swerveBase = SwerveBase.getInstance();
         this.targetPose = explicitWaypoints.isEmpty() ? new Pose2d() : explicitWaypoints.get(explicitWaypoints.size() - 1);
         this.isTunnelTransit = false;
-        this.isExplicitPath = true;
         this.tunnelHeading = targetPose.getRotation();
         this.waypoints.addAll(explicitWaypoints);
 
@@ -101,7 +99,7 @@ public class DriveToPoseAction implements Actions {
         driverForward = 0.0;
         driverStrafe = 0.0;
         driverRotation = 0.0;
-        if (isExplicitPath && !waypoints.isEmpty()) {
+        if (!waypoints.isEmpty()) {
             controller.setExplicitWaypoints(waypoints);
         }
     }
@@ -164,10 +162,35 @@ public class DriveToPoseAction implements Actions {
         swerveBase.driveFieldOriented(speeds);
     }
 
+    public void setTargetPose(Pose2d newTarget) {
+        if (newTarget != null && !isTunnelTransit) {
+            this.targetPose = newTarget;
+        }
+    }
+
+    public Pose2d getTargetPose() {
+        return targetPose;
+    }
+
+    public void setHoldPosition(boolean hold) {
+        this.holdPosition = hold;
+    }
+
+    public boolean isHoldingPosition() {
+        return holdPosition;
+    }
+
+    public void setRotationOverride(java.util.function.Supplier<Rotation2d> override) {
+        controller.setRotationOverride(override);
+    }
+
     @Override
     public boolean isFinished() {
         if (breakoutRequested) {
             return true;
+        }
+        if (holdPosition) {
+            return false;
         }
         Pose2d finalGoal = isTunnelTransit && !waypoints.isEmpty()
                 ? waypoints.get(waypoints.size() - 1)
@@ -192,21 +215,12 @@ public class DriveToPoseAction implements Actions {
     }
 
     public List<Pose2d> getWaypoints() {
-        if (!controller.getWaypoints().isEmpty()) {
+        if (controller != null && !controller.getWaypoints().isEmpty()) {
             return controller.getWaypoints();
         }
-        return Collections.unmodifiableList(waypoints);
-    }
-
-    public void setTargetPose(Pose2d targetPose) {
-        this.targetPose = targetPose;
-    }
-
-    public Pose2d getTargetPose() {
-        return targetPose;
-    }
-
-    public void setRotationOverride(java.util.function.Supplier<Rotation2d> override) {
-        controller.setRotationOverride(override);
+        if (!waypoints.isEmpty()) {
+            return Collections.unmodifiableList(waypoints);
+        }
+        return Collections.singletonList(targetPose);
     }
 }

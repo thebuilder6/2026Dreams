@@ -258,25 +258,13 @@ public class TrajectoryController {
             desiredHeading = driveDir.getAngle();
         }
 
-        // ── 8. Trench Virtual Rail Damper ───────────────────────────────────
+        // ── 8. Low-Clearance Heading Alignment (No forced Virtual Rail) ─────
+        // In low-clearance trench zones, align heading to 0°/180° if unconstrained to avoid clipping truss posts.
+        // Holonomic translation (vx, vy) remains natural and unconstrained, guided by StaticPathfinder.
         boolean inTrench = FieldMap.Trenches.isLowClearance(currentPose.getTranslation());
-
-        if (inTrench) {
+        if (inTrench && rotationOverride == null) {
             double deg = currentPose.getRotation().getDegrees();
-            Rotation2d trenchHeading = Math.abs(deg) <= 90.0 ? Rotation2d.fromDegrees(0) : Rotation2d.fromDegrees(180);
-            if (rotationOverride == null) {
-                desiredHeading = trenchHeading;
-            }
-
-            double yCenterline = currentPose.getY() >= 4.0 ? FieldMap.Trenches.TOP_CORRIDOR_Y : FieldMap.Trenches.BOT_CORRIDOR_Y;
-            double crossTrackError = yCenterline - currentPose.getY();
-            vy = Math.max(-1.0, Math.min(1.0, crossTrackError * 3.0));
-
-            double signX = Math.signum(unitDrive.getX());
-            if (Math.abs(signX) < 0.10) signX = targetPose.getX() > currentPose.getX() ? 1.0 : -1.0;
-            vx = signX * Math.sqrt(Math.max(0.0, currentCommandedSpeed * currentCommandedSpeed - vy * vy));
-
-            allowDynamicAvoidance = false;
+            desiredHeading = Math.abs(deg) <= 90.0 ? Rotation2d.fromDegrees(0) : Rotation2d.fromDegrees(180);
         }
 
         double omega = headingController.calculate(currentPose.getRotation().getRadians(), desiredHeading.getRadians());

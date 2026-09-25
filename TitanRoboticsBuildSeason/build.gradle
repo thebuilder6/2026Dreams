@@ -85,6 +85,11 @@ test {
     useJUnitPlatform()
     systemProperty 'junit.jupiter.extensions.autodetection.enabled', 'true'
     forkEvery = 1
+
+    def wpilibJava = file("C:/Users/Public/wpilib/2026/jdk/bin/java.exe")
+    if (wpilibJava.exists()) {
+        executable = wpilibJava.absolutePath
+    }
 }
 
 // Simulation configuration (e.g. environment variables).

@@ -35,6 +35,8 @@ public class MatchScoreTracker implements Subsystem {
 
     public static final int POINTS_PER_FUEL = 1;
     public static final int POINTS_PER_CLIMB = 10;
+    public static final int POINTS_PER_MINOR_FOUL = 2;
+    public static final int POINTS_PER_TECH_FOUL = 5;
     public static final int FUEL_RP_THRESHOLD = 40;
     public static final int CLIMB_RP_ROBOT_COUNT = 2;
     public static final double TOWER_CLIMB_RADIUS_METERS = 1.20;
@@ -53,6 +55,15 @@ public class MatchScoreTracker implements Subsystem {
     private int blueFuelCount = 0;
     private int redWastedFuelCount = 0;
     private int blueWastedFuelCount = 0;
+
+    // Fouls committed & penalty points awarded
+    private int redFoulCount = 0;
+    private int blueFoulCount = 0;
+    private int redTechFoulCount = 0;
+    private int blueTechFoulCount = 0;
+    private int redPenaltyPoints = 0; // Points given to Red (because Blue committed fouls)
+    private int bluePenaltyPoints = 0; // Points given to Blue (because Red committed fouls)
+    private String lastFoulDescription = "None";
 
     // Player specific shot tracking
     private int playerShotsAttempted = 0;
@@ -143,6 +154,29 @@ public class MatchScoreTracker implements Subsystem {
         recordFuelScore(isRedAlliance);
     }
 
+    /**
+     * Records a foul committed by an alliance, awarding penalty points to the opposing alliance.
+     *
+     * @param committedByRed True if Red Alliance committed the infraction
+     * @param isTechFoul True for Tech Foul (5 pts), false for Minor Foul (2 pts)
+     * @param reason Rule citation or description of the infraction
+     */
+    public synchronized void recordFoul(boolean committedByRed, boolean isTechFoul, String reason) {
+        int pts = isTechFoul ? POINTS_PER_TECH_FOUL : POINTS_PER_MINOR_FOUL;
+        if (committedByRed) {
+            redFoulCount++;
+            if (isTechFoul) redTechFoulCount++;
+            bluePenaltyPoints += pts;
+            lastFoulDescription = "[RED " + (isTechFoul ? "TECH FOUL" : "FOUL") + "] " + reason + " (+" + pts + " pts to Blue)";
+        } else {
+            blueFoulCount++;
+            if (isTechFoul) blueTechFoulCount++;
+            redPenaltyPoints += pts;
+            lastFoulDescription = "[BLUE " + (isTechFoul ? "TECH FOUL" : "FOUL") + "] " + reason + " (+" + pts + " pts to Red)";
+        }
+        Logger.recordOutput("Scoreboard/LastFoul", lastFoulDescription);
+    }
+
     // ── Score Totals & Calculations ──────────────────────────────────────────
 
     public synchronized int getRedFuelScore() {
@@ -161,12 +195,40 @@ public class MatchScoreTracker implements Subsystem {
         return blueClimbCount * POINTS_PER_CLIMB;
     }
 
+    public synchronized int getRedPenaltyScore() {
+        return redPenaltyPoints;
+    }
+
+    public synchronized int getBluePenaltyScore() {
+        return bluePenaltyPoints;
+    }
+
+    public synchronized int getRedFoulCount() {
+        return redFoulCount;
+    }
+
+    public synchronized int getBlueFoulCount() {
+        return blueFoulCount;
+    }
+
+    public synchronized int getRedTechFoulCount() {
+        return redTechFoulCount;
+    }
+
+    public synchronized int getBlueTechFoulCount() {
+        return blueTechFoulCount;
+    }
+
+    public synchronized String getLastFoulDescription() {
+        return lastFoulDescription;
+    }
+
     public synchronized int getRedTotalScore() {
-        return getRedFuelScore() + getRedClimbScore();
+        return getRedFuelScore() + getRedClimbScore() + redPenaltyPoints;
     }
 
     public synchronized int getBlueTotalScore() {
-        return getBlueFuelScore() + getBlueClimbScore();
+        return getBlueFuelScore() + getBlueClimbScore() + bluePenaltyPoints;
     }
 
     public synchronized int getPlayerScore() {
@@ -399,14 +461,16 @@ public class MatchScoreTracker implements Subsystem {
         SmartDashboard.putBoolean("Scoreboard/Opponents/Bot1_Climbed", bot1Climbed);
         SmartDashboard.putBoolean("Scoreboard/Opponents/Bot2_Climbed", bot2Climbed);
 
-        // ── AdvantageKit Structured Logging ──────────────────────────────────
-        Logger.recordOutput("Scoreboard/RedTotalScore", getRedTotalScore());
-        Logger.recordOutput("Scoreboard/BlueTotalScore", getBlueTotalScore());
-        Logger.recordOutput("Scoreboard/PlayerTotalScore", getPlayerScore());
-        Logger.recordOutput("Scoreboard/OpponentTotalScore", getOpponentScore());
-        Logger.recordOutput("Scoreboard/LeadMargin", getLeadMargin());
-        Logger.recordOutput("Scoreboard/Leader", getLeader());
-        Logger.recordOutput("Scoreboard/PlayerAccuracyPercent", getPlayerAccuracyPercent());
+        // ── Referee & Penalty Breakdown ──────────────────────────────────────
+        SmartDashboard.putNumber("Scoreboard/Red/PenaltyPoints", redPenaltyPoints);
+        SmartDashboard.putNumber("Scoreboard/Red/FoulsCommitted", redFoulCount);
+        SmartDashboard.putNumber("Scoreboard/Blue/PenaltyPoints", bluePenaltyPoints);
+        SmartDashboard.putNumber("Scoreboard/Blue/FoulsCommitted", blueFoulCount);
+        SmartDashboard.putString("Scoreboard/Referee/LastFoul", lastFoulDescription);
+
+        Logger.recordOutput("Scoreboard/RedPenaltyPoints", redPenaltyPoints);
+        Logger.recordOutput("Scoreboard/BluePenaltyPoints", bluePenaltyPoints);
+        Logger.recordOutput("Scoreboard/Referee/LastFoul", lastFoulDescription);
     }
 
     /**
@@ -417,6 +481,14 @@ public class MatchScoreTracker implements Subsystem {
         blueFuelCount = 0;
         redWastedFuelCount = 0;
         blueWastedFuelCount = 0;
+
+        redFoulCount = 0;
+        blueFoulCount = 0;
+        redTechFoulCount = 0;
+        blueTechFoulCount = 0;
+        redPenaltyPoints = 0;
+        bluePenaltyPoints = 0;
+        lastFoulDescription = "None";
 
         playerShotsAttempted = 0;
         playerShotsScored = 0;

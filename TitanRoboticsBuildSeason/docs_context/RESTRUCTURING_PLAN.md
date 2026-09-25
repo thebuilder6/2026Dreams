@@ -98,6 +98,40 @@ Below is the exact mapping of every existing file to its proposed new location.
 
 ---
 
+## Exhaustive File Mapping: Unit Tests (`src/test/java/frc/robot/`)
+To prevent the CI/CD pipeline from breaking, the test suite must mirror the new source package structure.
+
+*   `Auto/DriverAssistTest.java` -> `HMI/CoPilotTest.java`
+*   `Auto/DynamicRouterTest.java` -> `Navigation/Routing/DynamicRouterTest.java`
+*   `Auto/LegalPinningWatchdogTest.java` -> `HMI/Watchdogs/LegalPinningWatchdogTest.java`
+*   `Auto/TunnelAndAssistanceTest.java` -> `Navigation/Routing/TunnelAndAssistanceTest.java`
+*   `Data/FieldMapTest.java` -> *No Change*
+*   `Devices/ControllerHapticsTest.java` -> `HMI/ControllerHapticsTest.java`
+*   `Sim/AIRobotSimTest.java` -> `Intelligence/Sparring/AIRobotSimTest.java`
+*   `Sim/JevDecisionEngineTest.java` -> `Intelligence/JevDecisionEngineTest.java`
+*   `Sim/MatchScoreTrackerTest.java` -> `Intelligence/State/MatchScoreTrackerTest.java`
+*   `Subsystems/DashboardTest.java` -> `Telemetry/DashboardTest.java`
+*   `Subsystems/HardwareIOTest.java` -> `Hardware/HardwareIOTest.java`
+*   `Utils/AlertManagerTest.java` -> `HMI/Alerts/AlertManagerTest.java`
+*   `Utils/AllianceFlipUtilTest.java` -> `Navigation/Math/AllianceFlipUtilTest.java`
+
+---
+
+## Potential Architecture & Build Risks
+While migrating the file structure, developers must be aware of the following technical constraints:
+
+1.  **AdvantageKit Auto-Generated Files:**
+    AdvantageKit relies heavily on code generation for IO interfaces (e.g., generating `DriveIOInputsAutoLogged.java`). When moving `DriveIO.java` to a new package (`Hardware/Drive/`), the build system will initially fail.
+    *   *Mitigation:* After moving files, you **must** run a clean build (`./gradlew clean build`) to delete the old auto-logged classes and regenerate them in the correct new packages.
+2.  **Package-Private Access Violations:**
+    In the current flat structure, many classes might rely on package-private (`default`) visibility to share data with sibling files. By moving things into specific folders (`Navigation`, `Intelligence`), these access boundaries will be broken.
+    *   *Mitigation:* Identify state/methods that must be exposed across domains and make them `public`, or better yet, inject them via constructor interfaces to maintain decoupling.
+3.  **Strict Decoupling Limits:**
+    The new `Intelligence` package is meant to be game-agnostic. If `JevDecisionEngine` imports `frc.robot.Simulation.GameSim`, the architecture is broken.
+    *   *Mitigation:* The `Intelligence` layer should only interface with `WorldState`. The `WorldStateBuilder` is responsible for bridging the physical/simulated world into the AI brain. Ensure imports in the `Intelligence` folder never point back to `Simulation` or `Hardware`.
+
+---
+
 ## Splitting and Combining Considerations
 
 *   **Split `JevDecisionEngine`:** As AI complexity grows, `JevDecisionEngine.java` will become a god-class. We should split it into `TacticalReflex.java` (System 1) and `ExecutiveStrategy.java` (System 2).

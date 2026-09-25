@@ -1,83 +1,92 @@
-# Feature and Subsystem List
+# Feature and Subsystem Inventory
 
-This document outlines the core features, subsystems, and structural components of the 2026/2027 robot software platform, based on `ARCHITECTURE.md` and the existing `src` structure.
+This document outlines the core features, subsystems, and structural components of the 2026/2027 robot software platform. It highlights user-facing features, testing infrastructure, and backend logic.
 
-## 1. Subsystems
-*   **SwerveBase (`frc.robot.Subsystems.SwerveBase`)**
-    *   Kinematics via YAGSL (Yet Another Generic Swerve Library).
-    *   High-speed heading correction & skew compensation.
-    *   Vision watchdog for dead-reckoning fallback.
-*   **Shooter (`frc.robot.Subsystems.Shooter`)**
-    *   Dual-flywheel system (Left/Right) with independent PID + Feedforward.
-    *   Empirical distance-to-RPM lookup tables (`leftRpmTable`, `rightRpmTable`).
+## 1. Driver and Operator Features (HMI & Assist)
+These features directly impact how the human drive team interacts with the robot on the field.
+
+*   **Driver Assist & Co-Pilot (`AutonomousTeleopAgent`)**
+    *   One-button auto-cycle capabilities seamlessly integrating with teleop driving.
+    *   Takes over trajectory and alignment while leaving micro-adjustments to the driver.
+*   **Match Coach (`MatchCoach`)**
+    *   Real-time HUD recommendations leveraging the AI engine to suggest strategic moves based on the current field state.
+*   **Haptic Feedback & Rumbles (`Controller`)**
+    *   **Non-Blocking Sequenced Rumbles:** Executes complex vibration patterns without pausing control loops.
+    *   `TARGET_LOCKED`: Double pulse confirming alignment with the hub and flywheels at speed.
+    *   `BALL_ACQUIRED`: Confirmation pulse when a piece is seated.
+    *   `HARDWARE_WARNING`: Rapid triple pulse for sensor degradation (e.g., vision lost).
+    *   `MATCH_TIME_WARNING`: Sustained rumble at T-30s and T-15s.
+*   **Non-CLI Dashboard Alerts (`AlertManager`, `Alert`)**
+    *   No spamming the console. Errors and warnings are pushed to a visual Elastic Dashboard banner.
+*   **Status LEDs (`LEDs`)**
+    *   Visual communication to drivers and human players (Strobe Red for fault, Solid Orange for warning, Solid Green for target locked).
+*   **Legal Pinning Watchdog (`LegalPinningWatchdog`)**
+    *   Monitors and warns drivers when they are close to violating the 5-second pinning rule.
+
+## 2. Simulation & Physics Engine
+Features designed for testing code without a physical robot and generating opponent AI.
+
+*   **Multi-Bot Sparring (`AIRobotSim`, `AIRobotInstance`)**
+    *   Can spawn 1 to 3 concurrent simulated robots on the field.
+    *   Features inverse-distance repulsive forces to simulate collisions and prevent bots from stacking on each other.
+*   **Physics Simulation Layer (`IronMaple`)**
+    *   Rigid-body 2D simulation providing true carpet friction, wheel slip, and bumper collisions.
+*   **Hardware Virtualization (`ShooterSim`, `ArmSim`, `VisionSim`, `LimelightSim`)**
+    *   Simulated hardware inputs allowing full testing of PID controllers, intake gravity feedforwards, and camera pipelines in SimGUI.
+
+## 3. SysId, Diagnostics & Testing
+Tools for calibrating mechanisms, verifying hardware health, and troubleshooting.
+
+*   **15-Second Automated Pit Check (`Diagnostics`)**
+    *   *CAN Bus Audit:* Verifies all devices acknowledge heartbeats.
+    *   *Swerve Motor Pulse:* Checks encoder velocity sign.
+    *   *Steer Alignment Check:* Sweeps modules 90° to confirm absolute encoder offsets.
+    *   *Intake Profile Check:* Flags mechanical binding by monitoring current draw (>25A).
+    *   *Shooter Ramping:* Verifies steady-state RPM error bounds.
+    *   *Vision Link Check:* Pings network latency and FPS.
+*   **System Identification (`SysIdManager`, `SysID`, `DriveCharacterization`)**
+    *   Automated routines to characterize drive base, shooter, and intake feedforward constants (kV, kA, kS).
+*   **Test Modes (`TestMode`, `ShooterTuning`, `IntakeTesting`, `VisionTesting`)**
+    *   Isolated testing environments accessible via DriverStation Test Mode to tune PID loops safely.
+
+## 4. Telemetry & Replay
+*   **AdvantageScope & Epilogue (`.wpilog`)**
+    *   High-frequency deterministic logging.
+    *   Byte-for-byte match replay for debugging post-match.
+    *   3D visualizer for robot field poses, mechanism articulation, and vision raycasts.
+*   **Elastic Dashboard Layouts**
+    *   Custom pre-configured UI (`elastic-layout.json`) loaded automatically, containing the Pre-Flight Scorecard and Tunable Numbers.
+
+## 5. Core Robot Subsystems
+*   **SwerveBase (`SwerveBase`)**
+    *   Kinematics via YAGSL.
+    *   High-speed heading correction, skew compensation, and vision watchdog for dead-reckoning fallback.
+*   **Shooter (`Shooter`)**
+    *   Dual-flywheel system (independent PID + Feedforward).
+    *   Empirical distance-to-RPM lookup tables.
     *   Kicker feeder sequenced actuation.
-*   **Intake (`frc.robot.Subsystems.Intake`)**
-    *   Articulated ground intake with continuous profiled PID control.
-    *   Gravity compensation (`ArmFeedforward`).
-    *   Absolute encoder fallback to internal relative encoders.
+*   **Intake (`Intake`)**
+    *   Articulated ground intake with continuous profiled PID control and gravity compensation.
+    *   Absolute encoder fallback to relative encoders on failure.
     *   Current stall jam clearing (auto-reversal).
-*   **Vision (`frc.robot.Subsystems.Vision`)**
-    *   Dual-vision platform: Front Limelight (MegaTag2), Coprocessor PhotonVision.
-    *   Object detection (YOLOv8 pipeline).
-*   **LEDs (`frc.robot.Subsystems.LEDs`)**
-    *   Addressable LED integration for system status (Strobe Red, Solid Orange, etc.).
+*   **Vision (`Vision`)**
+    *   Dual-vision platform: Front Limelight (MegaTag2) and Coprocessor PhotonVision.
+    *   YOLOv8 Object detection for automated game piece targeting.
 
-## 2. Hardware IO Abstraction (AdvantageKit Pattern)
+## 6. Hardware IO Abstraction (AdvantageKit Pattern)
+Abstracts physical hardware from logic, enabling replay and simulation.
 *   **DriveIO** (`DriveIOSparkMax`, `DriveIOSim`)
 *   **ShooterIO** (`ShooterIOSparkMax`, `ShooterIOSim`)
 *   **IntakeIO** (`IntakeIOSparkMax`, `IntakeIOSim`)
 *   **VisionIO** (`VisionIOLimelight`, `VisionIOPhotonVision`, `VisionIOSim`)
 
-## 3. Autonomous & Planning (Pathing & Auto)
-*   **Choreo Integration**
-    *   Trajectory tracking & dynamic obstacle avoidance (`DynamicRouter`, `SmartTunnelRouter`).
-*   **Autonomous Missions**
-    *   `AutoMissionChooser`, `AutoMissionExecutor`.
-    *   Mission Base classes and Action structures (`DriveToPoseAction`, `ShootAction`, etc.).
-*   **Legal Pinning Watchdog** (`LegalPinningWatchdog.java`)
-*   **Collision Detection** (`CollisionDetector.java`)
-
-## 4. AI & Simulation (Jev AI & Sim)
-*   **Jev AI Decision Engine** (`JevDecisionEngine.java`)
+## 7. AI & Autonomous Planning
+*   **Jev AI Decision Engine (`JevDecisionEngine`)**
     *   System 1 (Tactical Reflex) and System 2 (Executive Strategy).
-    *   Unified cognitive architecture for live matches and sim sparring.
-*   **Simulation Sparring Engine**
-    *   `AIRobotSim`, `AIRobotInstance`.
-    *   Rigid-body 2D simulation via `IronMaple`.
-    *   Simulated multi-robot interactions with inverse-distance repulsive forces.
-*   **Driver Assist / Co-Pilot**
-    *   `AutonomousTeleopAgent.java`
-    *   `MatchCoach.java` (Real-time HUD recommendations).
-*   **Simulated Sensors**
-    *   `ShooterSim`, `ArmSim`, `VisionSim`, `LimelightSim`.
-
-## 5. Driver UI, Telemetry, and Diagnostics
-*   **Elastic Dashboard**
-    *   Feature switches, Pre-Flight Scorecard.
-*   **AdvantageScope**
-    *   3D field tracking, mechanism poses, and deterministic replay (.wpilog).
-*   **Alert & Haptic Feedback System**
-    *   `AlertManager` (non-CLI dashboard alerts).
-    *   `Controller.java` (non-blocking sequenced rumbles for target locked, acquired, warnings).
-*   **Diagnostics** (`frc.robot.Test.Diagnostics`)
-    *   15-Second Automated Pit Check (CAN audit, motor tests, vision links).
-*   **Alliance Flipping** (`AllianceFlipUtil.java`)
-    *   Blue-origin standardized coordinate geometry.
-
----
-
-# Proposed Architecture Restructuring (High-Level Ideas)
-
-Currently, files related to similar high-level responsibilities are spread out. For example, AI components (`Sim/`), autonomous routines (`Auto/`), and driver assist tools exist as sibling or unrelated structures. The goal of this restructuring is to **reduce complexity** and **group related files/systems together**.
-
-### Specific Focus Areas for Restructuring
-1.  **AI vs. Simulation vs. Driver Assist vs. Pathing**
-    *   Right now, `Sim/` contains both pure physics simulators (`ShooterSim`, `ArmSim`) AND the Jev AI Decision Engine (`JevDecisionEngine`, `WorldState`, `StrategicObjective`).
-    *   `Auto/` contains both static pathing tools (`StaticPathfinder`, Choreo bindings) AND dynamic planning (`DynamicRouter`, `AutonomousTeleopAgent`).
-    *   We need to cleanly separate:
-        *   **Cognitive/AI Layer**: Where decisions are made (Jev Engine, Strategy, States).
-        *   **Navigation/Pathing Layer**: How decisions are executed physically (Choreo, Trajectory Controllers, Obstacle Avoidance).
-        *   **Physics Simulation Layer**: Pure virtual hardware representation.
-        *   **Human-Machine Interface (HMI)**: Driver Assist, Coaching, Controller Rumbles.
-
-*A detailed proposal will be created in `RESTRUCTURING_PLAN.md`.*
+    *   Evaluates macro-utility matrices based on Archetypes (Cycler, Bully, Defender).
+*   **Choreo Integration & Pathing (`StaticPathfinder`, `DynamicRouter`)**
+    *   Trajectory tracking & dynamic obstacle avoidance (`SmartTunnelRouter`).
+*   **Autonomous Missions (`AutoMissionChooser`, `AutoMissionExecutor`)**
+    *   Mission base classes and concrete actions (`DriveToPoseAction`, `ShootAction`).
+*   **Alliance Flipping (`AllianceFlipUtil`)**
+    *   Standardized Blue-origin coordinate geometry automatically mirrored based on DriverStation data.

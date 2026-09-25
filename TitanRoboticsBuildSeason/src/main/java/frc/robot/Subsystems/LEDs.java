@@ -26,12 +26,15 @@ public class LEDs implements Subsystem {
     private LEDs() {
         SubsystemManager.registerSubsystem(this);
         blinkin = new Spark(LEDConstants.BLINKIN_PWM_PORT);
-        currentPattern = LEDConstants.RAINBOW;
+        currentPattern = -999.0;
+        setPattern(LEDConstants.RAINBOW);
     }
 
     public void setPattern(double pattern) {
-        currentPattern = pattern;
-        blinkin.set(pattern);
+        if (Math.abs(currentPattern - pattern) > 1e-4) {
+            currentPattern = pattern;
+            blinkin.set(pattern);
+        }
     }
 
     @Override
@@ -58,8 +61,9 @@ public class LEDs implements Subsystem {
                 setPattern(LEDConstants.STROBE_RED);
             } else if (AlertManager.hasActiveWarnings()) {
                 setPattern(LEDConstants.SOLID_ORANGE);
-            } else if (shooter.isAtTargetVelocity() && shooter.isReadyToFire(
-                    shooter.getLatestShootingSolution().turretAngle())) {
+            } else if (shooter.getLatestShootingSolution() != null
+                    && shooter.getLatestShootingSolution().possible()
+                    && shooter.isReadyToFire(shooter.getLatestShootingSolution().turretAngle())) {
                 setPattern(LEDConstants.SOLID_GREEN);
             } else if (shooter.getTargetVelocityRPM() > 0) {
                 setPattern(LEDConstants.STROBE_GOLD);

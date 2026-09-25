@@ -155,6 +155,8 @@ public class AutoAimAction implements Actions {
         shooter.setTargetRPM(Constants.ShooterConstants.IDLE_RPM);
 
         timer.stop();
-        swerve.stop();
+        if (path == null || path.isFinished()) {
+            swerve.stop();
+        }
     }
 }

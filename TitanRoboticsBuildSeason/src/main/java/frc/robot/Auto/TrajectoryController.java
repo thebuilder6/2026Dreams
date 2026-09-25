@@ -13,7 +13,6 @@ import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import edu.wpi.first.wpilibj.Timer;
 import frc.robot.Data.Constants;
 import frc.robot.Data.FieldMap;
-import frc.robot.Subsystems.Intake;
 import org.littletonrobotics.junction.Logger;
 
 /**
@@ -50,6 +49,8 @@ public class TrajectoryController {
     // Anti-stall / unstick reflex state
     private double unstickEndTime = -1.0;
     private Translation2d unstickVector = new Translation2d();
+    private int unstickAttempts = 0;
+    private double lastUnstickStartTime = -1.0;
 
     public TrajectoryController(PIDController headingController) {
         this.headingController = headingController;
@@ -67,6 +68,8 @@ public class TrajectoryController {
         lastCalculationTime = -1.0;
         currentCommandedSpeed = 0.0;
         unstickEndTime = -1.0;
+        unstickAttempts = 0;
+        lastUnstickStartTime = -1.0;
         isExplicitPath = false;
         rotationOverride = null;
     }
@@ -123,12 +126,38 @@ public class TrajectoryController {
 
         // ── 1. Anti-Stall / Unstick Pirouette Reflex ────────────────────────
         if (isStalled && now > unstickEndTime) {
-            unstickEndTime = now + 0.40;
+            // Escalate: if the last unstick attempt was recent (within 3s), increase attempts
+            if (now - lastUnstickStartTime < 3.0) {
+                unstickAttempts = Math.min(unstickAttempts + 1, 5);
+            } else {
+                unstickAttempts = 0;
+            }
+            lastUnstickStartTime = now;
+
+            // Escalating duration: 0.4s → 0.6s → 0.8s → 1.0s → 1.2s
+            double unstickDuration = 0.40 + unstickAttempts * 0.20;
+            unstickEndTime = now + unstickDuration;
+
             Translation2d vel = new Translation2d(currentSpeeds.vxMetersPerSecond, currentSpeeds.vyMetersPerSecond);
             if (vel.getNorm() < 0.10) {
                 vel = targetPose.getTranslation().minus(currentPose.getTranslation());
             }
-            unstickVector = vel.getNorm() > 0.10 ? vel.div(vel.getNorm()).times(-1.8) : new Translation2d(-1.5, 0.0);
+
+            // Systematically alter escape direction: on repeated stalls, alternate angles (e.g. +75°, -90°, +105°, -120°)
+            // to systematically try different escape vectors instead of reversing directly into the obstacle.
+            if (vel.getNorm() > 0.10) {
+                Translation2d reverseDir = vel.div(vel.getNorm()).times(-1.0);
+                if (unstickAttempts > 0) {
+                    double escapeAngleDeg = (unstickAttempts % 2 == 1 ? 1.0 : -1.0) * (60.0 + (unstickAttempts * 15.0));
+                    reverseDir = reverseDir.rotateBy(Rotation2d.fromDegrees(escapeAngleDeg));
+                }
+                double escapeSpeed = 1.8 + unstickAttempts * 0.4; // Escalate: 1.8 → 2.2 → 2.6 → ...
+                unstickVector = reverseDir.times(Math.min(escapeSpeed, 3.5));
+            } else {
+                // No velocity info: escape along an alternating angle based on attempt count
+                double escapeAngle = (unstickAttempts * Math.PI / 3.0);
+                unstickVector = new Translation2d(Math.cos(escapeAngle), Math.sin(escapeAngle)).times(2.2);
+            }
             waypoints.clear();
             isExplicitPath = false;
         }
@@ -247,7 +276,6 @@ public class TrajectoryController {
             if (Math.abs(signX) < 0.10) signX = targetPose.getX() > currentPose.getX() ? 1.0 : -1.0;
             vx = signX * Math.sqrt(Math.max(0.0, currentCommandedSpeed * currentCommandedSpeed - vy * vy));
 
-            Intake.getInstance().setArmPosition(Constants.INTAKE_HORIZONTAL_POSITION);
             allowDynamicAvoidance = false;
         }
 

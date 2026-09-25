@@ -27,9 +27,32 @@ public class Controller extends XboxController {
     private double patternStartTime = 0.0;
     private double pulseEndTime = 0.0;
     private double directionalRumbleEndTime = 0.0;
+    private double lastLeftRumble = -1.0;
+    private double lastRightRumble = -1.0;
 
     public Controller(int port) {
         super(port);
+    }
+
+    @Override
+    public void setRumble(RumbleType type, double value) {
+        if (type == RumbleType.kLeftRumble) {
+            if (Math.abs(value - lastLeftRumble) > 0.01) {
+                lastLeftRumble = value;
+                super.setRumble(type, value);
+            }
+        } else if (type == RumbleType.kRightRumble) {
+            if (Math.abs(value - lastRightRumble) > 0.01) {
+                lastRightRumble = value;
+                super.setRumble(type, value);
+            }
+        } else if (type == RumbleType.kBothRumble) {
+            if (Math.abs(value - lastLeftRumble) > 0.01 || Math.abs(value - lastRightRumble) > 0.01) {
+                lastLeftRumble = value;
+                lastRightRumble = value;
+                super.setRumble(type, value);
+            }
+        }
     }
 
     public boolean getDebouncedButton(int button) {

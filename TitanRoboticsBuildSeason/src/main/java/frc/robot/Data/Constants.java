@@ -2,10 +2,31 @@ package frc.robot.Data;
 
 import edu.wpi.first.math.geometry.Translation3d;
 import edu.wpi.first.math.util.Units;
+import edu.wpi.first.units.measure.Angle;
+import edu.wpi.first.units.measure.AngularVelocity;
+import edu.wpi.first.units.measure.Current;
+import edu.wpi.first.units.measure.Distance;
+import edu.wpi.first.units.measure.LinearVelocity;
+import edu.wpi.first.units.measure.Time;
+import edu.wpi.first.units.measure.Voltage;
 import swervelib.math.Matter;
 
+/**
+ * Global Robot & Platform Constants.
+ * 
+ * DESIGN PRINCIPLE:
+ * - This file contains core robot framework, chassis physics, and operator configuration.
+ * - Seasonal field geometry lives in {@link FieldMap}.
+ * - Mechanism-specific constants (tuning, setpoints, geometry) live directly within their subsystem
+ *   packages (e.g. {@link frc.robot.Subsystems.shooter.ShooterConstants},
+ *   {@link frc.robot.Subsystems.intake.IntakeConstants}).
+ */
 public class Constants {
-    // AdvantageKit execution mode definition
+
+    // =========================================================================
+    // 1. CORE SYSTEM & EXECUTION ENVIRONMENT (Evergreen)
+    // =========================================================================
+
     public static final Mode currentMode = edu.wpi.first.wpilibj.RobotBase.isReal() ? Mode.REAL : Mode.SIM;
 
     public static enum Mode {
@@ -21,102 +42,28 @@ public class Constants {
         return currentMode;
     }
 
-    // Global flag for enabling live tuning of PID values/setpoints via
-    // NetworkTables.
-    // Set to false for competition to save loop time.
+    /**
+     * Global flag for enabling live tuning of PID values/setpoints via NetworkTables.
+     * Set to false for official competition matches to save loop time.
+     */
     public static final boolean TUNING_MODE = true;
 
-    public static final class FieldConstants {
-        public static final Translation3d RED_GOAL_LOCATION = FieldMap.Hubs.RED_HUB_3D;
-        public static final Translation3d BLUE_GOAL_LOCATION = FieldMap.Hubs.BLUE_HUB_3D;
+    // =========================================================================
+    // 2. ROBOT CHASSIS & DRIVETRAIN DYNAMICS (Chassis-Specific)
+    // =========================================================================
 
-        public static final double GOAL_HEIGHT_METERS = FieldMap.Hubs.GOAL_HEIGHT;
-    }
-
-    // Root-level constants from physical robot
-    public static final Translation3d RED_HUB_LOCATION = FieldConstants.RED_GOAL_LOCATION;
-    public static final Translation3d BLUE_HUB_LOCATION = FieldConstants.BLUE_GOAL_LOCATION;
-
-    public static final double ROBOT_MASS = (148 - 20.3) * 0.453592; // 32lbs * kg per pound
+    public static final double ROBOT_MASS = (148 - 20.3) * 0.453592; // 32 lbs * kg per pound
     public static final Matter CHASSIS = new Matter(new Translation3d(0, 0, Units.inchesToMeters(8)), ROBOT_MASS);
-    /**
-     * Seconds to look ahead for projectile predictive math (accounts for
-     * mechanical/CAN latency).
-     */
-    public static final double SHOOTER_PREDICTIVE_LOOK_AHEAD = 0.13;
     public static final double MAX_SPEED = Units.feetToMeters(15);
     public static final double MAX_ROTATION_SPEED = 8.0;
 
-    // Shooter physical parameters
-    /** Shooter horizontal mounting offset from robot center (meters). */
-    public static final double SHOOTER_OFFSET = -0.2032;
-    /**
-     * Fixed shooter hood/flywheel firing angle relative to horizontal (radians).
-     */
-    public static final double FIRING_ANGLE = Units.degreesToRadians(70);
-    /**
-     * Height differential between hub goal opening and shooter exit point (meters).
-     */
-    public static final double HEIGHT_DIFFERENCE = RED_HUB_LOCATION.getZ() - 0.53;
+    // Java Units Type-Safe Configuration Constants
+    public static final LinearVelocity MAX_SPEED_MEASURE = edu.wpi.first.units.Units.MetersPerSecond.of(MAX_SPEED);
+    public static final AngularVelocity MAX_ROTATION_SPEED_MEASURE = edu.wpi.first.units.Units.RadiansPerSecond.of(MAX_ROTATION_SPEED);
 
-    // Flywheel Feedforward and Feedback Gains
-    /** Flywheel static friction voltage feedforward (volts). */
-    public static final double FLYWHEEL_KS = 0.0;
-    /** Flywheel velocity feedforward gain (volts / RPM). */
-    public static final double FLYWHEEL_KV = 0.0022;
-    /** Flywheel acceleration feedforward gain (volts / (RPM/s)). */
-    public static final double FLYWHEEL_KA = 0.0;
-    /** Flywheel proportional feedback gain (volts / RPM error). */
-    public static final double FLYWHEEL_KP = 0.0007;
-    /** Flywheel integral feedback gain. */
-    public static final double FLYWHEEL_KI = 0.000;
-    /** Flywheel derivative feedback gain. */
-    public static final double FLYWHEEL_KD = 0.000;
-    /** Full nominal voltage applied to kicker feed motor (volts). */
-    public static final double KICKER_VOLTAGE = 12.0;
-
-    // Intake physical parameters
-    /** Intake pivot proportional gain. */
-    public static final double INTAKE_ARM_KP = 0.1;
-    /** Intake pivot integral gain. */
-    public static final double INTAKE_ARM_KI = 0.0;
-    /** Intake pivot derivative gain. */
-    public static final double INTAKE_ARM_KD = 0.01;
-    /** Intake pivot static friction voltage (volts). */
-    public static final double INTAKE_ARM_KS = 0.2;
-    /** Intake pivot gravity compensation feedforward (volts). */
-    public static final double INTAKE_ARM_KG = 0.34;
-    /** Intake pivot velocity feedforward gain (volts / (rad/s)). */
-    public static final double INTAKE_ARM_KV = 0.0;
-    /** Intake pivot acceleration feedforward gain (volts / (rad/s^2)). */
-    public static final double INTAKE_ARM_KA = 0.0;
-
-    /**
-     * Maximum allowed angular velocity for intake pivot trapezoidal motion
-     * profiling (deg/s).
-     */
-    public static final double MAX_ARM_VELOCITY = 400.0;
-    /**
-     * Maximum allowed angular acceleration for intake pivot trapezoidal motion
-     * profiling (deg/s^2).
-     */
-    public static final double MAX_ARM_ACCELERATION = 400.0;
-
-    /** Intake pivot stowed position setpoint (degrees). */
-    public static final double INTAKE_UP_POSITION = 347.0;
-    /** Intake pivot ground deployed position setpoint (degrees). */
-    public static final double INTAKE_DOWN_POSITION = 250.0;
-    /**
-     * Intake pivot horizontal level position used for gravity cosine calculation
-     * (degrees).
-     */
-    public static final double INTAKE_HORIZONTAL_POSITION = 250.0;
-    /** Direction inversion flag for intake pivot motor. */
-    public static final boolean INTAKE_ARM_INVERTED = true;
-    /** Direction inversion flag for intake roller motor. */
-    public static final boolean INTAKE_WHEELS_INVERTED = true;
-    /** Absolute encoder zero-offset calibration (degrees). */
-    public static final double INTAKE_POSITION_OFFSET = 276.0;
+    // =========================================================================
+    // 3. AUTONOMOUS PATH FOLLOWING & HEADING PID (Evergreen)
+    // =========================================================================
 
     public static final class AutonConstants {
         // PID constants for X, Y translation
@@ -139,12 +86,21 @@ public class Constants {
         public static final TunableNumber TURN_KD = new TunableNumber("Auton/Turn_kD", AUTO_TURN_KD);
     }
 
+    // =========================================================================
+    // 4. DRIVEBASE VISION ESTIMATION & FILTERING (Chassis / Sensor Mounts)
+    // =========================================================================
+
     public static final class DrivebaseConstants {
         // Vision Rejection Thresholds
         public static final double VISION_MAX_YAW_RATE = 360.0; // deg/s
-        public static final double VISION_MAX_TAG_DIST = 4.0; // meters
+        public static final double VISION_MAX_TAG_DIST = 4.0;   // meters
         public static final double VISION_SINGLE_TAG_MAX_DIST = 3.0; // meters
         public static final double VISION_MAX_AMBIGUITY = 0.4;
+
+        // Java Units measures for vision thresholds
+        public static final AngularVelocity VISION_MAX_YAW_RATE_MEASURE = edu.wpi.first.units.Units.DegreesPerSecond.of(VISION_MAX_YAW_RATE);
+        public static final Distance VISION_MAX_TAG_DIST_MEASURE = edu.wpi.first.units.Units.Meters.of(VISION_MAX_TAG_DIST);
+        public static final Distance VISION_SINGLE_TAG_MAX_DIST_MEASURE = edu.wpi.first.units.Units.Meters.of(VISION_SINGLE_TAG_MAX_DIST);
 
         // Vision Trust (Std Dev) Coefficients
         public static final double VISION_BASE_STD_DEV = 0.1;
@@ -153,83 +109,32 @@ public class Constants {
 
         // Rubik Pi 3 (Qualcomm QCS6490) Camera Physical Mounting Geometry
         public static final double RUBIK_PI_CAMERA_HEIGHT_METERS = 0.45; // 45 cm from carpet
-        public static final double RUBIK_PI_CAMERA_PITCH_DEG = -15.0; // 15 degrees down-tilt toward carpet
+        public static final double RUBIK_PI_CAMERA_PITCH_DEG = -15.0;     // 15 degrees down-tilt toward carpet
         public static final double RUBIK_PI_CAMERA_FORWARD_OFFSET_METERS = 0.25; // 25 cm forward from robot center
-        public static final double FUEL_TARGET_HEIGHT_METERS = 0.075; // Fuel radius ~3 inches (center of sphere)
+        public static final double FUEL_TARGET_HEIGHT_METERS = 0.075;    // Center of sphere for object detection
+
+        public static final Distance RUBIK_PI_CAMERA_HEIGHT_MEASURE = edu.wpi.first.units.Units.Meters.of(RUBIK_PI_CAMERA_HEIGHT_METERS);
+        public static final Angle RUBIK_PI_CAMERA_PITCH_MEASURE = edu.wpi.first.units.Units.Degrees.of(RUBIK_PI_CAMERA_PITCH_DEG);
+        public static final Distance RUBIK_PI_CAMERA_FORWARD_OFFSET_MEASURE = edu.wpi.first.units.Units.Meters.of(RUBIK_PI_CAMERA_FORWARD_OFFSET_METERS);
+        public static final Distance FUEL_TARGET_HEIGHT_MEASURE = edu.wpi.first.units.Units.Meters.of(FUEL_TARGET_HEIGHT_METERS);
     }
 
-    public static final class ShooterConstants {
-        public static final double FEED_SPEED = 0.5;
+    // =========================================================================
+    // 5. OPERATOR CONTROLS & INPUT FILTERING (Evergreen)
+    // =========================================================================
 
-        // Physics Constants
-        public static final double SHOOTER_ANGLE_RAD = FIRING_ANGLE;
-        public static final TunableNumber SHOOTER_HEIGHT_METERS = new TunableNumber("Shooter/HeightMeters", 0.53);
-        public static final TunableNumber SHOOTER_OFFSET_METERS = new TunableNumber("Shooter/OffsetMeters",
-                SHOOTER_OFFSET);
-        public static final double IDLE_RPM = 60;
+    public static class OperatorConstants {
+        // Joystick Deadband
+        public static final double DEADBAND = 0.1;
 
-        // Tolerances
-        public static final double RPM_TOLERANCE = 50.0;
-        public static final double ALIGNMENT_HEADING_TOLERANCE_DEG = 3.0;
-        public static final double LIMELIGHT_TX_TOLERANCE_DEG = 2.0;
-
-        // Flywheel Feedback & Feedforward Tunables
-        public static final TunableNumber FLYWHEEL_KP = new TunableNumber("Shooter/kP", Constants.FLYWHEEL_KP);
-        public static final TunableNumber FLYWHEEL_KI = new TunableNumber("Shooter/kI", Constants.FLYWHEEL_KI);
-        public static final TunableNumber FLYWHEEL_KD = new TunableNumber("Shooter/kD", Constants.FLYWHEEL_KD);
-        public static final TunableNumber FLYWHEEL_KS = new TunableNumber("Shooter/kS", Constants.FLYWHEEL_KS);
-        public static final TunableNumber FLYWHEEL_KV = new TunableNumber("Shooter/kV", Constants.FLYWHEEL_KV);
-        public static final TunableNumber FLYWHEEL_KA = new TunableNumber("Shooter/kA", Constants.FLYWHEEL_KA);
-
-        // Safety
-        public static final double FLYWHEEL_CURRENT_LIMIT = 40.0; // Amps
-
-        // Simulation
-        public static final double SIM_GEARING = 1.0;
-        public static final double SIM_MOI = 0.001; // Estimate
-        public static final double BALL_SPAWN_INTERVAL = 0.3; // seconds
-        public static final double SHOOTER_WHEEL_CIRCUMFERENCE = 0.1016 * Math.PI;
-        /**
-         * Energy transfer and slip efficiency from flywheel surface to ball exit
-         * velocity (~0.42 for dual flywheels).
-         */
-        public static final TunableNumber BALL_LAUNCH_EFFICIENCY = new TunableNumber("Shooter/SimLaunchEfficiency",
-                0.42);
+        // Driver Slew Rate Limiters (m/s^2 for translation, rad/s^2 for rotation)
+        public static final TunableNumber TRANSLATION_SLEW_RATE = new TunableNumber("Operator/TranslationSlewRate", 16); // m/s^2
+        public static final TunableNumber ROTATION_SLEW_RATE = new TunableNumber("Operator/RotationSlewRate", 10);       // rad/s^2
     }
 
-    public static final class IntakeConstants {
-        public static final boolean INTAKE_ARM_INVERTED = true;
-        public static final boolean INTAKE_WHEELS_INVERTED = true;
-        public static final double INTAKE_POSITION_OFFSET = 276.0;
-
-        public static final double STALL_CURRENT_LIMIT = 30.0; // Amps
-        public static final double STALL_TIME = 0.5; // Seconds to trigger unjam
-        public static final double EJECT_TIME = 1.0; // Seconds to eject
-
-        public static final double INTAKE_SPEED = 0.7;
-        public static final double HOPPER_SPEED = 0.5;
-
-        // Arm Gains (Degrees based) - Physical tuning
-        public static final TunableNumber ARM_KP = new TunableNumber("Intake/kArmP", INTAKE_ARM_KP);
-        public static final TunableNumber ARM_KI = new TunableNumber("Intake/kArmI", INTAKE_ARM_KI);
-        public static final TunableNumber ARM_KD = new TunableNumber("Intake/kArmD", INTAKE_ARM_KD);
-        public static final TunableNumber ARM_KS = new TunableNumber("Intake/kArmS", INTAKE_ARM_KS);
-        public static final TunableNumber ARM_KG = new TunableNumber("Intake/kArmG", INTAKE_ARM_KG);
-        public static final TunableNumber ARM_KV = new TunableNumber("Intake/kArmV", INTAKE_ARM_KV);
-        public static final TunableNumber ARM_KA = new TunableNumber("Intake/kArmA", INTAKE_ARM_KA);
-
-        public static final double MAX_ARM_VELOCITY = 400.0;
-        public static final double MAX_ARM_ACCELERATION = 400.0;
-
-        public static final double ARM_INTAKE_POS = INTAKE_DOWN_POSITION;
-        public static final double ARM_IDLE_POS = INTAKE_UP_POSITION;
-
-        // Simulation
-        public static final int MAX_HELD_BALLS = 30;
-        public static final double SIM_ARM_GEARING = 100.0;
-        public static final double SIM_ARM_LENGTH = 0.4; // meters
-        public static final double SIM_ARM_MASS = 3.0; // kg
-    }
+    // =========================================================================
+    // 6. ADDRESSABLE LED PATTERNS (Evergreen)
+    // =========================================================================
 
     public static final class LEDConstants {
         public static final int BLINKIN_PWM_PORT = 0;
@@ -259,13 +164,108 @@ public class Constants {
         public static final double SOLID_BLACK = 0.99;
     }
 
-    public static class OperatorConstants {
+    // =========================================================================
+    // 7. MECHANISM & SEASONAL DELEGATES (Backward Compatibility)
+    // =========================================================================
+    // These delegates allow existing subsystem code to continue compiling without
+    // disruption while new code imports mechanism constants directly from their packages.
 
-        // Joystick Deadband
-        public static final double DEADBAND = 0.1;
+    public static final class FieldConstants {
+        public static final Translation3d RED_GOAL_LOCATION = FieldMap.Hubs.RED_HUB_3D;
+        public static final Translation3d BLUE_GOAL_LOCATION = FieldMap.Hubs.BLUE_HUB_3D;
+        public static final double GOAL_HEIGHT_METERS = FieldMap.Hubs.GOAL_HEIGHT;
+    }
 
-        // Driver Slew Rate Limiters (m/s^2 for translation, rad/s^2 for rotation)
-        public static final TunableNumber TRANSLATION_SLEW_RATE = new TunableNumber("Operator/TranslationSlewRate", 16); // m/s^2
-        public static final TunableNumber ROTATION_SLEW_RATE = new TunableNumber("Operator/RotationSlewRate", 10); // rad/s^2
+    public static final Translation3d RED_HUB_LOCATION = FieldMap.Hubs.RED_HUB_3D;
+    public static final Translation3d BLUE_HUB_LOCATION = FieldMap.Hubs.BLUE_HUB_3D;
+
+    // Shooter Delegates -> frc.robot.Subsystems.shooter.ShooterConstants
+    public static final double SHOOTER_PREDICTIVE_LOOK_AHEAD = frc.robot.Subsystems.shooter.ShooterConstants.SHOOTER_PREDICTIVE_LOOK_AHEAD;
+    public static final double SHOOTER_OFFSET = frc.robot.Subsystems.shooter.ShooterConstants.SHOOTER_OFFSET;
+    public static final double FIRING_ANGLE = frc.robot.Subsystems.shooter.ShooterConstants.FIRING_ANGLE;
+    public static final double HEIGHT_DIFFERENCE = frc.robot.Subsystems.shooter.ShooterConstants.HEIGHT_DIFFERENCE;
+    public static final double FLYWHEEL_KS = frc.robot.Subsystems.shooter.ShooterConstants.FLYWHEEL_KS_VAL;
+    public static final double FLYWHEEL_KV = frc.robot.Subsystems.shooter.ShooterConstants.FLYWHEEL_KV_VAL;
+    public static final double FLYWHEEL_KA = frc.robot.Subsystems.shooter.ShooterConstants.FLYWHEEL_KA_VAL;
+    public static final double FLYWHEEL_KP = frc.robot.Subsystems.shooter.ShooterConstants.FLYWHEEL_KP_VAL;
+    public static final double FLYWHEEL_KI = frc.robot.Subsystems.shooter.ShooterConstants.FLYWHEEL_KI_VAL;
+    public static final double FLYWHEEL_KD = frc.robot.Subsystems.shooter.ShooterConstants.FLYWHEEL_KD_VAL;
+    public static final double KICKER_VOLTAGE = frc.robot.Subsystems.shooter.ShooterConstants.KICKER_VOLTAGE;
+    public static final Voltage KICKER_VOLTAGE_MEASURE = frc.robot.Subsystems.shooter.ShooterConstants.KICKER_VOLTAGE_MEASURE;
+
+    public static final class ShooterConstants {
+        public static final double FEED_SPEED = frc.robot.Subsystems.shooter.ShooterConstants.FEED_SPEED;
+        public static final double SHOOTER_ANGLE_RAD = frc.robot.Subsystems.shooter.ShooterConstants.SHOOTER_ANGLE_RAD;
+        public static final TunableNumber SHOOTER_HEIGHT_METERS = frc.robot.Subsystems.shooter.ShooterConstants.SHOOTER_HEIGHT_METERS;
+        public static final TunableNumber SHOOTER_OFFSET_METERS = frc.robot.Subsystems.shooter.ShooterConstants.SHOOTER_OFFSET_METERS;
+        public static final double IDLE_RPM = frc.robot.Subsystems.shooter.ShooterConstants.IDLE_RPM;
+        public static final AngularVelocity IDLE_RPM_MEASURE = frc.robot.Subsystems.shooter.ShooterConstants.IDLE_RPM_MEASURE;
+        public static final double RPM_TOLERANCE = frc.robot.Subsystems.shooter.ShooterConstants.RPM_TOLERANCE;
+        public static final double ALIGNMENT_HEADING_TOLERANCE_DEG = frc.robot.Subsystems.shooter.ShooterConstants.ALIGNMENT_HEADING_TOLERANCE_DEG;
+        public static final double LIMELIGHT_TX_TOLERANCE_DEG = frc.robot.Subsystems.shooter.ShooterConstants.LIMELIGHT_TX_TOLERANCE_DEG;
+        public static final TunableNumber FLYWHEEL_KP = frc.robot.Subsystems.shooter.ShooterConstants.FLYWHEEL_KP;
+        public static final TunableNumber FLYWHEEL_KI = frc.robot.Subsystems.shooter.ShooterConstants.FLYWHEEL_KI;
+        public static final TunableNumber FLYWHEEL_KD = frc.robot.Subsystems.shooter.ShooterConstants.FLYWHEEL_KD;
+        public static final TunableNumber FLYWHEEL_KS = frc.robot.Subsystems.shooter.ShooterConstants.FLYWHEEL_KS;
+        public static final TunableNumber FLYWHEEL_KV = frc.robot.Subsystems.shooter.ShooterConstants.FLYWHEEL_KV;
+        public static final TunableNumber FLYWHEEL_KA = frc.robot.Subsystems.shooter.ShooterConstants.FLYWHEEL_KA;
+        public static final double FLYWHEEL_CURRENT_LIMIT = frc.robot.Subsystems.shooter.ShooterConstants.FLYWHEEL_CURRENT_LIMIT;
+        public static final double KICKER_CURRENT_LIMIT = frc.robot.Subsystems.shooter.ShooterConstants.KICKER_CURRENT_LIMIT;
+        public static final Current FLYWHEEL_CURRENT_LIMIT_MEASURE = frc.robot.Subsystems.shooter.ShooterConstants.FLYWHEEL_CURRENT_LIMIT_MEASURE;
+        public static final Current KICKER_CURRENT_LIMIT_MEASURE = frc.robot.Subsystems.shooter.ShooterConstants.KICKER_CURRENT_LIMIT_MEASURE;
+        public static final double SIM_GEARING = frc.robot.Subsystems.shooter.ShooterConstants.SIM_GEARING;
+        public static final double SIM_MOI = frc.robot.Subsystems.shooter.ShooterConstants.SIM_MOI;
+        public static final double BALL_SPAWN_INTERVAL = frc.robot.Subsystems.shooter.ShooterConstants.BALL_SPAWN_INTERVAL;
+        public static final double SHOOTER_WHEEL_CIRCUMFERENCE = frc.robot.Subsystems.shooter.ShooterConstants.SHOOTER_WHEEL_CIRCUMFERENCE;
+        public static final TunableNumber BALL_LAUNCH_EFFICIENCY = frc.robot.Subsystems.shooter.ShooterConstants.BALL_LAUNCH_EFFICIENCY;
+    }
+
+    // Intake Delegates -> frc.robot.Subsystems.intake.IntakeConstants
+    public static final double INTAKE_ARM_KP = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_ARM_KP_VAL;
+    public static final double INTAKE_ARM_KI = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_ARM_KI_VAL;
+    public static final double INTAKE_ARM_KD = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_ARM_KD_VAL;
+    public static final double INTAKE_ARM_KS = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_ARM_KS_VAL;
+    public static final double INTAKE_ARM_KG = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_ARM_KG_VAL;
+    public static final double INTAKE_ARM_KV = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_ARM_KV_VAL;
+    public static final double INTAKE_ARM_KA = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_ARM_KA_VAL;
+    public static final double MAX_ARM_VELOCITY = frc.robot.Subsystems.intake.IntakeConstants.MAX_ARM_VELOCITY;
+    public static final double MAX_ARM_ACCELERATION = frc.robot.Subsystems.intake.IntakeConstants.MAX_ARM_ACCELERATION;
+    public static final double INTAKE_UP_POSITION = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_UP_POSITION;
+    public static final double INTAKE_DOWN_POSITION = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_DOWN_POSITION;
+    public static final double INTAKE_HORIZONTAL_POSITION = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_HORIZONTAL_POSITION;
+    public static final Angle INTAKE_UP_POSITION_MEASURE = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_UP_POSITION_MEASURE;
+    public static final Angle INTAKE_DOWN_POSITION_MEASURE = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_DOWN_POSITION_MEASURE;
+    public static final Angle INTAKE_HORIZONTAL_POSITION_MEASURE = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_HORIZONTAL_POSITION_MEASURE;
+    public static final boolean INTAKE_ARM_INVERTED = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_ARM_INVERTED;
+    public static final boolean INTAKE_WHEELS_INVERTED = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_WHEELS_INVERTED;
+    public static final double INTAKE_POSITION_OFFSET = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_POSITION_OFFSET;
+
+    public static final class IntakeConstants {
+        public static final boolean INTAKE_ARM_INVERTED = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_ARM_INVERTED;
+        public static final boolean INTAKE_WHEELS_INVERTED = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_WHEELS_INVERTED;
+        public static final double INTAKE_POSITION_OFFSET = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_POSITION_OFFSET;
+        public static final double STALL_CURRENT_LIMIT = frc.robot.Subsystems.intake.IntakeConstants.STALL_CURRENT_LIMIT;
+        public static final double STALL_TIME = frc.robot.Subsystems.intake.IntakeConstants.STALL_TIME;
+        public static final double EJECT_TIME = frc.robot.Subsystems.intake.IntakeConstants.EJECT_TIME;
+        public static final Current STALL_CURRENT_LIMIT_MEASURE = frc.robot.Subsystems.intake.IntakeConstants.STALL_CURRENT_LIMIT_MEASURE;
+        public static final Time STALL_TIME_MEASURE = frc.robot.Subsystems.intake.IntakeConstants.STALL_TIME_MEASURE;
+        public static final Time EJECT_TIME_MEASURE = frc.robot.Subsystems.intake.IntakeConstants.EJECT_TIME_MEASURE;
+        public static final double INTAKE_SPEED = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_SPEED;
+        public static final double HOPPER_SPEED = frc.robot.Subsystems.intake.IntakeConstants.HOPPER_SPEED;
+        public static final TunableNumber ARM_KP = frc.robot.Subsystems.intake.IntakeConstants.ARM_KP;
+        public static final TunableNumber ARM_KI = frc.robot.Subsystems.intake.IntakeConstants.ARM_KI;
+        public static final TunableNumber ARM_KD = frc.robot.Subsystems.intake.IntakeConstants.ARM_KD;
+        public static final TunableNumber ARM_KS = frc.robot.Subsystems.intake.IntakeConstants.ARM_KS;
+        public static final TunableNumber ARM_KG = frc.robot.Subsystems.intake.IntakeConstants.ARM_KG;
+        public static final TunableNumber ARM_KV = frc.robot.Subsystems.intake.IntakeConstants.ARM_KV;
+        public static final TunableNumber ARM_KA = frc.robot.Subsystems.intake.IntakeConstants.ARM_KA;
+        public static final double MAX_ARM_VELOCITY = frc.robot.Subsystems.intake.IntakeConstants.MAX_ARM_VELOCITY;
+        public static final double MAX_ARM_ACCELERATION = frc.robot.Subsystems.intake.IntakeConstants.MAX_ARM_ACCELERATION;
+        public static final double ARM_INTAKE_POS = frc.robot.Subsystems.intake.IntakeConstants.ARM_INTAKE_POS;
+        public static final double ARM_IDLE_POS = frc.robot.Subsystems.intake.IntakeConstants.ARM_IDLE_POS;
+        public static final int MAX_HELD_BALLS = frc.robot.Subsystems.intake.IntakeConstants.MAX_HELD_BALLS;
+        public static final double SIM_ARM_GEARING = frc.robot.Subsystems.intake.IntakeConstants.SIM_ARM_GEARING;
+        public static final double SIM_ARM_LENGTH = frc.robot.Subsystems.intake.IntakeConstants.SIM_ARM_LENGTH;
+        public static final double SIM_ARM_MASS = frc.robot.Subsystems.intake.IntakeConstants.SIM_ARM_MASS;
     }
 }

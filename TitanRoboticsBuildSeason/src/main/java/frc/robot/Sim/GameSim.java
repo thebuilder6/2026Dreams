@@ -134,6 +134,10 @@ public class GameSim implements Subsystem {
         return simTimeRemainingSec;
     }
 
+    public void setSimTimeRemainingSec(double timeSec) {
+        this.simTimeRemainingSec = timeSec;
+    }
+
     /**
      * Consumes held balls for shooting with validation and error handling.
      * @param maxToConsume Maximum number of balls to consume
@@ -414,6 +418,7 @@ public class GameSim implements Subsystem {
                 mapleIntake.setGamePiecesCount(Config.INITIAL_HELD_BALLS);
             }
             score = 0;
+            MatchScoreTracker.getInstance().reset();
             simTimeRemainingSec = Config.MATCH_DURATION_SEC;
             simRunning = false;
             lastSimScoreCount = Shooter.getInstance().getSimScoreCount();

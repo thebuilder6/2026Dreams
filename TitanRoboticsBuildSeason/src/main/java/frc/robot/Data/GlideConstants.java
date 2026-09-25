@@ -76,12 +76,17 @@ public class GlideConstants {
     static {
         List<GlidePoint> redPoints = new ArrayList<>();
         for (GlidePoint p : BLUE_GLIDE_POINTS) {
-            String redName = p.name.replace("Blue", "Red");
-            Pose2d redPose = AllianceFlipUtil.apply(p.pose, true);
-            Pose2d redExit = p.isTunnelEntrance && p.tunnelExitPose != null
-                    ? AllianceFlipUtil.apply(p.tunnelExitPose, true)
-                    : null;
-            redPoints.add(new GlidePoint(redName, redPose, p.isTunnelEntrance, redExit));
+            if (p.name.startsWith("Blue ")) {
+                String redName = p.name.replace("Blue ", "Red ");
+                Pose2d redPose = AllianceFlipUtil.apply(p.pose, true);
+                Pose2d redExit = p.isTunnelEntrance && p.tunnelExitPose != null
+                        ? AllianceFlipUtil.apply(p.tunnelExitPose, true)
+                        : null;
+                redPoints.add(new GlidePoint(redName, redPose, p.isTunnelEntrance, redExit));
+            } else {
+                // Neutral field features (e.g. Midfield Top/Bottom) retain canonical coordinates
+                redPoints.add(p);
+            }
         }
         RED_GLIDE_POINTS = Collections.unmodifiableList(redPoints);
     }

@@ -1,6 +1,7 @@
 package frc.robot.Auto.Missions;
 
 import frc.robot.Auto.AutoMissionEndedException;
+import frc.robot.Auto.AutoMissionChooser;
 import frc.robot.Interfaces.Actions;
 import edu.wpi.first.wpilibj.DriverStation;
 
@@ -27,6 +28,9 @@ public abstract class MissionBase {
         mActive = true;
 
         try {
+            if (AutoMissionChooser.delay > 0.05) {
+                runAction(new frc.robot.Auto.Actions.WaitAction(AutoMissionChooser.delay));
+            }
             routine();
         } 
         catch (AutoMissionEndedException e) {

@@ -20,7 +20,7 @@ public class IntakeIOSparkMax implements IntakeIO {
     public IntakeIOSparkMax() {
         armMotor = new NeoSparkMaxMotor(PortMap.INTAKE_ARM_MOTOR_ID);
         armMotor.setInverted(Constants.INTAKE_ARM_INVERTED);
-        armMotor.setBrakeMode(false);
+        armMotor.setBrakeMode(true);
 
         wheelsMotor = new NeoSparkMaxMotor(PortMap.INTAKE_WHEELS_MOTOR_ID);
         wheelsMotor.setInverted(Constants.INTAKE_WHEELS_INVERTED);

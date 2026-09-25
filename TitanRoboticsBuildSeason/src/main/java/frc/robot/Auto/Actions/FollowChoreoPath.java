@@ -152,8 +152,11 @@ public class FollowChoreoPath implements Actions {
 
     @Override
     public boolean isFinished() {
-        // the timer is done, so we reached end of trajectory
-        return timer.hasElapsed(trajectory.get().getTotalTime() + extraTime);
+        if (!trajectory.isPresent()) {
+            return true;
+        }
+        double elapsedTrajectoryTime = isPaused ? (pauseStartTimestamp - totalPausedTime) : (timer.get() - totalPausedTime);
+        return elapsedTrajectoryTime >= (trajectory.get().getTotalTime() + extraTime);
     }
 
     @Override

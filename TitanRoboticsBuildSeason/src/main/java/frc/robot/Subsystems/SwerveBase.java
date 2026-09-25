@@ -2,12 +2,21 @@ package frc.robot.Subsystems;
 
 import static edu.wpi.first.units.Units.Meter;
 import static edu.wpi.first.units.Units.DegreesPerSecond;
+import edu.wpi.first.units.Units;
+import edu.wpi.first.units.measure.Angle;
+import edu.wpi.first.units.measure.AngularVelocity;
+import edu.wpi.first.units.measure.Current;
+import edu.wpi.first.units.measure.LinearVelocity;
+import edu.wpi.first.units.measure.Voltage;
+import edu.wpi.first.wpilibj2.command.Command;
+import edu.wpi.first.wpilibj2.command.Commands;
 
 import java.io.File;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 
+import edu.wpi.first.math.MathUtil;
 import edu.wpi.first.math.Matrix;
 import edu.wpi.first.math.VecBuilder;
 import edu.wpi.first.math.geometry.Pose2d;
@@ -20,6 +29,9 @@ import edu.wpi.first.math.numbers.N3;
 import edu.wpi.first.math.trajectory.Trajectory;
 import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.Filesystem;
+import edu.wpi.first.wpilibj.PowerDistribution;
+import edu.wpi.first.wpilibj.PowerDistribution.ModuleType;
+import edu.wpi.first.wpilibj.RobotController;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.smartdashboard.Field2d;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
@@ -73,7 +85,8 @@ public class SwerveBase implements Subsystem {
     private boolean lastLimelightAccepted = false;
 
     // Vision Watchdog & Graceful Degradation
-    private final Alert visionDegradedAlert = new Alert("Vision", "Vision Degraded: Pure Odometry Active", AlertType.WARNING);
+    private final Alert visionDegradedAlert = new Alert("Vision", "Vision Degraded: Pure Odometry Active",
+            AlertType.WARNING);
     private double lastVisionTimestamp = 0.0;
     private static final double VISION_TIMEOUT_SEC = 0.75;
     private boolean isVisionDegraded = false;
@@ -81,6 +94,14 @@ public class SwerveBase implements Subsystem {
     private boolean isPitMode = false;
 
     private final CollisionDetector collisionDetector = new CollisionDetector();
+
+    // Power Distribution & Brownout Sag Protection
+    private PowerDistribution powerDistribution;
+    private double brownoutSpeedScale = 1.0;
+    private double simBatteryVoltage = -1.0;
+    private double simTotalCurrent = -1.0;
+    private final Alert brownoutAlert = new Alert("Power", "Brownout Protection Active: Throttling Drive",
+            AlertType.WARNING);
 
     /**
      * Gets the singleton instance of SwerveBase.
@@ -140,6 +161,16 @@ public class SwerveBase implements Subsystem {
         SmartDashboard.putData("Field", field);
 
         this.io = SwerveDriveTelemetry.isSimulation ? new DriveIOSim(swerveDrive) : new DriveIOSparkMax(swerveDrive);
+
+        try {
+            this.powerDistribution = new PowerDistribution(1, ModuleType.kRev);
+        } catch (Throwable t1) {
+            try {
+                this.powerDistribution = new PowerDistribution();
+            } catch (Throwable t2) {
+                this.powerDistribution = null;
+            }
+        }
     }
 
     /**
@@ -166,10 +197,13 @@ public class SwerveBase implements Subsystem {
      *                      robot-relative.
      */
     public void drive(Translation2d translation, double rotation, boolean fieldRelative) {
-        swerveDrive.drive(translation,
-                rotation,
-                fieldRelative,
-                false); // Open loop is disabled since it shouldn't be used most of the time.
+        Translation2d scaledTranslation = translation.times(brownoutSpeedScale);
+        double scaledRotation = rotation * brownoutSpeedScale;
+        ChassisSpeeds speeds = fieldRelative
+                ? ChassisSpeeds.fromFieldRelativeSpeeds(scaledTranslation.getX(), scaledTranslation.getY(),
+                        scaledRotation, getHeading())
+                : new ChassisSpeeds(scaledTranslation.getX(), scaledTranslation.getY(), scaledRotation);
+        swerveDrive.drive(ChassisSpeeds.discretize(speeds, 0.020));
     }
 
     /**
@@ -180,12 +214,17 @@ public class SwerveBase implements Subsystem {
     }
 
     /**
-     * Drive according to the chassis robot oriented velocity.
+     * Drive according to the chassis robot oriented velocity with analytical
+     * discretization and brownout protection.
      *
      * @param velocity Robot oriented {@link ChassisSpeeds}
      */
     public void drive(ChassisSpeeds velocity) {
-        swerveDrive.drive(velocity);
+        ChassisSpeeds scaledVelocity = new ChassisSpeeds(
+                velocity.vxMetersPerSecond * brownoutSpeedScale,
+                velocity.vyMetersPerSecond * brownoutSpeedScale,
+                velocity.omegaRadiansPerSecond * brownoutSpeedScale);
+        swerveDrive.drive(ChassisSpeeds.discretize(scaledVelocity, 0.020));
     }
 
     /**
@@ -200,21 +239,27 @@ public class SwerveBase implements Subsystem {
     /**
      * Resets odometry to the given pose. Gyro angle and module positions do not
      * need to be reset when calling this method. However, if either gyro angle or
-     * module position is reset, this must be called in order for odometry to keep working.
+     * module position is reset, this must be called in order for odometry to keep
+     * working.
      *
      * @param initialHolonomicPose The pose to set the odometry to
      */
     public void resetOdometry(Pose2d initialHolonomicPose) {
-        swerveDrive.resetOdometry(initialHolonomicPose);
+        synchronized (swerveDrive) {
+            swerveDrive.resetOdometry(initialHolonomicPose);
+        }
     }
 
     /**
-     * Gets the current pose (position and rotation) of the robot, as reported by odometry.
+     * Gets the current pose (position and rotation) of the robot, as reported by
+     * odometry.
      *
      * @return The robot's current estimated Pose2d.
      */
     public Pose2d getPose() {
-        return swerveDrive.getPose();
+        synchronized (swerveDrive) {
+            return swerveDrive.getPose();
+        }
     }
 
     /**
@@ -256,7 +301,9 @@ public class SwerveBase implements Subsystem {
      * facing toward 0.
      */
     public void zeroGyro() {
-        swerveDrive.zeroGyro();
+        synchronized (swerveDrive) {
+            swerveDrive.zeroGyro();
+        }
     }
 
     /**
@@ -407,7 +454,8 @@ public class SwerveBase implements Subsystem {
     }
 
     /**
-     * Sanitizes a string for use as a Field2d object name by replacing special characters with underscores.
+     * Sanitizes a string for use as a Field2d object name by replacing special
+     * characters with underscores.
      * 
      * @param name The original name to sanitize.
      * @return A sanitized string compatible with NetworkTables/Field2d naming.
@@ -486,11 +534,10 @@ public class SwerveBase implements Subsystem {
      * @return {@link ChassisSpeeds} which can be sent to the Swerve Drive.
      */
     public ChassisSpeeds getTargetSpeeds(double xInput, double yInput, Rotation2d angle) {
-        return swerveDrive.swerveController.getTargetSpeeds(xInput,
+        return swerveDrive.swerveController.getRawTargetSpeeds(xInput,
                 yInput,
                 angle.getRadians(),
-                getHeading().getRadians(),
-                Constants.MAX_SPEED);
+                getHeading().getRadians());
     }
 
     /**
@@ -521,7 +568,8 @@ public class SwerveBase implements Subsystem {
     }
 
     /**
-     * Gets the {@link SwerveDriveConfiguration} containing physical drive dimensions and gear ratios.
+     * Gets the {@link SwerveDriveConfiguration} containing physical drive
+     * dimensions and gear ratios.
      * 
      * @return The {@link SwerveDriveConfiguration} for the current drive.
      */
@@ -534,6 +582,66 @@ public class SwerveBase implements Subsystem {
      */
     public void lock() {
         swerveDrive.lockPose();
+    }
+
+    /**
+     * WPILib Commands v2 Subsystem.idle():
+     * Returns a command that locks swerve modules in an X-pattern to resist movement
+     * while the drivebase is idle.
+     */
+    @Override
+    public Command idle() {
+        return Commands.run(this::lock, this)
+                .withName("SwerveBase.idle");
+    }
+
+    /**
+     * Gets robot linear ground speed magnitude as a {@link LinearVelocity} measure.
+     */
+    public LinearVelocity getLinearVelocityMeasure() {
+        ChassisSpeeds speeds = getFieldVelocity();
+        return Units.MetersPerSecond.of(Math.hypot(speeds.vxMetersPerSecond, speeds.vyMetersPerSecond));
+    }
+
+    /**
+     * Gets robot rotational velocity as an {@link AngularVelocity} measure.
+     */
+    public AngularVelocity getAngularVelocityMeasure() {
+        return Units.RadiansPerSecond.of(getFieldVelocity().omegaRadiansPerSecond);
+    }
+
+    /**
+     * Gets robot heading as an {@link Angle} measure.
+     */
+    public Angle getHeadingMeasure() {
+        return Units.Degrees.of(getHeading().getDegrees());
+    }
+
+    /**
+     * Gets robot pitch as an {@link Angle} measure.
+     */
+    public Angle getPitchMeasure() {
+        return Units.Degrees.of(getPitch().getDegrees());
+    }
+
+    /**
+     * Gets monitored battery voltage as a {@link Voltage} measure.
+     */
+    public Voltage getBatteryVoltageMeasure() {
+        double v = (simBatteryVoltage >= 0) ? simBatteryVoltage : RobotController.getBatteryVoltage();
+        return Units.Volts.of(v);
+    }
+
+    /**
+     * Gets monitored total electrical current draw as a {@link Current} measure.
+     */
+    public Current getTotalCurrentMeasure() {
+        double current = (simTotalCurrent >= 0)
+                ? simTotalCurrent
+                : ((powerDistribution != null && !edu.wpi.first.wpilibj.RobotBase.isSimulation())
+                        ? powerDistribution.getTotalCurrent()
+                        : getSimulationCurrentDraw());
+        return Units.Amps.of(current);
     }
 
     /**
@@ -560,9 +668,25 @@ public class SwerveBase implements Subsystem {
      * @param velocity Velocity according to the field.
      */
     public void driveFieldOriented(ChassisSpeeds velocity) {
-        swerveDrive.driveFieldOriented(velocity);
+        ChassisSpeeds scaledVelocity = new ChassisSpeeds(
+                velocity.vxMetersPerSecond * brownoutSpeedScale,
+                velocity.vyMetersPerSecond * brownoutSpeedScale,
+                velocity.omegaRadiansPerSecond * brownoutSpeedScale);
+        swerveDrive.driveFieldOriented(ChassisSpeeds.discretize(scaledVelocity, 0.020));
     }
 
+    /**
+     * Fast odometry polling callback designed for addPeriodic() timeslot execution.
+     * Updates swerve odometry at high frequency (e.g. 100 Hz / 10ms) between main
+     * 20ms periodic loops.
+     */
+    public void updateOdometryFast() {
+        if (swerveDrive != null) {
+            synchronized (swerveDrive) {
+                swerveDrive.updateOdometry();
+            }
+        }
+    }
 
     public boolean isVisionDegraded() {
         return isVisionDegraded;
@@ -572,7 +696,49 @@ public class SwerveBase implements Subsystem {
     public void update() {
         io.updateInputs(inputs);
         org.littletonrobotics.junction.Logger.processInputs("Drive", inputs);
-        swerveDrive.updateOdometry();
+        synchronized (swerveDrive) {
+            swerveDrive.updateOdometry();
+        }
+
+        // Dynamic PowerDistribution & Voltage Sag Brownout Monitoring
+        double batteryVoltage = (simBatteryVoltage >= 0)
+                ? simBatteryVoltage
+                : RobotController.getBatteryVoltage();
+        double totalCurrentAmps = (simTotalCurrent >= 0)
+                ? simTotalCurrent
+                : ((powerDistribution != null && !edu.wpi.first.wpilibj.RobotBase.isSimulation())
+                        ? powerDistribution.getTotalCurrent()
+                        : getSimulationCurrentDraw());
+
+        // Incipient brownout risk thresholds: V < 9.5V, I > 180A (Hardware cutoff at
+        // 6.8V)
+        double targetScale = 1.0;
+        if (simBatteryVoltage < 0 && RobotController.isBrownedOut()) {
+            targetScale = 0.25; // Severe hardware brownout cutoff active
+        } else {
+            double vScale = 1.0;
+            if (batteryVoltage < 9.5) {
+                // Continuous linear ramp from 1.0 at 9.5V down to 0.35 at 7.5V
+                vScale = MathUtil.clamp((batteryVoltage - 7.5) / (9.5 - 7.5), 0.35, 1.0);
+            }
+            double iScale = 1.0;
+            if (totalCurrentAmps > 180.0) {
+                // Continuous ramp down from 1.0 at 180A down to 0.50 at 240A
+                iScale = MathUtil.clamp(1.0 - ((totalCurrentAmps - 180.0) / (240.0 - 180.0)) * 0.5, 0.5, 1.0);
+            }
+            targetScale = Math.min(vScale, iScale);
+        }
+
+        // Instantaneous cut on brownout risk, smooth recovery slew back to 1.0 (+3% per
+        // 20ms)
+        if (targetScale < brownoutSpeedScale) {
+            brownoutSpeedScale = targetScale;
+        } else {
+            brownoutSpeedScale = Math.min(targetScale, brownoutSpeedScale + 0.03);
+        }
+
+        boolean isBrownoutThrottling = brownoutSpeedScale < 0.95;
+        brownoutAlert.set(isBrownoutThrottling);
 
         Pose2d estimatedPose = getPose();
         Pose2d truthPose = SwerveDriveTelemetry.isSimulation ? getSimulationPose() : estimatedPose;
@@ -638,32 +804,42 @@ public class SwerveBase implements Subsystem {
         SmartDashboard.putNumber("Subsystems/Limelight/AvgDist", lastLimelightAvgDist);
         SmartDashboard.putNumber("Subsystems/Limelight/TrustLevel", lastLimelightStdDev);
         SmartDashboard.putBoolean("Subsystems/Limelight/IsAccepted", lastLimelightAccepted);
+
+        // PowerDistribution & Dynamic Brownout Telemetry
+        SmartDashboard.putNumber("Power/BatteryVoltage", RobotController.getBatteryVoltage());
+        SmartDashboard.putNumber("Power/TotalCurrent",
+                (powerDistribution != null) ? powerDistribution.getTotalCurrent() : getSimulationCurrentDraw());
+        SmartDashboard.putNumber("Power/BrownoutSpeedScale", brownoutSpeedScale);
+        SmartDashboard.putBoolean("Power/IsBrownoutRisk", brownoutSpeedScale < 0.95);
     }
 
-    @Override
-    public double getSimulationCurrentDraw() {
-        // Estimate swerve current draw
-        // 4 modules * (Drive Motor + Angle Motor)
-        // Simple model: Base current + Speed proportion
-        double driveCurrent = Math.abs(getRobotVelocity().vxMetersPerSecond) * 10.0;
-        double turnCurrent = Math.abs(getRobotVelocity().omegaRadiansPerSecond) * 10.0;
+    /**
+     * Gets the current brownout speed scale factor [0.25 to 1.0].
+     */
+    public double getBrownoutSpeedScale() {
+        return brownoutSpeedScale;
+    }
 
-        return 4.0 // Idle current
-                + driveCurrent
-                + turnCurrent;
+    /**
+     * Gets the underlying PowerDistribution instance, or null if uninitialized.
+     */
+    public PowerDistribution getPowerDistribution() {
+        return powerDistribution;
     }
 
     private double simDriveCurrent = -1.0;
 
     /**
-     * Sets a simulated drive motor current for testing proprioceptive stall detection.
+     * Sets a simulated drive motor current for testing proprioceptive stall
+     * detection.
      */
     public void setSimulatedDriveCurrent(double currentAmps) {
         this.simDriveCurrent = currentAmps;
     }
 
     /**
-     * Gets average current draw across the drive motors for proprioceptive stall detection.
+     * Gets average current draw across the drive motors for proprioceptive stall
+     * detection.
      */
     public double getAverageDriveCurrent() {
         if (simDriveCurrent >= 0) {
@@ -728,7 +904,8 @@ public class SwerveBase implements Subsystem {
     }
 
     /**
-     * Sets the voltage to all drive motors with steering modules locked straight ahead (0 deg)
+     * Sets the voltage to all drive motors with steering modules locked straight
+     * ahead (0 deg)
      * for linear SysId characterization.
      */
     public void setSysIdDriveVoltage(double volts) {
@@ -740,13 +917,14 @@ public class SwerveBase implements Subsystem {
     }
 
     /**
-     * Sets the voltage to drive motors with modules oriented tangent to the rotation circle
+     * Sets the voltage to drive motors with modules oriented tangent to the
+     * rotation circle
      * for angular (rotational moment of inertia) SysId characterization.
      */
     public void setSysIdRotationVoltage(double volts) {
         // Calculate tangent module angles for pure yaw spin
-        edu.wpi.first.math.kinematics.SwerveModuleState[] states = 
-                swerveDrive.kinematics.toSwerveModuleStates(new edu.wpi.first.math.kinematics.ChassisSpeeds(0, 0, 1.0));
+        edu.wpi.first.math.kinematics.SwerveModuleState[] states = swerveDrive.kinematics
+                .toSwerveModuleStates(new edu.wpi.first.math.kinematics.ChassisSpeeds(0, 0, 1.0));
         swervelib.SwerveModule[] modules = swerveDrive.getModules();
         for (int i = 0; i < Math.min(modules.length, states.length); i++) {
             modules[i].setAngle(states[i].angle.getDegrees());
@@ -755,7 +933,8 @@ public class SwerveBase implements Subsystem {
     }
 
     /**
-     * Sets the voltage to all drive motors for SysId characterization (legacy alias).
+     * Sets the voltage to all drive motors for SysId characterization (legacy
+     * alias).
      */
     public void setDriveVoltage(double volts) {
         setSysIdDriveVoltage(volts);
@@ -769,7 +948,8 @@ public class SwerveBase implements Subsystem {
     }
 
     /**
-     * Sets angle motor voltage on a single module by index (0=FL, 1=FR, 2=BL, 3=BR).
+     * Sets angle motor voltage on a single module by index (0=FL, 1=FR, 2=BL,
+     * 3=BR).
      */
     public void setModuleAngleVoltage(int index, double volts) {
         io.setModuleAngleVoltage(index, volts);
@@ -832,12 +1012,14 @@ public class SwerveBase implements Subsystem {
     /**
      * Adds a vision measurement to the pose estimator.
      * 
-     * @param pose           Estimated pose
-     * @param timestamp      Measurement timestamp
-     * @param stdDevs        Standard deviations for X, Y, and Theta
+     * @param pose      Estimated pose
+     * @param timestamp Measurement timestamp
+     * @param stdDevs   Standard deviations for X, Y, and Theta
      */
     public void addVisionMeasurement(Pose2d pose, double timestamp, Matrix<N3, N1> stdDevs) {
-        swerveDrive.addVisionMeasurement(pose, timestamp, stdDevs);
+        synchronized (swerveDrive) {
+            swerveDrive.addVisionMeasurement(pose, timestamp, stdDevs);
+        }
         lastVisionTimestamp = Timer.getTimestamp();
         isVisionDegraded = false;
         lastLimelightAccepted = true;
@@ -917,10 +1099,50 @@ public class SwerveBase implements Subsystem {
      * Set the robot pose (for testing)
      */
     public void setPose(Pose2d pose) {
-        swerveDrive.resetOdometry(pose);
+        synchronized (swerveDrive) {
+            swerveDrive.resetOdometry(pose);
+        }
     }
+
     public double getCollisionJerkMagnitude() {
         return collisionDetector.getLastJerkMagnitude();
+    }
+
+    /**
+     * Estimates total current draw in simulation where no real PDH is available.
+     * Uses a rough heuristic based on commanded speed magnitude.
+     */
+    public double getSimulationCurrentDraw() {
+        ChassisSpeeds speeds = swerveDrive.getRobotVelocity();
+        double speedMag = Math.hypot(speeds.vxMetersPerSecond, speeds.vyMetersPerSecond);
+        // Rough estimate: ~15A idle per module (4 modules), scaling up to ~40A at full
+        // speed
+        double perModuleCurrent = 15.0 + 25.0 * Math.min(speedMag / 4.5, 1.0);
+        return perModuleCurrent * 4.0;
+    }
+
+    /**
+     * Set battery voltage override for simulation brownout testing. Use -1 to
+     * revert to real sensor.
+     */
+    public void setSimBatteryVoltage(double voltage) {
+        this.simBatteryVoltage = voltage;
+        if (voltage < 0 || voltage >= 12.0) {
+            brownoutSpeedScale = 1.0;
+            brownoutAlert.set(false);
+        }
+    }
+
+    /**
+     * Set total current override for simulation brownout testing. Use -1 to revert
+     * to real sensor.
+     */
+    public void setSimTotalCurrent(double current) {
+        this.simTotalCurrent = current;
+        if (current < 0) {
+            brownoutSpeedScale = 1.0;
+            brownoutAlert.set(false);
+        }
     }
 
 }

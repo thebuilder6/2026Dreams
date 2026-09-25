@@ -40,12 +40,21 @@ public class AIRobotSimTest {
         assertEquals(AIMode.LEAD_PURSUIT_INTERCEPT, AIMode.fromString("LEAD_PURSUIT_INTERCEPT"));
         assertEquals(AIMode.PINNING_BULLY, AIMode.fromString("PINNING_BULLY"));
         assertEquals(AIMode.AUTONOMOUS_CYCLER, AIMode.fromString("AUTONOMOUS_CYCLER"));
+        assertEquals(AIMode.ADAPTIVE_COMPETITOR, AIMode.fromString("ADAPTIVE_COMPETITOR"));
         assertEquals(AIMode.CHOREO_PATH, AIMode.fromString("CHOREO_PATH"));
         assertEquals(AIMode.MANUAL_2_PLAYER, AIMode.fromString("MANUAL_2_PLAYER"));
 
         // Fallback for null or unknown string
         assertEquals(AIMode.TACTICAL_DEFENSE, AIMode.fromString(null));
         assertEquals(AIMode.TACTICAL_DEFENSE, AIMode.fromString("INVALID_MODE"));
+    }
+
+    @Test
+    public void testBotArchetypeChoosers() {
+        assertNotNull(aiSim.getBot1ArchetypeChooser());
+        assertNotNull(aiSim.getBot2ArchetypeChooser());
+        assertEquals(Archetype.DEFENSE_BULLY, aiSim.getBot1Archetype());
+        assertEquals(Archetype.ADAPTIVE_COMPETITOR, aiSim.getBot2Archetype());
     }
 
     @Test
@@ -533,5 +542,153 @@ public class AIRobotSimTest {
         assertNotNull(blueFallback);
         assertEquals(0.0, blueFallback.getRotation().getDegrees(), 5.0,
                 "Blue opponent fallback midline patrol must face inward toward midfield (0 deg)");
+    }
+
+    @Test
+    public void testAllySpawnPosesOnPlayerSide() {
+        // When player is Blue (playerIsRed == false), ally bots must spawn on Blue side (X ~ 2.0m, facing 0 deg)
+        Pose2d blueAlly1 = AIRobotSim.getAllySpawnPose(1, false);
+        assertEquals(2.00, blueAlly1.getX(), 0.05);
+        assertEquals(5.80, blueAlly1.getY(), 0.05);
+        assertEquals(0.0, blueAlly1.getRotation().getDegrees(), 1.0);
+
+        Pose2d blueAlly2 = AIRobotSim.getAllySpawnPose(2, false);
+        assertEquals(2.00, blueAlly2.getX(), 0.05);
+        assertEquals(2.25, blueAlly2.getY(), 0.05);
+        assertEquals(0.0, blueAlly2.getRotation().getDegrees(), 1.0);
+
+        // When player is Red (playerIsRed == true), ally bots must spawn on Red side (X ~ FIELD_LENGTH - 2.0m, facing 180 deg)
+        Pose2d redAlly1 = AIRobotSim.getAllySpawnPose(1, true);
+        assertEquals(frc.robot.Utils.AllianceFlipUtil.FIELD_LENGTH - 2.00, redAlly1.getX(), 0.05);
+        assertEquals(5.80, redAlly1.getY(), 0.05);
+        assertEquals(180.0, redAlly1.getRotation().getDegrees(), 1.0);
+
+        Pose2d redAlly2 = AIRobotSim.getAllySpawnPose(2, true);
+        assertEquals(frc.robot.Utils.AllianceFlipUtil.FIELD_LENGTH - 2.00, redAlly2.getX(), 0.05);
+        assertEquals(2.25, redAlly2.getY(), 0.05);
+        assertEquals(180.0, redAlly2.getRotation().getDegrees(), 1.0);
+    }
+
+    @Test
+    public void testAllyArchetypeChoosers() {
+        assertNotNull(aiSim.getAlly1ArchetypeChooser());
+        assertNotNull(aiSim.getAlly2ArchetypeChooser());
+        assertEquals(Archetype.AUTONOMOUS_CYCLER, aiSim.getAlly1Archetype());
+        assertEquals(Archetype.ADAPTIVE_COMPETITOR, aiSim.getAlly2Archetype());
+    }
+
+    @Test
+    public void testAllyBotSpawningAndQueuing() {
+        // Initially when AllyCount is 0, ally bots are parked
+        SmartDashboard.putNumber("Simulation/AllyCount", 0.0);
+        Dashboard.setAllyCount(0);
+        SmartDashboard.putBoolean("Features/Opponent Robot", false);
+        aiSim.simulationUpdate();
+
+        // Spawn 2 ally bots
+        SmartDashboard.putNumber("Simulation/AllyCount", 2.0);
+        Dashboard.setAllyCount(2);
+        aiSim.simulationUpdate();
+
+        assertEquals(2, aiSim.getAllyBots().size(), "Should have instantiated 2 ally bots");
+        assertTrue(aiSim.getAllyBots().get(0).isAlly());
+        assertTrue(aiSim.getAllyBots().get(1).isAlly());
+        assertEquals(101, aiSim.getAllyBots().get(0).getBotId());
+        assertEquals(102, aiSim.getAllyBots().get(1).getBotId());
+
+        // Poses should be on field
+        assertTrue(aiSim.getAllyBots().get(0).getActualPose().getY() > 0.0, "Ally 1 should be on the field");
+        assertTrue(aiSim.getAllyBots().get(1).getActualPose().getY() > 0.0, "Ally 2 should be on the field");
+
+        // Scale down to 1 ally bot: Ally 2 should be reset and parked off-field
+        SmartDashboard.putNumber("Simulation/AllyCount", 1.0);
+        Dashboard.setAllyCount(1);
+        aiSim.simulationUpdate();
+        assertTrue(aiSim.getAllyBots().get(1).getActualPose().getY() < 0.0, "Ally 2 should be parked off-field when count is 1");
+
+        // Scale down to 0 ally bots: Both parked
+        SmartDashboard.putNumber("Simulation/AllyCount", 0.0);
+        Dashboard.setAllyCount(0);
+        aiSim.simulationUpdate();
+        assertTrue(aiSim.getAllyBots().get(0).getActualPose().getY() < 0.0, "Ally 1 should be parked off-field when count is 0");
+        assertTrue(aiSim.getAllyBots().get(1).getActualPose().getY() < 0.0, "Ally 2 should be parked off-field when count is 0");
+    }
+
+    @Test
+    public void testAllyScoreAttributionInMatchScoreTracker() {
+        MatchScoreTracker tracker = MatchScoreTracker.getInstance();
+        tracker.reset();
+
+        // Simulate Ally 1 (botId 101) scoring 3 fuel for Blue Alliance
+        tracker.recordBotScore(101, false);
+        tracker.recordBotScore(101, false);
+        tracker.recordBotScore(101, false);
+
+        // Simulate Ally 2 (botId 102) scoring 2 fuel for Blue Alliance
+        tracker.recordBotScore(102, false);
+        tracker.recordBotScore(102, false);
+
+        assertEquals(3, tracker.getAlly1FuelScored());
+        assertEquals(2, tracker.getAlly2FuelScored());
+        assertEquals(5, tracker.getBlueFuelCount());
+        assertEquals(5, tracker.getBlueFuelScore()); // 5 * 1 = 5 pts
+
+        // On Blue alliance, this adds directly to player's alliance score
+        assertEquals(5, tracker.getPlayerAllianceScore());
+    }
+
+    @Test
+    public void testAllyTowerClimbAttribution() {
+        MatchScoreTracker tracker = MatchScoreTracker.getInstance();
+        tracker.reset();
+
+        // Enable ally bots and spawn them
+        SmartDashboard.putNumber("Simulation/AllyCount", 2.0);
+        Dashboard.setAllyCount(2);
+        aiSim.simulationUpdate();
+
+        var allies = aiSim.getAllyBots();
+        assertEquals(2, allies.size());
+
+        // Move Ally 1 to the Blue Tower Pole (player alliance is Blue)
+        Translation2d bluePole = frc.robot.Data.FieldMap.ClimbingTowers.BLUE_TOWER_POLE;
+        allies.get(0).setRobotPose(new Pose2d(bluePole.getX() + 0.1, bluePole.getY() + 0.1, new Rotation2d()));
+
+        // Keep Ally 2 away from pole
+        allies.get(1).setRobotPose(new Pose2d(1.0, 1.0, new Rotation2d()));
+
+        // Simulate endgame (matchTime = 10.0s)
+        GameSim.getInstance().setSimTimeRemainingSec(10.0);
+        tracker.updateClimbEvaluation();
+
+        assertTrue(tracker.isAlly1Climbed(), "Ally 1 should be recognized as climbed");
+        assertFalse(tracker.isAlly2Climbed(), "Ally 2 should not be climbed");
+        assertEquals(10, tracker.getPlayerAllianceClimbScore()); // 10 pts per climb
+    }
+
+    @Test
+    public void testFull3v3SimulationSimultaneousExecution() {
+        // Enable 3 opponents and 2 allies = Full 3v3 match!
+        SmartDashboard.putBoolean("Features/Opponent Robot", true);
+        Dashboard.setOpponentCount(3);
+        SmartDashboard.putNumber("Simulation/OpponentCount", 3.0);
+
+        Dashboard.setAllyCount(2);
+        SmartDashboard.putNumber("Simulation/AllyCount", 2.0);
+
+        assertDoesNotThrow(() -> {
+            for (int i = 0; i < 10; i++) {
+                aiSim.simulationUpdate();
+                aiSim.update();
+            }
+        }, "3v3 match simulation update should execute smoothly across all 6 robots without throwing exceptions");
+
+        assertEquals(2, aiSim.getAdditionalBots().size(), "Should have 2 additional opponent bots");
+        assertEquals(2, aiSim.getAllyBots().size(), "Should have 2 ally bots");
+        assertTrue(aiSim.getDriveSimulation().getActualPoseInSimulationWorld().getY() > 0.0);
+        assertTrue(aiSim.getAdditionalBots().get(0).getActualPose().getY() > 0.0);
+        assertTrue(aiSim.getAdditionalBots().get(1).getActualPose().getY() > 0.0);
+        assertTrue(aiSim.getAllyBots().get(0).getActualPose().getY() > 0.0);
+        assertTrue(aiSim.getAllyBots().get(1).getActualPose().getY() > 0.0);
     }
 }

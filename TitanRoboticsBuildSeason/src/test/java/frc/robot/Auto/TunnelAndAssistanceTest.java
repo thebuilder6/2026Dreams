@@ -81,6 +81,19 @@ public class TunnelAndAssistanceTest {
     }
 
     @Test
+    public void testMidfieldGlidePointsNotCorruptedByRedMirroring() {
+        assertTrue(GlideConstants.GLIDE_POINTS.containsKey("Midfield Top"));
+        assertTrue(GlideConstants.GLIDE_POINTS.containsKey("Midfield Bottom"));
+
+        Pose2d midTop = GlideConstants.GLIDE_POINTS.get("Midfield Top").pose();
+        Pose2d midBot = GlideConstants.GLIDE_POINTS.get("Midfield Bottom").pose();
+
+        // Midfield Top must stay at high Y (6.10m), Midfield Bottom at low Y (2.00m)
+        assertEquals(6.10, midTop.getY(), 0.05, "Midfield Top must be at Y=6.10m and not inverted to bottom");
+        assertEquals(2.00, midBot.getY(), 0.05, "Midfield Bottom must be at Y=2.00m and not inverted to top");
+    }
+
+    @Test
     public void testDriveToPoseActionTunnelSequencing() {
         SwerveBase.getInstance().resetOdometry(new Pose2d(2.0, GlideConstants.Y_BOT_LANE, Rotation2d.fromDegrees(0)));
         Pose2d blueBottomEntrance = new Pose2d(3.50, GlideConstants.Y_BOT_LANE, Rotation2d.fromDegrees(0));
@@ -132,6 +145,7 @@ public class TunnelAndAssistanceTest {
     public void testSwerveBaseCollisionTracking() {
         SwerveBase swerve = SwerveBase.getInstance();
         assertNotNull(swerve);
+        swerve.getCollisionDetector().reset();
 
         // Initial state
         assertFalse(swerve.isCollisionDetected(), "Collision should not be detected at initialization");

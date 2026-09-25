@@ -20,6 +20,15 @@ public class AlertManager {
         }
     }
 
+    /**
+     * Deactivates all currently registered alerts. Useful for test isolation and clean state resets.
+     */
+    public static synchronized void resetAll() {
+        for (Alert a : alerts) {
+            a.set(false);
+        }
+    }
+
     public static synchronized List<Alert> getActiveAlerts() {
         List<Alert> active = new ArrayList<>();
         for (Alert a : alerts) {

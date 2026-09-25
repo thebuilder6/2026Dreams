@@ -5,6 +5,7 @@
 package frc.robot;
 
 import edu.wpi.first.wpilibj.DriverStation;
+import edu.wpi.first.wpilibj.Notifier;
 import edu.wpi.first.wpilibj.XboxController;
 import edu.wpi.first.wpilibj.simulation.BatterySim;
 import edu.wpi.first.wpilibj.simulation.RoboRioSim;
@@ -54,7 +55,11 @@ public class Robot extends LoggedRobot {
    */
   public Robot() {
     // AdvantageKit Logger Configuration for AdvantageScope & Deterministic Replay
-    Logger.recordMetadata("ProjectName", "TitanRobotics2026");
+    Logger.recordMetadata("ProjectName", BuildConstants.ROBOT_NAME);
+    Logger.recordMetadata("GitSHA", BuildConstants.GIT_SHA);
+    Logger.recordMetadata("GitBranch", BuildConstants.GIT_BRANCH);
+    Logger.recordMetadata("BuildDate", BuildConstants.BUILD_DATE);
+    Logger.recordMetadata("GitDirty", BuildConstants.DIRTY == 1 ? "true" : "false");
     switch (Constants.getMode()) {
         case REAL:
             Logger.addDataReceiver(new WPILOGWriter()); // USB stick "/U/logs" or "/home/lvuser/logs"
@@ -105,6 +110,51 @@ public class Robot extends LoggedRobot {
       edu.wpi.first.net.WebServer.start(5800, edu.wpi.first.wpilibj.Filesystem.getDeployDirectory().getPath());
     } catch (Throwable t) {
       System.out.println("[WebServer] Notice: Elastic layout WebServer on port 5800 could not be started: " + t.getMessage());
+    }
+
+    // The PortForwarder Trick: Forward coprocessor web interfaces and camera streams over USB tether (172.22.11.2)
+    try {
+      edu.wpi.first.net.PortForwarder.add(5801, "limelight-front.local", 5800);      // Limelight Web Dashboard
+      edu.wpi.first.net.PortForwarder.add(5802, "limelight-front.local", 5802);      // Limelight Camera Stream
+      edu.wpi.first.net.PortForwarder.add(5803, "rubik-pi-coprocessor.local", 5800); // PhotonVision Web Dashboard
+      edu.wpi.first.net.PortForwarder.add(5804, "rubik-pi-coprocessor.local", 1181); // PhotonVision Primary Stream
+      edu.wpi.first.net.PortForwarder.add(5805, "rubik-pi-coprocessor.local", 1182); // PhotonVision Secondary Stream
+      System.out.println("[PortForwarder] Coprocessor ports 5801-5805 successfully forwarded.");
+    } catch (Throwable t) {
+      System.out.println("[PortForwarder] Notice: Port forwarding setup encountered: " + t.getMessage());
+    }
+
+    // Fast 100Hz odometry polling scheduled with a 5ms timeslot offset from the 20ms main loop
+    addPeriodic(() -> {
+      if (swerveBase != null) {
+        swerveBase.updateOdometryFast();
+      }
+    }, 0.010, 0.005);
+  }
+
+  private final java.util.List<Notifier> subLoopNotifiers = new java.util.ArrayList<>();
+
+  /**
+   * Timeslot sub-loop scheduling: runs callbacks at higher rates (e.g. 100 Hz / 10ms)
+   * with an initial timeslot offset (e.g. 5ms) to interleave cleanly with the main 20ms loop.
+   *
+   * @param callback Runnable to execute
+   * @param periodSeconds Interval between calls (e.g. 0.010 for 100 Hz)
+   * @param offsetSeconds Initial timeslot offset (e.g. 0.005 for 5ms offset)
+   */
+  public void addPeriodic(Runnable callback, double periodSeconds, double offsetSeconds) {
+    Notifier periodicNotifier = new Notifier(callback);
+    periodicNotifier.setName("SubLoop-" + (int) (1.0 / periodSeconds) + "Hz");
+    subLoopNotifiers.add(periodicNotifier);
+
+    if (offsetSeconds > 0) {
+      Notifier offsetNotifier = new Notifier(() -> {
+        periodicNotifier.startPeriodic(periodSeconds);
+      });
+      offsetNotifier.startSingle(offsetSeconds);
+      subLoopNotifiers.add(offsetNotifier);
+    } else {
+      periodicNotifier.startPeriodic(periodSeconds);
     }
   }
 
@@ -197,6 +247,8 @@ public class Robot extends LoggedRobot {
     if (testMode != null) {
       testMode.cleanup();
     }
+    // Proactive GC flush: sweep heap while disabled to prevent mid-match GC pauses
+    System.gc();
   }
 
   /** This function is called periodically when disabled. */
@@ -239,5 +291,18 @@ public class Robot extends LoggedRobot {
     // Set the simulated battery voltage based on current draw
     double loadedVoltage = BatterySim.calculateDefaultBatteryLoadedVoltage(totalCurrentDraw);
     RoboRioSim.setVInVoltage(loadedVoltage);
+  }
+
+  @Override
+  public void close() {
+    for (Notifier notifier : subLoopNotifiers) {
+      try {
+        notifier.stop();
+        notifier.close();
+      } catch (Throwable ignored) {
+      }
+    }
+    subLoopNotifiers.clear();
+    super.close();
   }
 }

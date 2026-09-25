@@ -2,6 +2,7 @@ package frc.robot.Auto;
 
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
+import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.wpilibj.Timer;
 import frc.robot.Auto.Actions.*;
 import frc.robot.Data.FieldMap;
@@ -50,8 +51,9 @@ public class AutonomousTeleopAgent {
     private final Shooter shooter = Shooter.getInstance();
     private final Dashboard dashboard = Dashboard.getInstance();
 
-    private static final int MAX_FUEL_CAPACITY = WorldState.CO_PILOT_CAPACITY;
+    private static final int MAX_FUEL_CAPACITY = frc.robot.Data.Constants.IntakeConstants.MAX_HELD_BALLS; // 30
     private int estimatedHeldBalls = 0;
+    private Pose2d latchedStandoffPose = null;
 
     /**
      * Activates Smart Assist mode. Evaluates current WorldState and launches the appropriate action.
@@ -60,6 +62,7 @@ public class AutonomousTeleopAgent {
         assistActive = true;
         breakoutTriggered = false;
         activeObjective = null;
+        latchedStandoffPose = null;
         updateSmartAssist(0.0, 0.0, 0.0);
     }
 
@@ -77,12 +80,12 @@ public class AutonomousTeleopAgent {
         // 1. Ingest Ground Truth Snapshot
         int heldCount;
         if (intake.getMapleIntakeSim() != null) {
-            heldCount = intake.getMapleIntakeSim().getGamePiecesAmount();
+            heldCount = Math.max(intake.getMapleIntakeSim().getGamePiecesAmount(), estimatedHeldBalls);
         } else {
-            if (!intake.hasFuel()) {
-                estimatedHeldBalls = 0;
+            if (intake.hasFuel()) {
+                estimatedHeldBalls = Math.max(1, estimatedHeldBalls);
             }
-            heldCount = intake.hasFuel() ? Math.max(1, estimatedHeldBalls) : estimatedHeldBalls;
+            heldCount = Math.max(estimatedHeldBalls, intake.hasFuel() ? 1 : 0);
         }
         WorldState world = WorldStateBuilder.buildForPlayerRobot(heldCount);
         latestIntent = JevDecisionEngine.getInstance().evaluatePolicy(world, Archetype.CO_PILOT);
@@ -96,6 +99,12 @@ public class AutonomousTeleopAgent {
         // 2. React to Strategic Objective Shifts
         if (currentAction == null || activeObjective != objective) {
             transitionToObjective(objective, latestIntent.navigationTarget());
+        } else if (currentAction instanceof DriveToPoseAction dtp && objective == StrategicObjective.VACUUM_MIDFIELD) {
+            // Dynamically track updating fuel cluster target if piece field shifts
+            Pose2d newCluster = latestIntent.navigationTarget();
+            if (newCluster != null && dtp.getTargetPose().getTranslation().getDistance(newCluster.getTranslation()) > 1.2) {
+                dtp.setTargetPose(newCluster);
+            }
         }
 
         // 3. Inject Driver Authority into Active Action & Check Breakout
@@ -129,12 +138,19 @@ public class AutonomousTeleopAgent {
                 return false;
             }
             if (currentAction.isFinished()) {
-                currentAction.done();
-                currentAction = null;
-                // If objective was finished (e.g. arrived at parking or finished scoring), evaluate next step
                 if (objective == StrategicObjective.RUSH_CLIMB) {
+                    currentAction.done();
+                    currentAction = null;
                     stopAssist();
                     return false;
+                } else if (objective == StrategicObjective.CYCLE_SCORE_HUB || 
+                           objective == StrategicObjective.STAGE_STANDOFF || 
+                           objective == StrategicObjective.STOCKPILE_DEPOT) {
+                    // Holding position at standoff, staging area, or depot while completing subsystem tasks.
+                    // Do not kill the action; keep it active so it doesn't stutter in a 50Hz restart loop.
+                } else {
+                    currentAction.done();
+                    currentAction = null;
                 }
             }
         }
@@ -156,11 +172,16 @@ public class AutonomousTeleopAgent {
 
         switch (objective) {
             case VACUUM_MIDFIELD:
-                currentAction = new BallHuntAction();
+                latchedStandoffPose = null;
+                Pose2d harvestTarget = targetPose != null ? targetPose :
+                        JevDecisionEngine.getInstance().findClusterWeightedFuelTarget(swerve.getPose(), isRed);
+                currentAction = new DriveToPoseAction(harvestTarget);
                 currentAction.start();
+                intake.setState(Intake.IntakeState.INTAKING);
                 break;
 
             case STOCKPILE_DEPOT:
+                latchedStandoffPose = null;
                 Pose2d depotPose = targetPose != null ? targetPose :
                         new Pose2d(FieldMap.Depots.getDepotApproach(isRed),
                                 Rotation2d.fromDegrees(isRed ? 0.0 : 180.0));
@@ -170,13 +191,17 @@ public class AutonomousTeleopAgent {
 
             case CYCLE_SCORE_HUB:
             case STAGE_STANDOFF:
-                Pose2d standoffPose = targetPose != null ? targetPose :
+                latchedStandoffPose = targetPose != null ? targetPose :
                         JevDecisionEngine.getInstance().calculatePolarStandoffPose(swerve.getPose(), isRed);
-                currentAction = new DriveToPoseAction(standoffPose);
+                DriveToPoseAction scoreAction = new DriveToPoseAction(latchedStandoffPose);
+                Translation2d selfHub = FieldMap.Hubs.getHubLocation2d(isRed);
+                scoreAction.setRotationOverride(() -> selfHub.minus(swerve.getPose().getTranslation()).getAngle());
+                currentAction = scoreAction;
                 currentAction.start();
                 break;
 
             case RUSH_CLIMB:
+                latchedStandoffPose = null;
                 // Target Alliance Parking Pose (no climber present)
                 String parkKey = isRed ? "Red Right Side Climb" : "Blue Right Side Climb";
                 Pose2d parkPose = GlideConstants.GLIDE_POINTS.containsKey(parkKey) ?
@@ -187,6 +212,7 @@ public class AutonomousTeleopAgent {
                 break;
 
             default:
+                latchedStandoffPose = null;
                 if (targetPose != null) {
                     currentAction = new DriveToPoseAction(targetPose);
                     currentAction.start();
@@ -197,11 +223,17 @@ public class AutonomousTeleopAgent {
 
     private void manageSubsystems(AIActionIntent intent, WorldState world) {
         // Pre-spool flywheels during transit if approaching hub or shift is close
-        if (intent.shooterCommand() == Shooter.ShooterState.PREPARING || 
+        if (intent.shooterCommand() == Shooter.ShooterState.SHOOTING || intent.triggerFeedKicker()) {
+            double rpm = intent.targetFlywheelRPM() > 1000 ? intent.targetFlywheelRPM() : 3200.0;
+            shooter.setTargetRPM(rpm, rpm);
+            shooter.shoot();
+        } else if (intent.shooterCommand() == Shooter.ShooterState.PREPARING || 
             (intent.objective() == StrategicObjective.CYCLE_SCORE_HUB && world.isAllianceHubActive())) {
             double rpm = intent.targetFlywheelRPM() > 1000 ? intent.targetFlywheelRPM() : 3200.0;
             shooter.setTargetRPM(rpm, rpm);
             shooter.prepareToShoot();
+        } else {
+            shooter.stop();
         }
 
         if (intent.intakeCommand() == Intake.IntakeState.INTAKING || intent.objective() == StrategicObjective.VACUUM_MIDFIELD) {
@@ -215,10 +247,12 @@ public class AutonomousTeleopAgent {
     public void stopAssist() {
         assistActive = false;
         activeObjective = null;
+        latchedStandoffPose = null;
         if (currentAction != null) {
             currentAction.done();
             currentAction = null;
         }
+        shooter.stop();
     }
 
     public boolean isAssistActive() {
@@ -249,6 +283,14 @@ public class AutonomousTeleopAgent {
 
     public void decrementBallCount() {
         estimatedHeldBalls = Math.max(0, estimatedHeldBalls - 1);
+    }
+
+    public void resetBallCount() {
+        estimatedHeldBalls = 0;
+    }
+
+    public void setEstimatedHeldBalls(int count) {
+        estimatedHeldBalls = Math.max(0, Math.min(MAX_FUEL_CAPACITY, count));
     }
 
     public int getEstimatedHeldBalls() {

@@ -1,0 +1,1592 @@
+[
+  {
+    "package": "frc.robot",
+    "file": "BuildConstants.java",
+    "line": 7,
+    "kind": "class",
+    "name": "BuildConstants",
+    "modifiers": "public final",
+    "has_javadoc": true,
+    "javadoc_summary": "Automatically generated file containing build and git version information."
+  },
+  {
+    "package": "frc.robot",
+    "file": "Main.java",
+    "line": 14,
+    "kind": "class",
+    "name": "Main",
+    "modifiers": "public final",
+    "has_javadoc": true,
+    "javadoc_summary": "Do NOT add any static variables to this class, or any initialization at all. Unless you know what"
+  },
+  {
+    "package": "frc.robot",
+    "file": "Robot.java",
+    "line": 42,
+    "kind": "class",
+    "name": "Robot",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "The methods in this class are called automatically corresponding to each"
+  },
+  {
+    "package": "frc.robot",
+    "file": "Teleop.java",
+    "line": 35,
+    "kind": "class",
+    "name": "Teleop",
+    "modifiers": "public",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Auto",
+    "file": "Auto\\AutoMission.java",
+    "line": 14,
+    "kind": "@interface",
+    "name": "AutoMission",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "Annotation to mark a class as an autonomous mission that should be"
+  },
+  {
+    "package": "frc.robot.Auto",
+    "file": "Auto\\AutoMissionChooser.java",
+    "line": 24,
+    "kind": "class",
+    "name": "AutoMissionChooser",
+    "modifiers": "public",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Auto",
+    "file": "Auto\\AutoMissionEndedException.java",
+    "line": 8,
+    "kind": "class",
+    "name": "AutoMissionEndedException",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "Class: AutoMissionEndedException"
+  },
+  {
+    "package": "frc.robot.Auto",
+    "file": "Auto\\AutoMissionExecutor.java",
+    "line": 10,
+    "kind": "class",
+    "name": "AutoMissionExecutor",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "Class: AutoMissionExecutor"
+  },
+  {
+    "package": "frc.robot.Auto",
+    "file": "Auto\\AutonomousTeleopAgent.java",
+    "line": 32,
+    "kind": "class",
+    "name": "AutonomousTeleopAgent",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "AutonomousTeleopAgent: Real-Robot Co-Pilot & One-Button Smart Assist."
+  },
+  {
+    "package": "frc.robot.Auto",
+    "file": "Auto\\CollisionDetector.java",
+    "line": 9,
+    "kind": "class",
+    "name": "CollisionDetector",
+    "modifiers": "public",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Auto",
+    "file": "Auto\\DynamicObstacle.java",
+    "line": 11,
+    "kind": "class",
+    "name": "DynamicObstacle",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "Represents a dynamic moving obstacle on the field (e.g. opponent robot)."
+  },
+  {
+    "package": "frc.robot.Auto",
+    "file": "Auto\\DynamicRouter.java",
+    "line": 25,
+    "kind": "class",
+    "name": "DynamicRouter",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "DynamicRouter provides real-time local obstacle avoidance around moving opponents and field blocks."
+  },
+  {
+    "package": "frc.robot.Auto",
+    "file": "Auto\\DynamicRouter.java",
+    "line": 27,
+    "kind": "enum",
+    "name": "AvoidanceAlgorithm",
+    "modifiers": "public",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Auto",
+    "file": "Auto\\DynamicRouter.java",
+    "line": 377,
+    "kind": "class",
+    "name": "GridNode",
+    "modifiers": "private static",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Auto",
+    "file": "Auto\\LegalPinningWatchdog.java",
+    "line": 15,
+    "kind": "class",
+    "name": "LegalPinningWatchdog",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "LegalPinningWatchdog enforces FRC G-rule pinning limits during close-quarters robot engagement:"
+  },
+  {
+    "package": "frc.robot.Auto",
+    "file": "Auto\\SmartTunnelRouter.java",
+    "line": 21,
+    "kind": "class",
+    "name": "SmartTunnelRouter",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "SmartTunnelRouter provides intelligent, collision-free trench navigation:"
+  },
+  {
+    "package": "frc.robot.Auto",
+    "file": "Auto\\SmartTunnelRouter.java",
+    "line": 23,
+    "kind": "enum",
+    "name": "TrenchCorridor",
+    "modifiers": "public",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Auto",
+    "file": "Auto\\SmartTunnelRouter.java",
+    "line": 28,
+    "kind": "class",
+    "name": "TunnelRoute",
+    "modifiers": "public static",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Auto",
+    "file": "Auto\\StaticPathfinder.java",
+    "line": 26,
+    "kind": "class",
+    "name": "StaticPathfinder",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "StaticPathfinder: 2026 Field Topological Roadmap & Visibility Graph Planner"
+  },
+  {
+    "package": "frc.robot.Auto",
+    "file": "Auto\\StaticPathfinder.java",
+    "line": 31,
+    "kind": "interface",
+    "name": "Obstacle",
+    "modifiers": "public",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Auto",
+    "file": "Auto\\StaticPathfinder.java",
+    "line": 37,
+    "kind": "class",
+    "name": "CircularObstacle",
+    "modifiers": "public static",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Auto",
+    "file": "Auto\\StaticPathfinder.java",
+    "line": 68,
+    "kind": "class",
+    "name": "RectangularObstacle",
+    "modifiers": "public static",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Auto",
+    "file": "Auto\\StaticPathfinder.java",
+    "line": 97,
+    "kind": "class",
+    "name": "AABB",
+    "modifiers": "public static",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Auto",
+    "file": "Auto\\StaticPathfinder.java",
+    "line": 115,
+    "kind": "class",
+    "name": "RoadmapNode",
+    "modifiers": "public static",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Auto",
+    "file": "Auto\\StaticPathfinder.java",
+    "line": 597,
+    "kind": "class",
+    "name": "NodeRecord",
+    "modifiers": "private static",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Auto",
+    "file": "Auto\\TrajectoryController.java",
+    "line": 30,
+    "kind": "class",
+    "name": "TrajectoryController",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "High-performance holonomic trajectory controller for swerve drive."
+  },
+  {
+    "package": "frc.robot.Auto.Actions",
+    "file": "Auto\\Actions\\AutoAimAction.java",
+    "line": 17,
+    "kind": "class",
+    "name": "AutoAimAction",
+    "modifiers": "public",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Auto.Actions",
+    "file": "Auto\\Actions\\BallHuntAction.java",
+    "line": 24,
+    "kind": "class",
+    "name": "BallHuntAction",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "Intelligent Semi-Autonomous \"Auto Ball Pick Up\" Action (Ball Hunt)."
+  },
+  {
+    "package": "frc.robot.Auto.Actions",
+    "file": "Auto\\Actions\\DriveToPoseAction.java",
+    "line": 20,
+    "kind": "class",
+    "name": "DriveToPoseAction",
+    "modifiers": "public",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Auto.Actions",
+    "file": "Auto\\Actions\\FollowChoreoPath.java",
+    "line": 29,
+    "kind": "class",
+    "name": "FollowChoreoPath",
+    "modifiers": "public",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Auto.Actions",
+    "file": "Auto\\Actions\\IntakeAction.java",
+    "line": 7,
+    "kind": "class",
+    "name": "IntakeAction",
+    "modifiers": "public",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Auto.Actions",
+    "file": "Auto\\Actions\\LambdaAction.java",
+    "line": 9,
+    "kind": "class",
+    "name": "LambdaAction",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "A simple action that runs a Runnable once and finishes immediately."
+  },
+  {
+    "package": "frc.robot.Auto.Actions",
+    "file": "Auto\\Actions\\ParallelAction.java",
+    "line": 12,
+    "kind": "class",
+    "name": "ParallelAction",
+    "modifiers": "public",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Auto.Actions",
+    "file": "Auto\\Actions\\ParallelRaceAction.java",
+    "line": 8,
+    "kind": "class",
+    "name": "ParallelRaceAction",
+    "modifiers": "public",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Auto.Actions",
+    "file": "Auto\\Actions\\SeriesAction.java",
+    "line": 12,
+    "kind": "class",
+    "name": "SeriesAction",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "Executes a list of actions sequentially."
+  },
+  {
+    "package": "frc.robot.Auto.Actions",
+    "file": "Auto\\Actions\\ShootAction.java",
+    "line": 16,
+    "kind": "class",
+    "name": "ShootAction",
+    "modifiers": "public",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Auto.Actions",
+    "file": "Auto\\Actions\\WaitAction.java",
+    "line": 10,
+    "kind": "class",
+    "name": "WaitAction",
+    "modifiers": "public",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Auto.Actions",
+    "file": "Auto\\Actions\\WaitUntilMarkerAction.java",
+    "line": 10,
+    "kind": "class",
+    "name": "WaitUntilMarkerAction",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "Action that waits until a specific marker has been passed in a"
+  },
+  {
+    "package": "frc.robot.Auto.Missions",
+    "file": "Auto\\Missions\\AdvancedChoreoMission.java",
+    "line": 17,
+    "kind": "class",
+    "name": "AdvancedChoreoMission",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "Example of a high-performance Choreo mission."
+  },
+  {
+    "package": "frc.robot.Auto.Missions",
+    "file": "Auto\\Missions\\DepotShootMission.java",
+    "line": 15,
+    "kind": "class",
+    "name": "DepotShootMission",
+    "modifiers": "public",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Auto.Missions",
+    "file": "Auto\\Missions\\DoNothingMission.java",
+    "line": 11,
+    "kind": "class",
+    "name": "DoNothingMission",
+    "modifiers": "public",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Auto.Missions",
+    "file": "Auto\\Missions\\DynamicChoreoMission.java",
+    "line": 9,
+    "kind": "class",
+    "name": "DynamicChoreoMission",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "A generic autonomous mission that simply follows a Choreo trajectory."
+  },
+  {
+    "package": "frc.robot.Auto.Missions",
+    "file": "Auto\\Missions\\ExampleMission.java",
+    "line": 18,
+    "kind": "class",
+    "name": "ExampleMission",
+    "modifiers": "public",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Auto.Missions",
+    "file": "Auto\\Missions\\MissionBase.java",
+    "line": 15,
+    "kind": "class",
+    "name": "MissionBase",
+    "modifiers": "public abstract",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Auto.Missions",
+    "file": "Auto\\Missions\\ShooterMission.java",
+    "line": 22,
+    "kind": "class",
+    "name": "ShooterMission",
+    "modifiers": "public",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Data",
+    "file": "Data\\Constants.java",
+    "line": 24,
+    "kind": "class",
+    "name": "Constants",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "Global Robot & Platform Constants."
+  },
+  {
+    "package": "frc.robot.Data",
+    "file": "Data\\Constants.java",
+    "line": 32,
+    "kind": "enum",
+    "name": "Mode",
+    "modifiers": "public static",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Data",
+    "file": "Data\\Constants.java",
+    "line": 68,
+    "kind": "class",
+    "name": "AutonConstants",
+    "modifiers": "public static final",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Data",
+    "file": "Data\\Constants.java",
+    "line": 93,
+    "kind": "class",
+    "name": "DrivebaseConstants",
+    "modifiers": "public static final",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Data",
+    "file": "Data\\Constants.java",
+    "line": 126,
+    "kind": "class",
+    "name": "OperatorConstants",
+    "modifiers": "public static",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Data",
+    "file": "Data\\Constants.java",
+    "line": 139,
+    "kind": "class",
+    "name": "LEDConstants",
+    "modifiers": "public static final",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Data",
+    "file": "Data\\Constants.java",
+    "line": 173,
+    "kind": "class",
+    "name": "FieldConstants",
+    "modifiers": "public static final",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Data",
+    "file": "Data\\Constants.java",
+    "line": 196,
+    "kind": "class",
+    "name": "ShooterConstants",
+    "modifiers": "public static final",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Data",
+    "file": "Data\\Constants.java",
+    "line": 243,
+    "kind": "class",
+    "name": "IntakeConstants",
+    "modifiers": "public static final",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Data",
+    "file": "Data\\FieldMap.java",
+    "line": 24,
+    "kind": "class",
+    "name": "FieldMap",
+    "modifiers": "public final",
+    "has_javadoc": true,
+    "javadoc_summary": "Unified Field Map for the 2026 Rebuilt FIRST Robotics Competition field."
+  },
+  {
+    "package": "frc.robot.Data",
+    "file": "Data\\FieldMap.java",
+    "line": 40,
+    "kind": "class",
+    "name": "Hubs",
+    "modifiers": "public static final",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Data",
+    "file": "Data\\FieldMap.java",
+    "line": 69,
+    "kind": "class",
+    "name": "Ramps",
+    "modifiers": "public static final",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Data",
+    "file": "Data\\FieldMap.java",
+    "line": 88,
+    "kind": "class",
+    "name": "Trenches",
+    "modifiers": "public static final",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Data",
+    "file": "Data\\FieldMap.java",
+    "line": 128,
+    "kind": "class",
+    "name": "AllianceZones",
+    "modifiers": "public static final",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Data",
+    "file": "Data\\FieldMap.java",
+    "line": 163,
+    "kind": "class",
+    "name": "Depots",
+    "modifiers": "public static final",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Data",
+    "file": "Data\\FieldMap.java",
+    "line": 190,
+    "kind": "class",
+    "name": "ClimbingTowers",
+    "modifiers": "public static final",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Data",
+    "file": "Data\\FieldMap.java",
+    "line": 203,
+    "kind": "class",
+    "name": "AABB",
+    "modifiers": "public static",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Data",
+    "file": "Data\\FieldMap.java",
+    "line": 279,
+    "kind": "class",
+    "name": "Obstacles",
+    "modifiers": "public static final",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Data",
+    "file": "Data\\GlideConstants.java",
+    "line": 17,
+    "kind": "class",
+    "name": "GlideConstants",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "Tactical navigation waypoints (Glide Points) and Auto-Tunneling routes."
+  },
+  {
+    "package": "frc.robot.Data",
+    "file": "Data\\GlideConstants.java",
+    "line": 26,
+    "kind": "class",
+    "name": "GlidePoint",
+    "modifiers": "public static",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Data",
+    "file": "Data\\PortMap.java",
+    "line": 3,
+    "kind": "class",
+    "name": "PortMap",
+    "modifiers": "public final",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Data",
+    "file": "Data\\TunableNumber.java",
+    "line": 13,
+    "kind": "class",
+    "name": "TunableNumber",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "Class for a tunable number. Gets value from dashboard in tuning mode,"
+  },
+  {
+    "package": "frc.robot.Devices",
+    "file": "Devices\\Controller.java",
+    "line": 10,
+    "kind": "class",
+    "name": "Controller",
+    "modifiers": "public",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Devices",
+    "file": "Devices\\Controller.java",
+    "line": 12,
+    "kind": "enum",
+    "name": "RumblePattern",
+    "modifiers": "public",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Devices",
+    "file": "Devices\\NeoSparkMaxMotor.java",
+    "line": 19,
+    "kind": "class",
+    "name": "NeoSparkMaxMotor",
+    "modifiers": "public",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Interfaces",
+    "file": "Interfaces\\Actions.java",
+    "line": 8,
+    "kind": "interface",
+    "name": "Actions",
+    "modifiers": "public",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Interfaces",
+    "file": "Interfaces\\Subsystem.java",
+    "line": 5,
+    "kind": "interface",
+    "name": "Subsystem",
+    "modifiers": "public",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Sim",
+    "file": "Sim\\AIActionIntent.java",
+    "line": 11,
+    "kind": "record",
+    "name": "AIActionIntent",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "Concrete subsystem execution instructions generated by System 1 Tactical Reflex policy."
+  },
+  {
+    "package": "frc.robot.Sim",
+    "file": "Sim\\AIRobotInstance.java",
+    "line": 39,
+    "kind": "class",
+    "name": "AIRobotInstance",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "Autonomous AI Robot Instance."
+  },
+  {
+    "package": "frc.robot.Sim",
+    "file": "Sim\\AIRobotSim.java",
+    "line": 50,
+    "kind": "class",
+    "name": "AIRobotSim",
+    "modifiers": "public",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Sim",
+    "file": "Sim\\AIRobotSim.java",
+    "line": 52,
+    "kind": "enum",
+    "name": "AIMode",
+    "modifiers": "public",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Sim",
+    "file": "Sim\\AIRobotSim.java",
+    "line": 78,
+    "kind": "enum",
+    "name": "CyclerPhase",
+    "modifiers": "public",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Sim",
+    "file": "Sim\\Archetype.java",
+    "line": 6,
+    "kind": "enum",
+    "name": "Archetype",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "AI Competitor Archetypes governing System 2 macro utility weights and tactical behaviors."
+  },
+  {
+    "package": "frc.robot.Sim",
+    "file": "Sim\\ArmSim.java",
+    "line": 13,
+    "kind": "class",
+    "name": "ArmSim",
+    "modifiers": "public",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Sim",
+    "file": "Sim\\GameSim.java",
+    "line": 38,
+    "kind": "class",
+    "name": "GameSim",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "GameSim manages the simulation state for the 2026 robotics game."
+  },
+  {
+    "package": "frc.robot.Sim",
+    "file": "Sim\\GameSim.java",
+    "line": 41,
+    "kind": "class",
+    "name": "Config",
+    "modifiers": "private static final",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Sim",
+    "file": "Sim\\JevDecisionEngine.java",
+    "line": 36,
+    "kind": "class",
+    "name": "JevDecisionEngine",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "Jev AI Decision Engine (TypeSafe AI)"
+  },
+  {
+    "package": "frc.robot.Sim",
+    "file": "Sim\\JevDecisionEngine.java",
+    "line": 38,
+    "kind": "enum",
+    "name": "AIArchetype",
+    "modifiers": "public",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Sim",
+    "file": "Sim\\JevDecisionEngine.java",
+    "line": 46,
+    "kind": "enum",
+    "name": "TacticalAction",
+    "modifiers": "public",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Sim",
+    "file": "Sim\\JevDecisionEngine.java",
+    "line": 53,
+    "kind": "class",
+    "name": "DecisionResult",
+    "modifiers": "public static",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Sim",
+    "file": "Sim\\JevDecisionEngine.java",
+    "line": 636,
+    "kind": "enum",
+    "name": "OffensiveStrategy",
+    "modifiers": "public",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Sim",
+    "file": "Sim\\JevDecisionEngine.java",
+    "line": 649,
+    "kind": "class",
+    "name": "StrategicAdvice",
+    "modifiers": "public static",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Sim",
+    "file": "Sim\\LimelightSim.java",
+    "line": 20,
+    "kind": "class",
+    "name": "LimelightSim",
+    "modifiers": "public",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Sim",
+    "file": "Sim\\MatchScoreTracker.java",
+    "line": 34,
+    "kind": "class",
+    "name": "MatchScoreTracker",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "MatchScoreTracker: Unified FRC 2026 Rebuilt Real-Time Match Scoring & Scoreboard System."
+  },
+  {
+    "package": "frc.robot.Sim",
+    "file": "Sim\\ShooterSim.java",
+    "line": 24,
+    "kind": "class",
+    "name": "ShooterSim",
+    "modifiers": "public",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Sim",
+    "file": "Sim\\StrategicObjective.java",
+    "line": 8,
+    "kind": "enum",
+    "name": "StrategicObjective",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "Universal FRC Strategic Objectives arbitrated by System 2 Executive Strategist."
+  },
+  {
+    "package": "frc.robot.Sim",
+    "file": "Sim\\VisionSim.java",
+    "line": 32,
+    "kind": "class",
+    "name": "VisionSim",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "PhotonVision simulation engine combining:"
+  },
+  {
+    "package": "frc.robot.Sim",
+    "file": "Sim\\WorldState.java",
+    "line": 10,
+    "kind": "record",
+    "name": "WorldState",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "Immutable snapshot capturing all ground truth field information required for"
+  },
+  {
+    "package": "frc.robot.Sim",
+    "file": "Sim\\WorldStateBuilder.java",
+    "line": 14,
+    "kind": "class",
+    "name": "WorldStateBuilder",
+    "modifiers": "public final",
+    "has_javadoc": true,
+    "javadoc_summary": "Factory utilities for building immutable WorldState snapshots from"
+  },
+  {
+    "package": "frc.robot.Subsystems",
+    "file": "Subsystems\\Dashboard.java",
+    "line": 27,
+    "kind": "class",
+    "name": "Dashboard",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "Subsystem responsible for publishing aggregated driver telemetry, match state,"
+  },
+  {
+    "package": "frc.robot.Subsystems",
+    "file": "Subsystems\\Intake.java",
+    "line": 42,
+    "kind": "class",
+    "name": "Intake",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "Ground intake mechanism featuring an articulated pivot arm with feedforward"
+  },
+  {
+    "package": "frc.robot.Subsystems",
+    "file": "Subsystems\\Intake.java",
+    "line": 53,
+    "kind": "enum",
+    "name": "IntakeState",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "Discrete operational states for intake pivot and roller mechanisms."
+  },
+  {
+    "package": "frc.robot.Subsystems",
+    "file": "Subsystems\\LEDs.java",
+    "line": 13,
+    "kind": "class",
+    "name": "LEDs",
+    "modifiers": "public",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Subsystems",
+    "file": "Subsystems\\MatchCoach.java",
+    "line": 38,
+    "kind": "class",
+    "name": "MatchCoach",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "MatchCoach: Real-Time AI Coaching & Practice Proving Ground System."
+  },
+  {
+    "package": "frc.robot.Subsystems",
+    "file": "Subsystems\\MatchCoach.java",
+    "line": 40,
+    "kind": "enum",
+    "name": "DrillMode",
+    "modifiers": "public",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Subsystems",
+    "file": "Subsystems\\Shooter.java",
+    "line": 39,
+    "kind": "class",
+    "name": "Shooter",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "Dual-flywheel shooter mechanism with indexer/kicker feed, closed-loop velocity control,"
+  },
+  {
+    "package": "frc.robot.Subsystems",
+    "file": "Subsystems\\Shooter.java",
+    "line": 46,
+    "kind": "enum",
+    "name": "ShooterState",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "Discrete operational states for shooter state machine."
+  },
+  {
+    "package": "frc.robot.Subsystems",
+    "file": "Subsystems\\Shooter.java",
+    "line": 102,
+    "kind": "record",
+    "name": "ShootingSolution",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "Shooting Solution record containing targeting calculations."
+  },
+  {
+    "package": "frc.robot.Subsystems",
+    "file": "Subsystems\\SubsystemManager.java",
+    "line": 7,
+    "kind": "class",
+    "name": "SubsystemManager",
+    "modifiers": "public",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Subsystems",
+    "file": "Subsystems\\SwerveBase.java",
+    "line": 59,
+    "kind": "class",
+    "name": "SwerveBase",
+    "modifiers": "public",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Subsystems",
+    "file": "Subsystems\\Vision.java",
+    "line": 27,
+    "kind": "class",
+    "name": "Vision",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "Vision Subsystem following the AdvantageKit IO abstraction pattern."
+  },
+  {
+    "package": "frc.robot.Subsystems",
+    "file": "Subsystems\\Vision.java",
+    "line": 288,
+    "kind": "class",
+    "name": "VisionTargetEstimate",
+    "modifiers": "public static",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Subsystems.drive",
+    "file": "Subsystems\\drive\\DriveIO.java",
+    "line": 12,
+    "kind": "interface",
+    "name": "DriveIO",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "Hardware IO abstraction interface for the Swerve Drivebase."
+  },
+  {
+    "package": "frc.robot.Subsystems.drive",
+    "file": "Subsystems\\drive\\DriveIO.java",
+    "line": 15,
+    "kind": "class",
+    "name": "DriveIOInputs",
+    "modifiers": "public static",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Subsystems.drive",
+    "file": "Subsystems\\drive\\DriveIOSim.java",
+    "line": 12,
+    "kind": "class",
+    "name": "DriveIOSim",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "Desktop simulation implementation of DriveIO."
+  },
+  {
+    "package": "frc.robot.Subsystems.drive",
+    "file": "Subsystems\\drive\\DriveIOSparkMax.java",
+    "line": 14,
+    "kind": "class",
+    "name": "DriveIOSparkMax",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "Physical hardware implementation of DriveIO interfacing with REV SparkMax controllers"
+  },
+  {
+    "package": "frc.robot.Subsystems.intake",
+    "file": "Subsystems\\intake\\IntakeConstants.java",
+    "line": 8,
+    "kind": "class",
+    "name": "IntakeConstants",
+    "modifiers": "public final",
+    "has_javadoc": true,
+    "javadoc_summary": "Physical geometry, tuning parameters, and motion limits for the Articulated Ground Intake."
+  },
+  {
+    "package": "frc.robot.Subsystems.intake",
+    "file": "Subsystems\\intake\\IntakeIO.java",
+    "line": 9,
+    "kind": "interface",
+    "name": "IntakeIO",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "Hardware IO abstraction interface for the articulated ground intake subsystem."
+  },
+  {
+    "package": "frc.robot.Subsystems.intake",
+    "file": "Subsystems\\intake\\IntakeIO.java",
+    "line": 12,
+    "kind": "class",
+    "name": "IntakeIOInputs",
+    "modifiers": "public static",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Subsystems.intake",
+    "file": "Subsystems\\intake\\IntakeIOSim.java",
+    "line": 14,
+    "kind": "class",
+    "name": "IntakeIOSim",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "Desktop simulation implementation of IntakeIO wrapping ArmSim and MapleSim IntakeSimulation."
+  },
+  {
+    "package": "frc.robot.Subsystems.intake",
+    "file": "Subsystems\\intake\\IntakeIOSparkMax.java",
+    "line": 13,
+    "kind": "class",
+    "name": "IntakeIOSparkMax",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "Real physical hardware implementation of IntakeIO using REV SparkMax controllers"
+  },
+  {
+    "package": "frc.robot.Subsystems.shooter",
+    "file": "Subsystems\\shooter\\ShooterConstants.java",
+    "line": 10,
+    "kind": "class",
+    "name": "ShooterConstants",
+    "modifiers": "public final",
+    "has_javadoc": true,
+    "javadoc_summary": "Physical geometry, tuning parameters, and simulation metrics for the Dual-Flywheel Shooter mechanism."
+  },
+  {
+    "package": "frc.robot.Subsystems.shooter",
+    "file": "Subsystems\\shooter\\ShooterIO.java",
+    "line": 9,
+    "kind": "interface",
+    "name": "ShooterIO",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "Hardware IO abstraction interface for the dual-flywheel shooter subsystem."
+  },
+  {
+    "package": "frc.robot.Subsystems.shooter",
+    "file": "Subsystems\\shooter\\ShooterIO.java",
+    "line": 12,
+    "kind": "class",
+    "name": "ShooterIOInputs",
+    "modifiers": "public static",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Subsystems.shooter",
+    "file": "Subsystems\\shooter\\ShooterIOSim.java",
+    "line": 8,
+    "kind": "class",
+    "name": "ShooterIOSim",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "Desktop simulation implementation of ShooterIO wrapping ShooterSim physics."
+  },
+  {
+    "package": "frc.robot.Subsystems.shooter",
+    "file": "Subsystems\\shooter\\ShooterIOSparkMax.java",
+    "line": 11,
+    "kind": "class",
+    "name": "ShooterIOSparkMax",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "Real physical hardware implementation of ShooterIO using REV SparkMax motor controllers."
+  },
+  {
+    "package": "frc.robot.Subsystems.vision",
+    "file": "Subsystems\\vision\\VisionIO.java",
+    "line": 10,
+    "kind": "interface",
+    "name": "VisionIO",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "Hardware IO abstraction interface for Vision coprocessors (Limelight / PhotonVision)."
+  },
+  {
+    "package": "frc.robot.Subsystems.vision",
+    "file": "Subsystems\\vision\\VisionIO.java",
+    "line": 13,
+    "kind": "class",
+    "name": "VisionIOInputs",
+    "modifiers": "public static",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Subsystems.vision",
+    "file": "Subsystems\\vision\\VisionIOLimelight.java",
+    "line": 9,
+    "kind": "class",
+    "name": "VisionIOLimelight",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "Real hardware implementation of VisionIO using Limelight MegaTag2."
+  },
+  {
+    "package": "frc.robot.Subsystems.vision",
+    "file": "Subsystems\\vision\\VisionIOPhotonVision.java",
+    "line": 18,
+    "kind": "class",
+    "name": "VisionIOPhotonVision",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "Hardware IO implementation for PhotonVision running on a coprocessor (Orange Pi 5)."
+  },
+  {
+    "package": "frc.robot.Subsystems.vision",
+    "file": "Subsystems\\vision\\VisionIOSim.java",
+    "line": 16,
+    "kind": "class",
+    "name": "VisionIOSim",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "Desktop simulation implementation of VisionIO supporting both Limelight (MegaTag2)"
+  },
+  {
+    "package": "frc.robot.Subsystems.vision",
+    "file": "Subsystems\\vision\\VisionIOSim.java",
+    "line": 18,
+    "kind": "enum",
+    "name": "CameraType",
+    "modifiers": "public",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Test",
+    "file": "Test\\Diagnostics.java",
+    "line": 37,
+    "kind": "class",
+    "name": "Diagnostics",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "Diagnostics subsystem for safe hardware verification and automated Pre-Flight pit checks."
+  },
+  {
+    "package": "frc.robot.Test",
+    "file": "Test\\Diagnostics.java",
+    "line": 49,
+    "kind": "class",
+    "name": "DiagTest",
+    "modifiers": "public static",
+    "has_javadoc": true,
+    "javadoc_summary": "A single diagnostic check: one motor in, one encoder/position out."
+  },
+  {
+    "package": "frc.robot.Test",
+    "file": "Test\\Diagnostics.java",
+    "line": 64,
+    "kind": "enum",
+    "name": "PreFlightStep",
+    "modifiers": "public",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Test",
+    "file": "Test\\DriveCharacterization.java",
+    "line": 25,
+    "kind": "class",
+    "name": "DriveCharacterization",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "Swerve drive characterization and testing system."
+  },
+  {
+    "package": "frc.robot.Test",
+    "file": "Test\\DriveCharacterization.java",
+    "line": 27,
+    "kind": "enum",
+    "name": "TestMode",
+    "modifiers": "private",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Test",
+    "file": "Test\\IntakeTesting.java",
+    "line": 19,
+    "kind": "class",
+    "name": "IntakeTesting",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "Intake system testing and calibration."
+  },
+  {
+    "package": "frc.robot.Test",
+    "file": "Test\\IntakeTesting.java",
+    "line": 21,
+    "kind": "enum",
+    "name": "TestMode",
+    "modifiers": "private",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Test",
+    "file": "Test\\ShooterTuning.java",
+    "line": 22,
+    "kind": "class",
+    "name": "ShooterTuning",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "Comprehensive shooter tuning and testing system."
+  },
+  {
+    "package": "frc.robot.Test",
+    "file": "Test\\ShooterTuning.java",
+    "line": 24,
+    "kind": "enum",
+    "name": "TestMode",
+    "modifiers": "private",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Test",
+    "file": "Test\\SysID.java",
+    "line": 12,
+    "kind": "class",
+    "name": "SysID",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "Legacy wrapper for SysId routines, now delegating to the unified SysIdManager."
+  },
+  {
+    "package": "frc.robot.Test",
+    "file": "Test\\SysIdManager.java",
+    "line": 32,
+    "kind": "class",
+    "name": "SysIdManager",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "Unified System Identification (SysID) Manager for Team 8334."
+  },
+  {
+    "package": "frc.robot.Test",
+    "file": "Test\\SysIdManager.java",
+    "line": 36,
+    "kind": "enum",
+    "name": "MechanismType",
+    "modifiers": "public",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Test",
+    "file": "Test\\TestMode.java",
+    "line": 16,
+    "kind": "class",
+    "name": "TestMode",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "Comprehensive test mode for robot subsystem tuning, SysID, and diagnostics."
+  },
+  {
+    "package": "frc.robot.Test",
+    "file": "Test\\TestMode.java",
+    "line": 20,
+    "kind": "enum",
+    "name": "TestCategory",
+    "modifiers": "public",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Test",
+    "file": "Test\\VisionTesting.java",
+    "line": 21,
+    "kind": "class",
+    "name": "VisionTesting",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "Vision system testing and calibration."
+  },
+  {
+    "package": "frc.robot.Test",
+    "file": "Test\\VisionTesting.java",
+    "line": 23,
+    "kind": "enum",
+    "name": "TestMode",
+    "modifiers": "private",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.ThirdParty",
+    "file": "ThirdParty\\LimelightHelpers.java",
+    "line": 40,
+    "kind": "class",
+    "name": "LimelightHelpers",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "LimelightHelpers provides static methods and classes for interfacing with Limelight vision cameras in FRC."
+  },
+  {
+    "package": "frc.robot.ThirdParty",
+    "file": "ThirdParty\\LimelightHelpers.java",
+    "line": 47,
+    "kind": "class",
+    "name": "LimelightTarget_Retro",
+    "modifiers": "public static",
+    "has_javadoc": true,
+    "javadoc_summary": "Represents a Color/Retroreflective Target Result extracted from JSON Output"
+  },
+  {
+    "package": "frc.robot.ThirdParty",
+    "file": "ThirdParty\\LimelightHelpers.java",
+    "line": 143,
+    "kind": "class",
+    "name": "LimelightTarget_Fiducial",
+    "modifiers": "public static",
+    "has_javadoc": true,
+    "javadoc_summary": "Represents an AprilTag/Fiducial Target Result extracted from JSON Output"
+  },
+  {
+    "package": "frc.robot.ThirdParty",
+    "file": "ThirdParty\\LimelightHelpers.java",
+    "line": 244,
+    "kind": "class",
+    "name": "LimelightTarget_Barcode",
+    "modifiers": "public static",
+    "has_javadoc": true,
+    "javadoc_summary": "Represents a Barcode Target Result extracted from JSON Output"
+  },
+  {
+    "package": "frc.robot.ThirdParty",
+    "file": "ThirdParty\\LimelightHelpers.java",
+    "line": 293,
+    "kind": "class",
+    "name": "LimelightTarget_Classifier",
+    "modifiers": "public static",
+    "has_javadoc": true,
+    "javadoc_summary": "Represents a Neural Classifier Pipeline Result extracted from JSON Output"
+  },
+  {
+    "package": "frc.robot.ThirdParty",
+    "file": "ThirdParty\\LimelightHelpers.java",
+    "line": 326,
+    "kind": "class",
+    "name": "LimelightTarget_Detector",
+    "modifiers": "public static",
+    "has_javadoc": true,
+    "javadoc_summary": "Represents a Neural Detector Pipeline Result extracted from JSON Output"
+  },
+  {
+    "package": "frc.robot.ThirdParty",
+    "file": "ThirdParty\\LimelightHelpers.java",
+    "line": 365,
+    "kind": "class",
+    "name": "LimelightResults",
+    "modifiers": "public static",
+    "has_javadoc": true,
+    "javadoc_summary": "Limelight Results object, parsed from a Limelight's JSON results output."
+  },
+  {
+    "package": "frc.robot.ThirdParty",
+    "file": "ThirdParty\\LimelightHelpers.java",
+    "line": 472,
+    "kind": "class",
+    "name": "RawFiducial",
+    "modifiers": "public static",
+    "has_javadoc": true,
+    "javadoc_summary": "Represents a Limelight Raw Fiducial result from Limelight's NetworkTables output."
+  },
+  {
+    "package": "frc.robot.ThirdParty",
+    "file": "ThirdParty\\LimelightHelpers.java",
+    "line": 511,
+    "kind": "class",
+    "name": "RawDetection",
+    "modifiers": "public static",
+    "has_javadoc": true,
+    "javadoc_summary": "Represents a Limelight Raw Neural Detector result from Limelight's NetworkTables output."
+  },
+  {
+    "package": "frc.robot.ThirdParty",
+    "file": "ThirdParty\\LimelightHelpers.java",
+    "line": 549,
+    "kind": "class",
+    "name": "PoseEstimate",
+    "modifiers": "public static",
+    "has_javadoc": true,
+    "javadoc_summary": "Represents a 3D Pose Estimate."
+  },
+  {
+    "package": "frc.robot.ThirdParty",
+    "file": "ThirdParty\\LimelightHelpers.java",
+    "line": 612,
+    "kind": "class",
+    "name": "IMUData",
+    "modifiers": "public static",
+    "has_javadoc": true,
+    "javadoc_summary": "Encapsulates the state of an internal Limelight IMU."
+  },
+  {
+    "package": "frc.robot.Utils",
+    "file": "Utils\\Alert.java",
+    "line": 9,
+    "kind": "class",
+    "name": "Alert",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "Class representing a persistent alert displayed on driver dashboards and used"
+  },
+  {
+    "package": "frc.robot.Utils",
+    "file": "Utils\\Alert.java",
+    "line": 11,
+    "kind": "enum",
+    "name": "AlertType",
+    "modifiers": "public",
+    "has_javadoc": false,
+    "javadoc_summary": ""
+  },
+  {
+    "package": "frc.robot.Utils",
+    "file": "Utils\\AlertManager.java",
+    "line": 13,
+    "kind": "class",
+    "name": "AlertManager",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "Manages all robot alerts and publishes them to NetworkTables for dashboards"
+  },
+  {
+    "package": "frc.robot.Utils",
+    "file": "Utils\\AllianceFlipUtil.java",
+    "line": 16,
+    "kind": "class",
+    "name": "AllianceFlipUtil",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "Standardizes coordinate geometry to Blue-origin coordinates across the entire codebase."
+  },
+  {
+    "package": "frc.robot.Utils",
+    "file": "Utils\\Vector2dSlewRateLimiter.java",
+    "line": 17,
+    "kind": "class",
+    "name": "Vector2dSlewRateLimiter",
+    "modifiers": "public",
+    "has_javadoc": true,
+    "javadoc_summary": "True 2D Vector Slew Rate Limiter."
+  }
+]

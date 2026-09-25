@@ -164,10 +164,9 @@ public class MatchCoach implements Subsystem {
 
         // 2. Sync Selected Drill Mode
         DrillMode chosen = drillChooser.getSelected();
-        String drillStr = SmartDashboard.getString("Coaching/DrillMode", currentDrill.displayName);
-        DrillMode selectedDrill = (chosen != null && chosen != currentDrill)
+        DrillMode selectedDrill = (chosen != null)
                 ? chosen
-                : DrillMode.fromString(drillStr);
+                : DrillMode.fromString(SmartDashboard.getString("Coaching/DrillMode", currentDrill.displayName));
         if (selectedDrill != currentDrill) {
             currentDrill = selectedDrill;
             configureDrillEnvironment(currentDrill);

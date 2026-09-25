@@ -2,8 +2,6 @@ package frc.robot.Auto.Actions;
 
 import edu.wpi.first.math.controller.PIDController;
 import edu.wpi.first.math.geometry.Translation2d;
-import edu.wpi.first.networktables.NetworkTable;
-import edu.wpi.first.networktables.NetworkTableInstance;
 import edu.wpi.first.wpilibj.Timer;
 import frc.robot.Data.Constants;
 import frc.robot.Interfaces.Actions;
@@ -28,7 +26,6 @@ public class BallHuntAction implements Actions {
     private final SwerveBase swerve = SwerveBase.getInstance();
     private final Intake intake = Intake.getInstance();
     private final Vision vision = Vision.getInstance();
-    private final NetworkTable limelightTable = NetworkTableInstance.getDefault().getTable("limelight-front");
 
     // PID controller for centering camera yaw onto the ball
     private final PIDController turnController = new PIDController(0.08, 0, 0.005);

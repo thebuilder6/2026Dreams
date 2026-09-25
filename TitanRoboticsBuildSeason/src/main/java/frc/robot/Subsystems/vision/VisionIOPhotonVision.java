@@ -84,6 +84,10 @@ public class VisionIOPhotonVision implements VisionIO {
                     poseData[1],
                     Rotation2d.fromDegrees(poseData.length >= 6 ? poseData[5] : poseData[2]));
             inputs.timestamp = Timer.getFPGATimestamp() - (inputs.latencyMs / 1000.0);
+        } else {
+            inputs.hasTarget = false;
+            inputs.tagCount = 0;
+            inputs.estimatedPose = new Pose2d();
         }
 
         // Read Neural Network Object Detection ("Ball Hunt")

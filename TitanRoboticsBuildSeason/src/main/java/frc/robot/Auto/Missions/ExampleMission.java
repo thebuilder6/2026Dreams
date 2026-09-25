@@ -18,10 +18,7 @@ import frc.robot.Auto.Actions.FollowChoreoPath;
 public class ExampleMission extends MissionBase {
     @Override
     protected void routine() throws AutoMissionEndedException {
-       
-        //put the actions you want to do here in order of execution
-
-        runAction(new WaitAction(AutoMissionChooser.delay));
+        // Put the actions you want to do here in order of execution
         runAction(new FollowChoreoPath("ExamplePath", true));
     }
 }

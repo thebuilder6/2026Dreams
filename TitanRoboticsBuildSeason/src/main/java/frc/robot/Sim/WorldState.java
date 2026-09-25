@@ -20,7 +20,7 @@ public record WorldState(
         boolean isRedAlliance
 ) {
     public static final int DEFAULT_MAX_CAPACITY = 30;
-    public static final int CO_PILOT_CAPACITY = 8;
+    public static final int CO_PILOT_CAPACITY = 30; // Changed from 8 to 30
 
     // Self hub active alias:
     public boolean isSelfHubActive() { return isAllianceHubActive; }

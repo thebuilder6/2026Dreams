@@ -97,7 +97,7 @@ Our robot code serves the official layout directly over HTTP port 5800 (`edu.wpi
 - **Tab 2: AI Coach & Practice**: Real-time driver grading ($A+$ to $D$), cycle timing bars, shooting accuracy bar, drill mode chooser, `Toggle Button` for 1-click arena reset, `Toggle Switch` for haptic collision rumble, and Jev AI coaching directives.
 - **Tab 3: Pre-Flight Diagnostics**: Automated 15-second scorecard with progress bar and individual `Toggle Button` widgets to pulse each swerve steer/drive motor, intake arm, intake rollers, and flywheels.
 - **Tab 4: SysID & Characterization**: `Toggle Button` for Quasistatic / Dynamic Forward / Reverse and ABORT / E-STOP, with real-time `Graph` widgets for live applied voltage and velocity response waves.
-- **Tab 5: Simulation & Match Info**: Interactive `Number Slider` widgets to dynamically drag opponent bot count (1-3 bots) and speed (20-100%), interactive `Toggle Button` controls for Sim Reset and Respawn Balls, multi-bot state/score telemetry, and `Toggle Switch` for Opponent AI.
+- **Tab 5: Simulation & Match Info**: Dropdown menus for Opponent Count (1, 2, or 3 bots) and per-bot Archetypes (Bot 0 Lead, Bot 1 Bully, Bot 2 Adaptive), interactive `Number Slider` for opponent speed (20-100%), interactive `Toggle Button` controls for Sim Reset and Respawn Balls, multi-bot state/score telemetry, and `Toggle Switch` for Opponent AI.
 - **Tab 6: Tuning & PID**: Flywheel dual-RPM bars, pivot arm setpoint/goal bars, interactive `Toggle Switch` settings, and text displays with `show_submit_button: true` to edit PID constants live.
 
 ---
@@ -211,7 +211,63 @@ The simulation engine supports scaling from a single sparring opponent up to **3
   - *Aggregates*: `/Simulation/TotalOpponentScore`, `/Simulation/TotalOpponentFuel`, `/Simulation/MultiBotActiveCount`
   - *Field2d Objects*: `/SmartDashboard/Field/OpponentBot0`, `/SmartDashboard/Field/OpponentBot1`, `/SmartDashboard/Field/OpponentBot2`
 
-### 7. AI Coach & Practice Proving Ground
+### 7. Ally Bots & Full 3v3 FRC Match Simulation (Player + 2 Allies vs 3 Opponents)
+
+In addition to opposing sparring robots, the simulation engine allows you to spawn **1 or 2 autonomous Ally Bots** on your own alliance team. This enables complete **3v3 FRC match simulation** with full alliance coordination:
+
+- **Activating Ally Bots**:
+  - In Elastic Dashboard (`Simulation & Match Info` tab), toggle **`Ally Bots Active`** (`Features/Ally Bots`) or select the number of allies via **`Ally Count Chooser`** (`Simulation/AllyCountChooser`).
+  - Available configurations:
+    - **`0 Ally Bots (Solo)`**: Standard player solo practice or 1vX sparring.
+    - **`1 Ally Bot (2v3 / 2v2)`**: Spawns Ally 1 alongside the player.
+    - **`2 Ally Bots (Full 3v3)`**: Spawns both Ally 1 and Ally 2, forming a full 3-robot alliance!
+  - Allies line up along your alliance driver wall alongside the player robot:
+    - **Player**: Center start position ($X \approx 2.00\text{m}, Y \approx 4.035\text{m}$ for Blue)
+    - **Ally 1**: Left flank start position ($X = 2.00\text{m}, Y = 5.80\text{m}$ for Blue, facing $0^\circ$)
+    - **Ally 2**: Right flank start position ($X = 2.00\text{m}, Y = 2.25\text{m}$ for Blue, facing $0^\circ$)
+    *(Coordinates automatically mirror to $X = 14.54\text{m}$, facing $180^\circ$ when on Red Alliance).*
+
+- **Ally Bot Archetypes & Behavior**:
+  - Each ally can be assigned an independent behavioral archetype via SmartDashboard:
+    - **Ally 1** (`Simulation/Ally1/ArchetypeChooser`): Defaults to `Autonomous Fuel Cycler`. Focuses on collecting midfield fuel and rapid cycling into your Alliance Hub.
+    - **Ally 2** (`Simulation/Ally2/ArchetypeChooser`): Defaults to `Adaptive Match Competitor`. Cycles fuel when your Hub is active, and switches to midfield containment or depot defense when the Hub is inactive.
+  - **Alliance Awareness**: Unlike opponents, Ally Bots target your alliance's Hub, harvest balls from your alliance depots, never pin the player, and park at your alliance's climbing tower during the endgame.
+  - **Multi-Robot Soft Separation**: All 6 robots active on the field (Player, 2 Allies, 3 Opponents) constantly compute mutual bumper distances. When any robot approaches within $1.10\text{m}$, smooth repulsion velocities prevent mechanical jams and scrums.
+
+- **Field2d & Telemetry Representation**:
+  - *Field2d Objects*: `AllyBot1`, `AllyTarget1`, `AllyBot2`, `AllyTarget2` displayed in real-time in Elastic Dashboard and AdvantageScope.
+  - *Telemetry Channels*:
+    - `AI_Telemetry/Ally1/ActualPose`, `Simulation/Ally1/Fuel`, `Simulation/Ally1/Score`, `Simulation/Ally1/StateDetail`
+    - `AI_Telemetry/Ally2/ActualPose`, `Simulation/Ally2/Fuel`, `Simulation/Ally2/Score`, `Simulation/Ally2/StateDetail`
+    - `Simulation/TotalAllyScore`, `Simulation/TotalAllyFuel`, `Simulation/AllyActiveCount`
+
+---
+
+### 8. Unified 2026 Match Scoring & Scoreboard System (`MatchScoreTracker`)
+
+The simulation runs an automated, authoritative FRC match scoring engine via [`MatchScoreTracker`](file:///c:/Users/jumpi/Documents/Github/2026Dreams/TitanRoboticsBuildSeason/src/main/java/frc/robot/Sim/MatchScoreTracker.java), providing live scoreboards and Ranking Point calculations for both alliances:
+
+- **Scoring Rules**:
+  - **Fuel Ball in Active Hub**: $1\text{ point}$ per ball scored.
+  - **Wasted Shots**: Balls launched into an inactive Hub during opposing shifts score $0\text{ points}$ and are logged as wasted fuel.
+  - **Endgame Tower Climb**: $10\text{ points}$ per robot positioned within $1.20\text{m}$ of the alliance climbing pole during the final 20 seconds of the match ($t \le 20.0\text{s}$).
+
+- **FRC Ranking Points (RP)**:
+  - **Match Outcome**: $2\text{ RP}$ for a win, $1\text{ RP}$ for a tie.
+  - **Energized RP (Fuel)**: $+1\text{ RP}$ awarded to any alliance scoring $\ge 40$ active fuel balls.
+  - **Supercharged RP (Climb)**: $+1\text{ RP}$ awarded to any alliance with $\ge 2$ robots successfully climbed.
+
+- **Full Alliance Score Attribution**:
+  - Fuel scored and tower climbs achieved by **Ally 1** and **Ally 2** automatically credit your alliance's score and RP totals!
+  - Real-time scoring streams published to Elastic Dashboard and AdvantageKit:
+    - Main Scoreboard: `Scoreboard/Match/RedScore`, `Scoreboard/Match/BlueScore`, `Scoreboard/Match/LeadMargin`, `Scoreboard/Match/Leader`
+    - Player Team Summary: `Scoreboard/Player/ShotsAttempted`, `Scoreboard/Player/ShotsScored`, `Scoreboard/Player/AccuracyPercent`, `Scoreboard/Player/Climbed`
+    - Ally Breakdown: `Scoreboard/Allies/Ally1_FuelScored`, `Scoreboard/Allies/Ally2_FuelScored`, `Scoreboard/Allies/TotalFuelScored`, `Scoreboard/Allies/Ally1_Climbed`
+    - Opponent Breakdown: `Scoreboard/Opponents/Bot0_FuelScored`, `Scoreboard/Opponents/Bot1_FuelScored`, `Scoreboard/Opponents/Bot2_FuelScored`
+
+---
+
+### 9. AI Coach & Practice Proving Ground
 Switch to the **`AI Coach & Practice`** tab in Elastic Dashboard for focused driver training:
 
 - **Practice Drill Modes** (Select via `Practice Drill Mode` chooser):

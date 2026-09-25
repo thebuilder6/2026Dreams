@@ -4,6 +4,7 @@ import static edu.wpi.first.units.Units.DegreesPerSecond;
 
 import edu.wpi.first.math.Matrix;
 import edu.wpi.first.math.VecBuilder;
+import edu.wpi.first.math.filter.MedianFilter;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.numbers.N1;
 import edu.wpi.first.math.numbers.N3;
@@ -35,6 +36,13 @@ public class Vision implements Subsystem {
     // Telemetry state
     private double stdDev = 0;
     private boolean isAccepted = false;
+
+    // Signal Filters: 5-sample median filters reject optical noise, reflections, and transient spike frames
+    private final MedianFilter primaryTagDistFilter = new MedianFilter(5);
+    private final MedianFilter secondaryTagDistFilter = new MedianFilter(5);
+    private final MedianFilter gamePieceDistFilter = new MedianFilter(5);
+    private double filteredPrimaryTagDist = 0.0;
+    private double filteredSecondaryTagDist = 0.0;
 
     public static Vision getInstance() {
         if (instance == null) {
@@ -78,14 +86,15 @@ public class Vision implements Subsystem {
         org.littletonrobotics.junction.Logger.processInputs("Vision/Primary", primaryInputs);
 
         if (primaryInputs.hasTarget && primaryInputs.tagCount > 0) {
+            filteredPrimaryTagDist = primaryTagDistFilter.calculate(primaryInputs.avgTagDist);
             boolean doReject = false;
             if (yawRateAbs > DrivebaseConstants.VISION_MAX_YAW_RATE) doReject = true;
-            if (primaryInputs.avgTagDist > DrivebaseConstants.VISION_MAX_TAG_DIST) doReject = true;
+            if (filteredPrimaryTagDist > DrivebaseConstants.VISION_MAX_TAG_DIST) doReject = true;
             if (primaryInputs.latencyMs > 150.0) doReject = true;
 
             stdDev = DrivebaseConstants.VISION_BASE_STD_DEV;
             if (primaryInputs.tagCount == 1) stdDev += DrivebaseConstants.VISION_SINGLE_TAG_PENALTY;
-            stdDev += (primaryInputs.avgTagDist * primaryInputs.avgTagDist) / DrivebaseConstants.VISION_DIST_PENALTY_DIVISOR;
+            stdDev += (filteredPrimaryTagDist * filteredPrimaryTagDist) / DrivebaseConstants.VISION_DIST_PENALTY_DIVISOR;
 
             isAccepted = !doReject;
             if (isAccepted) {
@@ -93,6 +102,8 @@ public class Vision implements Subsystem {
                 swerve.addVisionMeasurement(primaryInputs.estimatedPose, primaryInputs.timestamp, visionStdDevs);
             }
         } else {
+            primaryTagDistFilter.reset();
+            filteredPrimaryTagDist = 0.0;
             isAccepted = false;
         }
 
@@ -102,14 +113,18 @@ public class Vision implements Subsystem {
             org.littletonrobotics.junction.Logger.processInputs("Vision/Secondary", secondaryInputs);
 
             if (secondaryInputs.hasTarget && secondaryInputs.tagCount > 0 && secondaryInputs.latencyMs < 150.0) {
-                if (secondaryInputs.avgTagDist < DrivebaseConstants.VISION_MAX_TAG_DIST && yawRateAbs <= DrivebaseConstants.VISION_MAX_YAW_RATE) {
+                filteredSecondaryTagDist = secondaryTagDistFilter.calculate(secondaryInputs.avgTagDist);
+                if (filteredSecondaryTagDist < DrivebaseConstants.VISION_MAX_TAG_DIST && yawRateAbs <= DrivebaseConstants.VISION_MAX_YAW_RATE) {
                     double secStdDev = DrivebaseConstants.VISION_BASE_STD_DEV + 0.15;
                     if (secondaryInputs.tagCount == 1) secStdDev += DrivebaseConstants.VISION_SINGLE_TAG_PENALTY;
-                    secStdDev += (secondaryInputs.avgTagDist * secondaryInputs.avgTagDist) / DrivebaseConstants.VISION_DIST_PENALTY_DIVISOR;
+                    secStdDev += (filteredSecondaryTagDist * filteredSecondaryTagDist) / DrivebaseConstants.VISION_DIST_PENALTY_DIVISOR;
 
                     Matrix<N3, N1> secStdDevs = VecBuilder.fill(secStdDev, secStdDev, Units.degreesToRadians(900));
                     swerve.addVisionMeasurement(secondaryInputs.estimatedPose, secondaryInputs.timestamp, secStdDevs);
                 }
+            } else {
+                secondaryTagDistFilter.reset();
+                filteredSecondaryTagDist = 0.0;
             }
         }
     }
@@ -150,6 +165,7 @@ public class Vision implements Subsystem {
      */
     public double getGamePieceDistanceMeters() {
         if (!hasGamePiece()) {
+            gamePieceDistFilter.reset();
             return 0.0;
         }
         double cameraHeight = DrivebaseConstants.RUBIK_PI_CAMERA_HEIGHT_METERS;
@@ -164,7 +180,8 @@ public class Vision implements Subsystem {
         }
 
         // Camera is higher than target, total angle is negative (tilted down)
-        return Math.abs((cameraHeight - targetHeight) / Math.tan(totalAngleRads));
+        double rawDist = Math.abs((cameraHeight - targetHeight) / Math.tan(totalAngleRads));
+        return gamePieceDistFilter.calculate(rawDist);
     }
 
     /**
@@ -345,6 +362,7 @@ public class Vision implements Subsystem {
     public void log() {
         SmartDashboard.putNumber("Vision/Primary/TagCount", primaryInputs.tagCount);
         SmartDashboard.putNumber("Vision/Primary/AvgDistance", primaryInputs.avgTagDist);
+        SmartDashboard.putNumber("Vision/Primary/FilteredAvgDistance", filteredPrimaryTagDist);
         SmartDashboard.putNumber("Vision/Primary/StdDev", stdDev);
         SmartDashboard.putBoolean("Vision/Primary/IsAccepted", isAccepted);
         SmartDashboard.putBoolean("Vision/Primary/HasTarget", primaryInputs.hasTarget);
@@ -356,6 +374,7 @@ public class Vision implements Subsystem {
         if (secondaryIO != null) {
             SmartDashboard.putNumber("Vision/Secondary/TagCount", secondaryInputs.tagCount);
             SmartDashboard.putNumber("Vision/Secondary/AvgDistance", secondaryInputs.avgTagDist);
+            SmartDashboard.putNumber("Vision/Secondary/FilteredAvgDistance", filteredSecondaryTagDist);
             SmartDashboard.putBoolean("Vision/Secondary/HasTarget", secondaryInputs.hasTarget);
             SmartDashboard.putNumber("Vision/Secondary/LatencyMs", secondaryInputs.latencyMs);
             if (secondaryInputs.hasTarget) {
@@ -377,6 +396,14 @@ public class Vision implements Subsystem {
         if (ballFieldPose != null) {
             org.littletonrobotics.junction.Logger.recordOutput("Vision/BallHunt/FieldPose", ballFieldPose);
         }
+    }
+
+    public double getFilteredPrimaryTagDist() {
+        return filteredPrimaryTagDist;
+    }
+
+    public double getFilteredSecondaryTagDist() {
+        return filteredSecondaryTagDist;
     }
 
     @Override

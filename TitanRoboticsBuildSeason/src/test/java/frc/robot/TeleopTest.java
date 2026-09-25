@@ -7,7 +7,10 @@ import org.junit.jupiter.api.Test;
 
 import edu.wpi.first.hal.HAL;
 import edu.wpi.first.math.geometry.Rotation2d;
+import edu.wpi.first.wpilibj.simulation.XboxControllerSim;
 import edu.wpi.first.wpilibj2.command.CommandScheduler;
+import frc.robot.Data.PortMap;
+import frc.robot.Subsystems.Dashboard;
 
 public class TeleopTest {
 
@@ -75,5 +78,87 @@ public class TeleopTest {
         assertEquals(-90.0, right.getDegrees(), 1e-4);
         assertEquals(180.0, Math.abs(backward.getDegrees()), 1e-4);
         assertEquals(90.0, left.getDegrees(), 1e-4);
+    }
+
+    @Test
+    public void testSlowModeControllerToggleAndExit() {
+        edu.wpi.first.wpilibj.simulation.DriverStationSim.resetData();
+        edu.wpi.first.wpilibj.simulation.DriverStationSim.setDsAttached(true);
+        edu.wpi.first.wpilibj.simulation.DriverStationSim.setEnabled(true);
+        XboxControllerSim driverSim = new XboxControllerSim(PortMap.DRIVER_CONTROLLER);
+        driverSim.setButtonCount(16);
+        driverSim.setAxisCount(6);
+        driverSim.setLeftStickButton(false);
+        driverSim.notifyNewData();
+        teleop.init();
+
+        assertFalse(teleop.isSlowModeActive(), "Slow mode must start inactive");
+        assertFalse(Dashboard.isSlowModeEnabled(), "Dashboard slow mode must start inactive");
+
+        // 1. Driver clicks Left Stick to enter slow mode
+        driverSim.setLeftStickButton(true);
+        driverSim.notifyNewData();
+        teleop.readControllers();
+        assertTrue(teleop.isSlowModeActive(), "Driver clicking left stick must enter slow mode");
+        assertTrue(Dashboard.isSlowModeEnabled(), "Dashboard must reflect slow mode enabled");
+
+        // Release stick
+        driverSim.setLeftStickButton(false);
+        driverSim.notifyNewData();
+        teleop.readControllers();
+        assertTrue(teleop.isSlowModeActive(), "Slow mode must stay active when stick is released");
+
+        // 2. Driver clicks Left Stick again to EXIT slow mode
+        driverSim.setLeftStickButton(true);
+        driverSim.notifyNewData();
+        teleop.readControllers();
+        assertFalse(teleop.isSlowModeActive(), "Driver clicking left stick again must EXIT slow mode");
+        assertFalse(Dashboard.isSlowModeEnabled(), "Dashboard must reflect slow mode disabled");
+
+        // Release stick
+        driverSim.setLeftStickButton(false);
+        driverSim.notifyNewData();
+        teleop.readControllers();
+        assertFalse(teleop.isSlowModeActive(), "Slow mode must stay inactive");
+    }
+
+    @Test
+    public void testSlowModeDashboardTwoWaySync() {
+        edu.wpi.first.wpilibj.simulation.DriverStationSim.resetData();
+        edu.wpi.first.wpilibj.simulation.DriverStationSim.setDsAttached(true);
+        edu.wpi.first.wpilibj.simulation.DriverStationSim.setEnabled(true);
+        XboxControllerSim driverSim = new XboxControllerSim(PortMap.DRIVER_CONTROLLER);
+        driverSim.setButtonCount(16);
+        driverSim.setAxisCount(6);
+        driverSim.setLeftStickButton(false);
+        driverSim.notifyNewData();
+        teleop.init();
+
+        // 1. Dashboard turns slow mode ON remotely
+        Dashboard.setSlowModeEnabled(true);
+        teleop.readControllers();
+        assertTrue(teleop.isSlowModeActive(), "Remote dashboard toggle must activate slow mode");
+
+        // 2. Driver overrides and turns slow mode OFF using controller
+        driverSim.setLeftStickButton(true);
+        driverSim.notifyNewData();
+        teleop.readControllers();
+        assertFalse(teleop.isSlowModeActive(), "Driver controller must successfully exit slow mode after dashboard turned it on");
+        assertFalse(Dashboard.isSlowModeEnabled(), "Dashboard must synchronize to disabled after driver override");
+
+        // 3. Driver turns slow mode ON using controller
+        driverSim.setLeftStickButton(false);
+        driverSim.notifyNewData();
+        teleop.readControllers();
+        driverSim.setLeftStickButton(true);
+        driverSim.notifyNewData();
+        teleop.readControllers();
+        assertTrue(teleop.isSlowModeActive(), "Driver controller turns slow mode ON");
+        assertTrue(Dashboard.isSlowModeEnabled(), "Dashboard reflects slow mode ON");
+
+        // 4. Remote dashboard turns slow mode OFF
+        Dashboard.setSlowModeEnabled(false);
+        teleop.readControllers();
+        assertFalse(teleop.isSlowModeActive(), "Remote dashboard must successfully turn off slow mode");
     }
 }

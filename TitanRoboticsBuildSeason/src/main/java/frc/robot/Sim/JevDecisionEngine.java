@@ -150,45 +150,53 @@ public class JevDecisionEngine {
         utilities.put(StrategicObjective.RUSH_CLIMB, climbUtility);
 
         // Cycle Score Hub
+        // If already in shooting range (dist <= 4.0m) or Co-Pilot assist, keep firing down to the very last ball!
+        // If out in midfield, require a solid batch (>=16) unless the active shift is about to end (<=4.5s)
+        boolean inShootingRange = distToSelfHub <= 4.0;
+        boolean shiftEndingSoon = world.timeUntilHubShift() <= 4.5 && world.timeUntilHubShift() > 0.0;
+        int minFuelToScore = (archetype == Archetype.CO_PILOT || inShootingRange) ? 1 : (shiftEndingSoon ? 4 : 16);
+
         double scoreUtility = 0.0;
-        int minFuelToScore = (archetype == Archetype.CO_PILOT) ? 1 : 3;
         if (world.isAllianceHubActive() && world.heldFuelCount() >= minFuelToScore) {
-            double loadRatio = (archetype == Archetype.CO_PILOT)
-                    ? 1.0
-                    : Math.min(1.0, world.heldFuelCount() / 14.0);
-            scoreUtility = 0.70 + (0.28 * loadRatio); // 0.70 to 0.98
+            double loadRatio = (archetype == Archetype.CO_PILOT || inShootingRange) 
+                    ? 1.0 
+                    : Math.min(1.0, world.heldFuelCount() / 20.0);
+            scoreUtility = 0.72 + (0.26 * loadRatio); // 0.72 to 0.98
         }
         utilities.put(StrategicObjective.CYCLE_SCORE_HUB, scoreUtility);
 
-        // Stage Standoff
+        // Stage Standoff (Hub is inactive; wait at standoff arc once hopper is well stocked)
         double stageUtility = 0.0;
-        int minFuelToStage = (archetype == Archetype.CO_PILOT) ? 1 : 10;
+        int minFuelToStage = (archetype == Archetype.CO_PILOT) ? 1 : 18;
         if (!world.isAllianceHubActive() && world.heldFuelCount() >= minFuelToStage) {
-            stageUtility = 0.82;
+            stageUtility = 0.80;
             if (world.timeUntilHubShift() <= 3.5 && world.timeUntilHubShift() > 0.0) {
-                stageUtility = (archetype == Archetype.CO_PILOT) ? 0.99 : 0.94; // Anticipate imminent shift
+                stageUtility = (archetype == Archetype.CO_PILOT) ? 0.99 : 0.95; // Anticipate imminent shift
             }
         }
         utilities.put(StrategicObjective.STAGE_STANDOFF, stageUtility);
 
-        // Vacuum Midfield (Field fuel harvest)
+        // Vacuum Midfield (Field fuel harvest: fill hopper with large payloads)
         double vacuumUtility = 0.0;
         if (!world.isInventoryFull()) {
             if (!world.isAllianceHubActive()) {
-                // Stockpile while hub is locked
+                // Stockpile full 20-30 ball capacity while hub is locked
                 vacuumUtility = 0.88 + (0.10 * (1.0 - world.heldFuelCount() / 30.0));
-            } else if (world.heldFuelCount() < 6) {
-                vacuumUtility = 0.78 + (0.18 * (1.0 - world.heldFuelCount() / 6.0));
             } else {
-                vacuumUtility = 0.40;
+                int targetBatch = shiftEndingSoon ? 6 : 18;
+                if (world.heldFuelCount() < targetBatch) {
+                    vacuumUtility = 0.82 + (0.14 * (1.0 - (double) world.heldFuelCount() / targetBatch));
+                } else {
+                    vacuumUtility = 0.35;
+                }
             }
         }
         utilities.put(StrategicObjective.VACUUM_MIDFIELD, vacuumUtility);
 
-        // Stockpile Depot (Feeder station restock)
+        // Stockpile Depot (Feeder station restock: collect full payloads)
         double stockpileUtility = 0.0;
         if (!world.isInventoryFull() && !world.isAllianceHubActive()) {
-            stockpileUtility = 0.84 + (0.10 * (1.0 - world.heldFuelCount() / 30.0));
+            stockpileUtility = 0.86 + (0.10 * (1.0 - world.heldFuelCount() / 30.0));
         }
         utilities.put(StrategicObjective.STOCKPILE_DEPOT, stockpileUtility);
 
@@ -232,8 +240,16 @@ public class JevDecisionEngine {
             laneDenialUtility = 0.0;
             shadowUtility = 0.0;
             interceptUtility = 0.0;
+            if (world.heldFuelCount() > 0 && world.isAllianceHubActive()) {
+                scoreUtility = 0.98;
+                vacuumUtility = 0.0;
+            }
         }
 
+        utilities.put(StrategicObjective.CYCLE_SCORE_HUB, scoreUtility);
+        utilities.put(StrategicObjective.STAGE_STANDOFF, stageUtility);
+        utilities.put(StrategicObjective.VACUUM_MIDFIELD, vacuumUtility);
+        utilities.put(StrategicObjective.STOCKPILE_DEPOT, stockpileUtility);
         utilities.put(StrategicObjective.DENY_SHOOTING_LANE, laneDenialUtility);
         utilities.put(StrategicObjective.SHADOW_MIDLINE, shadowUtility);
         utilities.put(StrategicObjective.LEAD_INTERCEPT, interceptUtility);
@@ -834,7 +850,8 @@ public class JevDecisionEngine {
         double clampedX = Math.max(0.60, Math.min(15.94, interceptPos.getX()));
         double clampedY = Math.max(0.60, Math.min(7.65, interceptPos.getY()));
 
-        Rotation2d faceOpponent = opponentPose.getTranslation().minus(new Translation2d(clampedX, clampedY)).getAngle();
+        Translation2d diff = opponentPose.getTranslation().minus(new Translation2d(clampedX, clampedY));
+        Rotation2d faceOpponent = diff.getNorm() > 0.01 ? diff.getAngle() : opponentPose.getRotation();
         Pose2d target = new Pose2d(clampedX, clampedY, faceOpponent);
 
         Logger.recordOutput("JevAI/LeadPursuitIntercept", target);

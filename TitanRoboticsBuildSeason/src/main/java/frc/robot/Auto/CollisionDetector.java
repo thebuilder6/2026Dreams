@@ -117,10 +117,16 @@ public class CollisionDetector {
     }
 
     public void reset() {
+        filteredAccelX = 0.0;
+        filteredAccelY = 0.0;
+        prevFilteredAccelX = 0.0;
+        prevFilteredAccelY = 0.0;
         stallStartTime = -1.0;
         stallDuration = 0.0;
         lastCollisionTimestamp = -1.0;
         lastTimestamp = -1.0;
+        lastJerkMagnitude = 0.0;
+        prevSpeeds = new ChassisSpeeds();
     }
 
     public double getLastJerkMagnitude() {

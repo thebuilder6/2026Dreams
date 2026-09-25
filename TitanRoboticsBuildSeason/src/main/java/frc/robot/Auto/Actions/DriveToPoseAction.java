@@ -20,9 +20,10 @@ import frc.robot.Subsystems.SwerveBase;
 public class DriveToPoseAction implements Actions {
     private final SwerveBase swerveBase;
     private final TrajectoryController controller;
-    private final Pose2d targetPose;
+    private Pose2d targetPose;
     private final List<Pose2d> waypoints = new ArrayList<>();
     private final boolean isTunnelTransit;
+    private final boolean isExplicitPath;
     private final Rotation2d tunnelHeading;
 
     // Shared Driver Authority & Blending
@@ -43,12 +44,14 @@ public class DriveToPoseAction implements Actions {
         boolean isTunnel = SmartTunnelRouter.isTunnelTarget(targetPose);
         if (isTunnel) {
             this.isTunnelTransit = true;
+            this.isExplicitPath = true;
             boolean preferTop = targetPose.getY() >= 4.0;
             TunnelRoute route = SmartTunnelRouter.planTunnelRoute(swerveBase.getPose(), preferTop);
             this.tunnelHeading = route.corridorHeading;
             this.waypoints.addAll(route.getWaypoints());
         } else {
             this.isTunnelTransit = false;
+            this.isExplicitPath = false;
             this.tunnelHeading = targetPose.getRotation();
             this.waypoints.add(targetPose);
         }
@@ -62,6 +65,7 @@ public class DriveToPoseAction implements Actions {
         this.swerveBase = SwerveBase.getInstance();
         this.targetPose = explicitWaypoints.isEmpty() ? new Pose2d() : explicitWaypoints.get(explicitWaypoints.size() - 1);
         this.isTunnelTransit = false;
+        this.isExplicitPath = true;
         this.tunnelHeading = targetPose.getRotation();
         this.waypoints.addAll(explicitWaypoints);
 
@@ -97,7 +101,7 @@ public class DriveToPoseAction implements Actions {
         driverForward = 0.0;
         driverStrafe = 0.0;
         driverRotation = 0.0;
-        if (!waypoints.isEmpty()) {
+        if (isExplicitPath && !waypoints.isEmpty()) {
             controller.setExplicitWaypoints(waypoints);
         }
     }
@@ -105,7 +109,7 @@ public class DriveToPoseAction implements Actions {
     @Override
     public void update() {
         Pose2d currentPose = swerveBase.getPose();
-        ChassisSpeeds currentSpeeds = swerveBase.getRobotVelocity();
+        ChassisSpeeds currentSpeeds = swerveBase.getFieldVelocity();
 
         // 1. Evaluate Driver Authority & Breakout Thresholds
         double drvSpeed = Math.hypot(driverForward, driverStrafe);
@@ -139,7 +143,7 @@ public class DriveToPoseAction implements Actions {
                     finalGoal,
                     Constants.MAX_SPEED,
                     isStalled,
-                    !isTunnelTransit);
+                    true);
         }
 
         // 2. Apply Shared Authority Nudge Blending (0.10 <= normDriverMag <= 0.65)
@@ -174,7 +178,9 @@ public class DriveToPoseAction implements Actions {
     @Override
     public void done() {
         swerveBase.setPathVisualization(Collections.emptyList());
-        swerveBase.stop();
+        if (!breakoutRequested) {
+            swerveBase.stop();
+        }
     }
 
     public boolean isTunnelTransit() {
@@ -186,6 +192,21 @@ public class DriveToPoseAction implements Actions {
     }
 
     public List<Pose2d> getWaypoints() {
+        if (!controller.getWaypoints().isEmpty()) {
+            return controller.getWaypoints();
+        }
         return Collections.unmodifiableList(waypoints);
+    }
+
+    public void setTargetPose(Pose2d targetPose) {
+        this.targetPose = targetPose;
+    }
+
+    public Pose2d getTargetPose() {
+        return targetPose;
+    }
+
+    public void setRotationOverride(java.util.function.Supplier<Rotation2d> override) {
+        controller.setRotationOverride(override);
     }
 }

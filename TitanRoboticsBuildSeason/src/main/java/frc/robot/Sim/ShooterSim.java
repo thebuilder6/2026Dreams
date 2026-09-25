@@ -122,13 +122,18 @@ public class ShooterSim {
                             .withTargetTolerance(new Translation3d(0.35, 0.35, 0.15))
                             .withHitTargetCallBack(() -> {
                                 boolean isBlueGoal = targetLoc.equals(Constants.FieldConstants.BLUE_GOAL_LOCATION);
+                                boolean isRedGoal = !isBlueGoal;
                                 if (SimulatedArena.getInstance() instanceof Arena2026Rebuilt) {
                                     Arena2026Rebuilt arena = (Arena2026Rebuilt) SimulatedArena.getInstance();
                                     if (arena.isActive(isBlueGoal)) {
                                         simScoreCount++;
+                                        MatchScoreTracker.getInstance().recordPlayerScore(isRedGoal);
+                                    } else {
+                                        MatchScoreTracker.getInstance().recordWastedShot(isRedGoal);
                                     }
                                 } else {
                                     simScoreCount++;
+                                    MatchScoreTracker.getInstance().recordPlayerScore(isRedGoal);
                                 }
                             })
                             .withProjectileTrajectoryDisplayCallBack(
@@ -140,6 +145,7 @@ public class ShooterSim {
                 }
 
                 simShotCount += ballsToFire;
+                MatchScoreTracker.getInstance().recordPlayerShotAttempt(ballsToFire);
                 lastBallSpawnTime = currentTime;
             }
         }

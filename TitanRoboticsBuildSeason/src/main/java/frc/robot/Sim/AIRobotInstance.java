@@ -41,6 +41,7 @@ public class AIRobotInstance {
     private final int botId;
     private final Pose2d queuingPose;
     private Archetype archetype;
+    private final boolean isAlly;
 
     private final SelfControlledSwerveDriveSimulation driveSimulation;
     private IntakeSimulation intakeSimulation;
@@ -54,6 +55,7 @@ public class AIRobotInstance {
     private String currentAIStateDetail = "IDLE";
     private int scoreCount = 0;
     private double lastShotTimestamp = 0.0;
+    private final frc.robot.Auto.LegalPinningWatchdog pinWatchdog = new frc.robot.Auto.LegalPinningWatchdog();
 
     // Stall watchdog
     private Pose2d lastActualPose = new Pose2d();
@@ -62,11 +64,18 @@ public class AIRobotInstance {
     private double lastStallEvalTimestamp = -1.0;
 
     public AIRobotInstance(int botId, Pose2d queuingPose, Archetype defaultArchetype) {
+        this(botId, queuingPose, defaultArchetype, false);
+    }
+
+    public AIRobotInstance(int botId, Pose2d queuingPose, Archetype defaultArchetype, boolean isAlly) {
         this.botId = botId;
         this.queuingPose = queuingPose;
         this.archetype = defaultArchetype != null ? defaultArchetype : Archetype.AUTONOMOUS_CYCLER;
+        this.isAlly = isAlly;
+
+        String prefix = isAlly ? ("Simulation/Ally" + (botId - 100)) : ("Simulation/Bot" + botId);
         edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.setDefaultString(
-                "Simulation/Bot" + botId + "/Archetype", this.archetype.name());
+                prefix + "/Archetype", this.archetype.name());
 
         this.driveSimulation = new SelfControlledSwerveDriveSimulation(
                 new SwerveDriveSimulation(DriveTrainSimulationConfig.Default(), queuingPose));
@@ -75,7 +84,11 @@ public class AIRobotInstance {
             this.driveSimulation.resetOdometry(queuingPose);
         } catch (Exception ignored) {}
 
-        SimulatedArena.getInstance().addDriveTrainSimulation(driveSimulation.getDriveTrainSimulation());
+        try {
+            SimulatedArena.getInstance().addDriveTrainSimulation(driveSimulation.getDriveTrainSimulation());
+        } catch (Exception e) {
+            System.err.println("[" + (isAlly ? "AllyBot-" : "AIRobotInstance-") + botId + "] Could not register drivetrain with arena: " + e.getMessage());
+        }
 
         try {
             this.intakeSimulation = IntakeSimulation.OverTheBumperIntake(
@@ -87,7 +100,7 @@ public class AIRobotInstance {
                     Constants.IntakeConstants.MAX_HELD_BALLS
             );
         } catch (Exception e) {
-            System.err.println("[AIRobotInstance-" + botId + "] Could not attach IntakeSimulation: " + e.getMessage());
+            System.err.println("[" + (isAlly ? "AllyBot-" : "AIRobotInstance-") + botId + "] Could not attach IntakeSimulation: " + e.getMessage());
         }
 
         var config = SwerveBase.getInstance().getSwerveController().config;
@@ -100,6 +113,10 @@ public class AIRobotInstance {
 
     public int getBotId() {
         return botId;
+    }
+
+    public boolean isAlly() {
+        return isAlly;
     }
 
     public Archetype getArchetype() {
@@ -141,10 +158,13 @@ public class AIRobotInstance {
         scoreCount = 0;
         stallDuration = 0.0;
         lastShotTimestamp = 0.0;
+        pinWatchdog.reset();
         trajectoryController.reset();
         try {
-            SwerveBase.getInstance().getField().getObject("OpponentBot" + botId).setPoses(new java.util.ArrayList<>());
-            SwerveBase.getInstance().getField().getObject("OpponentTarget" + botId).setPoses(new java.util.ArrayList<>());
+            String botName = isAlly ? ("AllyBot" + (botId - 100)) : ("OpponentBot" + botId);
+            String targetName = isAlly ? ("AllyTarget" + (botId - 100)) : ("OpponentTarget" + botId);
+            SwerveBase.getInstance().getField().getObject(botName).setPoses(new java.util.ArrayList<>());
+            SwerveBase.getInstance().getField().getObject(targetName).setPoses(new java.util.ArrayList<>());
         } catch (Exception ignored) {}
     }
 
@@ -160,35 +180,78 @@ public class AIRobotInstance {
             driveSimulation.periodic();
         } catch (Exception ignored) {}
 
-        boolean opponentIsRed = !playerIsRed;
+        boolean botAllianceIsRed = isAlly ? playerIsRed : !playerIsRed;
         Pose2d currentPose = driveSimulation.getActualPoseInSimulationWorld();
         ChassisSpeeds currentVel = driveSimulation.getDriveTrainSimulation() != null
                 ? driveSimulation.getDriveTrainSimulation().getDriveTrainSimulatedChassisSpeedsFieldRelative()
                 : new ChassisSpeeds();
 
         int heldPieces = (intakeSimulation != null) ? intakeSimulation.getGamePiecesAmount() : 0;
-        boolean hubActive = AIRobotSim.getInstance().isOpponentHubActive(opponentIsRed);
+        boolean hubActive = AIRobotSim.getInstance() != null
+                ? AIRobotSim.getInstance().isHubActiveForAlliance(botAllianceIsRed)
+                : true;
 
-        // 0. Update Archetype from dashboard if modified
-        String archStr = edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.getString(
-                "Simulation/Bot" + botId + "/Archetype", archetype.name());
-        Archetype selectedArch = Archetype.fromString(archStr);
-        if (selectedArch != null) {
-            this.archetype = selectedArch;
+        // 0. Update Archetype from chooser or dashboard if modified
+        if (isAlly) {
+            int allyIndex = botId - 100;
+            if (allyIndex == 1 && AIRobotSim.getInstance() != null) {
+                this.archetype = AIRobotSim.getInstance().getAlly1Archetype();
+            } else if (allyIndex == 2 && AIRobotSim.getInstance() != null) {
+                this.archetype = AIRobotSim.getInstance().getAlly2Archetype();
+            } else {
+                String archStr = edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.getString(
+                        "Simulation/Ally" + allyIndex + "/Archetype", archetype.name());
+                Archetype selectedArch = Archetype.fromString(archStr);
+                if (selectedArch != null) {
+                    this.archetype = selectedArch;
+                }
+            }
+        } else {
+            if (botId == 1 && AIRobotSim.getInstance() != null) {
+                this.archetype = AIRobotSim.getInstance().getBot1Archetype();
+            } else if (botId == 2 && AIRobotSim.getInstance() != null) {
+                this.archetype = AIRobotSim.getInstance().getBot2Archetype();
+            } else {
+                String archStr = edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.getString(
+                        "Simulation/Bot" + botId + "/Archetype", archetype.name());
+                Archetype selectedArch = Archetype.fromString(archStr);
+                if (selectedArch != null) {
+                    this.archetype = selectedArch;
+                }
+            }
         }
 
         // 1. Build immutable WorldState snapshot
         WorldState worldState = WorldStateBuilder.buildForSimBot(
-                currentPose, currentVel, heldPieces, opponentIsRed, hubActive);
+                currentPose, currentVel, heldPieces, botAllianceIsRed, hubActive);
 
         // 2. Evaluate unified Jev policy (stateless System 2 + System 1)
         AIActionIntent intent = JevDecisionEngine.getInstance().evaluatePolicy(worldState, archetype);
 
         // 3. Compute drive trajectory speeds
         currentTargetPose = intent.navigationTarget();
+        currentAIStateDetail = intent.objective().name() + " (" + intent.rationale() + ")";
         boolean stalled = isStalled();
         currentTargetSpeeds = trajectoryController.calculate(
                 currentPose, currentTargetSpeeds, currentTargetPose, maxSpeed, stalled, true);
+
+        // Track pinning against the player (peer index 0) - only for opponent bots
+        if (!isAlly) {
+            Pose2d playerPose = (peerRobotPoses != null && !peerRobotPoses.isEmpty()) ? peerRobotPoses.get(0) : null;
+            if (playerPose != null) {
+                double distToPlayer = currentPose.getTranslation().getDistance(playerPose.getTranslation());
+                boolean isContacting = (distToPlayer < 1.05) && (isStalled() || (distToPlayer < 0.95 && Math.hypot(currentTargetSpeeds.vxMetersPerSecond, currentTargetSpeeds.vyMetersPerSecond) > 0.5));
+                pinWatchdog.update(isContacting, currentPose, playerPose, 0.02);
+            }
+
+            if (pinWatchdog.isForcedBackoffActive() && archetype.isDefensive()) {
+                Pose2d backoff = pinWatchdog.getBackOffTarget(currentPose, playerPose);
+                currentTargetPose = backoff;
+                currentTargetSpeeds = trajectoryController.calculate(
+                        currentPose, currentTargetSpeeds, currentTargetPose, maxSpeed, false, false);
+                currentAIStateDetail = String.format("PIN_RULE_BACKOFF (%.1fs)", pinWatchdog.getBackoffRemainingSec());
+            }
+        }
 
         // Soft peer separation (avoids jamming and scrums between multi-bots)
         if (peerRobotPoses != null) {
@@ -226,13 +289,11 @@ public class AIRobotInstance {
             }
         }
 
-        if (intent.triggerFeedKicker() && canShootNow(currentPose, opponentIsRed)) {
-            launchShot(currentPose, opponentIsRed);
+        if (intent.triggerFeedKicker() && canShootNow(currentPose, botAllianceIsRed)) {
+            launchShot(currentPose, botAllianceIsRed);
             if (intakeSimulation != null) intakeSimulation.obtainGamePieceFromIntake();
             lastShotTimestamp = Timer.getFPGATimestamp();
         }
-
-        currentAIStateDetail = intent.objective().name() + " (" + intent.rationale() + ")";
 
         // 5. Register dynamic obstacle for peer robots
         if (currentPose.getX() > 0.0 && currentPose.getY() > 0.0) {
@@ -241,13 +302,15 @@ public class AIRobotInstance {
         }
 
         // Publish to Field2d
+        String botObjName = isAlly ? ("AllyBot" + (botId - 100)) : ("OpponentBot" + botId);
+        String targetObjName = isAlly ? ("AllyTarget" + (botId - 100)) : ("OpponentTarget" + botId);
         try {
-            SwerveBase.getInstance().getField().getObject("OpponentBot" + botId).setPose(currentPose);
-            SwerveBase.getInstance().getField().getObject("OpponentTarget" + botId).setPose(currentTargetPose);
+            SwerveBase.getInstance().getField().getObject(botObjName).setPose(currentPose);
+            SwerveBase.getInstance().getField().getObject(targetObjName).setPose(currentTargetPose);
         } catch (Exception ignored) {}
 
         // Telemetry logging (AdvantageKit & SmartDashboard)
-        String prefix = "AI_Telemetry/Bot" + botId + "/";
+        String prefix = (isAlly ? "AI_Telemetry/Ally" + (botId - 100) : "AI_Telemetry/Bot" + botId) + "/";
         Logger.recordOutput(prefix + "ActualPose", currentPose);
         Logger.recordOutput(prefix + "TargetPose", currentTargetPose);
         Logger.recordOutput(prefix + "Objective", intent.objective().name());
@@ -257,7 +320,7 @@ public class AIRobotInstance {
         Logger.recordOutput(prefix + "Confidence", intent.confidence());
         Logger.recordOutput(prefix + "Archetype", archetype.name());
 
-        String dashPrefix = "Simulation/Bot" + botId + "/";
+        String dashPrefix = (isAlly ? "Simulation/Ally" + (botId - 100) : "Simulation/Bot" + botId) + "/";
         edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putNumberArray(dashPrefix + "Pose", new double[] { currentPose.getX(), currentPose.getY(), currentPose.getRotation().getDegrees() });
         edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putNumberArray(dashPrefix + "TargetPose", new double[] { currentTargetPose.getX(), currentTargetPose.getY(), currentTargetPose.getRotation().getDegrees() });
         edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putString(dashPrefix + "Objective", intent.objective().name());
@@ -268,12 +331,13 @@ public class AIRobotInstance {
         edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putString(dashPrefix + "Archetype", archetype.name());
     }
 
-    public boolean canShootNow(Pose2d currentPose, boolean opponentIsRed) {
-        if (!AIRobotSim.getInstance().isOpponentHubActive(opponentIsRed)) return false;
+    public boolean canShootNow(Pose2d currentPose, boolean botAllianceIsRed) {
+        if (AIRobotSim.getInstance() == null) return false;
+        if (!AIRobotSim.getInstance().isHubActiveForAlliance(botAllianceIsRed)) return false;
         if (intakeSimulation == null || intakeSimulation.getGamePiecesAmount() <= 0) return false;
-        if (!AIRobotSim.getInstance().isValidShootingLocation(currentPose, opponentIsRed)) return false;
+        if (!AIRobotSim.getInstance().isValidShootingLocation(currentPose, botAllianceIsRed)) return false;
 
-        Translation2d hub = FieldMap.Hubs.getHubLocation2d(opponentIsRed);
+        Translation2d hub = FieldMap.Hubs.getHubLocation2d(botAllianceIsRed);
         if (AIRobotSim.getInstance().isShootingLaneBlocked(currentPose, hub)) return false;
 
         Rotation2d aimAngle = hub.minus(currentPose.getTranslation()).getAngle();
@@ -281,11 +345,11 @@ public class AIRobotInstance {
         if (headingErr > Math.toRadians(8.0)) return false;
 
         double now = Timer.getFPGATimestamp();
-        return (now - lastShotTimestamp >= 0.15);
+        return (now - lastShotTimestamp >= 0.08);
     }
 
-    public void launchShot(Pose2d robotPose, boolean opponentIsRed) {
-        Translation3d hub3d = opponentIsRed ? Constants.RED_HUB_LOCATION : Constants.BLUE_HUB_LOCATION;
+    public void launchShot(Pose2d robotPose, boolean botAllianceIsRed) {
+        Translation3d hub3d = botAllianceIsRed ? Constants.RED_HUB_LOCATION : Constants.BLUE_HUB_LOCATION;
         Translation3d funnelTarget = new Translation3d(hub3d.getX(), hub3d.getY(), 1.48);
 
         Translation2d botPos = robotPose.getTranslation();
@@ -322,10 +386,13 @@ public class AIRobotInstance {
             );
             fuelOnFly.withTargetPosition(() -> funnelTarget)
                     .withTargetTolerance(new Translation3d(0.38, 0.38, 0.20))
-                    .withHitTargetCallBack(() -> scoreCount++);
+                    .withHitTargetCallBack(() -> {
+                        scoreCount++;
+                        MatchScoreTracker.getInstance().recordBotScore(botId, botAllianceIsRed);
+                    });
             SimulatedArena.getInstance().addGamePieceProjectile(fuelOnFly);
         } catch (Exception e) {
-            System.err.println("[AIRobotInstance-" + botId + "] Error launching fuel projectile: " + e.getMessage());
+            System.err.println("[" + (isAlly ? "AllyBot-" : "AIRobotInstance-") + botId + "] Error launching fuel projectile: " + e.getMessage());
         }
     }
 
@@ -360,7 +427,7 @@ public class AIRobotInstance {
                     collectedThisTick++;
 
                     if (intakeSimulation.getGamePiecesAmount() >= Constants.IntakeConstants.MAX_HELD_BALLS
-                            || collectedThisTick >= 4) {
+                            || collectedThisTick >= 10) {
                         break;
                     }
                 }

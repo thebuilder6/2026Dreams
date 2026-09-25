@@ -7,6 +7,9 @@ import org.junit.jupiter.api.Test;
 
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
+import edu.wpi.first.math.geometry.Translation2d;
+import frc.robot.Data.Constants;
+import frc.robot.Data.FieldMap;
 import frc.robot.Sim.JevDecisionEngine.DecisionResult;
 import frc.robot.Sim.JevDecisionEngine.TacticalAction;
 
@@ -16,6 +19,9 @@ public class JevDecisionEngineTest {
 
     @BeforeEach
     public void setup() {
+        edu.wpi.first.hal.HAL.initialize(500, 0);
+        edu.wpi.first.wpilibj.simulation.DriverStationSim.resetData();
+        edu.wpi.first.wpilibj.simulation.DriverStationSim.setMatchTime(-1.0);
         engine = JevDecisionEngine.getInstance();
     }
 
@@ -324,5 +330,131 @@ public class JevDecisionEngineTest {
         assertNotNull(target);
         assertTrue(target.getX() > 0.0 && target.getX() < 16.5);
         assertTrue(target.getY() > 0.0 && target.getY() < 8.1);
+    }
+
+    @Test
+    public void testHighVolumeHarvestAndShootingToLastBall() {
+        // Red Hub location is ~ (11.94, 4.035)
+        Translation2d redHub = FieldMap.Hubs.getHubLocation2d(true);
+
+        // Case 1: Midfield bot (dist > 4.0m) with 10 balls (under 16 batch threshold)
+        // Hub active, shift not ending soon (> 4.5s)
+        Pose2d midfieldPose = new Pose2d(redHub.getX() - 5.0, redHub.getY(), new Rotation2d());
+        WorldState midfieldHarvestState = new WorldState(
+                midfieldPose,
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                10, // 10 balls: should keep vacuuming, not cycle early!
+                new Pose2d(4.0, 4.0, new Rotation2d()),
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                90.0,
+                true, // Alliance Hub active
+                false,
+                10.0, // Shift not ending soon
+                true  // Red
+        );
+        AIActionIntent harvestIntent = engine.evaluatePolicy(midfieldHarvestState, Archetype.AUTONOMOUS_CYCLER);
+        assertEquals(StrategicObjective.VACUUM_MIDFIELD, harvestIntent.objective(),
+                "Midfield bot with 10 balls should keep harvesting large batch instead of abandoning depot early");
+
+        // Case 2: Midfield bot with 18 balls (>= 16 batch threshold)
+        WorldState midfieldFullState = new WorldState(
+                midfieldPose,
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                18, // 18 balls
+                new Pose2d(4.0, 4.0, new Rotation2d()),
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                90.0,
+                true,
+                false,
+                10.0,
+                true
+        );
+        AIActionIntent cycleIntent = engine.evaluatePolicy(midfieldFullState, Archetype.AUTONOMOUS_CYCLER);
+        assertEquals(StrategicObjective.CYCLE_SCORE_HUB, cycleIntent.objective(),
+                "Midfield bot with 18 balls should initiate scoring run");
+
+        // Case 3: Bot in shooting range (dist <= 4.0m) with only 1 ball left
+        // Should keep firing down to the very last ball!
+        Pose2d shootingRangePose = new Pose2d(redHub.getX() - 2.5, redHub.getY(), new Rotation2d());
+        WorldState lastBallState = new WorldState(
+                shootingRangePose,
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                1, // Only 1 ball left
+                new Pose2d(4.0, 4.0, new Rotation2d()),
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                90.0,
+                true,
+                false,
+                10.0,
+                true
+        );
+        AIActionIntent lastBallIntent = engine.evaluatePolicy(lastBallState, Archetype.AUTONOMOUS_CYCLER);
+        assertEquals(StrategicObjective.CYCLE_SCORE_HUB, lastBallIntent.objective(),
+                "Bot within shooting range should keep cycling/shooting down to the 1st ball");
+
+        // Case 4: Hub inactive staging threshold
+        // When shift is not imminent (> 3.5s) and inventory is not full (< 30), bot keeps harvesting/stockpiling
+        WorldState inactiveHubShiftNotImminent = new WorldState(
+                shootingRangePose,
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                20,
+                new Pose2d(4.0, 4.0, new Rotation2d()),
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                90.0,
+                false, // Hub inactive
+                true,
+                10.0, // Shift not imminent
+                true
+        );
+        AIActionIntent keepStockpilingIntent = engine.evaluatePolicy(inactiveHubShiftNotImminent, Archetype.AUTONOMOUS_CYCLER);
+        assertEquals(StrategicObjective.VACUUM_MIDFIELD, keepStockpilingIntent.objective(),
+                "Bot with 20 balls should continue stockpiling to full capacity while hub is inactive and shift not imminent");
+
+        // When shift is imminent (<= 3.5s) and hopper has >= 18 balls, bot stages at standoff arc
+        WorldState inactiveHubImminentShift = new WorldState(
+                shootingRangePose,
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                20,
+                new Pose2d(4.0, 4.0, new Rotation2d()),
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                90.0,
+                false, // Hub inactive
+                true,
+                2.5, // Shift imminent (<= 3.5s)
+                true
+        );
+        AIActionIntent imminentShiftIntent = engine.evaluatePolicy(inactiveHubImminentShift, Archetype.AUTONOMOUS_CYCLER);
+        assertEquals(StrategicObjective.STAGE_STANDOFF, imminentShiftIntent.objective(),
+                "Bot with 20 balls should stage at standoff when hub shift is imminent");
+
+        // When inventory is full (30 balls), bot stages at standoff regardless of shift timer
+        WorldState inactiveHubFullHopper = new WorldState(
+                shootingRangePose,
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                30, // Full hopper
+                new Pose2d(4.0, 4.0, new Rotation2d()),
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                90.0,
+                false, // Hub inactive
+                true,
+                10.0,
+                true
+        );
+        AIActionIntent fullHopperIntent = engine.evaluatePolicy(inactiveHubFullHopper, Archetype.AUTONOMOUS_CYCLER);
+        assertEquals(StrategicObjective.STAGE_STANDOFF, fullHopperIntent.objective(),
+                "Bot with full hopper (30 balls) should stage at standoff when hub is inactive");
+    }
+
+    @Test
+    public void testCapacitiesAndCadenceConstants() {
+        assertEquals(30, WorldState.CO_PILOT_CAPACITY, "Co-pilot capacity should be 30");
+        assertEquals(30, WorldState.DEFAULT_MAX_CAPACITY, "Default max capacity should be 30");
+        assertEquals(0.12, Constants.ShooterConstants.BALL_SPAWN_INTERVAL, 1e-4, "Ball spawn interval should be 0.12s");
+
+        assertTrue(Archetype.DEFENSE_BULLY.isDefensive());
+        assertTrue(Archetype.TACTICAL_DEFENDER.isDefensive());
+        assertTrue(Archetype.LEAD_PURSUIT_INTERCEPTOR.isDefensive());
+        assertFalse(Archetype.AUTONOMOUS_CYCLER.isDefensive());
+        assertFalse(Archetype.CO_PILOT.isDefensive());
     }
 }

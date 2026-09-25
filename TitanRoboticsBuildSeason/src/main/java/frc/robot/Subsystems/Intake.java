@@ -5,16 +5,23 @@ import com.revrobotics.spark.config.SparkMaxConfig;
 import edu.wpi.first.math.MathUtil;
 import edu.wpi.first.math.controller.ArmFeedforward;
 import edu.wpi.first.math.controller.ProfiledPIDController;
+import edu.wpi.first.math.filter.Debouncer;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Pose3d;
 import edu.wpi.first.math.geometry.Rotation3d;
 import edu.wpi.first.math.geometry.Transform3d;
 import edu.wpi.first.math.geometry.Translation3d;
 import edu.wpi.first.math.trajectory.TrapezoidProfile;
-import edu.wpi.first.math.util.Units;
+import edu.wpi.first.units.Units;
+import edu.wpi.first.units.measure.Angle;
+import edu.wpi.first.units.measure.AngularVelocity;
+import edu.wpi.first.units.measure.Current;
+import edu.wpi.first.units.measure.Voltage;
 import edu.wpi.first.wpilibj.RobotBase;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
+import edu.wpi.first.wpilibj2.command.Command;
+import edu.wpi.first.wpilibj2.command.Commands;
 import frc.robot.Data.Constants;
 import frc.robot.Data.Constants.IntakeConstants;
 import frc.robot.Data.FieldMap;
@@ -93,7 +100,7 @@ public class Intake implements Subsystem {
     private double manualPosition = Constants.INTAKE_UP_POSITION;
 
     // Jam detection & Alerts
-    private final Timer stallTimer = new Timer();
+    private final Debouncer stallDebouncer = new Debouncer(IntakeConstants.STALL_TIME, Debouncer.DebounceType.kRising);
     private final Timer ejectTimer = new Timer();
     private boolean isEjectingJam = false;
     private final Alert intakeEncoderAlert = new Alert("Intake", "Absolute Encoder Disconnected: Fallback Active",
@@ -253,8 +260,44 @@ public class Intake implements Subsystem {
         manualPosition = positionDeg;
     }
 
+    /**
+     * Directly sets target arm position using the Java Units library {@link Angle}.
+     */
+    public void setArmPosition(Angle position) {
+        setArmPosition(position.in(Units.Degrees));
+    }
+
     public double getArmPosition() {
         return currentPosition;
+    }
+
+    /**
+     * Gets the current arm position as an {@link Angle} measure.
+     */
+    public Angle getArmPositionMeasure() {
+        return Units.Degrees.of(getArmPosition());
+    }
+
+    public double getTargetArmPosition() {
+        return goal;
+    }
+
+    /**
+     * Gets the target arm position setpoint as an {@link Angle} measure.
+     */
+    public Angle getTargetArmPositionMeasure() {
+        return Units.Degrees.of(goal);
+    }
+
+    /**
+     * WPILib Commands v2 Subsystem.idle():
+     * Returns a command that holds the intake arm in safe stowed/standby position
+     * and stops all rollers.
+     */
+    @Override
+    public Command idle() {
+        return Commands.run(() -> setState(IntakeState.STANDBY), this)
+                .withName("Intake.idle");
     }
 
     /**
@@ -272,6 +315,13 @@ public class Intake implements Subsystem {
         io.setArmVoltage(volts);
     }
 
+    /**
+     * Commands open-loop voltage to the arm pivot using {@link Voltage} measure.
+     */
+    public void setArmVoltage(Voltage voltage) {
+        setArmVoltage(voltage.in(Units.Volts));
+    }
+
     public void setCharacterizationVoltage(double armVolts) {
         setArmVoltage(armVolts);
     }
@@ -280,12 +330,26 @@ public class Intake implements Subsystem {
         return armVoltage;
     }
 
+    /**
+     * Gets applied arm voltage as a {@link Voltage} measure.
+     */
+    public Voltage getArmAppliedVoltageMeasure() {
+        return Units.Volts.of(getArmAppliedVoltage());
+    }
+
     public double getArmPositionRads() {
         return Math.toRadians(currentPosition);
     }
 
     public double getArmVelocityRads() {
         return Math.toRadians(inputs.armVelocityDegPerSec);
+    }
+
+    /**
+     * Gets current arm angular velocity as an {@link AngularVelocity} measure.
+     */
+    public AngularVelocity getArmVelocityMeasure() {
+        return Units.DegreesPerSecond.of(inputs.armVelocityDegPerSec);
     }
 
     public void runRollers(double speed) {
@@ -300,6 +364,13 @@ public class Intake implements Subsystem {
         return inputs.rollerVelocityRPM;
     }
 
+    /**
+     * Gets current roller velocity as an {@link AngularVelocity} measure.
+     */
+    public AngularVelocity getRollerVelocityMeasure() {
+        return Units.RPM.of(getRollerVelocityRPM());
+    }
+
     public void runHopper(double speed) {
         io.setHopperSpeed(speed);
     }
@@ -312,12 +383,33 @@ public class Intake implements Subsystem {
         return inputs.hopperVelocityRPM;
     }
 
+    /**
+     * Gets current hopper velocity as an {@link AngularVelocity} measure.
+     */
+    public AngularVelocity getHopperVelocityMeasure() {
+        return Units.RPM.of(getHopperVelocityRPM());
+    }
+
     public double getArmCurrentAmps() {
         return inputs.armCurrentAmps;
     }
 
+    /**
+     * Gets arm motor electrical current draw as a {@link Current} measure.
+     */
+    public Current getArmCurrentMeasure() {
+        return Units.Amps.of(getArmCurrentAmps());
+    }
+
     public double getRollerCurrentAmps() {
         return inputs.rollerCurrentAmps;
+    }
+
+    /**
+     * Gets roller motor electrical current draw as a {@link Current} measure.
+     */
+    public Current getRollerCurrentMeasure() {
+        return Units.Amps.of(getRollerCurrentAmps());
     }
 
     public void stop() {
@@ -365,19 +457,16 @@ public class Intake implements Subsystem {
             currentPosition = MathUtil.inputModulus(lastValidPosition + (deltaRotations * 3.6), 0, 360);
         }
 
-        // Automated Jam Detection and Ejection
-        if (!RobotBase.isSimulation() && Math.abs(inputs.rollerAppliedVolts) > 1.0
-                && inputs.rollerCurrentAmps > IntakeConstants.STALL_CURRENT_LIMIT) {
-            stallTimer.start();
-            if (stallTimer.hasElapsed(IntakeConstants.STALL_TIME)) {
+        // Automated Jam Detection and Ejection using native WPILib Debouncer
+        boolean isStallCondition = !RobotBase.isSimulation()
+                && Math.abs(inputs.rollerAppliedVolts) > 1.0
+                && inputs.rollerCurrentAmps > IntakeConstants.STALL_CURRENT_LIMIT;
+
+        if (stallDebouncer.calculate(isStallCondition)) {
+            if (!isEjectingJam) {
                 isEjectingJam = true;
                 ejectTimer.restart();
-                stallTimer.reset();
-                stallTimer.stop();
             }
-        } else {
-            stallTimer.reset();
-            stallTimer.stop();
         }
 
         if (isEjectingJam) {
@@ -420,7 +509,7 @@ public class Intake implements Subsystem {
                 goal = downPosition;
                 updateArmController();
                 io.setRollerSpeed(isEjectingJam ? -power : power);
-                io.setHopperSpeed(Constants.IntakeConstants.HOPPER_SPEED);
+                io.setHopperSpeed(isEjectingJam ? -Constants.IntakeConstants.HOPPER_SPEED : Constants.IntakeConstants.HOPPER_SPEED);
                 break;
 
             case DOWN:

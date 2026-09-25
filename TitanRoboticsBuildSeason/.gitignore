@@ -185,3 +185,8 @@ compile_commands.json
 
 # Eclipse generated file for annotation processors
 .factorypath
+
+# Generated BuildConstants from GradleRIO
+src/main/java/frc/robot/BuildConstants.java
+src/main/deploy/git_info.json
+.apt_generated/

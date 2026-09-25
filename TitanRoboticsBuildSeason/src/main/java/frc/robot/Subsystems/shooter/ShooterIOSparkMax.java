@@ -22,20 +22,22 @@ public class ShooterIOSparkMax implements ShooterIO {
         // Configure Left Flywheel
         SparkMaxConfig leftConfig = new SparkMaxConfig();
         leftConfig.inverted(false);
+        leftConfig.idleMode(com.revrobotics.spark.config.SparkBaseConfig.IdleMode.kCoast);
         leftConfig.smartCurrentLimit((int) ShooterConstants.FLYWHEEL_CURRENT_LIMIT);
         flywheelMotorLeft.configure(leftConfig);
-        flywheelMotorLeft.setBrakeMode(false);
 
         // Configure Right Flywheel
         SparkMaxConfig rightConfig = new SparkMaxConfig();
         rightConfig.inverted(true);
+        rightConfig.idleMode(com.revrobotics.spark.config.SparkBaseConfig.IdleMode.kCoast);
         rightConfig.smartCurrentLimit((int) ShooterConstants.FLYWHEEL_CURRENT_LIMIT);
         flywheelMotorRight.configure(rightConfig);
-        flywheelMotorRight.setBrakeMode(false);
 
         // Configure Kicker
         SparkMaxConfig kickerConfig = new SparkMaxConfig();
         kickerConfig.inverted(false);
+        kickerConfig.idleMode(com.revrobotics.spark.config.SparkBaseConfig.IdleMode.kBrake);
+        kickerConfig.smartCurrentLimit((int) ShooterConstants.KICKER_CURRENT_LIMIT);
         kickerMotor.configure(kickerConfig);
     }
 

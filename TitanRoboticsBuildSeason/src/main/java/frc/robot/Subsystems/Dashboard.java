@@ -14,7 +14,9 @@ import edu.wpi.first.networktables.NetworkTableInstance;
 import edu.wpi.first.networktables.DoubleSubscriber;
 import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.DriverStation.Alliance;
+import edu.wpi.first.wpilibj.smartdashboard.SendableChooser;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
+import frc.robot.BuildConstants;
 import frc.robot.Interfaces.Subsystem;
 import frc.robot.Utils.AllianceFlipUtil;
 
@@ -37,12 +39,24 @@ public class Dashboard implements Subsystem {
     private static final BooleanSubscriber slowModeSub = table.getBooleanTopic("Features/Slow Mode").subscribe(false);
     private static final BooleanSubscriber autoAimSub = table.getBooleanTopic("Features/Auto Aim").subscribe(true);
     private static final BooleanSubscriber opponentRobotSub = table.getBooleanTopic("Features/Opponent Robot").subscribe(false);
+    private static final BooleanSubscriber allyBotsSub = table.getBooleanTopic("Features/Ally Bots").subscribe(false);
     private static final BooleanSubscriber twoPlayerDefenseSub = table.getBooleanTopic("Features/2 Player Defense").subscribe(false);
     private static final BooleanSubscriber pitModeSub = table.getBooleanTopic("Features/Pit Mode").subscribe(false);
     private static final BooleanSubscriber hapticCollisionSub = table.getBooleanTopic("Operator/HapticCollisionEnabled")
             .subscribe(!edu.wpi.first.wpilibj.RobotBase.isSimulation());
     private static final DoubleSubscriber opponentCountSub = table.getDoubleTopic("Simulation/OpponentCount").subscribe(1.0);
     private static final DoubleSubscriber opponentSpeedSub = table.getDoubleTopic("Simulation/OpponentSpeedPercent").subscribe(75.0);
+    private static final DoubleSubscriber allyCountSub = table.getDoubleTopic("Simulation/AllyCount").subscribe(0.0);
+
+    // Dropdown chooser for Opponent Count
+    private final SendableChooser<Integer> opponentCountChooser = new SendableChooser<>();
+    private static Integer manualOpponentCountOverride = null;
+    private Integer lastSelectedChooserCount = null;
+
+    // Dropdown chooser for Ally Count
+    private final SendableChooser<Integer> allyCountChooser = new SendableChooser<>();
+    private static Integer manualAllyCountOverride = null;
+    private Integer lastSelectedAllyChooserCount = null;
 
     // 2026 Game Data Variables
     private String gameData = "";
@@ -68,6 +82,15 @@ public class Dashboard implements Subsystem {
     }
 
     private void setupLayout() {
+        // Publish Git commit metadata, compile date, and robot name for Elastic Dashboard and auditability
+        SmartDashboard.putString("Build/RobotName", BuildConstants.ROBOT_NAME);
+        SmartDashboard.putString("Build/GitSHA", BuildConstants.GIT_SHA);
+        SmartDashboard.putString("Build/GitBranch", BuildConstants.GIT_BRANCH);
+        SmartDashboard.putString("Build/GitDate", BuildConstants.GIT_DATE);
+        SmartDashboard.putString("Build/CompileDate", BuildConstants.BUILD_DATE);
+        SmartDashboard.putBoolean("Build/IsDirty", BuildConstants.DIRTY == 1);
+        SmartDashboard.putString("Build/Summary", BuildConstants.ROBOT_NAME + " [" + BuildConstants.GIT_BRANCH + "@" + BuildConstants.GIT_SHA + (BuildConstants.DIRTY == 1 ? " (DIRTY)" : "") + "] " + BuildConstants.BUILD_DATE);
+
         // Publish default toggle states if not already present on NetworkTables
         ensureTopicDefault("Features/Snap to Turn", true);
         ensureTopicDefault("Features/Ball Hunt", true);
@@ -76,11 +99,25 @@ public class Dashboard implements Subsystem {
         ensureTopicDefault("Features/Slow Mode", false);
         ensureTopicDefault("Features/Auto Aim", true);
         ensureTopicDefault("Features/Opponent Robot", false);
+        ensureTopicDefault("Features/Ally Bots", false);
         ensureTopicDefault("Features/2 Player Defense", false);
         ensureTopicDefault("Features/Pit Mode", false);
         ensureTopicDefault("Operator/HapticCollisionEnabled", !edu.wpi.first.wpilibj.RobotBase.isSimulation());
         ensureNumberDefault("Simulation/OpponentCount", 1.0);
         ensureNumberDefault("Simulation/OpponentSpeedPercent", 75.0);
+        ensureNumberDefault("Simulation/AllyCount", 0.0);
+
+        // Configure Opponent Count Dropdown Menu
+        opponentCountChooser.setDefaultOption("1 Opponent Bot", 1);
+        opponentCountChooser.addOption("2 Opponent Bots", 2);
+        opponentCountChooser.addOption("3 Opponent Bots", 3);
+        SmartDashboard.putData("Simulation/OpponentCountChooser", opponentCountChooser);
+
+        // Configure Ally Count Dropdown Menu
+        allyCountChooser.setDefaultOption("0 Ally Bots (Solo)", 0);
+        allyCountChooser.addOption("1 Ally Bot (2v3)", 1);
+        allyCountChooser.addOption("2 Ally Bots (Full 3v3)", 2);
+        SmartDashboard.putData("Simulation/AllyCountChooser", allyCountChooser);
     }
 
     public static boolean isHapticCollisionEnabled() {
@@ -107,6 +144,32 @@ public class Dashboard implements Subsystem {
 
         // Update the auto mission chooser and delay
         autoMissionChooser.updateMissionCreator();
+
+        // Sync Opponent Count dropdown with NetworkTables
+        if (opponentCountChooser != null && opponentCountChooser.getSelected() != null) {
+            int chooserVal = opponentCountChooser.getSelected();
+            if (lastSelectedChooserCount == null) {
+                lastSelectedChooserCount = chooserVal;
+            } else if (!lastSelectedChooserCount.equals(chooserVal)) {
+                lastSelectedChooserCount = chooserVal;
+                manualOpponentCountOverride = chooserVal;
+                table.getDoubleTopic("Simulation/OpponentCount").publish().set(chooserVal);
+                SmartDashboard.putNumber("Simulation/OpponentCount", chooserVal);
+            }
+        }
+
+        // Sync Ally Count dropdown with NetworkTables
+        if (allyCountChooser != null && allyCountChooser.getSelected() != null) {
+            int chooserVal = allyCountChooser.getSelected();
+            if (lastSelectedAllyChooserCount == null) {
+                lastSelectedAllyChooserCount = chooserVal;
+            } else if (!lastSelectedAllyChooserCount.equals(chooserVal)) {
+                lastSelectedAllyChooserCount = chooserVal;
+                manualAllyCountOverride = chooserVal;
+                table.getDoubleTopic("Simulation/AllyCount").publish().set(chooserVal);
+                SmartDashboard.putNumber("Simulation/AllyCount", chooserVal);
+            }
+        }
 
         // Sync Pit Mode
         SwerveBase.getInstance().setPitMode(isPitModeEnabled());
@@ -331,12 +394,20 @@ public class Dashboard implements Subsystem {
         return slowModeSub.get();
     }
 
+    public static void setSlowModeEnabled(boolean enabled) {
+        SmartDashboard.putBoolean("Features/Slow Mode", enabled);
+    }
+
     public static boolean isAutoAimEnabled() {
         return autoAimSub.get();
     }
 
     public static boolean isOpponentRobotEnabled() {
         return opponentRobotSub.get();
+    }
+
+    public static boolean isAllyBotsEnabled() {
+        return allyBotsSub.get() || getAllyCount() > 0;
     }
 
     public static boolean is2PlayerDefenseEnabled() {
@@ -348,11 +419,49 @@ public class Dashboard implements Subsystem {
     }
 
     public static int getOpponentCount() {
+        if (manualOpponentCountOverride != null) {
+            return manualOpponentCountOverride;
+        }
+        if (instance != null && instance.opponentCountChooser != null && instance.opponentCountChooser.getSelected() != null) {
+            return instance.opponentCountChooser.getSelected();
+        }
         return (int) Math.max(1, Math.min(3, Math.round(opponentCountSub.get())));
     }
 
     public static void setOpponentCount(int count) {
-        table.getDoubleTopic("Simulation/OpponentCount").publish().set(Math.max(1, Math.min(3, count)));
+        int clamped = Math.max(1, Math.min(3, count));
+        manualOpponentCountOverride = clamped;
+        table.getDoubleTopic("Simulation/OpponentCount").publish().set(clamped);
+        SmartDashboard.putNumber("Simulation/OpponentCount", clamped);
+        String optName = clamped == 1 ? "1 Opponent Bot" : clamped + " Opponent Bots";
+        SmartDashboard.putString("Simulation/OpponentCountChooser/selected", optName);
+    }
+
+    public SendableChooser<Integer> getOpponentCountChooser() {
+        return opponentCountChooser;
+    }
+
+    public static int getAllyCount() {
+        if (manualAllyCountOverride != null) {
+            return manualAllyCountOverride;
+        }
+        if (instance != null && instance.allyCountChooser != null && instance.allyCountChooser.getSelected() != null) {
+            return instance.allyCountChooser.getSelected();
+        }
+        return (int) Math.max(0, Math.min(2, Math.round(allyCountSub.get())));
+    }
+
+    public static void setAllyCount(int count) {
+        int clamped = Math.max(0, Math.min(2, count));
+        manualAllyCountOverride = clamped;
+        table.getDoubleTopic("Simulation/AllyCount").publish().set(clamped);
+        SmartDashboard.putNumber("Simulation/AllyCount", clamped);
+        String optName = clamped == 0 ? "0 Ally Bots (Solo)" : (clamped == 1 ? "1 Ally Bot (2v3)" : "2 Ally Bots (Full 3v3)");
+        SmartDashboard.putString("Simulation/AllyCountChooser/selected", optName);
+    }
+
+    public SendableChooser<Integer> getAllyCountChooser() {
+        return allyCountChooser;
     }
 
     public static double getOpponentSpeedPercent() {

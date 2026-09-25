@@ -12,10 +12,15 @@ import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.math.geometry.Translation3d;
 import edu.wpi.first.math.interpolation.InterpolatingDoubleTreeMap;
 import edu.wpi.first.math.kinematics.ChassisSpeeds;
+import edu.wpi.first.units.Units;
+import edu.wpi.first.units.measure.AngularVelocity;
+import edu.wpi.first.units.measure.Current;
 import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.DriverStation.Alliance;
 import edu.wpi.first.wpilibj.RobotBase;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
+import edu.wpi.first.wpilibj2.command.Command;
+import edu.wpi.first.wpilibj2.command.Commands;
 import frc.robot.Data.Constants;
 import frc.robot.Data.Constants.ShooterConstants;
 import frc.robot.Interfaces.Subsystem;
@@ -131,17 +136,23 @@ public class Shooter implements Subsystem {
         flywheelPidRight.setIntegratorRange(-1.5, 1.5);
 
         // Hardware-calibrated RPM tables based on distance (meters)
+        leftRpmTable.put(1.20, 2400.0);
         leftRpmTable.put(1.92, 2700.0);
         leftRpmTable.put(2.47, 2900.0);
         leftRpmTable.put(3.05, 3500.0);
         leftRpmTable.put(3.48, 3550.0);
         leftRpmTable.put(4.18, 3750.0);
+        leftRpmTable.put(5.00, 4100.0);
+        leftRpmTable.put(6.00, 4500.0);
 
+        rightRpmTable.put(1.20, 2450.0);
         rightRpmTable.put(1.92, 2750.0);
         rightRpmTable.put(2.47, 2950.0);
         rightRpmTable.put(3.05, 3550.0);
         rightRpmTable.put(3.48, 3600.0);
         rightRpmTable.put(4.18, 3800.0);
+        rightRpmTable.put(5.00, 4150.0);
+        rightRpmTable.put(6.00, 4550.0);
 
         if (RobotBase.isSimulation() && io instanceof ShooterIOSim simIO) {
             flywheelSim = simIO.getShooterSim();
@@ -216,6 +227,7 @@ public class Shooter implements Subsystem {
 
         // Iterative virtual target solver (2 iterations for sub-millimeter precision)
         double dist = shooterLoc.getDistance(goalLoc);
+        normalDistanceToHub = dist;
         double tof = 0.12 + 0.18 * dist; // Empirical time-of-flight curve
 
         Translation2d virtualGoal = goalLoc.minus(vel.times(tof));
@@ -240,7 +252,11 @@ public class Shooter implements Subsystem {
         Logger.recordOutput("Shooter/SOTF/EffectiveDistance", effectiveDist);
         Logger.recordOutput("Shooter/SOTF/CompensatedAngleDeg", compensatedAngle.getDegrees());
 
-        return new ShootingSolution(compensatedAngle, rpmLeft, rpmRight, possible);
+        if (!possible) {
+            return new ShootingSolution(compensatedAngle, 0, 0, false);
+        } else {
+            return new ShootingSolution(compensatedAngle, rpmLeft, rpmRight, true);
+        }
     }
 
     /**
@@ -273,6 +289,20 @@ public class Shooter implements Subsystem {
      */
     public void setTargetRPM(double rpm) {
         setTargetRPM(rpm, rpm);
+    }
+
+    /**
+     * Sets target flywheel velocity using Java Units {@link AngularVelocity} measures.
+     */
+    public void setTargetVelocity(AngularVelocity targetLeft, AngularVelocity targetRight) {
+        setTargetRPM(targetLeft.in(Units.RPM), targetRight.in(Units.RPM));
+    }
+
+    /**
+     * Sets symmetric target flywheel velocity using Java Units {@link AngularVelocity} measure.
+     */
+    public void setTargetVelocity(AngularVelocity target) {
+        setTargetVelocity(target, target);
     }
 
     /**
@@ -322,6 +352,10 @@ public class Shooter implements Subsystem {
      * Checks if both flywheels are within RPM tolerance with hysteresis.
      */
     public boolean isAtCorrectSpeed() {
+        if (targetRpmLeft <= 100 || targetRpmRight <= 100) {
+            wasAtSpeed = false;
+            return false;
+        }
         double leftError = Math.abs(inputs.leftVelocityRPM - targetRpmLeft);
         double rightError = Math.abs(inputs.rightVelocityRPM - targetRpmRight);
 
@@ -376,6 +410,48 @@ public class Shooter implements Subsystem {
         return inputs.rightVelocityRPM;
     }
 
+    /**
+     * Gets target flywheel velocity as an {@link AngularVelocity} measure.
+     */
+    public AngularVelocity getTargetVelocityMeasure() {
+        return Units.RPM.of(getTargetVelocityRPM());
+    }
+
+    /**
+     * Gets left flywheel velocity as an {@link AngularVelocity} measure.
+     */
+    public AngularVelocity getLeftFlywheelVelocityMeasure() {
+        return Units.RPM.of(getFlywheelLeftVelocityRPM());
+    }
+
+    /**
+     * Gets right flywheel velocity as an {@link AngularVelocity} measure.
+     */
+    public AngularVelocity getRightFlywheelVelocityMeasure() {
+        return Units.RPM.of(getFlywheelRightVelocityRPM());
+    }
+
+    /**
+     * Gets average actual flywheel velocity as an {@link AngularVelocity} measure.
+     */
+    public AngularVelocity getActualVelocityMeasure() {
+        return Units.RPM.of(getActualRPM());
+    }
+
+    /**
+     * Gets left flywheel motor electrical current draw as a {@link Current} measure.
+     */
+    public Current getLeftCurrentMeasure() {
+        return Units.Amps.of(inputs.leftCurrentAmps);
+    }
+
+    /**
+     * Gets right flywheel motor electrical current draw as a {@link Current} measure.
+     */
+    public Current getRightCurrentMeasure() {
+        return Units.Amps.of(inputs.rightCurrentAmps);
+    }
+
     public ShooterIO getIO() {
         return io;
     }
@@ -399,6 +475,17 @@ public class Shooter implements Subsystem {
         targetRpmLeft = 0;
         targetRpmRight = 0;
         io.stop();
+    }
+
+    /**
+     * WPILib Commands v2 Subsystem.idle():
+     * Returns a command that stops flywheels and feed mechanisms, holding the shooter
+     * in a safe STOPPED standby state.
+     */
+    @Override
+    public Command idle() {
+        return Commands.run(this::stop, this)
+                .withName("Shooter.idle");
     }
 
     public void shoot() {

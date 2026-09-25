@@ -26,7 +26,7 @@ public class WaitUntilMarkerAction implements Actions {
 
     @Override
     public boolean isFinished() {
-        return path.hasMarkerBeenPassed(markerName);
+        return path == null || path.hasMarkerBeenPassed(markerName) || path.isFinished();
     }
 
     @Override

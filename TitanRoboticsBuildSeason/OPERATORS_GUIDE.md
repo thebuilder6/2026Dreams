@@ -104,9 +104,10 @@ The Elastic Dashboard (`elastic-layout.json`) provides real-time situational awa
 
 ### 5. Simulation & Multi-Bot Match Telemetry
 - **Embedded Arena Field View**: 2D holonomic field tracking the player robot alongside up to 3 AI opponent bots (`OpponentBot0`, `OpponentBot1`, `OpponentBot2`) with target waypoints and heading vectors.
-- **Multi-Bot Dynamic Sliders**: Interactive `Number Slider` widgets for `Opponent Count (1-3)` and `Opponent Speed %` (20% to 100%).
+- **Opponent Count Dropdown Chooser**: Select between 1, 2, or 3 simultaneous opponent bots.
+- **Independent Bot Archetype Dropdowns**: Dropdown menus for Bot 0, Bot 1, and Bot 2 strategy assignments (Cycler, Bully, Adaptive Competitor, Defender, Interceptor) with live status rationale.
+- **Speed Slider**: Interactive `Number Slider` for opponent velocity scaling (20% to 100%).
 - **Interactive Action Triggers**: `Toggle Button` controls to Reset Simulation and Respawn Fuel Balls.
-- **Independent Bot Archetype Selectors**: Per-bot strategy assignments (Bot 0 Lead, Bot 1 Bully, Bot 2 Adaptive) with live status rationale.
 - **Multi-Bot Scoring & Ball Count**: Live tally of individual bot scores and total opponent points scored against the driver.
 - **Pit Mode**: Interactive `Toggle Switch` to lock swerve wheels in X-brake configuration.
 

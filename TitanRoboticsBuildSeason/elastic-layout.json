@@ -1076,19 +1076,16 @@
             }
           },
           {
-            "title": "Opponent Count (1-3)",
+            "title": "Opponent Count",
             "x": 768.0,
             "y": 0.0,
             "width": 256.0,
             "height": 128.0,
-            "type": "Number Slider",
+            "type": "ComboBox Chooser",
             "properties": {
-              "topic": "/SmartDashboard/Simulation/OpponentCount",
+              "topic": "/SmartDashboard/Simulation/OpponentCountChooser",
               "period": 0.06,
-              "min_value": 1.0,
-              "max_value": 3.0,
-              "divisions": 2,
-              "publish_all": true
+              "sort_options": false
             }
           },
           {
@@ -1199,11 +1196,11 @@
             "y": 256.0,
             "width": 320.0,
             "height": 128.0,
-            "type": "Text Display",
+            "type": "ComboBox Chooser",
             "properties": {
-              "topic": "/SmartDashboard/Simulation/Bot1/Archetype",
+              "topic": "/SmartDashboard/Simulation/Bot1/ArchetypeChooser",
               "period": 0.06,
-              "show_submit_button": true
+              "sort_options": false
             }
           },
           {
@@ -1238,11 +1235,11 @@
             "y": 384.0,
             "width": 320.0,
             "height": 128.0,
-            "type": "Text Display",
+            "type": "ComboBox Chooser",
             "properties": {
-              "topic": "/SmartDashboard/Simulation/Bot2/Archetype",
+              "topic": "/SmartDashboard/Simulation/Bot2/ArchetypeChooser",
               "period": 0.06,
-              "show_submit_button": true
+              "sort_options": false
             }
           },
           {

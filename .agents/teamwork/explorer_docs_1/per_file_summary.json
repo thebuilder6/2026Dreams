@@ -1,0 +1,4496 @@
+[
+  {
+    "file": "BuildConstants.java",
+    "package": "frc.robot",
+    "types_total": 1,
+    "types_with_jd": 1,
+    "types_missing_jd": [],
+    "methods_total": 0,
+    "methods_with_jd": 0,
+    "methods_missing_jd_count": 0,
+    "methods_missing_jd_names": [],
+    "methods_missing_units_count": 0,
+    "constants_total": 6,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 6,
+    "constants_missing_units_count": 6,
+    "constants_missing_units_names": [
+      "ROBOT_NAME",
+      "GIT_SHA",
+      "GIT_BRANCH",
+      "GIT_DATE",
+      "BUILD_DATE",
+      "DIRTY"
+    ],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Main.java",
+    "package": "frc.robot",
+    "types_total": 1,
+    "types_with_jd": 1,
+    "types_missing_jd": [],
+    "methods_total": 1,
+    "methods_with_jd": 1,
+    "methods_missing_jd_count": 0,
+    "methods_missing_jd_names": [],
+    "methods_missing_units_count": 0,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Robot.java",
+    "package": "frc.robot",
+    "types_total": 1,
+    "types_with_jd": 1,
+    "types_missing_jd": [],
+    "methods_total": 14,
+    "methods_with_jd": 12,
+    "methods_missing_jd_count": 2,
+    "methods_missing_jd_names": [
+      "robotInit",
+      "close"
+    ],
+    "methods_missing_units_count": 12,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 4,
+    "smells": [
+      {
+        "line": 112,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[WebServer] Notice: Elastic layout WebServer on port 5800 could not be started: \" + t.getMessage());"
+      },
+      {
+        "line": 122,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[PortForwarder] Coprocessor ports 5801-5805 successfully forwarded.\");"
+      },
+      {
+        "line": 124,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[PortForwarder] Notice: Port forwarding setup encountered: \" + t.getMessage());"
+      },
+      {
+        "line": 207,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"Auto selected: \" + m_autoSelected);"
+      }
+    ]
+  },
+  {
+    "file": "Teleop.java",
+    "package": "frc.robot",
+    "types_total": 1,
+    "types_with_jd": 0,
+    "types_missing_jd": [
+      "Teleop"
+    ],
+    "methods_total": 16,
+    "methods_with_jd": 2,
+    "methods_missing_jd_count": 14,
+    "methods_missing_jd_names": [
+      "init",
+      "reset",
+      "teleopPeriodic",
+      "readControllers",
+      "driveBaseControl",
+      "intakeControl",
+      "shooterControl",
+      "isSlowModeActive",
+      "setSlowModeActive",
+      "isArmDeployed",
+      "getSnapTargetHeading",
+      "getDriverForward",
+      "getDriverStrafe",
+      "getDriverRotation"
+    ],
+    "methods_missing_units_count": 15,
+    "constants_total": 2,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 2,
+    "constants_missing_units_count": 2,
+    "constants_missing_units_names": [
+      "TRANSLATION_DEADBAND",
+      "ROTATION_DEADBAND"
+    ],
+    "smells_count": 1,
+    "smells": [
+      {
+        "line": 47,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'joystickEnabled': public static boolean joystickEnabled = false;"
+      }
+    ]
+  },
+  {
+    "file": "Auto\\AutoMission.java",
+    "package": "frc.robot.Auto",
+    "types_total": 1,
+    "types_with_jd": 1,
+    "types_missing_jd": [],
+    "methods_total": 0,
+    "methods_with_jd": 0,
+    "methods_missing_jd_count": 0,
+    "methods_missing_jd_names": [],
+    "methods_missing_units_count": 0,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Auto\\AutoMissionChooser.java",
+    "package": "frc.robot.Auto",
+    "types_total": 1,
+    "types_with_jd": 0,
+    "types_missing_jd": [
+      "AutoMissionChooser"
+    ],
+    "methods_total": 7,
+    "methods_with_jd": 0,
+    "methods_missing_jd_count": 7,
+    "methods_missing_jd_names": [
+      "updateMissionCreator",
+      "getAutoMissionForParams",
+      "reset",
+      "outputToSmartDashboard",
+      "getRawChooser",
+      "getSelected",
+      "getAutoMission"
+    ],
+    "methods_missing_units_count": 7,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 1,
+    "smells": [
+      {
+        "line": 28,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'delay': public static double delay;"
+      }
+    ]
+  },
+  {
+    "file": "Auto\\AutoMissionEndedException.java",
+    "package": "frc.robot.Auto",
+    "types_total": 1,
+    "types_with_jd": 1,
+    "types_missing_jd": [],
+    "methods_total": 0,
+    "methods_with_jd": 0,
+    "methods_missing_jd_count": 0,
+    "methods_missing_jd_names": [],
+    "methods_missing_units_count": 0,
+    "constants_total": 1,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 1,
+    "constants_missing_units_count": 1,
+    "constants_missing_units_names": [
+      "serialVersionUID"
+    ],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Auto\\AutoMissionExecutor.java",
+    "package": "frc.robot.Auto",
+    "types_total": 1,
+    "types_with_jd": 1,
+    "types_missing_jd": [],
+    "methods_total": 10,
+    "methods_with_jd": 0,
+    "methods_missing_jd_count": 10,
+    "methods_missing_jd_names": [
+      "setAutoMission",
+      "run",
+      "start",
+      "isStarted",
+      "reset",
+      "stop",
+      "getAutoMission",
+      "isInterrupted",
+      "interrupt",
+      "resume"
+    ],
+    "methods_missing_units_count": 10,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Auto\\AutonomousTeleopAgent.java",
+    "package": "frc.robot.Auto",
+    "types_total": 1,
+    "types_with_jd": 1,
+    "types_missing_jd": [],
+    "methods_total": 12,
+    "methods_with_jd": 3,
+    "methods_missing_jd_count": 9,
+    "methods_missing_jd_names": [
+      "getInstance",
+      "isAssistActive",
+      "checkAndClearBreakout",
+      "getCurrentAction",
+      "getActiveObjective",
+      "getLatestIntent",
+      "incrementBallCount",
+      "decrementBallCount",
+      "getEstimatedHeldBalls"
+    ],
+    "methods_missing_units_count": 11,
+    "constants_total": 1,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 1,
+    "constants_missing_units_count": 1,
+    "constants_missing_units_names": [
+      "MAX_FUEL_CAPACITY"
+    ],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Auto\\CollisionDetector.java",
+    "package": "frc.robot.Auto",
+    "types_total": 1,
+    "types_with_jd": 0,
+    "types_missing_jd": [
+      "CollisionDetector"
+    ],
+    "methods_total": 5,
+    "methods_with_jd": 0,
+    "methods_missing_jd_count": 5,
+    "methods_missing_jd_names": [
+      "isImpactDetected",
+      "isStalled",
+      "getStallDuration",
+      "reset",
+      "getLastJerkMagnitude"
+    ],
+    "methods_missing_units_count": 5,
+    "constants_total": 6,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 6,
+    "constants_missing_units_count": 4,
+    "constants_missing_units_names": [
+      "COLLISION_JERK_THRESHOLD",
+      "COLLISION_DECEL_THRESHOLD",
+      "STALL_CMD_SPEED_MIN",
+      "STALL_ACTUAL_SPEED_MAX"
+    ],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Auto\\DynamicObstacle.java",
+    "package": "frc.robot.Auto",
+    "types_total": 1,
+    "types_with_jd": 1,
+    "types_missing_jd": [],
+    "methods_total": 3,
+    "methods_with_jd": 3,
+    "methods_missing_jd_count": 0,
+    "methods_missing_jd_names": [],
+    "methods_missing_units_count": 3,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Auto\\DynamicRouter.java",
+    "package": "frc.robot.Auto",
+    "types_total": 3,
+    "types_with_jd": 1,
+    "types_missing_jd": [
+      "AvoidanceAlgorithm",
+      "GridNode"
+    ],
+    "methods_total": 10,
+    "methods_with_jd": 1,
+    "methods_missing_jd_count": 9,
+    "methods_missing_jd_names": [
+      "setAlgorithm",
+      "getAlgorithm",
+      "registerObstacle",
+      "registerObstacle",
+      "registerObstacle",
+      "clearObstacles",
+      "getActiveObstacles",
+      "fCost",
+      "compareTo"
+    ],
+    "methods_missing_units_count": 6,
+    "constants_total": 17,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 17,
+    "constants_missing_units_count": 12,
+    "constants_missing_units_names": [
+      "activeObstacles",
+      "REPULSION_STRENGTH",
+      "GRID_RESOLUTION",
+      "GRID_COLS",
+      "GRID_ROWS",
+      "STATIC_BLOCKED_GRID",
+      "BLUE_HUB_CENTER",
+      "RED_HUB_CENTER",
+      "HUB_RADIUS",
+      "BLUE_CLIMB_POLE",
+      "RED_CLIMB_POLE",
+      "POLE_RADIUS"
+    ],
+    "smells_count": 3,
+    "smells": [
+      {
+        "line": 380,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'gCost': public double gCost;"
+      },
+      {
+        "line": 381,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'hCost': public double hCost;"
+      },
+      {
+        "line": 382,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'parent': public GridNode parent;"
+      }
+    ]
+  },
+  {
+    "file": "Auto\\LegalPinningWatchdog.java",
+    "package": "frc.robot.Auto",
+    "types_total": 1,
+    "types_with_jd": 1,
+    "types_missing_jd": [],
+    "methods_total": 8,
+    "methods_with_jd": 4,
+    "methods_missing_jd_count": 4,
+    "methods_missing_jd_names": [
+      "getInstance",
+      "getPinDuration",
+      "getBackoffRemainingSec",
+      "reset"
+    ],
+    "methods_missing_units_count": 6,
+    "constants_total": 4,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 4,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Auto\\SmartTunnelRouter.java",
+    "package": "frc.robot.Auto",
+    "types_total": 3,
+    "types_with_jd": 1,
+    "types_missing_jd": [
+      "TrenchCorridor",
+      "TunnelRoute"
+    ],
+    "methods_total": 6,
+    "methods_with_jd": 3,
+    "methods_missing_jd_count": 3,
+    "methods_missing_jd_names": [
+      "getWaypoints",
+      "isDiverted",
+      "isWestToEast"
+    ],
+    "methods_missing_units_count": 6,
+    "constants_total": 10,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 10,
+    "constants_missing_units_count": 10,
+    "constants_missing_units_names": [
+      "BLUE_TRENCH_X_MIN",
+      "BLUE_TRENCH_X_MAX",
+      "RED_TRENCH_X_MIN",
+      "RED_TRENCH_X_MAX",
+      "TOP_TRENCH_Y_MIN",
+      "TOP_TRENCH_Y_MAX",
+      "BOTTOM_TRENCH_Y_MIN",
+      "BOTTOM_TRENCH_Y_MAX",
+      "Y_TOP_CENTERLINE",
+      "Y_BOT_CENTERLINE"
+    ],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Auto\\StaticPathfinder.java",
+    "package": "frc.robot.Auto",
+    "types_total": 7,
+    "types_with_jd": 1,
+    "types_missing_jd": [
+      "Obstacle",
+      "CircularObstacle",
+      "RectangularObstacle",
+      "AABB",
+      "RoadmapNode",
+      "NodeRecord"
+    ],
+    "methods_total": 16,
+    "methods_with_jd": 7,
+    "methods_missing_jd_count": 9,
+    "methods_missing_jd_names": [
+      "isBlocking",
+      "getCenter",
+      "getSafeRadius",
+      "isBlocking",
+      "getCenter",
+      "getSafeRadius",
+      "clampToField",
+      "findNearestClearPoint",
+      "ensurePoseOutsideObstacles"
+    ],
+    "methods_missing_units_count": 14,
+    "constants_total": 39,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 39,
+    "constants_missing_units_count": 38,
+    "constants_missing_units_names": [
+      "FIELD_LENGTH",
+      "FIELD_WIDTH",
+      "STATIC_OBSTACLES",
+      "NODES",
+      "N_BLUE_ALLIANCE_CTR",
+      "N_BLUE_ALLIANCE_TOP",
+      "N_BLUE_ALLIANCE_BOT",
+      "N_BLUE_HUB_TOP_BYPASS",
+      "N_BLUE_HUB_BOT_BYPASS",
+      "N_BLUE_TOP_TRENCH_W",
+      "N_BLUE_TOP_TRENCH_IN",
+      "N_BLUE_TOP_TRENCH_OUT",
+      "N_BLUE_TOP_TRENCH_E",
+      "N_BLUE_BOT_TRENCH_W",
+      "N_BLUE_BOT_TRENCH_IN",
+      "N_BLUE_BOT_TRENCH_OUT",
+      "N_BLUE_BOT_TRENCH_E",
+      "N_MIDFIELD_TOP",
+      "N_MIDFIELD_CTR_TOP",
+      "N_MIDFIELD_CTR_BOT",
+      "N_MIDFIELD_BOT",
+      "N_RED_TOP_TRENCH_W",
+      "N_RED_TOP_TRENCH_IN",
+      "N_RED_TOP_TRENCH_OUT",
+      "N_RED_TOP_TRENCH_E",
+      "N_RED_BOT_TRENCH_W",
+      "N_RED_BOT_TRENCH_IN",
+      "N_RED_BOT_TRENCH_OUT",
+      "N_RED_BOT_TRENCH_E",
+      "N_RED_HUB_TOP_BYPASS",
+      "N_RED_HUB_BOT_BYPASS",
+      "N_RED_ALLIANCE_CTR",
+      "N_RED_ALLIANCE_TOP",
+      "N_RED_ALLIANCE_BOT",
+      "N_BLUE_ALLIANCE_TOP_BYPASS",
+      "N_BLUE_ALLIANCE_BOT_BYPASS",
+      "N_RED_ALLIANCE_TOP_BYPASS",
+      "N_RED_ALLIANCE_BOT_BYPASS"
+    ],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Auto\\TrajectoryController.java",
+    "package": "frc.robot.Auto",
+    "types_total": 1,
+    "types_with_jd": 1,
+    "types_missing_jd": [],
+    "methods_total": 7,
+    "methods_with_jd": 4,
+    "methods_missing_jd_count": 3,
+    "methods_missing_jd_names": [
+      "getWaypoints",
+      "getCurrentWaypointIndex",
+      "isStalledActive"
+    ],
+    "methods_missing_units_count": 6,
+    "constants_total": 2,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 2,
+    "constants_missing_units_count": 2,
+    "constants_missing_units_names": [
+      "MAX_ACCELERATION_MPS2",
+      "MAX_DECELERATION_MPS2"
+    ],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Auto\\Actions\\AutoAimAction.java",
+    "package": "frc.robot.Auto.Actions",
+    "types_total": 1,
+    "types_with_jd": 0,
+    "types_missing_jd": [
+      "AutoAimAction"
+    ],
+    "methods_total": 4,
+    "methods_with_jd": 0,
+    "methods_missing_jd_count": 4,
+    "methods_missing_jd_names": [
+      "start",
+      "update",
+      "isFinished",
+      "done"
+    ],
+    "methods_missing_units_count": 4,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Auto\\Actions\\BallHuntAction.java",
+    "package": "frc.robot.Auto.Actions",
+    "types_total": 1,
+    "types_with_jd": 1,
+    "types_missing_jd": [],
+    "methods_total": 7,
+    "methods_with_jd": 2,
+    "methods_missing_jd_count": 5,
+    "methods_missing_jd_names": [
+      "start",
+      "update",
+      "isTargetLocked",
+      "isFinished",
+      "done"
+    ],
+    "methods_missing_units_count": 7,
+    "constants_total": 3,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 3,
+    "constants_missing_units_count": 2,
+    "constants_missing_units_names": [
+      "MAX_PURSUIT_SPEED",
+      "MIN_INGESTION_SPEED"
+    ],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Auto\\Actions\\DriveToPoseAction.java",
+    "package": "frc.robot.Auto.Actions",
+    "types_total": 1,
+    "types_with_jd": 0,
+    "types_missing_jd": [
+      "DriveToPoseAction"
+    ],
+    "methods_total": 12,
+    "methods_with_jd": 0,
+    "methods_missing_jd_count": 12,
+    "methods_missing_jd_names": [
+      "setDriverInput",
+      "isBreakoutRequested",
+      "start",
+      "update",
+      "isFinished",
+      "done",
+      "isTunnelTransit",
+      "getTunnelHeading",
+      "getWaypoints",
+      "setTargetPose",
+      "getTargetPose",
+      "setRotationOverride"
+    ],
+    "methods_missing_units_count": 12,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Auto\\Actions\\FollowChoreoPath.java",
+    "package": "frc.robot.Auto.Actions",
+    "types_total": 1,
+    "types_with_jd": 0,
+    "types_missing_jd": [
+      "FollowChoreoPath"
+    ],
+    "methods_total": 10,
+    "methods_with_jd": 3,
+    "methods_missing_jd_count": 7,
+    "methods_missing_jd_names": [
+      "start",
+      "hasMarkerBeenPassed",
+      "update",
+      "isFinished",
+      "done",
+      "setPaused",
+      "isPaused"
+    ],
+    "methods_missing_units_count": 8,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Auto\\Actions\\IntakeAction.java",
+    "package": "frc.robot.Auto.Actions",
+    "types_total": 1,
+    "types_with_jd": 0,
+    "types_missing_jd": [
+      "IntakeAction"
+    ],
+    "methods_total": 4,
+    "methods_with_jd": 0,
+    "methods_missing_jd_count": 4,
+    "methods_missing_jd_names": [
+      "start",
+      "update",
+      "isFinished",
+      "done"
+    ],
+    "methods_missing_units_count": 4,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Auto\\Actions\\LambdaAction.java",
+    "package": "frc.robot.Auto.Actions",
+    "types_total": 1,
+    "types_with_jd": 1,
+    "types_missing_jd": [],
+    "methods_total": 4,
+    "methods_with_jd": 0,
+    "methods_missing_jd_count": 4,
+    "methods_missing_jd_names": [
+      "start",
+      "update",
+      "isFinished",
+      "done"
+    ],
+    "methods_missing_units_count": 4,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Auto\\Actions\\ParallelAction.java",
+    "package": "frc.robot.Auto.Actions",
+    "types_total": 1,
+    "types_with_jd": 0,
+    "types_missing_jd": [
+      "ParallelAction"
+    ],
+    "methods_total": 4,
+    "methods_with_jd": 0,
+    "methods_missing_jd_count": 4,
+    "methods_missing_jd_names": [
+      "start",
+      "update",
+      "isFinished",
+      "done"
+    ],
+    "methods_missing_units_count": 4,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Auto\\Actions\\ParallelRaceAction.java",
+    "package": "frc.robot.Auto.Actions",
+    "types_total": 1,
+    "types_with_jd": 0,
+    "types_missing_jd": [
+      "ParallelRaceAction"
+    ],
+    "methods_total": 4,
+    "methods_with_jd": 0,
+    "methods_missing_jd_count": 4,
+    "methods_missing_jd_names": [
+      "start",
+      "update",
+      "isFinished",
+      "done"
+    ],
+    "methods_missing_units_count": 4,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Auto\\Actions\\SeriesAction.java",
+    "package": "frc.robot.Auto.Actions",
+    "types_total": 1,
+    "types_with_jd": 1,
+    "types_missing_jd": [],
+    "methods_total": 4,
+    "methods_with_jd": 0,
+    "methods_missing_jd_count": 4,
+    "methods_missing_jd_names": [
+      "start",
+      "update",
+      "isFinished",
+      "done"
+    ],
+    "methods_missing_units_count": 4,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Auto\\Actions\\ShootAction.java",
+    "package": "frc.robot.Auto.Actions",
+    "types_total": 1,
+    "types_with_jd": 0,
+    "types_missing_jd": [
+      "ShootAction"
+    ],
+    "methods_total": 4,
+    "methods_with_jd": 0,
+    "methods_missing_jd_count": 4,
+    "methods_missing_jd_names": [
+      "start",
+      "update",
+      "isFinished",
+      "done"
+    ],
+    "methods_missing_units_count": 4,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Auto\\Actions\\WaitAction.java",
+    "package": "frc.robot.Auto.Actions",
+    "types_total": 1,
+    "types_with_jd": 0,
+    "types_missing_jd": [
+      "WaitAction"
+    ],
+    "methods_total": 4,
+    "methods_with_jd": 0,
+    "methods_missing_jd_count": 4,
+    "methods_missing_jd_names": [
+      "start",
+      "update",
+      "isFinished",
+      "done"
+    ],
+    "methods_missing_units_count": 4,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Auto\\Actions\\WaitUntilMarkerAction.java",
+    "package": "frc.robot.Auto.Actions",
+    "types_total": 1,
+    "types_with_jd": 1,
+    "types_missing_jd": [],
+    "methods_total": 4,
+    "methods_with_jd": 0,
+    "methods_missing_jd_count": 4,
+    "methods_missing_jd_names": [
+      "start",
+      "update",
+      "isFinished",
+      "done"
+    ],
+    "methods_missing_units_count": 4,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Auto\\Missions\\AdvancedChoreoMission.java",
+    "package": "frc.robot.Auto.Missions",
+    "types_total": 1,
+    "types_with_jd": 1,
+    "types_missing_jd": [],
+    "methods_total": 1,
+    "methods_with_jd": 0,
+    "methods_missing_jd_count": 1,
+    "methods_missing_jd_names": [
+      "routine"
+    ],
+    "methods_missing_units_count": 1,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Auto\\Missions\\DepotShootMission.java",
+    "package": "frc.robot.Auto.Missions",
+    "types_total": 1,
+    "types_with_jd": 0,
+    "types_missing_jd": [
+      "DepotShootMission"
+    ],
+    "methods_total": 1,
+    "methods_with_jd": 0,
+    "methods_missing_jd_count": 1,
+    "methods_missing_jd_names": [
+      "routine"
+    ],
+    "methods_missing_units_count": 1,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Auto\\Missions\\DoNothingMission.java",
+    "package": "frc.robot.Auto.Missions",
+    "types_total": 1,
+    "types_with_jd": 0,
+    "types_missing_jd": [
+      "DoNothingMission"
+    ],
+    "methods_total": 1,
+    "methods_with_jd": 0,
+    "methods_missing_jd_count": 1,
+    "methods_missing_jd_names": [
+      "routine"
+    ],
+    "methods_missing_units_count": 1,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 1,
+    "smells": [
+      {
+        "line": 14,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"Do nothing auto mission\");"
+      }
+    ]
+  },
+  {
+    "file": "Auto\\Missions\\DynamicChoreoMission.java",
+    "package": "frc.robot.Auto.Missions",
+    "types_total": 1,
+    "types_with_jd": 1,
+    "types_missing_jd": [],
+    "methods_total": 1,
+    "methods_with_jd": 0,
+    "methods_missing_jd_count": 1,
+    "methods_missing_jd_names": [
+      "routine"
+    ],
+    "methods_missing_units_count": 1,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Auto\\Missions\\ExampleMission.java",
+    "package": "frc.robot.Auto.Missions",
+    "types_total": 1,
+    "types_with_jd": 0,
+    "types_missing_jd": [
+      "ExampleMission"
+    ],
+    "methods_total": 1,
+    "methods_with_jd": 0,
+    "methods_missing_jd_count": 1,
+    "methods_missing_jd_names": [
+      "routine"
+    ],
+    "methods_missing_units_count": 1,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Auto\\Missions\\MissionBase.java",
+    "package": "frc.robot.Auto.Missions",
+    "types_total": 1,
+    "types_with_jd": 0,
+    "types_missing_jd": [
+      "MissionBase"
+    ],
+    "methods_total": 11,
+    "methods_with_jd": 0,
+    "methods_missing_jd_count": 11,
+    "methods_missing_jd_names": [
+      "routine",
+      "setStartPose",
+      "run",
+      "done",
+      "stop",
+      "isActive",
+      "isActiveWithThrow",
+      "interrupt",
+      "resume",
+      "runAction",
+      "getIsInterrupted"
+    ],
+    "methods_missing_units_count": 11,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 7,
+    "smells": [
+      {
+        "line": 45,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"Auto mission done\");"
+      },
+      {
+        "line": 65,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"** Auto mission interrrupted!\");"
+      },
+      {
+        "line": 70,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"** Auto mission resumed!\");"
+      },
+      {
+        "line": 80,
+        "type": "THREAD_SLEEP",
+        "message": "Thread.sleep(waitTime);"
+      },
+      {
+        "line": 83,
+        "type": "PRINT_STACK_TRACE",
+        "message": "e.printStackTrace();"
+      },
+      {
+        "line": 94,
+        "type": "THREAD_SLEEP",
+        "message": "Thread.sleep(waitTime);"
+      },
+      {
+        "line": 97,
+        "type": "PRINT_STACK_TRACE",
+        "message": "e.printStackTrace();"
+      }
+    ]
+  },
+  {
+    "file": "Auto\\Missions\\ShooterMission.java",
+    "package": "frc.robot.Auto.Missions",
+    "types_total": 1,
+    "types_with_jd": 0,
+    "types_missing_jd": [
+      "ShooterMission"
+    ],
+    "methods_total": 1,
+    "methods_with_jd": 0,
+    "methods_missing_jd_count": 1,
+    "methods_missing_jd_names": [
+      "routine"
+    ],
+    "methods_missing_units_count": 1,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Data\\Constants.java",
+    "package": "frc.robot.Data",
+    "types_total": 9,
+    "types_with_jd": 1,
+    "types_missing_jd": [
+      "Mode",
+      "AutonConstants",
+      "DrivebaseConstants",
+      "OperatorConstants",
+      "LEDConstants",
+      "FieldConstants",
+      "ShooterConstants",
+      "IntakeConstants"
+    ],
+    "methods_total": 1,
+    "methods_with_jd": 0,
+    "methods_missing_jd_count": 1,
+    "methods_missing_jd_names": [
+      "getMode"
+    ],
+    "methods_missing_units_count": 1,
+    "constants_total": 147,
+    "constants_with_jd": 1,
+    "constants_missing_jd_count": 146,
+    "constants_missing_units_count": 128,
+    "constants_missing_units_names": [
+      "currentMode",
+      "TUNING_MODE",
+      "CHASSIS",
+      "MAX_SPEED",
+      "MAX_ROTATION_SPEED",
+      "MAX_SPEED_MEASURE",
+      "MAX_ROTATION_SPEED_MEASURE",
+      "AUTO_DRIVE_KP",
+      "AUTO_DRIVE_KI",
+      "AUTO_DRIVE_KD",
+      "AUTO_TURN_KP",
+      "AUTO_TURN_KI",
+      "AUTO_TURN_KD",
+      "DRIVE_KP",
+      "DRIVE_KI",
+      "DRIVE_KD",
+      "TURN_KP",
+      "TURN_KI",
+      "TURN_KD",
+      "VISION_MAX_AMBIGUITY",
+      "VISION_MAX_YAW_RATE_MEASURE",
+      "VISION_MAX_TAG_DIST_MEASURE",
+      "VISION_SINGLE_TAG_MAX_DIST_MEASURE",
+      "VISION_BASE_STD_DEV",
+      "VISION_SINGLE_TAG_PENALTY",
+      "VISION_DIST_PENALTY_DIVISOR",
+      "RUBIK_PI_CAMERA_HEIGHT_MEASURE",
+      "RUBIK_PI_CAMERA_PITCH_MEASURE",
+      "RUBIK_PI_CAMERA_FORWARD_OFFSET_MEASURE",
+      "FUEL_TARGET_HEIGHT_MEASURE",
+      "DEADBAND",
+      "TRANSLATION_SLEW_RATE",
+      "BLINKIN_PWM_PORT",
+      "RAINBOW",
+      "RAINBOW_PARTY",
+      "CONFETTI",
+      "LARSON_SCAN_RED",
+      "HEARTBEAT_RED",
+      "HEARTBEAT_BLUE",
+      "BREATH_RED",
+      "BREATH_BLUE",
+      "STROBE_RED",
+      "STROBE_BLUE",
+      "STROBE_GOLD",
+      "STROBE_WHITE",
+      "SOLID_RED",
+      "SOLID_ORANGE",
+      "SOLID_YELLOW",
+      "SOLID_GREEN",
+      "SOLID_BLUE",
+      "SOLID_PURPLE",
+      "SOLID_WHITE",
+      "SOLID_BLACK",
+      "RED_GOAL_LOCATION",
+      "BLUE_GOAL_LOCATION",
+      "RED_HUB_LOCATION",
+      "BLUE_HUB_LOCATION",
+      "SHOOTER_PREDICTIVE_LOOK_AHEAD",
+      "SHOOTER_OFFSET",
+      "FIRING_ANGLE",
+      "HEIGHT_DIFFERENCE",
+      "FLYWHEEL_KS",
+      "FLYWHEEL_KV",
+      "FLYWHEEL_KA",
+      "FLYWHEEL_KP",
+      "FLYWHEEL_KI",
+      "FLYWHEEL_KD",
+      "KICKER_VOLTAGE",
+      "FEED_SPEED",
+      "IDLE_RPM_MEASURE",
+      "RPM_TOLERANCE",
+      "FLYWHEEL_KP",
+      "FLYWHEEL_KI",
+      "FLYWHEEL_KD",
+      "FLYWHEEL_KS",
+      "FLYWHEEL_KV",
+      "FLYWHEEL_KA",
+      "FLYWHEEL_CURRENT_LIMIT",
+      "KICKER_CURRENT_LIMIT",
+      "FLYWHEEL_CURRENT_LIMIT_MEASURE",
+      "KICKER_CURRENT_LIMIT_MEASURE",
+      "SIM_GEARING",
+      "SIM_MOI",
+      "BALL_SPAWN_INTERVAL",
+      "SHOOTER_WHEEL_CIRCUMFERENCE",
+      "BALL_LAUNCH_EFFICIENCY",
+      "INTAKE_ARM_KP",
+      "INTAKE_ARM_KI",
+      "INTAKE_ARM_KD",
+      "INTAKE_ARM_KS",
+      "INTAKE_ARM_KV",
+      "INTAKE_ARM_KA",
+      "MAX_ARM_VELOCITY",
+      "MAX_ARM_ACCELERATION",
+      "INTAKE_UP_POSITION",
+      "INTAKE_DOWN_POSITION",
+      "INTAKE_HORIZONTAL_POSITION",
+      "INTAKE_UP_POSITION_MEASURE",
+      "INTAKE_DOWN_POSITION_MEASURE",
+      "INTAKE_HORIZONTAL_POSITION_MEASURE",
+      "INTAKE_ARM_INVERTED",
+      "INTAKE_WHEELS_INVERTED",
+      "INTAKE_POSITION_OFFSET",
+      "INTAKE_ARM_INVERTED",
+      "INTAKE_WHEELS_INVERTED",
+      "INTAKE_POSITION_OFFSET",
+      "STALL_CURRENT_LIMIT",
+      "STALL_TIME",
+      "EJECT_TIME",
+      "STALL_CURRENT_LIMIT_MEASURE",
+      "STALL_TIME_MEASURE",
+      "EJECT_TIME_MEASURE",
+      "INTAKE_SPEED",
+      "HOPPER_SPEED",
+      "ARM_KP",
+      "ARM_KI",
+      "ARM_KD",
+      "ARM_KS",
+      "ARM_KV",
+      "ARM_KA",
+      "MAX_ARM_VELOCITY",
+      "MAX_ARM_ACCELERATION",
+      "ARM_INTAKE_POS",
+      "ARM_IDLE_POS",
+      "MAX_HELD_BALLS",
+      "SIM_ARM_GEARING",
+      "SIM_ARM_LENGTH",
+      "SIM_ARM_MASS"
+    ],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Data\\FieldMap.java",
+    "package": "frc.robot.Data",
+    "types_total": 9,
+    "types_with_jd": 1,
+    "types_missing_jd": [
+      "Hubs",
+      "Ramps",
+      "Trenches",
+      "AllianceZones",
+      "Depots",
+      "ClimbingTowers",
+      "AABB",
+      "Obstacles"
+    ],
+    "methods_total": 20,
+    "methods_with_jd": 2,
+    "methods_missing_jd_count": 18,
+    "methods_missing_jd_names": [
+      "getHubLocation3d",
+      "getHubLocation2d",
+      "isLowClearance",
+      "isInAllianceZone",
+      "isInAllianceZone",
+      "isInMidfield",
+      "getDepotLoadPoint",
+      "getDepotApproach",
+      "getDepotContest",
+      "getTowerPole",
+      "contains",
+      "contains",
+      "getCenter",
+      "getWidth",
+      "getHeight",
+      "clampToField",
+      "isWithinField",
+      "isPointInStaticObstacle"
+    ],
+    "methods_missing_units_count": 19,
+    "constants_total": 53,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 53,
+    "constants_missing_units_count": 48,
+    "constants_missing_units_names": [
+      "FIELD_LENGTH",
+      "FIELD_WIDTH",
+      "CENTERLINE_X",
+      "ROBOT_RADIUS",
+      "HUB_RADIUS",
+      "FUNNEL_TARGET_Z",
+      "BLUE_HUB_3D",
+      "RED_HUB_3D",
+      "BLUE_HUB_2D",
+      "RED_HUB_2D",
+      "SHOOTING_MIN_DISTANCE",
+      "SHOOTING_MAX_DISTANCE",
+      "OPTIMAL_STANDOFF_DISTANCE",
+      "BLUE_RAMP_MIN_X",
+      "BLUE_RAMP_MAX_X",
+      "BLUE_RAMP_MIN_Y",
+      "BLUE_RAMP_MAX_Y",
+      "RED_RAMP_MIN_X",
+      "RED_RAMP_MAX_X",
+      "RED_RAMP_MIN_Y",
+      "RED_RAMP_MAX_Y",
+      "BLUE_TRENCH_MIN_X",
+      "BLUE_TRENCH_MAX_X",
+      "RED_TRENCH_MIN_X",
+      "RED_TRENCH_MAX_X",
+      "TOP_CORRIDOR_Y",
+      "BOT_CORRIDOR_Y",
+      "TOP_TRENCH_MIN_Y",
+      "TOP_TRENCH_MAX_Y",
+      "BOT_TRENCH_MIN_Y",
+      "BOT_TRENCH_MAX_Y",
+      "BLUE_ZONE_MAX_X",
+      "RED_ZONE_MIN_X",
+      "MIDFIELD_MIN_X",
+      "MIDFIELD_MAX_X",
+      "BLUE_DEPOT_LOAD_POINT",
+      "BLUE_DEPOT_APPROACH",
+      "BLUE_DEPOT_CONTEST",
+      "RED_DEPOT_LOAD_POINT",
+      "RED_DEPOT_APPROACH",
+      "RED_DEPOT_CONTEST",
+      "BLUE_TOWER_POLE",
+      "RED_TOWER_POLE",
+      "POLE_RADIUS",
+      "BLUE_HUB_AND_RAMPS",
+      "RED_HUB_AND_RAMPS",
+      "BLUE_TOWER_POLE",
+      "RED_TOWER_POLE"
+    ],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Data\\GlideConstants.java",
+    "package": "frc.robot.Data",
+    "types_total": 2,
+    "types_with_jd": 1,
+    "types_missing_jd": [
+      "GlidePoint"
+    ],
+    "methods_total": 4,
+    "methods_with_jd": 2,
+    "methods_missing_jd_count": 2,
+    "methods_missing_jd_names": [
+      "pose",
+      "name"
+    ],
+    "methods_missing_units_count": 3,
+    "constants_total": 5,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 5,
+    "constants_missing_units_count": 5,
+    "constants_missing_units_names": [
+      "FIELD_LENGTH",
+      "FIELD_WIDTH",
+      "Y_BOT_LANE",
+      "Y_TOP_LANE",
+      "RED_GLIDE_POINTS"
+    ],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Data\\PortMap.java",
+    "package": "frc.robot.Data",
+    "types_total": 1,
+    "types_with_jd": 0,
+    "types_missing_jd": [
+      "PortMap"
+    ],
+    "methods_total": 0,
+    "methods_with_jd": 0,
+    "methods_missing_jd_count": 0,
+    "methods_missing_jd_names": [],
+    "methods_missing_units_count": 0,
+    "constants_total": 9,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 9,
+    "constants_missing_units_count": 9,
+    "constants_missing_units_names": [
+      "DRIVER_CONTROLLER",
+      "OPERATOR_CONTROLLER",
+      "INTAKE_ARM_MOTOR_ID",
+      "INTAKE_WHEELS_MOTOR_ID",
+      "HOPPER_MOTOR_CANID",
+      "INTAKE_ENCODER_ID",
+      "SHOOTER_MOTOR_LEFT_ID",
+      "SHOOTER_MOTOR_RIGHT_ID",
+      "KICKER_MOTOR_ID"
+    ],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Data\\TunableNumber.java",
+    "package": "frc.robot.Data",
+    "types_total": 1,
+    "types_with_jd": 1,
+    "types_missing_jd": [],
+    "methods_total": 5,
+    "methods_with_jd": 5,
+    "methods_missing_jd_count": 0,
+    "methods_missing_jd_names": [],
+    "methods_missing_units_count": 5,
+    "constants_total": 1,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 1,
+    "constants_missing_units_count": 1,
+    "constants_missing_units_names": [
+      "tableKey"
+    ],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Devices\\Controller.java",
+    "package": "frc.robot.Devices",
+    "types_total": 2,
+    "types_with_jd": 0,
+    "types_missing_jd": [
+      "Controller",
+      "RumblePattern"
+    ],
+    "methods_total": 13,
+    "methods_with_jd": 4,
+    "methods_missing_jd_count": 9,
+    "methods_missing_jd_names": [
+      "setRumble",
+      "getDebouncedButton",
+      "getDebouncedButton",
+      "getLeftX",
+      "getLeftY",
+      "getRightX",
+      "getRightY",
+      "isOperational",
+      "getName"
+    ],
+    "methods_missing_units_count": 11,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Devices\\NeoSparkMaxMotor.java",
+    "package": "frc.robot.Devices",
+    "types_total": 1,
+    "types_with_jd": 0,
+    "types_missing_jd": [
+      "NeoSparkMaxMotor"
+    ],
+    "methods_total": 18,
+    "methods_with_jd": 0,
+    "methods_missing_jd_count": 18,
+    "methods_missing_jd_names": [
+      "configure",
+      "set",
+      "setVoltage",
+      "setSpeed",
+      "getSpeed",
+      "getVelocity",
+      "getPosition",
+      "setInverted",
+      "setBrakeMode",
+      "getAppliedOutput",
+      "getBusVoltage",
+      "getAppliedVoltage",
+      "getOutputCurrent",
+      "setSimState",
+      "resetEncoder",
+      "stop",
+      "getCANID",
+      "getMotor"
+    ],
+    "methods_missing_units_count": 16,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 1,
+    "smells": [
+      {
+        "line": 39,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"SparkMax error initializing CANID: \" + CANID);"
+      }
+    ]
+  },
+  {
+    "file": "Interfaces\\Actions.java",
+    "package": "frc.robot.Interfaces",
+    "types_total": 1,
+    "types_with_jd": 0,
+    "types_missing_jd": [
+      "Actions"
+    ],
+    "methods_total": 0,
+    "methods_with_jd": 0,
+    "methods_missing_jd_count": 0,
+    "methods_missing_jd_names": [],
+    "methods_missing_units_count": 0,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Interfaces\\Subsystem.java",
+    "package": "frc.robot.Interfaces",
+    "types_total": 1,
+    "types_with_jd": 0,
+    "types_missing_jd": [
+      "Subsystem"
+    ],
+    "methods_total": 8,
+    "methods_with_jd": 1,
+    "methods_missing_jd_count": 7,
+    "methods_missing_jd_names": [
+      "update",
+      "initialize",
+      "log",
+      "isEnabled",
+      "simulationUpdate",
+      "getSimulationCurrentDraw",
+      "getName"
+    ],
+    "methods_missing_units_count": 8,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Sim\\AIActionIntent.java",
+    "package": "frc.robot.Sim",
+    "types_total": 1,
+    "types_with_jd": 1,
+    "types_missing_jd": [],
+    "methods_total": 0,
+    "methods_with_jd": 0,
+    "methods_missing_jd_count": 0,
+    "methods_missing_jd_names": [],
+    "methods_missing_units_count": 0,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Sim\\AIRobotInstance.java",
+    "package": "frc.robot.Sim",
+    "types_total": 1,
+    "types_with_jd": 1,
+    "types_missing_jd": [],
+    "methods_total": 21,
+    "methods_with_jd": 1,
+    "methods_missing_jd_count": 20,
+    "methods_missing_jd_names": [
+      "getBotId",
+      "isAlly",
+      "getArchetype",
+      "setArchetype",
+      "getDriveSimulation",
+      "getIntakeSimulation",
+      "getActualPose",
+      "setRobotPose",
+      "reset",
+      "canShootNow",
+      "launchShot",
+      "checkProximityPickup",
+      "isStalled",
+      "getCurrentTargetSpeeds",
+      "getCurrentTargetPose",
+      "getCurrentAIStateDetail",
+      "getScoreCount",
+      "getFuelCount",
+      "getStallDuration",
+      "getTrajectoryController"
+    ],
+    "methods_missing_units_count": 20,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 3,
+    "smells": [
+      {
+        "line": 90,
+        "type": "CONSOLE_IO",
+        "message": "System.err.println(\"[\" + (isAlly ? \"AllyBot-\" : \"AIRobotInstance-\") + botId + \"] Could not register drivetrain with arena: \" + e.getMessage());"
+      },
+      {
+        "line": 103,
+        "type": "CONSOLE_IO",
+        "message": "System.err.println(\"[\" + (isAlly ? \"AllyBot-\" : \"AIRobotInstance-\") + botId + \"] Could not attach IntakeSimulation: \" + e.getMessage());"
+      },
+      {
+        "line": 395,
+        "type": "CONSOLE_IO",
+        "message": "System.err.println(\"[\" + (isAlly ? \"AllyBot-\" : \"AIRobotInstance-\") + botId + \"] Error launching fuel projectile: \" + e.getMessage());"
+      }
+    ]
+  },
+  {
+    "file": "Sim\\AIRobotSim.java",
+    "package": "frc.robot.Sim",
+    "types_total": 3,
+    "types_with_jd": 0,
+    "types_missing_jd": [
+      "AIRobotSim",
+      "AIMode",
+      "CyclerPhase"
+    ],
+    "methods_total": 54,
+    "methods_with_jd": 3,
+    "methods_missing_jd_count": 51,
+    "methods_missing_jd_names": [
+      "fromString",
+      "getInstance",
+      "setTrajectory",
+      "setRobotPose",
+      "reset",
+      "simulationUpdate",
+      "computeDriveToPoseSpeeds",
+      "isStalled",
+      "isStalled",
+      "isHubActiveForAlliance",
+      "isOpponentHubActive",
+      "isPoseInLowClearanceZone",
+      "isShootingLaneBlocked",
+      "isValidShootingLocation",
+      "canShootNow",
+      "findBestFuelTarget",
+      "isNearAnyFuel",
+      "launchOpponentShot",
+      "update",
+      "setupArchetypeChoosers",
+      "getBot1Archetype",
+      "getBot2Archetype",
+      "getAlly1Archetype",
+      "getAlly2Archetype",
+      "getBot1ArchetypeChooser",
+      "getBot2ArchetypeChooser",
+      "getAlly1ArchetypeChooser",
+      "getAlly2ArchetypeChooser",
+      "getAllyBots",
+      "initialize",
+      "getAllySpawnPose",
+      "getAllySpawnPose",
+      "getOpponentSpawnPose",
+      "getOpponentSpawnPose",
+      "getOpponentSpawnPose",
+      "getOpponentSpawnPose",
+      "mirrorPoseForOpponent",
+      "log",
+      "isEnabled",
+      "getName",
+      "getAIMode",
+      "getCyclerPhase",
+      "setCyclerPhase",
+      "getAiScoreCount",
+      "getFuelCount",
+      "setFuelCount",
+      "getDriveSimulation",
+      "getIntakeSimulation",
+      "getCurrentPath",
+      "getCurrentPathIndex",
+      "getAdditionalBots"
+    ],
+    "methods_missing_units_count": 51,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 7,
+    "smells": [
+      {
+        "line": 176,
+        "type": "CONSOLE_IO",
+        "message": "System.err.println(\"[AIRobotSim] Could not attach IntakeSimulation: \" + e.getMessage());"
+      },
+      {
+        "line": 300,
+        "type": "CONSOLE_IO",
+        "message": "System.err.println(\"[AIRobotSim] Failed to spawn additional opponent bot: \" + e.getMessage());"
+      },
+      {
+        "line": 301,
+        "type": "PRINT_STACK_TRACE",
+        "message": "e.printStackTrace();"
+      },
+      {
+        "line": 313,
+        "type": "CONSOLE_IO",
+        "message": "System.err.println(\"[AIRobotSim] Failed to spawn ally bot: \" + e.getMessage());"
+      },
+      {
+        "line": 314,
+        "type": "PRINT_STACK_TRACE",
+        "message": "e.printStackTrace();"
+      },
+      {
+        "line": 995,
+        "type": "CONSOLE_IO",
+        "message": "System.err.println(\"[AIRobotSim] Error launching fuel projectile: \" + e.getMessage());"
+      },
+      {
+        "line": 1098,
+        "type": "CONSOLE_IO",
+        "message": "System.out.printf("
+      }
+    ]
+  },
+  {
+    "file": "Sim\\Archetype.java",
+    "package": "frc.robot.Sim",
+    "types_total": 1,
+    "types_with_jd": 1,
+    "types_missing_jd": [],
+    "methods_total": 3,
+    "methods_with_jd": 0,
+    "methods_missing_jd_count": 3,
+    "methods_missing_jd_names": [
+      "isDefensive",
+      "isOffensive",
+      "fromString"
+    ],
+    "methods_missing_units_count": 3,
+    "constants_total": 1,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 1,
+    "constants_missing_units_count": 1,
+    "constants_missing_units_names": [
+      "PINNING_BULLY"
+    ],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Sim\\ArmSim.java",
+    "package": "frc.robot.Sim",
+    "types_total": 1,
+    "types_with_jd": 0,
+    "types_missing_jd": [
+      "ArmSim"
+    ],
+    "methods_total": 4,
+    "methods_with_jd": 0,
+    "methods_missing_jd_count": 4,
+    "methods_missing_jd_names": [
+      "update",
+      "getAngleRads",
+      "getVelocityRadsPerSec",
+      "getCurrentDrawAmps"
+    ],
+    "methods_missing_units_count": 3,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Sim\\GameSim.java",
+    "package": "frc.robot.Sim",
+    "types_total": 2,
+    "types_with_jd": 1,
+    "types_missing_jd": [
+      "Config"
+    ],
+    "methods_total": 12,
+    "methods_with_jd": 3,
+    "methods_missing_jd_count": 9,
+    "methods_missing_jd_names": [
+      "getInstance",
+      "getSimTimeRemainingSec",
+      "setSimTimeRemainingSec",
+      "getHeldBalls",
+      "update",
+      "initialize",
+      "log",
+      "isEnabled",
+      "getName"
+    ],
+    "methods_missing_units_count": 11,
+    "constants_total": 30,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 30,
+    "constants_missing_units_count": 25,
+    "constants_missing_units_names": [
+      "MAX_HELD_BALLS",
+      "PICKUP_PER_CHECK_LIMIT",
+      "MIN_RESPAWN_INTERVAL",
+      "PICKUP_CHECK_INTERVAL",
+      "CENTER_HALF_X_MIN",
+      "CENTER_HALF_X_MAX",
+      "CENTER_HALF_Y_MIN",
+      "CENTER_HALF_Y_MAX",
+      "FIELD_X_MIN",
+      "FIELD_X_MAX",
+      "FIELD_Y_MIN",
+      "FIELD_Y_MAX",
+      "INITIAL_HELD_BALLS",
+      "LIGHTWEIGHT_BALL_COUNT",
+      "DEFAULT_GAME_MESSAGE",
+      "BLUE_DEPOT_X",
+      "BLUE_DEPOT_Y",
+      "BLUE_DEPOT_FULL_Y",
+      "RED_DEPOT_X",
+      "RED_DEPOT_Y",
+      "RED_DEPOT_FULL_Y",
+      "BALL_SPACING_X",
+      "BALL_SPACING_Y",
+      "instance",
+      "ARENA_CACHE_DURATION"
+    ],
+    "smells_count": 11,
+    "smells": [
+      {
+        "line": 152,
+        "type": "CONSOLE_IO",
+        "message": "System.err.println(\"GameSim: Invalid maxToConsume value: \" + maxToConsume);"
+      },
+      {
+        "line": 212,
+        "type": "CONSOLE_IO",
+        "message": "System.err.println(\"GameSim: Error in simulationUpdate: \" + e.getMessage());"
+      },
+      {
+        "line": 213,
+        "type": "PRINT_STACK_TRACE",
+        "message": "e.printStackTrace();"
+      },
+      {
+        "line": 234,
+        "type": "CONSOLE_IO",
+        "message": "System.err.println(\"GameSim: Error handling dashboard commands: \" + e.getMessage());"
+      },
+      {
+        "line": 265,
+        "type": "CONSOLE_IO",
+        "message": "System.err.println(\"GameSim: Error updating simulation time: \" + e.getMessage());"
+      },
+      {
+        "line": 293,
+        "type": "CONSOLE_IO",
+        "message": "System.err.println(\"GameSim: Error in publish: \" + e.getMessage());"
+      },
+      {
+        "line": 381,
+        "type": "CONSOLE_IO",
+        "message": "System.err.println(\"GameSim: Error in handlePickup: \" + e.getMessage());"
+      },
+      {
+        "line": 406,
+        "type": "CONSOLE_IO",
+        "message": "System.err.println(\"GameSim: Error in handleShotsAndScoring: \" + e.getMessage());"
+      },
+      {
+        "line": 451,
+        "type": "CONSOLE_IO",
+        "message": "System.err.println(\"GameSim: Error in resetGame: \" + e.getMessage());"
+      },
+      {
+        "line": 468,
+        "type": "CONSOLE_IO",
+        "message": "System.err.println(\"GameSim: Error in spawnBallInCenterHalf: \" + e.getMessage());"
+      },
+      {
+        "line": 523,
+        "type": "CONSOLE_IO",
+        "message": "System.err.println(\"GameSim: Error in spawnPickupBalls: \" + e.getMessage());"
+      }
+    ]
+  },
+  {
+    "file": "Sim\\JevDecisionEngine.java",
+    "package": "frc.robot.Sim",
+    "types_total": 6,
+    "types_with_jd": 1,
+    "types_missing_jd": [
+      "AIArchetype",
+      "TacticalAction",
+      "DecisionResult",
+      "OffensiveStrategy",
+      "StrategicAdvice"
+    ],
+    "methods_total": 7,
+    "methods_with_jd": 3,
+    "methods_missing_jd_count": 4,
+    "methods_missing_jd_names": [
+      "toSchemaJson",
+      "getInstance",
+      "getLastDecision",
+      "calculatePolarStandoffPose"
+    ],
+    "methods_missing_units_count": 6,
+    "constants_total": 4,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 4,
+    "constants_missing_units_count": 4,
+    "constants_missing_units_names": [
+      "BLUE_HUB_POS",
+      "BLUE_DEPOT_POS",
+      "CENTERLINE_X",
+      "RETREAT_X"
+    ],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Sim\\LimelightSim.java",
+    "package": "frc.robot.Sim",
+    "types_total": 1,
+    "types_with_jd": 0,
+    "types_missing_jd": [
+      "LimelightSim"
+    ],
+    "methods_total": 1,
+    "methods_with_jd": 0,
+    "methods_missing_jd_count": 1,
+    "methods_missing_jd_names": [
+      "update"
+    ],
+    "methods_missing_units_count": 1,
+    "constants_total": 1,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 1,
+    "constants_missing_units_count": 1,
+    "constants_missing_units_names": [
+      "LL_TABLE"
+    ],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Sim\\MatchScoreTracker.java",
+    "package": "frc.robot.Sim",
+    "types_total": 1,
+    "types_with_jd": 1,
+    "types_missing_jd": [],
+    "methods_total": 48,
+    "methods_with_jd": 8,
+    "methods_missing_jd_count": 40,
+    "methods_missing_jd_names": [
+      "getInstance",
+      "getRedFuelScore",
+      "getBlueFuelScore",
+      "getRedClimbScore",
+      "getBlueClimbScore",
+      "getRedTotalScore",
+      "getBlueTotalScore",
+      "getPlayerScore",
+      "getOpponentScore",
+      "getLeadMargin",
+      "getLeader",
+      "getPlayerAccuracyPercent",
+      "isRedFuelRpAchieved",
+      "isBlueFuelRpAchieved",
+      "isRedClimbRpAchieved",
+      "isBlueClimbRpAchieved",
+      "getRedRankingPoints",
+      "getBlueRankingPoints",
+      "simulationUpdate",
+      "update",
+      "getRedFuelCount",
+      "getBlueFuelCount",
+      "getPlayerShotsAttempted",
+      "getPlayerShotsScored",
+      "getBot0FuelScored",
+      "getBot1FuelScored",
+      "getBot2FuelScored",
+      "getAlly1FuelScored",
+      "getAlly2FuelScored",
+      "isPlayerClimbed",
+      "isAlly1Climbed",
+      "isAlly2Climbed",
+      "getRedClimbCount",
+      "getBlueClimbCount",
+      "getPlayerAllianceScore",
+      "getPlayerAllianceClimbScore",
+      "isEnabled",
+      "initialize",
+      "log",
+      "getName"
+    ],
+    "methods_missing_units_count": 48,
+    "constants_total": 5,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 5,
+    "constants_missing_units_count": 4,
+    "constants_missing_units_names": [
+      "POINTS_PER_FUEL",
+      "POINTS_PER_CLIMB",
+      "FUEL_RP_THRESHOLD",
+      "CLIMB_RP_ROBOT_COUNT"
+    ],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Sim\\ShooterSim.java",
+    "package": "frc.robot.Sim",
+    "types_total": 1,
+    "types_with_jd": 0,
+    "types_missing_jd": [
+      "ShooterSim"
+    ],
+    "methods_total": 13,
+    "methods_with_jd": 2,
+    "methods_missing_jd_count": 11,
+    "methods_missing_jd_names": [
+      "update",
+      "update",
+      "getVelocityRPM",
+      "getLeftVelocityRPM",
+      "getRightVelocityRPM",
+      "getCurrentDrawAmps",
+      "getLeftCurrentDrawAmps",
+      "getRightCurrentDrawAmps",
+      "launchSimulatedFuel",
+      "getSimShotCount",
+      "getSimScoreCount"
+    ],
+    "methods_missing_units_count": 8,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Sim\\StrategicObjective.java",
+    "package": "frc.robot.Sim",
+    "types_total": 1,
+    "types_with_jd": 1,
+    "types_missing_jd": [],
+    "methods_total": 2,
+    "methods_with_jd": 0,
+    "methods_missing_jd_count": 2,
+    "methods_missing_jd_names": [
+      "isOffensive",
+      "isDefensive"
+    ],
+    "methods_missing_units_count": 2,
+    "constants_total": 8,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 8,
+    "constants_missing_units_count": 8,
+    "constants_missing_units_names": [
+      "HARVEST_FEEDER",
+      "HARVEST_FIELD_PIECES",
+      "HARVEST_FIELD_FUEL",
+      "SCORE_HUB",
+      "SCORE_GOAL",
+      "STAGE_SCORING_WINDOW",
+      "DENY_SCORING_LANE",
+      "RUSH_ENDGAME"
+    ],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Sim\\VisionSim.java",
+    "package": "frc.robot.Sim",
+    "types_total": 1,
+    "types_with_jd": 1,
+    "types_missing_jd": [],
+    "methods_total": 10,
+    "methods_with_jd": 2,
+    "methods_missing_jd_count": 8,
+    "methods_missing_jd_names": [
+      "getInstance",
+      "hasSimulatedNeuralTarget",
+      "getSimulatedNeuralYaw",
+      "getSimulatedNeuralPitch",
+      "getSimulatedNeuralArea",
+      "getSimulatedNeuralDistance",
+      "getVisionSystemSim",
+      "getCameraSim"
+    ],
+    "methods_missing_units_count": 7,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Sim\\WorldState.java",
+    "package": "frc.robot.Sim",
+    "types_total": 1,
+    "types_with_jd": 1,
+    "types_missing_jd": [],
+    "methods_total": 7,
+    "methods_with_jd": 0,
+    "methods_missing_jd_count": 7,
+    "methods_missing_jd_names": [
+      "isSelfHubActive",
+      "isInventoryFull",
+      "heldGamePieceCount",
+      "isAllianceGoalActive",
+      "isOpponentGoalActive",
+      "timeUntilGoalShift",
+      "inventoryRatio"
+    ],
+    "methods_missing_units_count": 7,
+    "constants_total": 2,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 2,
+    "constants_missing_units_count": 2,
+    "constants_missing_units_names": [
+      "DEFAULT_MAX_CAPACITY",
+      "CO_PILOT_CAPACITY"
+    ],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Sim\\WorldStateBuilder.java",
+    "package": "frc.robot.Sim",
+    "types_total": 1,
+    "types_with_jd": 1,
+    "types_missing_jd": [],
+    "methods_total": 1,
+    "methods_with_jd": 1,
+    "methods_missing_jd_count": 0,
+    "methods_missing_jd_names": [],
+    "methods_missing_units_count": 1,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Subsystems\\Dashboard.java",
+    "package": "frc.robot.Subsystems",
+    "types_total": 1,
+    "types_with_jd": 1,
+    "types_missing_jd": [],
+    "methods_total": 29,
+    "methods_with_jd": 0,
+    "methods_missing_jd_count": 29,
+    "methods_missing_jd_names": [
+      "getInstance",
+      "isHapticCollisionEnabled",
+      "update",
+      "log",
+      "initialize",
+      "isEnabled",
+      "getName",
+      "getAutoChooser",
+      "isHubActive",
+      "getTimeUntilSwitch",
+      "isSnapToTurnEnabled",
+      "isBallHuntEnabled",
+      "isGlidePointsEnabled",
+      "isFieldOrientedEnabled",
+      "isFieldOriented",
+      "isSlowModeEnabled",
+      "setSlowModeEnabled",
+      "isAutoAimEnabled",
+      "isOpponentRobotEnabled",
+      "isAllyBotsEnabled",
+      "is2PlayerDefenseEnabled",
+      "isPitModeEnabled",
+      "getOpponentCount",
+      "setOpponentCount",
+      "getOpponentCountChooser",
+      "getAllyCount",
+      "setAllyCount",
+      "getAllyCountChooser",
+      "getOpponentSpeedPercent"
+    ],
+    "methods_missing_units_count": 29,
+    "constants_total": 14,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 14,
+    "constants_missing_units_count": 14,
+    "constants_missing_units_names": [
+      "table",
+      "snapToTurnSub",
+      "ballHuntSub",
+      "glidePointsSub",
+      "fieldOrientedSub",
+      "slowModeSub",
+      "autoAimSub",
+      "opponentRobotSub",
+      "allyBotsSub",
+      "twoPlayerDefenseSub",
+      "pitModeSub",
+      "opponentCountSub",
+      "opponentSpeedSub",
+      "allyCountSub"
+    ],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Subsystems\\Intake.java",
+    "package": "frc.robot.Subsystems",
+    "types_total": 2,
+    "types_with_jd": 2,
+    "types_missing_jd": [],
+    "methods_total": 52,
+    "methods_with_jd": 21,
+    "methods_missing_jd_count": 31,
+    "methods_missing_jd_names": [
+      "getStateName",
+      "fromString",
+      "getArmPosition",
+      "getTargetArmPosition",
+      "setCharacterizationVoltage",
+      "getArmAppliedVoltage",
+      "getArmPositionRads",
+      "getArmVelocityRads",
+      "runRollers",
+      "setRollerVoltage",
+      "getRollerVelocityRPM",
+      "runHopper",
+      "setHopperVoltage",
+      "getHopperVelocityRPM",
+      "getArmCurrentAmps",
+      "getRollerCurrentAmps",
+      "stop",
+      "isAtTargetPosition",
+      "isJammed",
+      "getCurrentDraw",
+      "getIO",
+      "getInputs",
+      "update",
+      "simulationUpdate",
+      "getSimulationCurrentDraw",
+      "initialize",
+      "getMapleIntakeSim",
+      "hasGamePiece",
+      "log",
+      "isEnabled",
+      "getName"
+    ],
+    "methods_missing_units_count": 45,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Subsystems\\LEDs.java",
+    "package": "frc.robot.Subsystems",
+    "types_total": 1,
+    "types_with_jd": 0,
+    "types_missing_jd": [
+      "LEDs"
+    ],
+    "methods_total": 8,
+    "methods_with_jd": 0,
+    "methods_missing_jd_count": 8,
+    "methods_missing_jd_names": [
+      "getInstance",
+      "setPattern",
+      "initialize",
+      "update",
+      "simulationUpdate",
+      "log",
+      "isEnabled",
+      "getName"
+    ],
+    "methods_missing_units_count": 8,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Subsystems\\MatchCoach.java",
+    "package": "frc.robot.Subsystems",
+    "types_total": 2,
+    "types_with_jd": 1,
+    "types_missing_jd": [
+      "DrillMode"
+    ],
+    "methods_total": 22,
+    "methods_with_jd": 2,
+    "methods_missing_jd_count": 20,
+    "methods_missing_jd_names": [
+      "fromString",
+      "getInstance",
+      "initialize",
+      "update",
+      "getShootingAccuracyPercent",
+      "getAverageCycleTimeSec",
+      "getLastCycleDurationSec",
+      "getFastestCycleSec",
+      "getCompletedCyclesCount",
+      "getTotalShotsAttempted",
+      "getGoodShotsOnTarget",
+      "getWastedShotsInactiveHub",
+      "getMisalignedShots",
+      "getPinWarningsCount",
+      "getDriverGrade",
+      "getActiveCoachingTip",
+      "getCurrentDrill",
+      "log",
+      "isEnabled",
+      "getName"
+    ],
+    "methods_missing_units_count": 22,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Subsystems\\Shooter.java",
+    "package": "frc.robot.Subsystems",
+    "types_total": 3,
+    "types_with_jd": 3,
+    "types_missing_jd": [],
+    "methods_total": 62,
+    "methods_with_jd": 25,
+    "methods_missing_jd_count": 37,
+    "methods_missing_jd_names": [
+      "getStateName",
+      "turretAngle",
+      "flywheelRPM",
+      "possible",
+      "getTargetVelocityRPM",
+      "getSpeed",
+      "getActualRPM",
+      "getFlywheelLeftVelocityRPM",
+      "getFlywheelRightVelocityRPM",
+      "getIO",
+      "getInputs",
+      "manualFire",
+      "manualPrep",
+      "stop",
+      "shoot",
+      "prepareToShoot",
+      "getState",
+      "getShooterState",
+      "getStateEnum",
+      "isShooting",
+      "update",
+      "simulationUpdate",
+      "initialize",
+      "log",
+      "setVoltages",
+      "setFlywheelVoltages",
+      "setFlywheelCharacterizationVoltage",
+      "getFlywheelLeftAppliedVoltage",
+      "getFlywheelRightAppliedVoltage",
+      "getKickerAppliedVoltage",
+      "getKickerVelocityRPM",
+      "setKickerSpeed",
+      "getSimShotCount",
+      "getSimScoreCount",
+      "getSimulationCurrentDraw",
+      "isEnabled",
+      "getName"
+    ],
+    "methods_missing_units_count": 50,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 5,
+    "smells": [
+      {
+        "line": 76,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'targetRpmLeft': public double targetRpmLeft = 0;"
+      },
+      {
+        "line": 77,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'targetRpmRight': public double targetRpmRight = 0;"
+      },
+      {
+        "line": 86,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'normalDistanceToHub': public double normalDistanceToHub = 0;"
+      },
+      {
+        "line": 87,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'leftShooterVoltageCalc': public double leftShooterVoltageCalc = 0;"
+      },
+      {
+        "line": 88,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'rightShooterVoltageCalc': public double rightShooterVoltageCalc = 0;"
+      }
+    ]
+  },
+  {
+    "file": "Subsystems\\SubsystemManager.java",
+    "package": "frc.robot.Subsystems",
+    "types_total": 1,
+    "types_with_jd": 0,
+    "types_missing_jd": [
+      "SubsystemManager"
+    ],
+    "methods_total": 6,
+    "methods_with_jd": 3,
+    "methods_missing_jd_count": 3,
+    "methods_missing_jd_names": [
+      "updateSubsystems",
+      "simulationUpdateSubsystems",
+      "logSubsystems"
+    ],
+    "methods_missing_units_count": 4,
+    "constants_total": 1,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 1,
+    "constants_missing_units_count": 1,
+    "constants_missing_units_names": [
+      "subsystems"
+    ],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Subsystems\\SwerveBase.java",
+    "package": "frc.robot.Subsystems",
+    "types_total": 1,
+    "types_with_jd": 0,
+    "types_missing_jd": [
+      "SwerveBase"
+    ],
+    "methods_total": 77,
+    "methods_with_jd": 59,
+    "methods_missing_jd_count": 18,
+    "methods_missing_jd_names": [
+      "getNearestGlidePoint",
+      "drawGlidePointsOnField",
+      "isVisionDegraded",
+      "update",
+      "getCollisionDetector",
+      "isCollisionDetected",
+      "initialize",
+      "log",
+      "isEnabled",
+      "getName",
+      "getField",
+      "getIO",
+      "getInputs",
+      "getDriveMotorVoltages",
+      "getDriveMotorPositions",
+      "getDriveMotorVelocities",
+      "setSysIdSteerVoltage",
+      "getCollisionJerkMagnitude"
+    ],
+    "methods_missing_units_count": 58,
+    "constants_total": 2,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 2,
+    "constants_missing_units_count": 1,
+    "constants_missing_units_names": [
+      "OFF_FIELD_POSE"
+    ],
+    "smells_count": 1,
+    "smells": [
+      {
+        "line": 120,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"SwerveBase: Simulation Mode is \" + SwerveDriveTelemetry.isSimulation);"
+      }
+    ]
+  },
+  {
+    "file": "Subsystems\\Vision.java",
+    "package": "frc.robot.Subsystems",
+    "types_total": 2,
+    "types_with_jd": 1,
+    "types_missing_jd": [
+      "VisionTargetEstimate"
+    ],
+    "methods_total": 31,
+    "methods_with_jd": 10,
+    "methods_missing_jd_count": 21,
+    "methods_missing_jd_names": [
+      "getInstance",
+      "update",
+      "hasTarget",
+      "hasGamePiece",
+      "getGamePieceYaw",
+      "getGamePiecePitch",
+      "getGamePieceArea",
+      "getTX",
+      "getTY",
+      "getEstimatedPose",
+      "isAccepted",
+      "getIO",
+      "getSecondaryIO",
+      "getInputs",
+      "getSecondaryInputs",
+      "initialize",
+      "log",
+      "getFilteredPrimaryTagDist",
+      "getFilteredSecondaryTagDist",
+      "isEnabled",
+      "getName"
+    ],
+    "methods_missing_units_count": 30,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 3,
+    "smells": [
+      {
+        "line": 340,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[Vision] Limelight enabled: \" + enabled);"
+      },
+      {
+        "line": 347,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[Vision] Limelight LED mode: \" + mode);"
+      },
+      {
+        "line": 354,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[Vision] PhotonVision pipeline: \" + pipeline);"
+      }
+    ]
+  },
+  {
+    "file": "Subsystems\\drive\\DriveIO.java",
+    "package": "frc.robot.Subsystems.drive",
+    "types_total": 2,
+    "types_with_jd": 1,
+    "types_missing_jd": [
+      "DriveIOInputs"
+    ],
+    "methods_total": 7,
+    "methods_with_jd": 7,
+    "methods_missing_jd_count": 0,
+    "methods_missing_jd_names": [],
+    "methods_missing_units_count": 5,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 16,
+    "smells": [
+      {
+        "line": 17,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'drivePositionsMeters': public double[] drivePositionsMeters = new double[4];"
+      },
+      {
+        "line": 18,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'driveVelocitiesMetersPerSec': public double[] driveVelocitiesMetersPerSec = new double[4];"
+      },
+      {
+        "line": 19,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'driveAppliedVolts': public double[] driveAppliedVolts = new double[4];"
+      },
+      {
+        "line": 20,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'driveCurrentAmps': public double[] driveCurrentAmps = new double[4];"
+      },
+      {
+        "line": 23,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'steerPositionsDeg': public double[] steerPositionsDeg = new double[4];"
+      },
+      {
+        "line": 24,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'steerVelocitiesDegPerSec': public double[] steerVelocitiesDegPerSec = new double[4];"
+      },
+      {
+        "line": 25,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'steerAppliedVolts': public double[] steerAppliedVolts = new double[4];"
+      },
+      {
+        "line": 26,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'steerCurrentAmps': public double[] steerCurrentAmps = new double[4];"
+      },
+      {
+        "line": 29,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'gyroYawDeg': public double gyroYawDeg = 0.0;"
+      },
+      {
+        "line": 30,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'gyroPitchDeg': public double gyroPitchDeg = 0.0;"
+      },
+      {
+        "line": 31,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'gyroRollDeg': public double gyroRollDeg = 0.0;"
+      },
+      {
+        "line": 32,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'gyroYawVelocityDegPerSec': public double gyroYawVelocityDegPerSec = 0.0;"
+      },
+      {
+        "line": 35,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'accelXG': public double accelXG = 0.0;"
+      },
+      {
+        "line": 36,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'accelYG': public double accelYG = 0.0;"
+      },
+      {
+        "line": 37,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'accelZG': public double accelZG = 1.0;"
+      },
+      {
+        "line": 40,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'odometryPose': public Pose2d odometryPose = new Pose2d();"
+      }
+    ]
+  },
+  {
+    "file": "Subsystems\\drive\\DriveIOSim.java",
+    "package": "frc.robot.Subsystems.drive",
+    "types_total": 1,
+    "types_with_jd": 1,
+    "types_missing_jd": [],
+    "methods_total": 6,
+    "methods_with_jd": 0,
+    "methods_missing_jd_count": 6,
+    "methods_missing_jd_names": [
+      "updateInputs",
+      "setModuleDriveVoltage",
+      "setModuleAngleVoltage",
+      "setChassisSpeeds",
+      "zeroGyro",
+      "setPose"
+    ],
+    "methods_missing_units_count": 4,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Subsystems\\drive\\DriveIOSparkMax.java",
+    "package": "frc.robot.Subsystems.drive",
+    "types_total": 1,
+    "types_with_jd": 1,
+    "types_missing_jd": [],
+    "methods_total": 6,
+    "methods_with_jd": 0,
+    "methods_missing_jd_count": 6,
+    "methods_missing_jd_names": [
+      "updateInputs",
+      "setModuleDriveVoltage",
+      "setModuleAngleVoltage",
+      "setChassisSpeeds",
+      "zeroGyro",
+      "setPose"
+    ],
+    "methods_missing_units_count": 4,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Subsystems\\intake\\IntakeConstants.java",
+    "package": "frc.robot.Subsystems.intake",
+    "types_total": 1,
+    "types_with_jd": 1,
+    "types_missing_jd": [],
+    "methods_total": 0,
+    "methods_with_jd": 0,
+    "methods_missing_jd_count": 0,
+    "methods_missing_jd_names": [],
+    "methods_missing_units_count": 0,
+    "constants_total": 39,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 39,
+    "constants_missing_units_count": 31,
+    "constants_missing_units_names": [
+      "INTAKE_ARM_INVERTED",
+      "INTAKE_WHEELS_INVERTED",
+      "INTAKE_POSITION_OFFSET",
+      "INTAKE_UP_POSITION",
+      "INTAKE_DOWN_POSITION",
+      "INTAKE_HORIZONTAL_POSITION",
+      "ARM_INTAKE_POS",
+      "ARM_IDLE_POS",
+      "INTAKE_UP_POSITION_MEASURE",
+      "INTAKE_DOWN_POSITION_MEASURE",
+      "INTAKE_HORIZONTAL_POSITION_MEASURE",
+      "STALL_CURRENT_LIMIT_MEASURE",
+      "STALL_TIME_MEASURE",
+      "EJECT_TIME_MEASURE",
+      "INTAKE_SPEED",
+      "HOPPER_SPEED",
+      "INTAKE_ARM_KP_VAL",
+      "INTAKE_ARM_KI_VAL",
+      "INTAKE_ARM_KD_VAL",
+      "INTAKE_ARM_KS_VAL",
+      "INTAKE_ARM_KG_VAL",
+      "INTAKE_ARM_KV_VAL",
+      "INTAKE_ARM_KA_VAL",
+      "ARM_KP",
+      "ARM_KI",
+      "ARM_KD",
+      "ARM_KS",
+      "ARM_KV",
+      "ARM_KA",
+      "MAX_HELD_BALLS",
+      "SIM_ARM_GEARING"
+    ],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Subsystems\\intake\\IntakeIO.java",
+    "package": "frc.robot.Subsystems.intake",
+    "types_total": 2,
+    "types_with_jd": 1,
+    "types_missing_jd": [
+      "IntakeIOInputs"
+    ],
+    "methods_total": 7,
+    "methods_with_jd": 7,
+    "methods_missing_jd_count": 0,
+    "methods_missing_jd_names": [],
+    "methods_missing_units_count": 4,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 12,
+    "smells": [
+      {
+        "line": 13,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'armPositionDeg': public double armPositionDeg = 0.0;"
+      },
+      {
+        "line": 14,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'armVelocityDegPerSec': public double armVelocityDegPerSec = 0.0;"
+      },
+      {
+        "line": 15,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'armAppliedVolts': public double armAppliedVolts = 0.0;"
+      },
+      {
+        "line": 16,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'armCurrentAmps': public double armCurrentAmps = 0.0;"
+      },
+      {
+        "line": 17,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'armMotorRotations': public double armMotorRotations = 0.0;"
+      },
+      {
+        "line": 18,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'encoderConnected': public boolean encoderConnected = true;"
+      },
+      {
+        "line": 20,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'rollerAppliedVolts': public double rollerAppliedVolts = 0.0;"
+      },
+      {
+        "line": 21,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'rollerCurrentAmps': public double rollerCurrentAmps = 0.0;"
+      },
+      {
+        "line": 22,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'rollerVelocityRPM': public double rollerVelocityRPM = 0.0;"
+      },
+      {
+        "line": 24,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'hopperAppliedVolts': public double hopperAppliedVolts = 0.0;"
+      },
+      {
+        "line": 25,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'hopperCurrentAmps': public double hopperCurrentAmps = 0.0;"
+      },
+      {
+        "line": 26,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'hopperVelocityRPM': public double hopperVelocityRPM = 0.0;"
+      }
+    ]
+  },
+  {
+    "file": "Subsystems\\intake\\IntakeIOSim.java",
+    "package": "frc.robot.Subsystems.intake",
+    "types_total": 1,
+    "types_with_jd": 1,
+    "types_missing_jd": [],
+    "methods_total": 10,
+    "methods_with_jd": 1,
+    "methods_missing_jd_count": 9,
+    "methods_missing_jd_names": [
+      "getMapleIntakeSim",
+      "getArmSim",
+      "updateInputs",
+      "setArmVoltage",
+      "setRollerVoltage",
+      "setRollerSpeed",
+      "setHopperVoltage",
+      "setHopperSpeed",
+      "stop"
+    ],
+    "methods_missing_units_count": 6,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Subsystems\\intake\\IntakeIOSparkMax.java",
+    "package": "frc.robot.Subsystems.intake",
+    "types_total": 1,
+    "types_with_jd": 1,
+    "types_missing_jd": [],
+    "methods_total": 7,
+    "methods_with_jd": 0,
+    "methods_missing_jd_count": 7,
+    "methods_missing_jd_names": [
+      "updateInputs",
+      "setArmVoltage",
+      "setRollerVoltage",
+      "setRollerSpeed",
+      "setHopperVoltage",
+      "setHopperSpeed",
+      "stop"
+    ],
+    "methods_missing_units_count": 4,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Subsystems\\shooter\\ShooterConstants.java",
+    "package": "frc.robot.Subsystems.shooter",
+    "types_total": 1,
+    "types_with_jd": 1,
+    "types_missing_jd": [],
+    "methods_total": 0,
+    "methods_with_jd": 0,
+    "methods_missing_jd_count": 0,
+    "methods_missing_jd_names": [],
+    "methods_missing_units_count": 0,
+    "constants_total": 37,
+    "constants_with_jd": 7,
+    "constants_missing_jd_count": 30,
+    "constants_missing_units_count": 20,
+    "constants_missing_units_names": [
+      "FIRING_ANGLE",
+      "HEIGHT_DIFFERENCE",
+      "FEED_SPEED",
+      "RPM_TOLERANCE",
+      "FLYWHEEL_KI_VAL",
+      "FLYWHEEL_KD_VAL",
+      "SHOOTER_PREDICTIVE_LOOK_AHEAD",
+      "FLYWHEEL_KP",
+      "FLYWHEEL_KI",
+      "FLYWHEEL_KD",
+      "FLYWHEEL_KS",
+      "FLYWHEEL_KV",
+      "FLYWHEEL_KA",
+      "FLYWHEEL_CURRENT_LIMIT_MEASURE",
+      "KICKER_CURRENT_LIMIT_MEASURE",
+      "IDLE_RPM_MEASURE",
+      "SIM_GEARING",
+      "SIM_MOI",
+      "SHOOTER_WHEEL_CIRCUMFERENCE",
+      "BALL_LAUNCH_EFFICIENCY"
+    ],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Subsystems\\shooter\\ShooterIO.java",
+    "package": "frc.robot.Subsystems.shooter",
+    "types_total": 2,
+    "types_with_jd": 1,
+    "types_missing_jd": [
+      "ShooterIOInputs"
+    ],
+    "methods_total": 4,
+    "methods_with_jd": 4,
+    "methods_missing_jd_count": 0,
+    "methods_missing_jd_names": [],
+    "methods_missing_units_count": 2,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 11,
+    "smells": [
+      {
+        "line": 13,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'leftVelocityRPM': public double leftVelocityRPM = 0.0;"
+      },
+      {
+        "line": 14,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'rightVelocityRPM': public double rightVelocityRPM = 0.0;"
+      },
+      {
+        "line": 15,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'leftAppliedVolts': public double leftAppliedVolts = 0.0;"
+      },
+      {
+        "line": 16,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'rightAppliedVolts': public double rightAppliedVolts = 0.0;"
+      },
+      {
+        "line": 17,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'kickerAppliedVolts': public double kickerAppliedVolts = 0.0;"
+      },
+      {
+        "line": 18,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'leftCurrentAmps': public double leftCurrentAmps = 0.0;"
+      },
+      {
+        "line": 19,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'rightCurrentAmps': public double rightCurrentAmps = 0.0;"
+      },
+      {
+        "line": 20,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'kickerCurrentAmps': public double kickerCurrentAmps = 0.0;"
+      },
+      {
+        "line": 21,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'kickerVelocityRPM': public double kickerVelocityRPM = 0.0;"
+      },
+      {
+        "line": 22,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'leftBusVolts': public double leftBusVolts = 12.0;"
+      },
+      {
+        "line": 23,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'rightBusVolts': public double rightBusVolts = 12.0;"
+      }
+    ]
+  },
+  {
+    "file": "Subsystems\\shooter\\ShooterIOSim.java",
+    "package": "frc.robot.Subsystems.shooter",
+    "types_total": 1,
+    "types_with_jd": 1,
+    "types_missing_jd": [],
+    "methods_total": 5,
+    "methods_with_jd": 0,
+    "methods_missing_jd_count": 5,
+    "methods_missing_jd_names": [
+      "getShooterSim",
+      "updateInputs",
+      "setFlywheelVoltages",
+      "setKickerVoltage",
+      "stop"
+    ],
+    "methods_missing_units_count": 3,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Subsystems\\shooter\\ShooterIOSparkMax.java",
+    "package": "frc.robot.Subsystems.shooter",
+    "types_total": 1,
+    "types_with_jd": 1,
+    "types_missing_jd": [],
+    "methods_total": 4,
+    "methods_with_jd": 0,
+    "methods_missing_jd_count": 4,
+    "methods_missing_jd_names": [
+      "updateInputs",
+      "setFlywheelVoltages",
+      "setKickerVoltage",
+      "stop"
+    ],
+    "methods_missing_units_count": 2,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Subsystems\\vision\\VisionIO.java",
+    "package": "frc.robot.Subsystems.vision",
+    "types_total": 2,
+    "types_with_jd": 1,
+    "types_missing_jd": [
+      "VisionIOInputs"
+    ],
+    "methods_total": 2,
+    "methods_with_jd": 2,
+    "methods_missing_jd_count": 0,
+    "methods_missing_jd_names": [],
+    "methods_missing_units_count": 1,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 13,
+    "smells": [
+      {
+        "line": 14,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'hasTarget': public boolean hasTarget = false;"
+      },
+      {
+        "line": 15,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'tagCount': public int tagCount = 0;"
+      },
+      {
+        "line": 16,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'avgTagDist': public double avgTagDist = 0.0;"
+      },
+      {
+        "line": 17,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'timestamp': public double timestamp = 0.0;"
+      },
+      {
+        "line": 18,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'latencyMs': public double latencyMs = 0.0;"
+      },
+      {
+        "line": 19,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'estimatedPose': public Pose2d estimatedPose = new Pose2d();"
+      },
+      {
+        "line": 20,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'targetTx': public double targetTx = 0.0;"
+      },
+      {
+        "line": 21,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'targetTy': public double targetTy = 0.0;"
+      },
+      {
+        "line": 22,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'targetTa': public double targetTa = 0.0;"
+      },
+      {
+        "line": 25,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'hasGamePiece': public boolean hasGamePiece = false;"
+      },
+      {
+        "line": 26,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'gamePieceYaw': public double gamePieceYaw = 0.0;"
+      },
+      {
+        "line": 27,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'gamePiecePitch': public double gamePiecePitch = 0.0;"
+      },
+      {
+        "line": 28,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'gamePieceArea': public double gamePieceArea = 0.0;"
+      }
+    ]
+  },
+  {
+    "file": "Subsystems\\vision\\VisionIOLimelight.java",
+    "package": "frc.robot.Subsystems.vision",
+    "types_total": 1,
+    "types_with_jd": 1,
+    "types_missing_jd": [],
+    "methods_total": 2,
+    "methods_with_jd": 0,
+    "methods_missing_jd_count": 2,
+    "methods_missing_jd_names": [
+      "updateInputs",
+      "setRobotOrientation"
+    ],
+    "methods_missing_units_count": 1,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Subsystems\\vision\\VisionIOPhotonVision.java",
+    "package": "frc.robot.Subsystems.vision",
+    "types_total": 1,
+    "types_with_jd": 1,
+    "types_missing_jd": [],
+    "methods_total": 2,
+    "methods_with_jd": 0,
+    "methods_missing_jd_count": 2,
+    "methods_missing_jd_names": [
+      "updateInputs",
+      "getCameraName"
+    ],
+    "methods_missing_units_count": 2,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Subsystems\\vision\\VisionIOSim.java",
+    "package": "frc.robot.Subsystems.vision",
+    "types_total": 2,
+    "types_with_jd": 1,
+    "types_missing_jd": [
+      "CameraType"
+    ],
+    "methods_total": 6,
+    "methods_with_jd": 0,
+    "methods_missing_jd_count": 6,
+    "methods_missing_jd_names": [
+      "setSimulatedPose",
+      "setRobotOrientation",
+      "setGamePieceDetected",
+      "clearManualGamePieceOverride",
+      "updateInputs",
+      "getCameraType"
+    ],
+    "methods_missing_units_count": 6,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Test\\Diagnostics.java",
+    "package": "frc.robot.Test",
+    "types_total": 3,
+    "types_with_jd": 2,
+    "types_missing_jd": [
+      "PreFlightStep"
+    ],
+    "methods_total": 17,
+    "methods_with_jd": 3,
+    "methods_missing_jd_count": 14,
+    "methods_missing_jd_names": [
+      "getInstance",
+      "resetScorecard",
+      "registerTests",
+      "update",
+      "log",
+      "initialize",
+      "getName",
+      "isEnabled",
+      "isPreFlightRunning",
+      "getPreFlightStep",
+      "hasErrors",
+      "startTest",
+      "getTestNames",
+      "setupDashboard"
+    ],
+    "methods_missing_units_count": 15,
+    "constants_total": 3,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 3,
+    "constants_missing_units_count": 1,
+    "constants_missing_units_names": [
+      "MODULE_NAMES"
+    ],
+    "smells_count": 9,
+    "smells": [
+      {
+        "line": 350,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[Diagnostics] =========================================\");"
+      },
+      {
+        "line": 351,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[Diagnostics] PRE-FLIGHT PIT CHECK RESULTS:\");"
+      },
+      {
+        "line": 352,
+        "type": "CONSOLE_IO",
+        "message": "scorecard.forEach((k, v) -> System.out.printf(\"[Diagnostics]   %-18s: %s%n\", k, v));"
+      },
+      {
+        "line": 353,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[Diagnostics] =========================================\");"
+      },
+      {
+        "line": 365,
+        "type": "CONSOLE_IO",
+        "message": "System.out.printf("
+      },
+      {
+        "line": 443,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[Diagnostics] Starting 15-Second Pre-Flight Check...\");"
+      },
+      {
+        "line": 459,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[Diagnostics] Pre-Flight Check CANCELLED.\");"
+      },
+      {
+        "line": 483,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[Diagnostics] Unknown test: \" + name);"
+      },
+      {
+        "line": 491,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[Diagnostics] -> \" + name);"
+      }
+    ]
+  },
+  {
+    "file": "Test\\DriveCharacterization.java",
+    "package": "frc.robot.Test",
+    "types_total": 2,
+    "types_with_jd": 1,
+    "types_missing_jd": [
+      "TestMode"
+    ],
+    "methods_total": 5,
+    "methods_with_jd": 5,
+    "methods_missing_jd_count": 0,
+    "methods_missing_jd_names": [],
+    "methods_missing_units_count": 5,
+    "constants_total": 1,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 1,
+    "constants_missing_units_count": 1,
+    "constants_missing_units_names": [
+      "MODULE_NAMES"
+    ],
+    "smells_count": 15,
+    "smells": [
+      {
+        "line": 144,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[DriveCharacterization] Mode: SYSID_QUASISTATIC\");"
+      },
+      {
+        "line": 148,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[DriveCharacterization] Mode: SYSID_DYNAMIC\");"
+      },
+      {
+        "line": 152,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[DriveCharacterization] Mode: MODULE_INDIVIDUAL\");"
+      },
+      {
+        "line": 156,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[DriveCharacterization] Mode: KINEMATICS_TEST\");"
+      },
+      {
+        "line": 163,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[DriveCharacterization] Mode: ODOMETRY_TEST\");"
+      },
+      {
+        "line": 174,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[DriveCharacterization] Starting quasistatic forward\");"
+      },
+      {
+        "line": 179,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[DriveCharacterization] Starting quasistatic reverse\");"
+      },
+      {
+        "line": 187,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[DriveCharacterization] Starting steer quasistatic forward\");"
+      },
+      {
+        "line": 192,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[DriveCharacterization] Starting steer quasistatic reverse\");"
+      },
+      {
+        "line": 205,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[DriveCharacterization] Starting dynamic forward\");"
+      },
+      {
+        "line": 210,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[DriveCharacterization] Starting dynamic reverse\");"
+      },
+      {
+        "line": 218,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[DriveCharacterization] Starting steer dynamic forward\");"
+      },
+      {
+        "line": 223,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[DriveCharacterization] Starting steer dynamic reverse\");"
+      },
+      {
+        "line": 241,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[DriveCharacterization] Active module: \" + MODULE_NAMES[activeModule]);"
+      },
+      {
+        "line": 245,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[DriveCharacterization] Active module: \" + MODULE_NAMES[activeModule]);"
+      }
+    ]
+  },
+  {
+    "file": "Test\\IntakeTesting.java",
+    "package": "frc.robot.Test",
+    "types_total": 2,
+    "types_with_jd": 1,
+    "types_missing_jd": [
+      "TestMode"
+    ],
+    "methods_total": 5,
+    "methods_with_jd": 5,
+    "methods_missing_jd_count": 0,
+    "methods_missing_jd_names": [],
+    "methods_missing_units_count": 5,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 7,
+    "smells": [
+      {
+        "line": 83,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[IntakeTesting] Mode: ARM_CONTROL\");"
+      },
+      {
+        "line": 87,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[IntakeTesting] Mode: ROLLER_TESTING\");"
+      },
+      {
+        "line": 91,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[IntakeTesting] Mode: HOPPER_TESTING\");"
+      },
+      {
+        "line": 95,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[IntakeTesting] Mode: JAM_DETECTION\");"
+      },
+      {
+        "line": 102,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[IntakeTesting] Mode: POSITION_CALIBRATION\");"
+      },
+      {
+        "line": 258,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[IntakeTesting] Jam detected! Current: \" + simulatedCurrent + \"A\");"
+      },
+      {
+        "line": 296,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[IntakeTesting] Saved current position: \" + currentPos + \"\u00b0\");"
+      }
+    ]
+  },
+  {
+    "file": "Test\\ShooterTuning.java",
+    "package": "frc.robot.Test",
+    "types_total": 2,
+    "types_with_jd": 1,
+    "types_missing_jd": [
+      "TestMode"
+    ],
+    "methods_total": 5,
+    "methods_with_jd": 5,
+    "methods_missing_jd_count": 0,
+    "methods_missing_jd_names": [],
+    "methods_missing_units_count": 5,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 5,
+    "smells": [
+      {
+        "line": 87,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[ShooterTuning] Mode: MANUAL_VELOCITY\");"
+      },
+      {
+        "line": 91,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[ShooterTuning] Mode: AUTO_AIM_TEST\");"
+      },
+      {
+        "line": 95,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[ShooterTuning] Mode: PID_TUNING\");"
+      },
+      {
+        "line": 99,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[ShooterTuning] Mode: CHARACTERIZATION\");"
+      },
+      {
+        "line": 193,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[ShooterTuning] No shooting solution available for test pose\");"
+      }
+    ]
+  },
+  {
+    "file": "Test\\SysID.java",
+    "package": "frc.robot.Test",
+    "types_total": 1,
+    "types_with_jd": 1,
+    "types_missing_jd": [],
+    "methods_total": 1,
+    "methods_with_jd": 0,
+    "methods_missing_jd_count": 1,
+    "methods_missing_jd_names": [
+      "runTest"
+    ],
+    "methods_missing_units_count": 1,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Test\\SysIdManager.java",
+    "package": "frc.robot.Test",
+    "types_total": 2,
+    "types_with_jd": 1,
+    "types_missing_jd": [
+      "MechanismType"
+    ],
+    "methods_total": 12,
+    "methods_with_jd": 3,
+    "methods_missing_jd_count": 9,
+    "methods_missing_jd_names": [
+      "getInstance",
+      "getActiveRoutine",
+      "setActiveMechanism",
+      "getActiveMechanism",
+      "isRunning",
+      "getRoutineState",
+      "startDynamic",
+      "setupDashboard",
+      "log"
+    ],
+    "methods_missing_units_count": 11,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 3,
+    "smells": [
+      {
+        "line": 237,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[SysIdManager] Switched active mechanism to: \" + mechanism.displayName);"
+      },
+      {
+        "line": 263,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[SysIdManager] Scheduled Quasistatic \" + direction.name() + \" for \" + activeMechanism.displayName);"
+      },
+      {
+        "line": 271,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[SysIdManager] Scheduled Dynamic \" + direction.name() + \" for \" + activeMechanism.displayName);"
+      }
+    ]
+  },
+  {
+    "file": "Test\\TestMode.java",
+    "package": "frc.robot.Test",
+    "types_total": 2,
+    "types_with_jd": 1,
+    "types_missing_jd": [
+      "TestCategory"
+    ],
+    "methods_total": 8,
+    "methods_with_jd": 2,
+    "methods_missing_jd_count": 6,
+    "methods_missing_jd_names": [
+      "getInstance",
+      "setupDashboard",
+      "updateDashboard",
+      "getActiveCategory",
+      "isEnabled",
+      "cleanup"
+    ],
+    "methods_missing_units_count": 8,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 3,
+    "smells": [
+      {
+        "line": 119,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[TestMode] ENABLED - Category: \" + activeCategory.name());"
+      },
+      {
+        "line": 128,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[TestMode] DISABLED\");"
+      },
+      {
+        "line": 159,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[TestMode] Category switched via Dashboard: \" + activeCategory.name());"
+      }
+    ]
+  },
+  {
+    "file": "Test\\VisionTesting.java",
+    "package": "frc.robot.Test",
+    "types_total": 2,
+    "types_with_jd": 1,
+    "types_missing_jd": [
+      "TestMode"
+    ],
+    "methods_total": 6,
+    "methods_with_jd": 6,
+    "methods_missing_jd_count": 0,
+    "methods_missing_jd_names": [],
+    "methods_missing_units_count": 6,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 6,
+    "smells": [
+      {
+        "line": 92,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[VisionTesting] Mode: LIMELIGHT_TESTING\");"
+      },
+      {
+        "line": 96,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[VisionTesting] Mode: PHOTONVISION_TESTING\");"
+      },
+      {
+        "line": 100,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[VisionTesting] Mode: TARGET_TRACKING\");"
+      },
+      {
+        "line": 104,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[VisionTesting] Mode: VISION_ODOMETRY\");"
+      },
+      {
+        "line": 111,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[VisionTesting] Mode: CAMERA_CALIBRATION\");"
+      },
+      {
+        "line": 271,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"[VisionTesting] Pose error: \" + poseError + \" meters\");"
+      }
+    ]
+  },
+  {
+    "file": "ThirdParty\\LimelightHelpers.java",
+    "package": "frc.robot.ThirdParty",
+    "types_total": 11,
+    "types_with_jd": 11,
+    "types_missing_jd": [],
+    "methods_total": 95,
+    "methods_with_jd": 55,
+    "methods_missing_jd_count": 40,
+    "methods_missing_jd_names": [
+      "getFamily",
+      "getBotPose3d",
+      "getBotPose3d_wpiRed",
+      "getBotPose3d_wpiBlue",
+      "getBotPose2d",
+      "getBotPose2d_wpiRed",
+      "getBotPose2d_wpiBlue",
+      "equals",
+      "equals",
+      "validPoseEstimate",
+      "getLimelightNTTable",
+      "Flush",
+      "getLimelightNTTableEntry",
+      "getLimelightDoubleArrayEntry",
+      "getLimelightNTDouble",
+      "setLimelightNTDouble",
+      "setLimelightNTDoubleArray",
+      "getLimelightNTDoubleArray",
+      "getLimelightNTString",
+      "getLimelightNTStringArray",
+      "getLimelightURLString",
+      "getBotPose",
+      "getBotPose_wpiRed",
+      "getBotPose_wpiBlue",
+      "getBotPose_TargetSpace",
+      "getCameraPose_TargetSpace",
+      "getTargetPose_CameraSpace",
+      "getTargetPose_RobotSpace",
+      "getTargetColor",
+      "getFiducialID",
+      "getNeuralClassID",
+      "getRawBarcodeData",
+      "getBotPose3d",
+      "setPipelineIndex",
+      "setPriorityTagID",
+      "setLEDMode_ForceOff",
+      "setLEDMode_ForceBlink",
+      "setLEDMode_ForceOn",
+      "setPythonScriptData",
+      "getPythonScriptData"
+    ],
+    "methods_missing_units_count": 77,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 132,
+    "smells": [
+      {
+        "line": 666,
+        "type": "CONSOLE_IO",
+        "message": "//System.err.println(\"Bad LL 3D Pose Data!\");"
+      },
+      {
+        "line": 685,
+        "type": "CONSOLE_IO",
+        "message": "//System.err.println(\"Bad LL 2D Pose Data!\");"
+      },
+      {
+        "line": 863,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"No PoseEstimate available.\");"
+      },
+      {
+        "line": 867,
+        "type": "CONSOLE_IO",
+        "message": "System.out.printf(\"Pose Estimate Information:%n\");"
+      },
+      {
+        "line": 868,
+        "type": "CONSOLE_IO",
+        "message": "System.out.printf(\"Timestamp (Seconds): %.3f%n\", pose.timestampSeconds);"
+      },
+      {
+        "line": 869,
+        "type": "CONSOLE_IO",
+        "message": "System.out.printf(\"Latency: %.3f ms%n\", pose.latency);"
+      },
+      {
+        "line": 870,
+        "type": "CONSOLE_IO",
+        "message": "System.out.printf(\"Tag Count: %d%n\", pose.tagCount);"
+      },
+      {
+        "line": 871,
+        "type": "CONSOLE_IO",
+        "message": "System.out.printf(\"Tag Span: %.2f meters%n\", pose.tagSpan);"
+      },
+      {
+        "line": 872,
+        "type": "CONSOLE_IO",
+        "message": "System.out.printf(\"Average Tag Distance: %.2f meters%n\", pose.avgTagDist);"
+      },
+      {
+        "line": 873,
+        "type": "CONSOLE_IO",
+        "message": "System.out.printf(\"Average Tag Area: %.2f%% of image%n\", pose.avgTagArea);"
+      },
+      {
+        "line": 874,
+        "type": "CONSOLE_IO",
+        "message": "System.out.printf(\"Is MegaTag2: %b%n\", pose.isMegaTag2);"
+      },
+      {
+        "line": 875,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println();"
+      },
+      {
+        "line": 878,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"No RawFiducials data available.\");"
+      },
+      {
+        "line": 882,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println(\"Raw Fiducials Details:\");"
+      },
+      {
+        "line": 885,
+        "type": "CONSOLE_IO",
+        "message": "System.out.printf(\" Fiducial #%d:%n\", i + 1);"
+      },
+      {
+        "line": 886,
+        "type": "CONSOLE_IO",
+        "message": "System.out.printf(\"  ID: %d%n\", fiducial.id);"
+      },
+      {
+        "line": 887,
+        "type": "CONSOLE_IO",
+        "message": "System.out.printf(\"  TXNC: %.2f%n\", fiducial.txnc);"
+      },
+      {
+        "line": 888,
+        "type": "CONSOLE_IO",
+        "message": "System.out.printf(\"  TYNC: %.2f%n\", fiducial.tync);"
+      },
+      {
+        "line": 889,
+        "type": "CONSOLE_IO",
+        "message": "System.out.printf(\"  TA: %.2f%n\", fiducial.ta);"
+      },
+      {
+        "line": 890,
+        "type": "CONSOLE_IO",
+        "message": "System.out.printf(\"  Distance to Camera: %.2f meters%n\", fiducial.distToCamera);"
+      },
+      {
+        "line": 891,
+        "type": "CONSOLE_IO",
+        "message": "System.out.printf(\"  Distance to Robot: %.2f meters%n\", fiducial.distToRobot);"
+      },
+      {
+        "line": 892,
+        "type": "CONSOLE_IO",
+        "message": "System.out.printf(\"  Ambiguity: %.2f%n\", fiducial.ambiguity);"
+      },
+      {
+        "line": 893,
+        "type": "CONSOLE_IO",
+        "message": "System.out.println();"
+      },
+      {
+        "line": 954,
+        "type": "CONSOLE_IO",
+        "message": "System.err.println(\"bad LL URL\");"
+      },
+      {
+        "line": 1664,
+        "type": "CONSOLE_IO",
+        "message": "System.err.println(\"Bad LL Request\");"
+      },
+      {
+        "line": 1667,
+        "type": "CONSOLE_IO",
+        "message": "System.err.println(e.getMessage());"
+      },
+      {
+        "line": 1695,
+        "type": "CONSOLE_IO",
+        "message": "System.out.printf(\"lljson: %.2f\\r\\n\", millis);"
+      },
+      {
+        "line": 107,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'ta': public double ta;"
+      },
+      {
+        "line": 110,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'tx': public double tx;"
+      },
+      {
+        "line": 113,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'ty': public double ty;"
+      },
+      {
+        "line": 116,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'tx_pixels': public double tx_pixels;"
+      },
+      {
+        "line": 119,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'ty_pixels': public double ty_pixels;"
+      },
+      {
+        "line": 122,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'tx_nocrosshair': public double tx_nocrosshair;"
+      },
+      {
+        "line": 125,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'ty_nocrosshair': public double ty_nocrosshair;"
+      },
+      {
+        "line": 128,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'ts': public double ts;"
+      },
+      {
+        "line": 146,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'fiducialID': public double fiducialID;"
+      },
+      {
+        "line": 149,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'fiducialFamily': public String fiducialFamily;"
+      },
+      {
+        "line": 209,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'ta': public double ta;"
+      },
+      {
+        "line": 212,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'tx': public double tx;"
+      },
+      {
+        "line": 215,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'ty': public double ty;"
+      },
+      {
+        "line": 218,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'tx_pixels': public double tx_pixels;"
+      },
+      {
+        "line": 221,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'ty_pixels': public double ty_pixels;"
+      },
+      {
+        "line": 224,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'tx_nocrosshair': public double tx_nocrosshair;"
+      },
+      {
+        "line": 227,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'ty_nocrosshair': public double ty_nocrosshair;"
+      },
+      {
+        "line": 230,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'ts': public double ts;"
+      },
+      {
+        "line": 250,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'family': public String family;"
+      },
+      {
+        "line": 256,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'data': public String data;"
+      },
+      {
+        "line": 259,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'tx_pixels': public double tx_pixels;"
+      },
+      {
+        "line": 262,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'ty_pixels': public double ty_pixels;"
+      },
+      {
+        "line": 265,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'tx': public double tx;"
+      },
+      {
+        "line": 268,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'ty': public double ty;"
+      },
+      {
+        "line": 271,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'tx_nocrosshair': public double tx_nocrosshair;"
+      },
+      {
+        "line": 274,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'ty_nocrosshair': public double ty_nocrosshair;"
+      },
+      {
+        "line": 277,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'ta': public double ta;"
+      },
+      {
+        "line": 280,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'corners': public double[][] corners;"
+      },
+      {
+        "line": 296,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'className': public String className;"
+      },
+      {
+        "line": 299,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'classID': public double classID;"
+      },
+      {
+        "line": 302,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'confidence': public double confidence;"
+      },
+      {
+        "line": 305,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'zone': public double zone;"
+      },
+      {
+        "line": 308,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'tx': public double tx;"
+      },
+      {
+        "line": 311,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'tx_pixels': public double tx_pixels;"
+      },
+      {
+        "line": 314,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'ty': public double ty;"
+      },
+      {
+        "line": 317,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'ty_pixels': public double ty_pixels;"
+      },
+      {
+        "line": 329,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'className': public String className;"
+      },
+      {
+        "line": 332,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'classID': public double classID;"
+      },
+      {
+        "line": 335,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'confidence': public double confidence;"
+      },
+      {
+        "line": 338,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'ta': public double ta;"
+      },
+      {
+        "line": 341,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'tx': public double tx;"
+      },
+      {
+        "line": 344,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'ty': public double ty;"
+      },
+      {
+        "line": 347,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'tx_pixels': public double tx_pixels;"
+      },
+      {
+        "line": 350,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'ty_pixels': public double ty_pixels;"
+      },
+      {
+        "line": 353,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'tx_nocrosshair': public double tx_nocrosshair;"
+      },
+      {
+        "line": 356,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'ty_nocrosshair': public double ty_nocrosshair;"
+      },
+      {
+        "line": 367,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'error': public String error;"
+      },
+      {
+        "line": 370,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'pipelineID': public double pipelineID;"
+      },
+      {
+        "line": 373,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'latency_pipeline': public double latency_pipeline;"
+      },
+      {
+        "line": 376,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'latency_capture': public double latency_capture;"
+      },
+      {
+        "line": 378,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'latency_jsonParse': public double latency_jsonParse;"
+      },
+      {
+        "line": 381,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'timestamp_LIMELIGHT_publish': public double timestamp_LIMELIGHT_publish;"
+      },
+      {
+        "line": 384,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'timestamp_RIOFPGA_capture': public double timestamp_RIOFPGA_capture;"
+      },
+      {
+        "line": 388,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'valid': public boolean valid;"
+      },
+      {
+        "line": 391,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'botpose': public double[] botpose;"
+      },
+      {
+        "line": 394,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'botpose_wpired': public double[] botpose_wpired;"
+      },
+      {
+        "line": 397,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'botpose_wpiblue': public double[] botpose_wpiblue;"
+      },
+      {
+        "line": 400,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'botpose_tagcount': public double botpose_tagcount;"
+      },
+      {
+        "line": 403,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'botpose_span': public double botpose_span;"
+      },
+      {
+        "line": 406,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'botpose_avgdist': public double botpose_avgdist;"
+      },
+      {
+        "line": 409,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'botpose_avgarea': public double botpose_avgarea;"
+      },
+      {
+        "line": 412,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'camerapose_robotspace': public double[] camerapose_robotspace;"
+      },
+      {
+        "line": 439,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'targets_Retro': public LimelightTarget_Retro[] targets_Retro;"
+      },
+      {
+        "line": 442,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'targets_Fiducials': public LimelightTarget_Fiducial[] targets_Fiducials;"
+      },
+      {
+        "line": 445,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'targets_Classifier': public LimelightTarget_Classifier[] targets_Classifier;"
+      },
+      {
+        "line": 448,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'targets_Detector': public LimelightTarget_Detector[] targets_Detector;"
+      },
+      {
+        "line": 451,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'targets_Barcode': public LimelightTarget_Barcode[] targets_Barcode;"
+      },
+      {
+        "line": 473,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'id': public int id = 0;"
+      },
+      {
+        "line": 474,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'txnc': public double txnc = 0;"
+      },
+      {
+        "line": 475,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'tync': public double tync = 0;"
+      },
+      {
+        "line": 476,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'ta': public double ta = 0;"
+      },
+      {
+        "line": 477,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'distToCamera': public double distToCamera = 0;"
+      },
+      {
+        "line": 478,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'distToRobot': public double distToRobot = 0;"
+      },
+      {
+        "line": 479,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'ambiguity': public double ambiguity = 0;"
+      },
+      {
+        "line": 512,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'classId': public int classId = 0;"
+      },
+      {
+        "line": 513,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'txnc': public double txnc = 0;"
+      },
+      {
+        "line": 514,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'tync': public double tync = 0;"
+      },
+      {
+        "line": 515,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'ta': public double ta = 0;"
+      },
+      {
+        "line": 516,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'corner0_X': public double corner0_X = 0;"
+      },
+      {
+        "line": 517,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'corner0_Y': public double corner0_Y = 0;"
+      },
+      {
+        "line": 518,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'corner1_X': public double corner1_X = 0;"
+      },
+      {
+        "line": 519,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'corner1_Y': public double corner1_Y = 0;"
+      },
+      {
+        "line": 520,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'corner2_X': public double corner2_X = 0;"
+      },
+      {
+        "line": 521,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'corner2_Y': public double corner2_Y = 0;"
+      },
+      {
+        "line": 522,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'corner3_X': public double corner3_X = 0;"
+      },
+      {
+        "line": 523,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'corner3_Y': public double corner3_Y = 0;"
+      },
+      {
+        "line": 550,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'pose': public Pose2d pose;"
+      },
+      {
+        "line": 551,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'timestampSeconds': public double timestampSeconds;"
+      },
+      {
+        "line": 552,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'latency': public double latency;"
+      },
+      {
+        "line": 553,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'tagCount': public int tagCount;"
+      },
+      {
+        "line": 554,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'tagSpan': public double tagSpan;"
+      },
+      {
+        "line": 555,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'avgTagDist': public double avgTagDist;"
+      },
+      {
+        "line": 556,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'avgTagArea': public double avgTagArea;"
+      },
+      {
+        "line": 558,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'rawFiducials': public RawFiducial[] rawFiducials;"
+      },
+      {
+        "line": 559,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'isMegaTag2': public boolean isMegaTag2;"
+      },
+      {
+        "line": 613,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'robotYaw': public double robotYaw = 0.0;"
+      },
+      {
+        "line": 614,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'Roll': public double Roll = 0.0;"
+      },
+      {
+        "line": 615,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'Pitch': public double Pitch = 0.0;"
+      },
+      {
+        "line": 616,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'Yaw': public double Yaw = 0.0;"
+      },
+      {
+        "line": 617,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'gyroX': public double gyroX = 0.0;"
+      },
+      {
+        "line": 618,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'gyroY': public double gyroY = 0.0;"
+      },
+      {
+        "line": 619,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'gyroZ': public double gyroZ = 0.0;"
+      },
+      {
+        "line": 620,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'accelX': public double accelX = 0.0;"
+      },
+      {
+        "line": 621,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'accelY': public double accelY = 0.0;"
+      },
+      {
+        "line": 622,
+        "type": "PUBLIC_MUTABLE_FIELD",
+        "message": "Public mutable field 'accelZ': public double accelZ = 0.0;"
+      }
+    ]
+  },
+  {
+    "file": "Utils\\Alert.java",
+    "package": "frc.robot.Utils",
+    "types_total": 2,
+    "types_with_jd": 1,
+    "types_missing_jd": [
+      "AlertType"
+    ],
+    "methods_total": 7,
+    "methods_with_jd": 0,
+    "methods_missing_jd_count": 7,
+    "methods_missing_jd_names": [
+      "set",
+      "setText",
+      "getText",
+      "getGroup",
+      "getType",
+      "isActive",
+      "getActiveStartTime"
+    ],
+    "methods_missing_units_count": 7,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Utils\\AlertManager.java",
+    "package": "frc.robot.Utils",
+    "types_total": 1,
+    "types_with_jd": 1,
+    "types_missing_jd": [],
+    "methods_total": 7,
+    "methods_with_jd": 1,
+    "methods_missing_jd_count": 6,
+    "methods_missing_jd_names": [
+      "register",
+      "getActiveAlerts",
+      "getHighestSeverity",
+      "hasActiveErrors",
+      "hasActiveWarnings",
+      "update"
+    ],
+    "methods_missing_units_count": 7,
+    "constants_total": 1,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 1,
+    "constants_missing_units_count": 1,
+    "constants_missing_units_names": [
+      "alerts"
+    ],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Utils\\AllianceFlipUtil.java",
+    "package": "frc.robot.Utils",
+    "types_total": 1,
+    "types_with_jd": 1,
+    "types_missing_jd": [],
+    "methods_total": 13,
+    "methods_with_jd": 13,
+    "methods_missing_jd_count": 0,
+    "methods_missing_jd_names": [],
+    "methods_missing_units_count": 13,
+    "constants_total": 2,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 2,
+    "constants_missing_units_count": 2,
+    "constants_missing_units_names": [
+      "FIELD_LENGTH",
+      "FIELD_WIDTH"
+    ],
+    "smells_count": 0,
+    "smells": []
+  },
+  {
+    "file": "Utils\\Vector2dSlewRateLimiter.java",
+    "package": "frc.robot.Utils",
+    "types_total": 1,
+    "types_with_jd": 1,
+    "types_missing_jd": [],
+    "methods_total": 8,
+    "methods_with_jd": 8,
+    "methods_missing_jd_count": 0,
+    "methods_missing_jd_names": [],
+    "methods_missing_units_count": 7,
+    "constants_total": 0,
+    "constants_with_jd": 0,
+    "constants_missing_jd_count": 0,
+    "constants_missing_units_count": 0,
+    "constants_missing_units_names": [],
+    "smells_count": 0,
+    "smells": []
+  }
+]

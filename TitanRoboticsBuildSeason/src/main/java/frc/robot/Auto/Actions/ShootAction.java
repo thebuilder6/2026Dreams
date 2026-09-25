@@ -83,5 +83,6 @@ public class ShootAction implements Actions {
     public void done() {
         timer.stop();
         shooter.stop();
+        swerveBase.stop();
     }
 }

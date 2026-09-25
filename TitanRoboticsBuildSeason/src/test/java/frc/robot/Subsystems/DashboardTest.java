@@ -39,9 +39,41 @@ public class DashboardTest {
 
     @Test
     public void testMultiBotSimulationControls() {
+        Dashboard dashboard = Dashboard.getInstance();
+        assertNotNull(dashboard.getOpponentCountChooser());
+
         Dashboard.setOpponentCount(2);
-        assertTrue(Dashboard.getOpponentCount() >= 1 && Dashboard.getOpponentCount() <= 3);
+        assertEquals(2, Dashboard.getOpponentCount());
+        Dashboard.setOpponentCount(3);
+        assertEquals(3, Dashboard.getOpponentCount());
         Dashboard.setOpponentCount(1);
+        assertEquals(1, Dashboard.getOpponentCount());
         assertTrue(Dashboard.getOpponentSpeedPercent() >= 20.0 && Dashboard.getOpponentSpeedPercent() <= 100.0);
+    }
+
+    @Test
+    public void testAllyBotSimulationControls() {
+        Dashboard dashboard = Dashboard.getInstance();
+        assertNotNull(dashboard.getAllyCountChooser());
+
+        Dashboard.setAllyCount(1);
+        assertEquals(1, Dashboard.getAllyCount());
+        assertTrue(Dashboard.isAllyBotsEnabled());
+
+        Dashboard.setAllyCount(2);
+        assertEquals(2, Dashboard.getAllyCount());
+        assertTrue(Dashboard.isAllyBotsEnabled());
+
+        Dashboard.setAllyCount(0);
+        assertEquals(0, Dashboard.getAllyCount());
+
+        // Clamping checks
+        Dashboard.setAllyCount(-1);
+        assertEquals(0, Dashboard.getAllyCount());
+        Dashboard.setAllyCount(5);
+        assertEquals(2, Dashboard.getAllyCount());
+
+        // Reset to default 0
+        Dashboard.setAllyCount(0);
     }
 }

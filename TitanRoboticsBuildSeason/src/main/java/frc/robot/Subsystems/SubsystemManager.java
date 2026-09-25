@@ -23,7 +23,9 @@ public class SubsystemManager {
      * subsystems.
      */
     public static void initializeSubsystems() {
-        for (Subsystem subsystem : subsystems) {
+        // Snapshot to avoid ConcurrentModificationException if initialize() registers new subsystems
+        List<Subsystem> snapshot = new ArrayList<>(subsystems);
+        for (Subsystem subsystem : snapshot) {
             subsystem.initialize();
         }
     }

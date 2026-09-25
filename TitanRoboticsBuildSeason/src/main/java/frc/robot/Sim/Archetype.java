@@ -19,6 +19,14 @@ public enum Archetype {
 
     public static final Archetype PINNING_BULLY = DEFENSE_BULLY;
 
+    public boolean isDefensive() {
+        return this == DEFENSE_BULLY || this == TACTICAL_DEFENDER || this == LEAD_PURSUIT_INTERCEPTOR;
+    }
+
+    public boolean isOffensive() {
+        return this == AUTONOMOUS_CYCLER || this == CO_PILOT;
+    }
+
     public static Archetype fromString(String name) {
         if (name == null) return AUTONOMOUS_CYCLER;
         for (Archetype a : values()) {

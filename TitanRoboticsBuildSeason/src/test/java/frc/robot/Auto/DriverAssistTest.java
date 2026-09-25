@@ -28,6 +28,8 @@ public class DriverAssistTest {
     @BeforeEach
     public void setup() {
         HAL.initialize(500, 0);
+        AutonomousTeleopAgent.getInstance().resetBallCount();
+        AutonomousTeleopAgent.getInstance().stopAssist();
     }
 
     @Test
@@ -225,5 +227,79 @@ public class DriverAssistTest {
         AIActionIntent intent = JevDecisionEngine.getInstance().evaluatePolicy(endgameFullHopper, Archetype.CO_PILOT);
         assertEquals(StrategicObjective.RUSH_CLIMB, intent.objective(),
                 "In final 15s, RUSH_CLIMB must override CYCLE_SCORE_HUB even when holding full 14 fuel pieces");
+    }
+
+    @Test
+    public void testDriveToPoseActionDynamicPathfindingAroundHub() {
+        // Robot starts west of Blue Hub, target is east of Blue Hub
+        Pose2d startPose = new Pose2d(2.0, 4.035, Rotation2d.fromDegrees(0));
+        Pose2d targetPose = new Pose2d(6.0, 4.035, Rotation2d.fromDegrees(0));
+        frc.robot.Subsystems.SwerveBase.getInstance().resetOdometry(startPose);
+
+        DriveToPoseAction action = new DriveToPoseAction(targetPose);
+        assertFalse(action.isTunnelTransit(), "Path across midfield should not be flagged as a tunnel transit");
+
+        action.start();
+        action.update(); // Triggers TrajectoryController.calculate() which calls StaticPathfinder
+
+        var waypoints = action.getWaypoints();
+        assertNotNull(waypoints);
+        assertTrue(waypoints.size() > 1, "Pathfinder must generate multiple detour waypoints around the Hub");
+
+        // Verify that intermediate waypoints route above or below the Hub (Hub Y is 4.035m, width is ~1.4m)
+        boolean routedAroundHub = false;
+        for (Pose2d wp : waypoints) {
+            double dy = Math.abs(wp.getY() - 4.035);
+            if (dy > 0.8) {
+                routedAroundHub = true;
+                break;
+            }
+        }
+        assertTrue(routedAroundHub, "Pathfinder waypoints must divert laterally to bypass the Hub");
+    }
+
+    @Test
+    public void testSmartAssistMidfieldFuelNavigation() {
+        AutonomousTeleopAgent agent = AutonomousTeleopAgent.getInstance();
+        agent.stopAssist();
+
+        // Start Smart Assist with 0 balls held -> Should navigate to fuel cluster
+        agent.startSmartAssist();
+        agent.updateSmartAssist(0.0, 0.0, 0.0);
+
+        assertEquals(StrategicObjective.VACUUM_MIDFIELD, agent.getActiveObjective(),
+                "With 0 balls held, Smart Assist must seek fuel via VACUUM_MIDFIELD");
+        assertTrue(agent.getCurrentAction() instanceof DriveToPoseAction,
+                "Smart Assist must use DriveToPoseAction with StaticPathfinder to navigate across field to fuel");
+        assertEquals(frc.robot.Subsystems.Intake.IntakeState.INTAKING, frc.robot.Subsystems.Intake.getInstance().getState(),
+                "Intake must be active during VACUUM_MIDFIELD");
+
+        agent.stopAssist();
+    }
+
+    @Test
+    public void testSmartAssistStandoffHoldPositionWithoutRestartStutter() {
+        AutonomousTeleopAgent agent = AutonomousTeleopAgent.getInstance();
+        agent.stopAssist();
+
+        // Give robot 1 ball so it wants to score at active hub
+        agent.incrementBallCount();
+        agent.startSmartAssist();
+        agent.updateSmartAssist(0.0, 0.0, 0.0);
+
+        assertEquals(StrategicObjective.CYCLE_SCORE_HUB, agent.getActiveObjective(),
+                "With fuel held and active hub, Smart Assist must enter CYCLE_SCORE_HUB");
+        assertNotNull(agent.getCurrentAction(), "Current action must be instantiated");
+
+        // Simulate reaching goal
+        frc.robot.Interfaces.Actions action = agent.getCurrentAction();
+        assertTrue(action instanceof DriveToPoseAction);
+
+        // Update when near target should NOT destroy the action and cause stop-start stutter
+        agent.updateSmartAssist(0.0, 0.0, 0.0);
+        assertNotNull(agent.getCurrentAction(), "Current action must NOT be destroyed when holding standoff");
+        assertTrue(agent.isAssistActive(), "Smart Assist must remain active while driver holds button");
+
+        agent.stopAssist();
     }
 }

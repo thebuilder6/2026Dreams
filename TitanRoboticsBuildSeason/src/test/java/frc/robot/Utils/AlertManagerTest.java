@@ -10,7 +10,7 @@ public class AlertManagerTest {
 
     @BeforeEach
     public void setup() {
-        // Reset or prepare tests
+        AlertManager.resetAll();
     }
 
     @Test

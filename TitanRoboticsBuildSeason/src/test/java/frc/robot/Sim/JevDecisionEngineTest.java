@@ -526,4 +526,45 @@ public class JevDecisionEngineTest {
         assertFalse(intent.triggerFeedKicker(),
                 "Bot outside Alliance Zone must not trigger feed kicker");
     }
+
+    @Test
+    public void testAutonomousDefenseSuppressionAndCenterlineBoundary() {
+        Pose2d botPose = new Pose2d(3.0, 4.0, new Rotation2d());
+        Pose2d playerPose = new Pose2d(10.0, 4.0, new Rotation2d());
+
+        // Auto world with 10 balls preloaded, bot is TACTICAL_DEFENDER
+        WorldState autoWithPreload = new WorldState(
+                botPose,
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                10,
+                playerPose,
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                15.0,
+                true,
+                false,
+                15.0,
+                false, // Blue alliance
+                true   // Autonomous mode
+        );
+
+        AIActionIntent autoDefenderIntent = engine.evaluatePolicy(autoWithPreload, Archetype.TACTICAL_DEFENDER);
+        assertEquals(StrategicObjective.CYCLE_SCORE_HUB, autoDefenderIntent.objective(),
+                "In autonomous mode, even defender archetypes must score their preloaded fuel instead of illegal defense");
+
+        AIActionIntent autoBullyIntent = engine.evaluatePolicy(autoWithPreload, Archetype.DEFENSE_BULLY);
+        assertEquals(StrategicObjective.CYCLE_SCORE_HUB, autoBullyIntent.objective(),
+                "In autonomous mode, bully archetypes must score preload rather than cross-field intercept");
+
+        // Blue alliance fuel search in auto must not cross centerline (X=8.27m)
+        Pose2d blueAutoFuelTarget = engine.findClusterWeightedFuelTarget(botPose, false, true);
+        assertNotNull(blueAutoFuelTarget);
+        assertTrue(blueAutoFuelTarget.getX() <= FieldMap.CENTERLINE_X + 0.05,
+                "Blue alliance auto fuel target must not cross centerline into opponent territory: " + blueAutoFuelTarget.getX());
+
+        // Red alliance fuel search in auto must not cross centerline (X=8.27m)
+        Pose2d redAutoFuelTarget = engine.findClusterWeightedFuelTarget(playerPose, true, true);
+        assertNotNull(redAutoFuelTarget);
+        assertTrue(redAutoFuelTarget.getX() >= FieldMap.CENTERLINE_X - 0.05,
+                "Red alliance auto fuel target must not cross centerline into opponent territory: " + redAutoFuelTarget.getX());
+    }
 }

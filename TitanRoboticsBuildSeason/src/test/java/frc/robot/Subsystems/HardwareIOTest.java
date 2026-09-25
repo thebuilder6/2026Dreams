@@ -197,4 +197,29 @@ public class HardwareIOTest {
         assertEquals(-5.0, inputs.gamePieceYaw, 1e-3);
         assertEquals(2.0, inputs.gamePiecePitch, 1e-3);
     }
+
+    @Test
+    public void testNeoSparkMaxMotorCanOptimization() {
+        com.revrobotics.spark.config.SparkMaxConfig config = new com.revrobotics.spark.config.SparkMaxConfig();
+        assertDoesNotThrow(() -> frc.robot.Devices.NeoSparkMaxMotor.optimizeCanBusUtilization(config, true, true));
+
+        com.revrobotics.spark.config.SparkMaxConfig flywheelConfig = new com.revrobotics.spark.config.SparkMaxConfig();
+        assertDoesNotThrow(() -> frc.robot.Devices.NeoSparkMaxMotor.optimizeCanBusUtilization(flywheelConfig, false, true));
+    }
+
+    @Test
+    public void testHardwareSparkMaxIOInstantiation() {
+        // Verify that hardware IO implementations initialize cleanly in simulation/test environment
+        assertDoesNotThrow(() -> {
+            frc.robot.Subsystems.shooter.ShooterIOSparkMax shooterIO = new frc.robot.Subsystems.shooter.ShooterIOSparkMax();
+            shooterIO.updateInputs(new ShooterIOInputs());
+            shooterIO.stop();
+        });
+
+        assertDoesNotThrow(() -> {
+            frc.robot.Subsystems.intake.IntakeIOSparkMax intakeIO = new frc.robot.Subsystems.intake.IntakeIOSparkMax();
+            intakeIO.updateInputs(new IntakeIOInputs());
+            intakeIO.stop();
+        });
+    }
 }

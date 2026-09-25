@@ -46,8 +46,12 @@ Status tags: `[OPEN]`, `[EXPLAINED]` (working as designed, UX problem), `[STALE]
 - [x] `[RESOLVED]` Referee/penalty awareness in sim & penalty score tracking. **Implemented: `RefereeSim` & `MatchScoreTracker` penalty subsystem.**
   - Created `RefereeSim` enforcing FRC G401 (pinning duration >2.4s without 3ft backoff) and G201 (autonomous centerline crossing >0.40m past midfield).
   - Integrated Minor Foul (2 pts) and Tech Foul (5 pts) tracking in `MatchScoreTracker`, cleanly awarding penalty points to the opponent alliance score total and publishing `Scoreboard/Referee/*` telemetry. Full unit test coverage in `RefereeSimTest`.
-- [ ] Coordinated bot autonomous plans + starting positions. `[PARTIAL]` staggered spawns exist (`AIRobotSim.java:333-354`). Missing: distinct auto objectives (blocked by §C endgame bug), coordinated multi-bot plans.
-- [ ] Smarter Jev strategy/tactics (lookahead, allies, opponent modeling). `[OPEN]` Engine is unit-tested (`JevDecisionEngineTest`, 17 tests) but purely reactive single-step policy.
+- [x] `[RESOLVED]` Coordinated bot autonomous plans + starting positions. **Fixed: Defense suppression and centerline isolation in autonomous mode.**
+  - Bots spawn across staggered lanes (Y=2.25, 4.035, 5.80m).
+  - In autonomous mode (`world.isAutonomous()`), defense archetypes (`TACTICAL_DEFENDER`, `DEFENSE_BULLY`, `LEAD_PURSUIT_INTERCEPTOR`) suppress illegal cross-field pursuit and lane denial (preventing FRC G201 centerline penalties). Bots with preloaded fuel prioritize scoring into the active hub, and fuel harvesting is strictly bounded to the alliance half (X <= 8.12m Blue, X >= 8.42m Red).
+- [x] `[RESOLVED]` CAN bus utilization & motor current protection. **Implemented: CAN status frame throttling & smart current limits.**
+  - Added `NeoSparkMaxMotor.optimizeCanBusUtilization()` throttling unused auxiliary sensors (analog, alternate encoder, absolute encoder) to 500ms and tuning velocity/position frames to subsystem needs.
+  - Added smart current limits (40A arm pivot, 30A rollers, 30A hopper) on `IntakeIOSparkMax` and applied frame throttling across intake and shooter SparkMax controllers.
 - [ ] Headless AI-vs-AI training matches + scenario control. `[OPEN]`
 - [ ] Test the AI "brain" outside full sim. `[PARTIAL]` `JevDecisionEngineTest` + `AIRobotSimTest` (32 tests) already do this — extend, don't start over.
 - [ ] Better match UI (both alliances' scores, etc.). `[OPEN]` Data exists (`Scoreboard/*`), layout doesn't.

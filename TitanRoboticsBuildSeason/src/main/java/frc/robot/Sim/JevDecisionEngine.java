@@ -218,7 +218,20 @@ public class JevDecisionEngine {
         }
 
         // Apply Archetype Multipliers
-        if (archetype == Archetype.AUTONOMOUS_CYCLER) {
+        if (world.isAutonomous()) {
+            // FRC G201 centerline rule: in autonomous mode, robots must stay on their alliance half.
+            // Opponent interception, lane denial, and cross-field pinning are illegal in auto.
+            laneDenialUtility = 0.0;
+            shadowUtility = 0.0;
+            interceptUtility = 0.0;
+            if (world.heldFuelCount() > 0) {
+                scoreUtility = 0.95;
+                vacuumUtility = 0.0;
+            } else {
+                scoreUtility = 0.0;
+                vacuumUtility = 0.85;
+            }
+        } else if (archetype == Archetype.AUTONOMOUS_CYCLER) {
             laneDenialUtility = 0.0;
             shadowUtility = 0.0;
             interceptUtility = 0.0;
@@ -319,7 +332,7 @@ public class JevDecisionEngine {
                 break;
 
             case VACUUM_MIDFIELD:
-                navTarget = findClusterWeightedFuelTarget(world.selfPose(), world.isRedAlliance());
+                navTarget = findClusterWeightedFuelTarget(world.selfPose(), world.isRedAlliance(), world.isAutonomous());
                 intakeCmd = IntakeState.INTAKING;
                 shooterCmd = ShooterState.STOPPED;
                 rationale = String.format("Hunting fuel (%d/30). Hopper capacity available.", world.heldFuelCount());
@@ -407,6 +420,10 @@ public class JevDecisionEngine {
      * @return Target Pose2d on carpet facing the highest-density fuel cluster
      */
     public Pose2d findClusterWeightedFuelTarget(Pose2d robotPose, boolean isRedAlliance) {
+        return findClusterWeightedFuelTarget(robotPose, isRedAlliance, false);
+    }
+
+    public Pose2d findClusterWeightedFuelTarget(Pose2d robotPose, boolean isRedAlliance, boolean isAutonomous) {
         SimulatedArena arena = SimulatedArena.getInstance();
         Translation2d bestTarget = null;
         double highestScent = -1.0;
@@ -425,9 +442,14 @@ public class JevDecisionEngine {
                         if (pos.getX() < 0.05 || pos.getX() > 16.48 || pos.getY() < 0.05 || pos.getY() > 8.00) continue;
                         if (StaticPathfinder.isPointInObstacle(pos)) continue;
 
-                        // Restrict opposing driver wall zone
-                        if (isRedAlliance && pos.getX() < 3.5) continue;
-                        if (!isRedAlliance && pos.getX() > 13.0) continue;
+                        // Restrict opposing driver wall zone (and centerline in autonomous under FRC G201)
+                        if (isAutonomous) {
+                            if (isRedAlliance && pos.getX() < FieldMap.CENTERLINE_X + 0.15) continue;
+                            if (!isRedAlliance && pos.getX() > FieldMap.CENTERLINE_X - 0.15) continue;
+                        } else {
+                            if (isRedAlliance && pos.getX() < 3.5) continue;
+                            if (!isRedAlliance && pos.getX() > 13.0) continue;
+                        }
 
                         candidates.add(pos);
                     }
@@ -493,8 +515,10 @@ public class JevDecisionEngine {
             return StaticPathfinder.ensurePoseOutsideObstacles(new Pose2d(targetPos, targetHeading), robotPose.getTranslation());
         }
 
-        // Fallback: Midline patrol
-        double midX = CENTERLINE_X;
+        // Fallback: Midline patrol (buffered away from centerline during autonomous under FRC G201)
+        double midX = isAutonomous
+                ? (isRedAlliance ? CENTERLINE_X + 0.60 : CENTERLINE_X - 0.60)
+                : CENTERLINE_X;
         double midY = (robotPose.getY() > 4.0) ? 5.80 : 2.40;
         return StaticPathfinder.ensurePoseOutsideObstacles(
                 new Pose2d(midX, midY, Rotation2d.fromDegrees(isRedAlliance ? 180 : 0)), robotPose.getTranslation());

@@ -1,4 +1,14 @@
-package frc.robot.Subsystems;
+package frc.robot.Intelligence;
+import frc.robot.Intelligence.Archetype;
+import frc.robot.Intelligence.State.WorldState;
+import frc.robot.Intelligence.State.WorldStateBuilder;
+import frc.robot.Intelligence.State.MatchScoreTracker;
+import frc.robot.Intelligence.AIActionIntent;
+import frc.robot.Intelligence.StrategicObjective;
+import frc.robot.Intelligence.JevDecisionEngine;
+import frc.robot.Intelligence.Sparring.AIRobotSim;
+import frc.robot.Intelligence.Sparring.AIRobotInstance;
+import frc.robot.Intelligence.MatchCoach.DrillMode;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -7,7 +17,6 @@ import org.junit.jupiter.api.Test;
 
 import edu.wpi.first.hal.HAL;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
-import frc.robot.Subsystems.MatchCoach.DrillMode;
 
 public class MatchCoachTest {
 

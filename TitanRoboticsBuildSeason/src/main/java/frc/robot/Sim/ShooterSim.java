@@ -1,5 +1,7 @@
 package frc.robot.Sim;
 
+import frc.robot.Intelligence.State.MatchScoreTracker;
+
 import static edu.wpi.first.units.Units.Meters;
 import static edu.wpi.first.units.Units.MetersPerSecond;
 import static edu.wpi.first.units.Units.Radians;

@@ -1,4 +1,4 @@
-package frc.robot.Sim;
+package frc.robot.Intelligence;
 
 /**
  * AI Competitor Archetypes governing System 2 macro utility weights and tactical behaviors.

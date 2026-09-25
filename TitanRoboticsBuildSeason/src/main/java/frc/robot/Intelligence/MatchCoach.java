@@ -1,4 +1,17 @@
-package frc.robot.Subsystems;
+package frc.robot.Intelligence;
+import frc.robot.Subsystems.SwerveBase;
+import frc.robot.Subsystems.Intake;
+import frc.robot.Subsystems.Shooter;
+import frc.robot.Subsystems.Dashboard;
+import frc.robot.Subsystems.SubsystemManager;
+import frc.robot.Intelligence.Sparring.AIRobotSim;
+import frc.robot.Intelligence.Sparring.AIRobotSim.AIMode;
+import frc.robot.Intelligence.AIActionIntent;
+import frc.robot.Intelligence.Archetype;
+import frc.robot.Intelligence.JevDecisionEngine;
+import frc.robot.Intelligence.StrategicObjective;
+import frc.robot.Intelligence.State.WorldState;
+import frc.robot.Intelligence.State.WorldStateBuilder;
 
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
@@ -13,15 +26,7 @@ import frc.robot.Auto.SmartTunnelRouter;
 import frc.robot.Data.Constants;
 import frc.robot.Data.GlideConstants;
 import frc.robot.Interfaces.Subsystem;
-import frc.robot.Sim.AIRobotSim;
-import frc.robot.Sim.AIRobotSim.AIMode;
-import frc.robot.Sim.AIActionIntent;
-import frc.robot.Sim.Archetype;
 import frc.robot.Sim.GameSim;
-import frc.robot.Sim.JevDecisionEngine;
-import frc.robot.Sim.StrategicObjective;
-import frc.robot.Sim.WorldState;
-import frc.robot.Sim.WorldStateBuilder;
 import frc.robot.Utils.AllianceFlipUtil;
 import org.littletonrobotics.junction.Logger;
 

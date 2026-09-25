@@ -1,4 +1,15 @@
-package frc.robot.Sim;
+package frc.robot.Intelligence.Sparring;
+
+import frc.robot.Sim.GameSim;
+import frc.robot.Intelligence.Archetype;
+import frc.robot.Intelligence.State.WorldState;
+import frc.robot.Intelligence.State.WorldStateBuilder;
+import frc.robot.Intelligence.State.MatchScoreTracker;
+import frc.robot.Intelligence.AIActionIntent;
+import frc.robot.Intelligence.StrategicObjective;
+import frc.robot.Intelligence.JevDecisionEngine;
+import frc.robot.Intelligence.Sparring.AIRobotSim.AIMode;
+import frc.robot.Intelligence.Sparring.AIRobotSim.CyclerPhase;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -12,8 +23,6 @@ import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import frc.robot.Auto.DynamicRouter;
-import frc.robot.Sim.AIRobotSim.AIMode;
-import frc.robot.Sim.AIRobotSim.CyclerPhase;
 import frc.robot.Subsystems.Dashboard;
 import swervelib.simulation.ironmaple.simulation.SimulatedArena;
 import swervelib.simulation.ironmaple.simulation.seasonspecific.rebuilt2026.Arena2026Rebuilt;

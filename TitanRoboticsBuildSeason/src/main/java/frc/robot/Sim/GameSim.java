@@ -1,5 +1,7 @@
 package frc.robot.Sim;
 
+import frc.robot.Intelligence.State.MatchScoreTracker;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;

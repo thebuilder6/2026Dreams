@@ -39,7 +39,7 @@ public class HubScheduleTest {
         assertEquals(Phase.SHIFT4, HubSchedule.phaseFor(31.0, false));
         assertEquals(Phase.ENDGAME, HubSchedule.phaseFor(30.0, false));
         assertEquals(Phase.ENDGAME, HubSchedule.phaseFor(1.0, false));
-        assertEquals(Phase.DONE, HubSchedule.phaseFor(0.0, false));
+        assertEquals(Phase.ENDGAME, HubSchedule.phaseFor(0.0, false));
         assertEquals(Phase.AUTO, HubSchedule.phaseFor(20.0, true));
         assertEquals(Phase.AUTO, HubSchedule.phaseFor(140.0, true));
     }

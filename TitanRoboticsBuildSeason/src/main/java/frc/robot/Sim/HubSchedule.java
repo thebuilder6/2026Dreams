@@ -86,10 +86,10 @@ public class HubSchedule {
         if (matchTimeRemaining > SHIFT4_END) {
             return Phase.SHIFT4;
         }
-        if (matchTimeRemaining > 0.0) {
-            return Phase.ENDGAME;
-        }
-        return Phase.DONE;
+        // Clock exhausted (or no clock yet in a practice sim): fail open on
+        // both hubs, matching the pre-schedule behavior. Post-match tails are
+        // bounded by the 3 s grace stamps and match-end robot stops.
+        return Phase.ENDGAME;
     }
 
     /**
@@ -181,14 +181,19 @@ public class HubSchedule {
         double remaining = -1.0;
         try {
             isAuto = DriverStation.isAutonomous();
-            remaining = DriverStation.getMatchTime();
         } catch (Exception ignored) {
         }
-        if (remaining < 0.0 && RobotBase.isSimulation()) {
-            try {
+        try {
+            if (RobotBase.isSimulation()) {
+                // In sim, GameSim owns the match clock: it mirrors a running
+                // DS clock during real play and holds test-set values
+                // otherwise. (A bare DS reports 0.0 with no match running,
+                // which must not read as "match over".)
                 remaining = GameSim.getInstance().getSimTimeRemainingSec();
-            } catch (Exception ignored) {
+            } else {
+                remaining = DriverStation.getMatchTime();
             }
+        } catch (Exception ignored) {
         }
         if (remaining < 0.0) {
             remaining = 150.0; // unknown clock: fail open on both hubs

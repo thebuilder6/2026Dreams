@@ -94,6 +94,7 @@ public class SwerveBase implements Subsystem {
     private boolean isPitMode = false;
 
     private final ContactWatchdog contactWatchdog = ContactWatchdog.getInstance();
+    private ChassisSpeeds lastCommandedFieldVelocity = new ChassisSpeeds();
 
     // Power Distribution & Brownout Sag Protection
     private PowerDistribution powerDistribution;
@@ -203,6 +204,9 @@ public class SwerveBase implements Subsystem {
                 ? ChassisSpeeds.fromFieldRelativeSpeeds(scaledTranslation.getX(), scaledTranslation.getY(),
                         scaledRotation, getHeading())
                 : new ChassisSpeeds(scaledTranslation.getX(), scaledTranslation.getY(), scaledRotation);
+        lastCommandedFieldVelocity = fieldRelative
+                ? new ChassisSpeeds(scaledTranslation.getX(), scaledTranslation.getY(), scaledRotation)
+                : ChassisSpeeds.fromRobotRelativeSpeeds(speeds, getHeading());
         swerveDrive.drive(ChassisSpeeds.discretize(speeds, 0.020));
     }
 
@@ -210,6 +214,7 @@ public class SwerveBase implements Subsystem {
      * Stop the drivebase by commanding zero velocity.
      */
     public void stop() {
+        lastCommandedFieldVelocity = new ChassisSpeeds();
         swerveDrive.drive(new Translation2d(0, 0), 0, false, false);
     }
 
@@ -224,6 +229,7 @@ public class SwerveBase implements Subsystem {
                 velocity.vxMetersPerSecond * brownoutSpeedScale,
                 velocity.vyMetersPerSecond * brownoutSpeedScale,
                 velocity.omegaRadiansPerSecond * brownoutSpeedScale);
+        lastCommandedFieldVelocity = ChassisSpeeds.fromRobotRelativeSpeeds(scaledVelocity, getHeading());
         swerveDrive.drive(ChassisSpeeds.discretize(scaledVelocity, 0.020));
     }
 
@@ -673,6 +679,7 @@ public class SwerveBase implements Subsystem {
                 velocity.vxMetersPerSecond * brownoutSpeedScale,
                 velocity.vyMetersPerSecond * brownoutSpeedScale,
                 velocity.omegaRadiansPerSecond * brownoutSpeedScale);
+        lastCommandedFieldVelocity = scaledVelocity;
         swerveDrive.driveFieldOriented(ChassisSpeeds.discretize(scaledVelocity, 0.020));
     }
 
@@ -771,8 +778,8 @@ public class SwerveBase implements Subsystem {
 
         contactWatchdog.update(
                 truthPose,
-                getRobotVelocity(),
                 getFieldVelocity(),
+                lastCommandedFieldVelocity,
                 inputs.accelXG,
                 inputs.accelYG,
                 getAverageDriveCurrent(),
@@ -1113,6 +1120,21 @@ public class SwerveBase implements Subsystem {
     public void setPose(Pose2d pose) {
         synchronized (swerveDrive) {
             swerveDrive.resetOdometry(pose);
+        }
+    }
+
+    /** Teleports the simulated drivetrain, gyro, and odometry to the same pose. */
+    public void setSimulationPose(Pose2d pose) {
+        synchronized (swerveDrive) {
+            var mapleDrive = swerveDrive.getMapleSimDrive();
+            if (mapleDrive.isPresent()) {
+                var simulation = mapleDrive.get();
+                simulation.setSimulationWorldPose(pose);
+                simulation.getGyroSimulation().setRotation(pose.getRotation());
+                swerveDrive.resetOdometry(pose);
+            } else {
+                swerveDrive.resetOdometry(pose);
+            }
         }
     }
 

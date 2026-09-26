@@ -79,6 +79,7 @@ public class MatchScoreTracker implements Subsystem {
     private int bot0FuelScored = 0;
     private int bot1FuelScored = 0;
     private int bot2FuelScored = 0;
+    private int ally0FuelScored = 0;
     private int ally1FuelScored = 0;
     private int ally2FuelScored = 0;
 
@@ -87,6 +88,7 @@ public class MatchScoreTracker implements Subsystem {
     private boolean bot0Climbed = false;
     private boolean bot1Climbed = false;
     private boolean bot2Climbed = false;
+    private boolean ally0Climbed = false;
     private boolean ally1Climbed = false;
     private boolean ally2Climbed = false;
 
@@ -157,7 +159,7 @@ public class MatchScoreTracker implements Subsystem {
     /**
      * Records a score attributed to a specific bot.
      *
-     * @param botId Bot identifier (0 = Bot 0, 1 = Bot 1, 2 = Bot 2, 101 = Ally 1, 102 = Ally 2)
+     * @param botId Bot identifier (0-2 = Red bots, 100 = training Blue 0, 101-102 = Blue allies)
      * @param isRedAlliance True if bot belongs to Red Alliance
      */
     public synchronized void recordBotScore(int botId, boolean isRedAlliance) {
@@ -165,6 +167,7 @@ public class MatchScoreTracker implements Subsystem {
             case 0: bot0FuelScored++; break;
             case 1: bot1FuelScored++; break;
             case 2: bot2FuelScored++; break;
+            case 100: ally0FuelScored++; break;
             case 101: ally1FuelScored++; break;
             case 102: ally2FuelScored++; break;
             default: break;
@@ -368,6 +371,7 @@ public class MatchScoreTracker implements Subsystem {
             bot0Climbed = false;
             bot1Climbed = false;
             bot2Climbed = false;
+            ally0Climbed = false;
             ally1Climbed = false;
             ally2Climbed = false;
             redClimbCount = 0;
@@ -381,18 +385,23 @@ public class MatchScoreTracker implements Subsystem {
         Translation2d redTower = FieldMap.ClimbingTowers.RED_TOWER_POLE;
         Translation2d blueTower = FieldMap.ClimbingTowers.BLUE_TOWER_POLE;
 
-        // 1. Evaluate Player Robot
-        Pose2d playerPose = SwerveBase.getInstance().getPose();
+        // 1. Evaluate Player Robot (or training Blue slot 0)
+        AIRobotSim opponentSim = AIRobotSim.getInstance();
+        AIRobotInstance trainingPrimary = opponentSim != null && opponentSim.isTrainingScenarioActive()
+                ? opponentSim.getTrainingBluePrimaryBot() : null;
+        Pose2d playerPose = trainingPrimary == null
+                ? SwerveBase.getInstance().getPose() : trainingPrimary.getActualPose();
         Translation2d playerTower = playerIsRed ? redTower : blueTower;
-        playerClimbed = (playerPose != null && playerPose.getTranslation().getDistance(playerTower) <= TOWER_CLIMB_RADIUS_METERS);
+        playerClimbed = trainingPrimary == null && playerPose != null
+                && playerPose.getTranslation().getDistance(playerTower) <= TOWER_CLIMB_RADIUS_METERS;
 
         // 2. Evaluate Opponent Bots (Bot 0, 1, 2)
-        AIRobotSim opponentSim = AIRobotSim.getInstance();
         Translation2d oppTower = opponentIsRed ? redTower : blueTower;
 
         bot0Climbed = false;
         bot1Climbed = false;
         bot2Climbed = false;
+        ally0Climbed = false;
 
         if (opponentSim != null && opponentSim.getDriveSimulation() != null) {
             Pose2d bot0Pose = opponentSim.getDriveSimulation().getActualPoseInSimulationWorld();
@@ -416,6 +425,13 @@ public class MatchScoreTracker implements Subsystem {
 
             // 3. Evaluate Ally Bots (Ally 1, 2)
             List<AIRobotInstance> allyBots = opponentSim.getAllyBots();
+            if (trainingPrimary != null) {
+                Pose2d ally0Pose = trainingPrimary.getActualPose();
+                if (ally0Pose != null && ally0Pose.getY() > 0.0) {
+                    ally0Climbed = ally0Pose.getTranslation().getDistance(blueTower)
+                            <= TOWER_CLIMB_RADIUS_METERS;
+                }
+            }
             if (allyBots.size() >= 1) {
                 Pose2d ally1Pose = allyBots.get(0).getActualPose();
                 if (ally1Pose != null && ally1Pose.getY() > 0.0) {
@@ -442,7 +458,7 @@ public class MatchScoreTracker implements Subsystem {
             if (bot1Climbed) blueClimbs++;
             if (bot2Climbed) blueClimbs++;
         } else {
-            if (playerClimbed) blueClimbs++;
+            if (playerClimbed || ally0Climbed) blueClimbs++;
             if (ally1Climbed) blueClimbs++;
             if (ally2Climbed) blueClimbs++;
             if (bot0Climbed) redClimbs++;
@@ -528,7 +544,9 @@ public class MatchScoreTracker implements Subsystem {
         // ── Ally Robot Contributions ─────────────────────────────────────────
         SmartDashboard.putNumber("Scoreboard/Allies/Ally1_FuelScored", ally1FuelScored);
         SmartDashboard.putNumber("Scoreboard/Allies/Ally2_FuelScored", ally2FuelScored);
-        SmartDashboard.putNumber("Scoreboard/Allies/TotalFuelScored", ally1FuelScored + ally2FuelScored);
+        SmartDashboard.putNumber("Scoreboard/Allies/Ally0_FuelScored", ally0FuelScored);
+        SmartDashboard.putNumber("Scoreboard/Allies/TotalFuelScored", ally0FuelScored + ally1FuelScored + ally2FuelScored);
+        SmartDashboard.putBoolean("Scoreboard/Allies/Ally0_Climbed", ally0Climbed);
         SmartDashboard.putBoolean("Scoreboard/Allies/Ally1_Climbed", ally1Climbed);
         SmartDashboard.putBoolean("Scoreboard/Allies/Ally2_Climbed", ally2Climbed);
 
@@ -570,6 +588,7 @@ public class MatchScoreTracker implements Subsystem {
         bot0FuelScored = 0;
         bot1FuelScored = 0;
         bot2FuelScored = 0;
+        ally0FuelScored = 0;
         ally1FuelScored = 0;
         ally2FuelScored = 0;
 
@@ -577,6 +596,7 @@ public class MatchScoreTracker implements Subsystem {
         bot0Climbed = false;
         bot1Climbed = false;
         bot2Climbed = false;
+        ally0Climbed = false;
         ally1Climbed = false;
         ally2Climbed = false;
 
@@ -595,9 +615,11 @@ public class MatchScoreTracker implements Subsystem {
     public synchronized int getBot0FuelScored() { return bot0FuelScored; }
     public synchronized int getBot1FuelScored() { return bot1FuelScored; }
     public synchronized int getBot2FuelScored() { return bot2FuelScored; }
+    public synchronized int getAlly0FuelScored() { return ally0FuelScored; }
     public synchronized int getAlly1FuelScored() { return ally1FuelScored; }
     public synchronized int getAlly2FuelScored() { return ally2FuelScored; }
     public synchronized boolean isPlayerClimbed() { return playerClimbed; }
+    public synchronized boolean isAlly0Climbed() { return ally0Climbed; }
     public synchronized boolean isAlly1Climbed() { return ally1Climbed; }
     public synchronized boolean isAlly2Climbed() { return ally2Climbed; }
     public synchronized int getRedClimbCount() { return redClimbCount; }

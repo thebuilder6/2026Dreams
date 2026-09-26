@@ -20,7 +20,7 @@ import org.littletonrobotics.junction.Logger;
  * - Dynamic velocity-dependent lookahead vectoring
  * - Kinematic deceleration curve: v = min(v_max, sqrt(2 * a * d))
  * - Traction-preserving acceleration ramping
- * - Cross-plane monotonic waypoint progression
+ * - Cross-plane waypoint progression constrained by cross-track error
  * - Trench virtual rail damper for constrained corridors
  * - Independent rotation override for Shooting-On-The-Fly (SOTF)
  * - Stall escape delegated to ContactWatchdog (see arbitrate())
@@ -44,7 +44,8 @@ public class TrajectoryController {
     // Rotation override (e.g. SOTF auto-aiming at Hub while moving)
     private Supplier<Rotation2d> rotationOverride = null;
 
-    // Phase 2: pirouette escape lives in ContactWatchdog; this controller stays pure path tracking.
+    // Phase 2: pirouette escape lives in ContactWatchdog; this controller stays
+    // pure path tracking.
 
     public TrajectoryController(PIDController headingController) {
         this.headingController = headingController;
@@ -82,7 +83,8 @@ public class TrajectoryController {
     }
 
     /**
-     * Overrides the rotational heading target while still following the translational path.
+     * Overrides the rotational heading target while still following the
+     * translational path.
      * Useful for pointing at the Hub for Shooting-On-The-Fly.
      */
     public void setRotationOverride(Supplier<Rotation2d> override) {
@@ -92,12 +94,14 @@ public class TrajectoryController {
     /**
      * Computes field-oriented ChassisSpeeds to follow the trajectory.
      *
-     * @param currentPose Current robot pose
-     * @param currentSpeeds Current robot velocity
-     * @param targetPose Desired final pose
-     * @param maxSpeed Maximum allowable translational velocity (m/s)
-     * @param isStalled True if physical drivetrain stall/collision is detected
-     * @param allowDynamicAvoidance True if local reactive obstacle avoidance is permitted
+     * @param currentPose           Current robot pose
+     * @param currentSpeeds         Current robot velocity
+     * @param targetPose            Desired final pose
+     * @param maxSpeed              Maximum allowable translational velocity (m/s)
+     * @param isStalled             True if physical drivetrain stall/collision is
+     *                              detected
+     * @param allowDynamicAvoidance True if local reactive obstacle avoidance is
+     *                              permitted
      * @return Field-oriented ChassisSpeeds
      */
     public ChassisSpeeds calculate(
@@ -115,7 +119,8 @@ public class TrajectoryController {
         // Ensure destination is outside static/dynamic barriers
         targetPose = StaticPathfinder.ensurePoseOutsideObstacles(targetPose, currentPose.getTranslation());
 
-        // ── 1. Stall escape is owned by ContactWatchdog (see arbitrate()); this controller
+        // ── 1. Stall escape is owned by ContactWatchdog (see arbitrate()); this
+        // controller
         // tracks the path only. The isStalled flag is retained for API compatibility.
         // ── 2. Automatic Path Generation & Re-planning ──────────────────────
         double distTargetMoved = targetPose.getTranslation().getDistance(lastPathTarget.getTranslation());
@@ -140,8 +145,11 @@ public class TrajectoryController {
             return new ChassisSpeeds();
         }
 
+        boolean evacuatingStaticObstacle = currentWaypointIndex == 0
+                && StaticPathfinder.isPointInStaticObstacle(currentPose.getTranslation());
+
         // ── 3. Waypoint Progression (Cross-Plane Projection) ────────────────
-        while (currentWaypointIndex < waypoints.size() - 1) {
+        while (!evacuatingStaticObstacle && currentWaypointIndex < waypoints.size() - 1) {
             Pose2d wp = waypoints.get(currentWaypointIndex);
             Translation2d prev = (currentWaypointIndex > 0)
                     ? waypoints.get(currentWaypointIndex - 1).getTranslation()
@@ -152,8 +160,14 @@ public class TrajectoryController {
             Translation2d toBot = currentPose.getTranslation().minus(wp.getTranslation());
             boolean passedPlane = false;
             if (segLen > 0.05) {
-                double dot = toBot.getX() * (seg.getX() / segLen) + toBot.getY() * (seg.getY() / segLen);
-                if (dot >= 0.0) passedPlane = true;
+                double unitX = seg.getX() / segLen;
+                double unitY = seg.getY() / segLen;
+                double alongTrack = toBot.getX() * unitX + toBot.getY() * unitY;
+                double crossTrack = Math.abs(toBot.getX() * unitY - toBot.getY() * unitX);
+                // Crossing the waypoint plane is only progress if we passed near
+                // the segment. Otherwise a shove/avoidance detour can skip a
+                // tunnel corner and command a path that clips the obstacle.
+                passedPlane = alongTrack >= 0.0 && crossTrack < 0.45;
             }
 
             if (toBot.getNorm() < 0.45 || passedPlane) {
@@ -168,7 +182,8 @@ public class TrajectoryController {
         double remainingDist = distToGoal;
 
         if (!waypoints.isEmpty()) {
-            remainingDist = currentPose.getTranslation().getDistance(waypoints.get(currentWaypointIndex).getTranslation());
+            remainingDist = currentPose.getTranslation()
+                    .getDistance(waypoints.get(currentWaypointIndex).getTranslation());
             for (int i = currentWaypointIndex; i < waypoints.size() - 1; i++) {
                 remainingDist += waypoints.get(i).getTranslation().getDistance(waypoints.get(i + 1).getTranslation());
             }
@@ -190,8 +205,15 @@ public class TrajectoryController {
         currentCommandedSpeed = targetSpeed;
 
         // ── 6. Lookahead Vector & Translation ───────────────────────────────
-        double lookaheadDist = Math.max(0.40, Math.min(0.85, 0.35 + 0.12 * currentCommandedSpeed));
-        Translation2d lookaheadPoint = computeLookahead(currentPose, lookaheadDist, targetPose);
+        boolean inTrench = FieldMap.Trenches.isLowClearance(currentPose.getTranslation());
+        // In tight corridors, clamp lookahead to 0.35m to prevent cutting corners into
+        // the truss
+        double lookaheadDist = inTrench
+                ? 0.35
+                : Math.max(0.40, Math.min(0.85, 0.35 + 0.12 * currentCommandedSpeed));
+        Translation2d lookaheadPoint = evacuatingStaticObstacle
+                ? waypoints.get(0).getTranslation()
+                : computeLookahead(currentPose, lookaheadDist, targetPose);
         Translation2d driveDir = lookaheadPoint.minus(currentPose.getTranslation());
         double norm = driveDir.getNorm();
         Translation2d unitDrive = norm > 1e-4 ? driveDir.div(norm) : new Translation2d();
@@ -210,9 +232,10 @@ public class TrajectoryController {
         }
 
         // ── 8. Low-Clearance Heading Alignment (No forced Virtual Rail) ─────
-        // In low-clearance trench zones, align heading to 0°/180° if unconstrained to avoid clipping truss posts.
-        // Holonomic translation (vx, vy) remains natural and unconstrained, guided by StaticPathfinder.
-        boolean inTrench = FieldMap.Trenches.isLowClearance(currentPose.getTranslation());
+        // In low-clearance trench zones, align heading to 0°/180° if unconstrained to
+        // avoid clipping truss posts.
+        // Holonomic translation (vx, vy) remains natural and unconstrained, guided by
+        // StaticPathfinder.
         if (inTrench && rotationOverride == null) {
             double deg = currentPose.getRotation().getDegrees();
             desiredHeading = Math.abs(deg) <= 90.0 ? Rotation2d.fromDegrees(0) : Rotation2d.fromDegrees(180);

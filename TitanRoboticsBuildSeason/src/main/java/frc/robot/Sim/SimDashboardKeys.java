@@ -30,9 +30,9 @@ public final class SimDashboardKeys {
     }
 
     /**
-     * Topic prefix for an ally bot, e.g. {@code "Simulation/Ally1"}.
+     * Topic prefix for an ally bot, e.g. {@code "Simulation/Ally0"}.
      *
-     * @param allyIndex ally index (1-2)
+     * @param allyIndex ally slot index (0-2; slot 0 is training-only)
      */
     public static String allyPrefix(int allyIndex) {
         return "Simulation/Ally" + allyIndex;

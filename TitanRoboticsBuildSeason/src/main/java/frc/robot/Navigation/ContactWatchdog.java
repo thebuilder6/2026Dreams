@@ -111,9 +111,9 @@ public class ContactWatchdog {
      *
      * @param currentPose current robot pose
      * @param actualVel measured field-relative chassis velocity
-     * @param commandedVel commanded field-relative chassis velocity
-     * @param accelXG IMU accel X in G
-     * @param accelYG IMU accel Y in G
+     * @param commandedVel requested field-relative chassis velocity
+     * @param accelXG robot-forward IMU acceleration in G
+     * @param accelYG robot-left IMU acceleration in G
      * @param driveCurrentAmps average drive current in amps
      * @param nearestPeerDist distance to closest peer robot (m, {@code Double.MAX_VALUE} if none)
      * @param opponentPose opponent pose for pin reference (may be null)
@@ -139,8 +139,11 @@ public class ContactWatchdog {
         if (filterDt < 1e-4) filterDt = dt;
 
         // ---- 1. Jerk / impact (CollisionDetector) ----
-        double rawAx = accelXG * 9.80665;
-        double rawAy = accelYG * 9.80665;
+        Translation2d fieldAcceleration = new Translation2d(accelXG, accelYG)
+                .rotateBy(currentPose.getRotation())
+                .times(9.80665);
+        double rawAx = fieldAcceleration.getX();
+        double rawAy = fieldAcceleration.getY();
         if (Math.hypot(accelXG, accelYG) < 1e-3) {
             rawAx = (actualVel.vxMetersPerSecond - prevSpeeds.vxMetersPerSecond) / filterDt;
             rawAy = (actualVel.vyMetersPerSecond - prevSpeeds.vyMetersPerSecond) / filterDt;
@@ -174,8 +177,7 @@ public class ContactWatchdog {
                     ? new Translation2d(prevSpeeds.vxMetersPerSecond, prevSpeeds.vyMetersPerSecond).div(prevSpeed)
                     : new Translation2d(-filteredAccelX, -filteredAccelY);
             if (dir.getNorm() > 1e-3) dir = dir.div(dir.getNorm());
-            Translation2d obsPos =
-                    currentPose.getTranslation().plus(dir.rotateBy(currentPose.getRotation()).times(0.65));
+            Translation2d obsPos = currentPose.getTranslation().plus(dir.times(0.65));
             DynamicRouter.registerObstacle(obsPos, new Translation2d(), 0.55, 0.65, true);
         }
 

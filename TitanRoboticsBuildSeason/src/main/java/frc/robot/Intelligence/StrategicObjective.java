@@ -13,6 +13,13 @@ public enum StrategicObjective {
     DENY_SHOOTING_LANE,   // Defend; block opponent's line-of-sight to their hub
     SHADOW_MIDLINE,       // Defend; mirror opponent across field centerline
     LEAD_INTERCEPT,       // Defend; lead-pursuit interception of opponent
+    SWEEP_ALLIANCE_ZONE,   // Harvest loose fuel in the home scoring zone
+    POACH_OPPONENT_ZONE,   // Harvest loose fuel in opponent territory during teleop
+    SHUTTLE_PASS,          // Lob held fuel home from midfield while the Hub is inactive
+    LONG_RANGE_SNIPE,      // Shoot from the outer edge of the alliance zone
+    CHOKE_TRENCH,           // Contest an occupied trench approach
+    SCREEN_FOR_ALLY,        // Interpose between a loaded ally and a defender
+    BAIT_PIN_FOUL,          // Hold position during an observed opponent pin
     RUSH_CLIMB,           // Endgame (t <= 20s); navigate to climbing tower
     IDLE;                 // Standby / no action
 
@@ -27,10 +34,17 @@ public enum StrategicObjective {
     public static final StrategicObjective RUSH_ENDGAME = RUSH_CLIMB;
 
     public boolean isOffensive() {
-        return this == STOCKPILE_DEPOT || this == VACUUM_MIDFIELD || this == CYCLE_SCORE_HUB || this == STAGE_STANDOFF || this == RUSH_CLIMB;
+        return this == STOCKPILE_DEPOT || this == VACUUM_MIDFIELD || this == CYCLE_SCORE_HUB
+                || this == STAGE_STANDOFF || this == SWEEP_ALLIANCE_ZONE || this == POACH_OPPONENT_ZONE
+                || this == SHUTTLE_PASS || this == LONG_RANGE_SNIPE || this == RUSH_CLIMB;
     }
 
     public boolean isDefensive() {
-        return this == DENY_SHOOTING_LANE || this == SHADOW_MIDLINE || this == LEAD_INTERCEPT;
+        return this == DENY_SHOOTING_LANE || this == SHADOW_MIDLINE || this == LEAD_INTERCEPT
+                || this == CHOKE_TRENCH || this == BAIT_PIN_FOUL;
+    }
+
+    public boolean isTeamwork() {
+        return this == SCREEN_FOR_ALLY || this == SHUTTLE_PASS;
     }
 }

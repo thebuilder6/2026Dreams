@@ -3,7 +3,7 @@ title: Architecture Contracts
 audience: [human, ai]
 owner: programming-leads
 last_verified: 2026-09-26
-status: authoritative
+status: needs-review
 ---
 
 # 📐 2026–2027 Robot Software Architecture & System Design
@@ -17,7 +17,7 @@ Welcome to the technical architecture guide for Team 8334's 2026/2027 robot plat
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
 │                   DECISION & TACTICAL STRATEGY LAYER                     │
-│  - Jev AI Decision Engine (TypeSafe System One: <20ms structured choices)│
+│  - Jev AI Decision Engine (local 50 Hz policy + async TypeSafe choices)  │
 │  - Choreo Trajectory Tracking & Dynamic Obstacle Avoidance               │
 │  - Autonomous Mission Chooser & Teleop State Machine                     │
 └────────────────────────────────────┬─────────────────────────────────────┘
@@ -92,6 +92,8 @@ flowchart TD
 - **Kinematics Engine**: Powered by YAGSL (Yet Another Generic Swerve Library) with custom high-speed heading correction and skew compensation.
 - **Simulation**: Backed by `IronMaple` rigid-body 2D simulation for true carpet friction, wheel slip, and simulated bumper collision physics.
 - **Navigation**: Integrated with `GlideConstants` for automated transit to strategic field zones (Hub, Feeders, Trenches).
+- **Contact Watchdog**: `SwerveBase` supplies measured and requested field-relative chassis speeds; robot-frame IMU acceleration is rotated into field coordinates before collision and stall checks. Escape commands therefore share the field-relative frame used by Glide drive output.
+- **Field obstacle map**: `Navigation/FieldMap.java` stores Hub cores, trench divider walls, and each ramp as separate AABBs. `ObstacleHandling` defaults to `IMPASSABLE`; every split piece blocks pathfinding in every mode. The legacy `PHYSICS` and `ABSTRACT` labels remain accepted for dashboard/API compatibility but no longer make ramps traversable. `StaticPathfinder` applies the 0.45 m bumper half-width once, validates roadmap edges and endpoint connectors, and adds an outward escape waypoint when the measured start is inside an inflated obstacle. It stops safely if no valid route exists; hard fuel-target checks exclude ramps. `TrajectoryController` holds that escape waypoint until clear and only advances past a waypoint plane when cross-track error is within 0.45 m, preventing missed tunnel turns from being skipped.
 
 ### B. Dual-Flywheel Shooter (`Shooter.java`)
 - **Velocity Control**: Independent PID + `SimpleMotorFeedforward` controllers for Left (CAN 12) and Right (CAN 11) flywheels with integrator anti-windup range (`-1.5 to +1.5`, `Shooter.java:135-136` — integrator only, not output clamp).
@@ -149,14 +151,14 @@ flowchart TD
 - **Dynamic Field Mirroring**: Automatically transforms coordinates, rotations, and poses across the field midline ($X_{\text{red}} = 16.535 - X_{\text{blue}}$, $\theta_{\text{red}} = 180^\circ - \theta_{\text{blue}}$) when DriverStation is set to Red Alliance.
 
 ### J. Jev AI Unified Cognitive Architecture (System 1 + System 2)
-The decision-making across simulation sparring, teleoperated co-pilot assist, and live match coaching is unified under a deterministic, re-entrant System 1 (Tactical Reflex) + System 2 (Executive Strategy) cognitive architecture:
+Simulation sparring and the default co-pilot path use a deterministic, re-entrant local System 1 (Tactical Reflex) + System 2 (Executive Strategy) architecture. When the TypeSafe feature toggle is enabled, the player Co-Pilot and simulator bots can also request asynchronous TypeSafe macro decisions; local tactical generation and safety checks still run every cycle:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                      SYSTEM 2: EXECUTIVE STRATEGY                           │
-│  - Evaluates macro-utility matrix over candidate StrategicObjectives        │
+│  - Evaluates local utility matrix; optional TypeSafe result is advisory      │
 │  - Weighted by Archetype (Cycler, Bully, Competitor, Defender, Co-Pilot)   │
-│  - Sub-millisecond execution with latency logging (`JevDecisionEngine.java:167,493,665`); no hard GC-free guarantee in code.   │
+│  - Cloud HTTP is asynchronous; only fresh, locally eligible choices apply  │
 └──────────────────────────────────────┬──────────────────────────────────────┘
                                        │ Active Objective
                                        ▼
@@ -177,14 +179,16 @@ The decision-making across simulation sparring, teleoperated co-pilot assist, an
 ```
 
 1. **Game-Agnostic Abstraction Layer**:
-   - [`StrategicObjective`](file:///c:/Users/jumpi/Documents/Github/2026Dreams/TitanRoboticsBuildSeason/src/main/java/frc/robot/Sim/StrategicObjective.java): Universal FRC macro objectives (`STOCKPILE_DEPOT`, `VACUUM_MIDFIELD`, `CYCLE_SCORE_HUB`, `STAGE_STANDOFF`, `DENY_SHOOTING_LANE`, `SHADOW_MIDLINE`, `LEAD_INTERCEPT`, `RUSH_CLIMB`, `IDLE`) with game-agnostic static aliases (`SCORE_GOAL`, `HARVEST_FEEDER`, `HARVEST_FIELD_PIECES`).
-   - [`WorldState`](file:///c:/Users/jumpi/Documents/Github/2026Dreams/TitanRoboticsBuildSeason/src/main/java/frc/robot/Sim/WorldState.java): Immutable snapshot with `heldGamePieceCount()`, `isAllianceGoalActive()`, `isOpponentGoalActive()`, `timeUntilGoalShift()` plus 2026 record components `heldFuelCount()`, `isAllianceHubActive()`.
-   - [`MatchKnowledge`](file:///c:/Users/jumpi/Documents/Github/2026Dreams/TitanRoboticsBuildSeason/src/main/java/frc/robot/Sim/MatchKnowledge.java): Two-tier information model. Driver-assist tier (`unknown()`): only self-perceivable state, opponents unobserved. Sim-sparring tier: robot knowledge plus player-visible match context (score differential, both sides' poses/velocities, held/scored balls).
-   - [`AIActionIntent`](file:///c:/Users/jumpi/Documents/Github/2026Dreams/TitanRoboticsBuildSeason/src/main/java/frc/robot/Sim/AIActionIntent.java): Concrete subsystem output record linking directly to `IntakeState` and `ShooterState`.
+   - [`StrategicObjective`](src/main/java/frc/robot/Intelligence/StrategicObjective.java): Macro objectives for depot/midfield/home/opponent-zone harvesting, Hub scoring and staging, shuttle/long-range scoring, defense/teamwork, endgame, and idle; retains game-agnostic aliases.
+   - [`WorldState`](src/main/java/frc/robot/Intelligence/WorldState.java): Immutable snapshot with game-agnostic aliases and 2026 record components `heldFuelCount()`, `isAllianceHubActive()`, and `timeUntilHubShift()`.
+   - [`MatchKnowledge`](src/main/java/frc/robot/Intelligence/MatchKnowledge.java): Two-tier information model. Driver-assist tier (`unknown()`): only self-perceivable state, opponents unobserved. Sim-sparring tier: robot knowledge plus player-visible match context (score differential, both sides' poses/velocities, held/scored balls).
+   - [`AIActionIntent`](src/main/java/frc/robot/Intelligence/AIActionIntent.java) and [`StrategicPlan`](src/main/java/frc/robot/Intelligence/StrategicPlan.java): Concrete subsystem output plus current/next objective and estimated transition time. Autonomous batch, in-range, and clock-low dump decisions take priority over alliance-zone sweeping. Co-pilot and sim-bot next-objective telemetry is published to NetworkTables; trench corridor yield is not implemented yet.
+   - [`TypeSafeJevClient`](src/main/java/frc/robot/Intelligence/TypeSafeJevClient.java): Optional `jev-latest` choice/noul request with bearer-key authentication, a fair shared FIFO dispatcher spacing all calls by 150 ms, a 150 ms player per-caller interval, a 1 s per-simulator-bot interval, and a 1.0 s request timeout. Network work and JSON parsing run on a daemon worker; each simulator bot has its own in-flight state and latest decision. The feature toggle defaults off; no key, stale/error response, confidence below 0.60, locally ineligible objective, local priority of at least 0.95, or unsafe autonomous choice keeps local utility selection. This spaces requests but does not enforce a per-match spend budget.
 
 2. **Multi-Robot Simultaneous Execution (`AIRobotSim` & `AIRobotInstance`)**:
    - `AIRobotInstance`: Encapsulates an independent simulated swerve drive chassis, intake mechanism, PID controllers, and behavior archetype.
    - `AIRobotSim`: Multi-robot manager for max 5 AI (3 opponents + 2 allies) + player = 6 on field, scaling via `Simulation/OpponentCount` (1 to 3 bots) and `Simulation/AllyCount` (0 to 2 bots), with independent opponent/ally speed scales. Every sim robot opens with 8 fuel.
+   - `TrainingMatchScenario` maps Blue slot 0 to a training-only `AIRobotInstance`, later Blue slots to allies, and Red slots to opponents. Reset applies every robot's archetype/pose/preload; the main `SwerveBase` is parked off-field and excluded from the training roster, then restored to its previous pose when training is cleared. Training world state, match knowledge, defensive marking, scoring, and climb attribution use the configured Blue roster. The autonomous match lifecycle, headless runner, and result summary remain unfinished.
    - Opponents skate against the player, allies skate with the player; per-bot archetype choosers on the Simulation Elastic tab.
    - **Soft Peer Separation**: Applies inverse-distance repulsive forces ($r < 1.10\text{m}$) across peer robots, preventing clustering or jamming during contested pickups.
    - **Staggered Spawning**: Staggers initial positions across non-overlapping corridor coordinates ($Y = 4.035\text{m}, 5.80\text{m}, 2.25\text{m}$).

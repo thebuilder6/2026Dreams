@@ -90,7 +90,7 @@ The Elastic Dashboard (`elastic-layout.json`) provides real-time situational awa
 - **Shooter Ready Status & Hub Active**: Large status indicators showing Hub state and shoot lock.
 - **Flywheel RPM Live Graph**: Real-time time-series wave graph displaying instantaneous flywheel spool-up, recovery after firing, and target stability.
 - **Held Fuel Gauge**: Visual 0-5 ball fullness bar.
-- **Assist Feature Toggles**: Interactive `Toggle Switch` controls for Snap Turn, Auto Aim, Ball Hunt, Glide Points, and Slow Mode.
+- **Assist Feature Toggles**: Interactive `Toggle Switch` controls for Snap Turn, Auto Aim, Ball Hunt, Glide Points, Slow Mode, and optional TypeSafe Jev. TypeSafe is off by default; when enabled with a configured key, the player Co-Pilot and simulator bots can make cloud requests. Set `JevAI/DecisionMode` to `LOCAL_HEURISTIC`, `TYPESAFE_CLOUD`, or `AUTO_FALLBACK`. Missing keys, stale replies, API errors, low-confidence replies, and locally unsafe or low-priority choices use the local policy; simulator bot setup and request limits are in `SIMULATION_GUIDE.md`.
 - **3D Robot Field View**: Live holonomic pose, vision ghost, trajectory pathing, and Hub timing ring.
 
 ### 2. AI Coach & Practice Proving Ground

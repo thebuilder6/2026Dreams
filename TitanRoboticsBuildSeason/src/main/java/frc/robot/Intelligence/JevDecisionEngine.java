@@ -6,6 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
@@ -24,6 +25,7 @@ import frc.robot.Navigation.GlidePoints;
 import frc.robot.Navigation.GlidePoints.GlidePoint;
 import frc.robot.Subsystems.Intake.IntakeState;
 import frc.robot.Subsystems.Shooter.ShooterState;
+import frc.robot.Telemetry.Dashboard;
 import frc.robot.Utils.AllianceFlipUtil;
 import org.littletonrobotics.junction.Logger;
 
@@ -37,6 +39,16 @@ import org.littletonrobotics.junction.Logger;
  * mechanism and drive intents.
  */
 public class JevDecisionEngine {
+
+    public enum DecisionMode {
+        LOCAL_HEURISTIC,
+        TYPESAFE_CLOUD,
+        AUTO_FALLBACK
+    }
+
+    private static final double CLOUD_DECISION_FRESHNESS_SEC = 1.2;
+    private static final double MIN_CLOUD_CONFIDENCE = 0.60;
+    private static final double LOCAL_PRIORITY_OVERRIDE_THRESHOLD = 0.95;
 
     public enum AIArchetype {
         AUTONOMOUS_CYCLER,
@@ -131,6 +143,19 @@ public class JevDecisionEngine {
     }
 
     private DecisionResult lastDecision = null;
+    private volatile DecisionMode decisionMode = DecisionMode.AUTO_FALLBACK;
+    private final Map<String, String> lastPublishedCloudErrors = new ConcurrentHashMap<>();
+
+    public DecisionMode getDecisionMode() {
+        return decisionMode;
+    }
+
+    public void setDecisionMode(DecisionMode mode) {
+        if (mode == null)
+            return;
+        decisionMode = mode;
+        Dashboard.setJevDecisionModeName(mode.name());
+    }
 
     // =========================================================================
     // JEV TYPE-SAFE POLICY ENGINE (Option A & Option B)
@@ -142,7 +167,8 @@ public class JevDecisionEngine {
      * Guaranteed deterministic, stateless (re-entrant for multi-bot simulations),
      * and sub-millisecond latency.
      *
-     * <p>Legacy tier: the opponent mark is trusted as observed
+     * <p>
+     * Legacy tier: the opponent mark is trusted as observed
      * ({@link MatchKnowledge#legacyObserved()}). Driver-assist callers must use
      * {@link #evaluatePolicy(WorldState, MatchKnowledge, Archetype)} with
      * {@link MatchKnowledge#unknown()} instead, so unobserved opponents degrade
@@ -159,21 +185,41 @@ public class JevDecisionEngine {
     /**
      * Tier-aware policy evaluation.
      *
-     * @param world robot-knowable snapshot (own state, hub phase, one mark)
+     * @param world     robot-knowable snapshot (own state, hub phase, one mark)
      * @param knowledge player-knowable match context (score, sides' balls,
      *                  field picture) or {@link MatchKnowledge#unknown()} for
      *                  the driver-assist tier
      * @param archetype behavior archetype selecting utility weights
      */
     public AIActionIntent evaluatePolicy(WorldState world, MatchKnowledge knowledge, Archetype archetype) {
+        return evaluatePolicy(world, knowledge, archetype, null);
+    }
+
+    /**
+     * Evaluation overload that isolates cloud state and telemetry for a simulator
+     * bot.
+     */
+    public AIActionIntent evaluatePolicy(
+            WorldState world, MatchKnowledge knowledge, Archetype archetype, String cloudContext) {
         if (knowledge == null) {
             knowledge = MatchKnowledge.legacyObserved();
         }
         boolean opponentObserved = knowledge.opponentObserved();
         long startNanos = System.nanoTime();
 
+        DecisionMode activeDecisionMode = resolveDecisionMode();
+        TypeSafeJevClient cloudClient = TypeSafeJevClient.getInstance();
+        boolean cloudConfigured = activeDecisionMode != DecisionMode.LOCAL_HEURISTIC
+                && (archetype == Archetype.CO_PILOT || cloudContext != null)
+                && cloudClient.hasValidKey();
+        if (cloudConfigured) {
+            cloudClient.evaluateAsync(cloudContext, world, knowledge, archetype);
+        }
+
         Translation2d selfHub = FieldMap.Hubs.getHubLocation2d(world.isRedAlliance());
         double distToSelfHub = world.selfPose().getTranslation().getDistance(selfHub);
+        double transitTimeToHub = distToSelfHub / 3.2;
+        double timeLeftToHarvest = world.timeUntilHubShift() - transitTimeToHub;
 
         // ── 1. Evaluate Utility Scores Across Objectives ─────────────────────
         Map<StrategicObjective, Double> utilities = new LinkedHashMap<>();
@@ -254,6 +300,39 @@ public class JevDecisionEngine {
         }
         utilities.put(StrategicObjective.STOCKPILE_DEPOT, stockpileUtility);
 
+        int homeFuelCount = countFuelInZone(world.isRedAlliance(), false);
+        double sweepUtility = 0.0;
+        if (homeFuelCount > 0 && !world.isInventoryFull()) {
+            sweepUtility = world.isAllianceHubActive()
+                    ? 0.96
+                    : 0.90 + 0.08 * (1.0 - world.heldFuelCount() / 30.0);
+        }
+        utilities.put(StrategicObjective.SWEEP_ALLIANCE_ZONE, sweepUtility);
+
+        double opponentZoneUtility = 0.0;
+        if (!world.isAutonomous() && !world.isInventoryFull() && world.timeUntilHubShift() <= 6.0
+                && world.heldFuelCount() < 20 && countFuelInZone(!world.isRedAlliance(), true) > 0) {
+            opponentZoneUtility = 0.78;
+        }
+        utilities.put(StrategicObjective.POACH_OPPONENT_ZONE, opponentZoneUtility);
+
+        // G407 and the robot's shooter safety policy allow launches only from our
+        // alliance zone. Do not turn a midfield pass into an illegal launch.
+        double shuttleUtility = !world.isAutonomous() && !world.isAllianceHubActive()
+                && FieldMap.AllianceZones.isInAllianceZone(world.selfPose(), world.isRedAlliance())
+                && !FieldMap.Trenches.isLowClearance(world.selfPose()) && distToSelfHub > 6.0
+                && world.heldFuelCount() >= 16 ? 0.87 : 0.0;
+        utilities.put(StrategicObjective.SHUTTLE_PASS, shuttleUtility);
+
+        double longRangeUtility = 0.0;
+        if (world.isAllianceHubActive() && world.heldFuelCount() >= 6
+                && FieldMap.AllianceZones.isInAllianceZone(world.selfPose(), world.isRedAlliance())
+                && distToSelfHub >= 3.6 && distToSelfHub <= 4.3) {
+            longRangeUtility = opponentObserved
+                    && world.opponentPose().getTranslation().getDistance(selfHub) <= 2.4 ? 0.94 : 0.86;
+        }
+        utilities.put(StrategicObjective.LONG_RANGE_SNIPE, longRangeUtility);
+
         // Defense Objectives
         double laneDenialUtility = 0.0;
         double shadowUtility = 0.0;
@@ -270,6 +349,37 @@ public class JevDecisionEngine {
             shadowUtility = 0.65;
             interceptUtility = 0.75;
         }
+
+        boolean defensiveArchetype = archetype == Archetype.TACTICAL_DEFENDER
+                || archetype == Archetype.DEFENSE_BULLY || archetype == Archetype.ADAPTIVE_COMPETITOR;
+        double chokeUtility = 0.0;
+        if (defensiveArchetype && opponentObserved && !world.isAutonomous()) {
+            double opponentX = world.opponentPose().getX();
+            if ((opponentX >= FieldMap.Trenches.BLUE_TRENCH_MIN_X && opponentX <= FieldMap.Trenches.BLUE_TRENCH_MAX_X)
+                    || (opponentX >= FieldMap.Trenches.RED_TRENCH_MIN_X
+                            && opponentX <= FieldMap.Trenches.RED_TRENCH_MAX_X)) {
+                chokeUtility = 0.91;
+            }
+        }
+        utilities.put(StrategicObjective.CHOKE_TRENCH, chokeUtility);
+
+        double screenUtility = 0.0;
+        if (opponentObserved && knowledge.alliesHeldFuel() >= 12 && world.isAllianceHubActive()) {
+            outer: for (Pose2d ally : knowledge.allyPoses()) {
+                for (Pose2d opponent : knowledge.opponentPoses()) {
+                    if (ally.getTranslation().getDistance(opponent.getTranslation()) <= 2.2) {
+                        screenUtility = 0.89;
+                        break outer;
+                    }
+                }
+            }
+        }
+        utilities.put(StrategicObjective.SCREEN_FOR_ALLY, screenUtility);
+
+        // Pin duration is not present in WorldState/MatchKnowledge yet; keep this
+        // objective unavailable until the simulator supplies an explicit referee
+        // signal.
+        utilities.put(StrategicObjective.BAIT_PIN_FOUL, 0.0);
 
         // Tier-1 driver assist: with no vision-tracked opponent, opponent-
         // chasing objectives are unavailable regardless of archetype.
@@ -299,6 +409,9 @@ public class JevDecisionEngine {
             if (world.heldFuelCount() > 0 && (batchReady || inShootingRange || autoClockLow)) {
                 scoreUtility = 0.95;
                 vacuumUtility = 0.0;
+                // Do not let the newly added home-zone sweep outrank the
+                // established auto batch/clock dump decision.
+                sweepUtility = 0.0;
             } else {
                 scoreUtility = 0.0;
                 vacuumUtility = 0.85;
@@ -332,6 +445,12 @@ public class JevDecisionEngine {
             }
         }
 
+        if (world.isAllianceHubActive() && timeLeftToHarvest <= 0.0 && world.heldFuelCount() >= 8) {
+            scoreUtility = 0.98;
+            vacuumUtility = 0.0;
+            sweepUtility = 0.0;
+        }
+
         utilities.put(StrategicObjective.CYCLE_SCORE_HUB, scoreUtility);
         utilities.put(StrategicObjective.STAGE_STANDOFF, stageUtility);
         utilities.put(StrategicObjective.VACUUM_MIDFIELD, vacuumUtility);
@@ -339,16 +458,16 @@ public class JevDecisionEngine {
         utilities.put(StrategicObjective.DENY_SHOOTING_LANE, laneDenialUtility);
         utilities.put(StrategicObjective.SHADOW_MIDLINE, shadowUtility);
         utilities.put(StrategicObjective.LEAD_INTERCEPT, interceptUtility);
+        utilities.put(StrategicObjective.SWEEP_ALLIANCE_ZONE, sweepUtility);
+        utilities.put(StrategicObjective.POACH_OPPONENT_ZONE, opponentZoneUtility);
+        utilities.put(StrategicObjective.SHUTTLE_PASS, shuttleUtility);
+        utilities.put(StrategicObjective.LONG_RANGE_SNIPE, longRangeUtility);
+        utilities.put(StrategicObjective.CHOKE_TRENCH, chokeUtility);
+        utilities.put(StrategicObjective.SCREEN_FOR_ALLY, screenUtility);
 
         // ── 2. Select Highest Utility Objective ──────────────────────────────
-        StrategicObjective bestObjective = StrategicObjective.VACUUM_MIDFIELD;
-        double maxUtility = -1.0;
-        for (Map.Entry<StrategicObjective, Double> entry : utilities.entrySet()) {
-            if (entry.getValue() > maxUtility) {
-                maxUtility = entry.getValue();
-                bestObjective = entry.getKey();
-            }
-        }
+        StrategicObjective bestObjective = evaluateLocalUtilityMatrix(utilities);
+        double maxUtility = utilities.getOrDefault(bestObjective, 0.0);
 
         // Tier-1 safety net: opponent-chasing objectives require a tracked
         // opponent. If one ever wins without observation (e.g. a future
@@ -356,9 +475,27 @@ public class JevDecisionEngine {
         // placeholder mark.
         if (!opponentObserved && (bestObjective == StrategicObjective.LEAD_INTERCEPT
                 || bestObjective == StrategicObjective.DENY_SHOOTING_LANE
-                || bestObjective == StrategicObjective.SHADOW_MIDLINE)) {
+                || bestObjective == StrategicObjective.SHADOW_MIDLINE
+                || bestObjective == StrategicObjective.CHOKE_TRENCH
+                || bestObjective == StrategicObjective.SCREEN_FOR_ALLY)) {
             bestObjective = StrategicObjective.VACUUM_MIDFIELD;
             maxUtility = utilities.getOrDefault(bestObjective, 0.0);
+        }
+
+        TypeSafeJevClient.JevDecision cloudDecision = cloudConfigured
+                ? cloudClient.getLatestDecision(cloudContext)
+                : null;
+        boolean usedCloud = false;
+        double nowSeconds = System.nanoTime() / 1_000_000_000.0;
+        if (cloudDecision != null
+                && nowSeconds - cloudDecision.timestamp() >= 0.0
+                && nowSeconds - cloudDecision.timestamp() <= CLOUD_DECISION_FRESHNESS_SEC
+                && cloudDecision.confidence() >= MIN_CLOUD_CONFIDENCE
+                && isCloudObjectiveAdmissible(
+                        cloudDecision.objective(), utilities, world, knowledge, bestObjective, maxUtility)) {
+            bestObjective = cloudDecision.objective();
+            maxUtility = cloudDecision.confidence();
+            usedCloud = true;
         }
 
         // ── 3. Resolve Concrete Tactical Action Intent ───────────────────────
@@ -369,6 +506,10 @@ public class JevDecisionEngine {
         double targetRPM = 0.0;
         boolean triggerKicker = false;
         String rationale;
+        StrategicObjective nextObjective = resolveNextObjective(bestObjective, world);
+        double timeToTransitionSec = world.isAllianceHubActive() && world.heldFuelCount() >= 8
+                ? Math.max(0.0, timeLeftToHarvest)
+                : Math.max(0.0, world.timeUntilHubShift());
 
         switch (bestObjective) {
             case CYCLE_SCORE_HUB:
@@ -426,6 +567,77 @@ public class JevDecisionEngine {
                 rationale = String.format("Hunting fuel (%d/30). Hopper capacity available.", world.heldFuelCount());
                 break;
 
+            case SWEEP_ALLIANCE_ZONE:
+                navTarget = findAllianceZoneFuelTarget(world.selfPose(), world.isRedAlliance());
+                intakeCmd = IntakeState.INTAKING;
+                if (world.isAllianceHubActive()) {
+                    shooterCmd = ShooterState.PREPARING;
+                    targetRPM = 3200.0;
+                }
+                rationale = String.format("Sweeping %d loose fuel pieces in the alliance zone.", homeFuelCount);
+                break;
+
+            case LONG_RANGE_SNIPE:
+                navTarget = world.selfPose();
+                aimOverride = selfHub.minus(world.selfPose().getTranslation()).getAngle();
+                shooterCmd = ShooterState.SHOOTING;
+                targetRPM = 4000.0;
+                triggerKicker = Math.abs(world.selfPose().getRotation().minus(aimOverride).getDegrees()) < 4.0;
+                rationale = "Taking an outer-perimeter shot while the alliance Hub is active.";
+                break;
+
+            case SHUTTLE_PASS:
+                navTarget = world.selfPose();
+                Translation2d homeZoneCenter = new Translation2d(world.isRedAlliance() ? 14.2 : 2.3,
+                        FieldMap.FIELD_WIDTH / 2.0);
+                aimOverride = homeZoneCenter.minus(world.selfPose().getTranslation()).getAngle();
+                shooterCmd = ShooterState.SHOOTING;
+                targetRPM = 2400.0;
+                triggerKicker = true;
+                rationale = "Shuttling held fuel toward the home zone while the Hub is inactive.";
+                break;
+
+            case POACH_OPPONENT_ZONE:
+                navTarget = findOpponentZoneFuelTarget(world.selfPose(), world.isRedAlliance());
+                intakeCmd = IntakeState.INTAKING;
+                rationale = "Harvesting opponent-zone fuel before the next Hub shift.";
+                break;
+
+            case CHOKE_TRENCH:
+                boolean opponentAtTop = world.opponentPose().getY() >= FieldMap.FIELD_WIDTH / 2.0;
+                double trenchMouthY = opponentAtTop
+                        ? FieldMap.Trenches.TOP_TRENCH_MIN_Y - 0.8
+                        : FieldMap.Trenches.BOT_TRENCH_MAX_Y + 0.8;
+                // Identify whether opponent is in the Red or Blue half:
+                boolean opponentInRedTrench = world.opponentPose().getX() > FieldMap.CENTERLINE_X;
+                double minX = opponentInRedTrench ? FieldMap.Trenches.RED_TRENCH_MIN_X
+                        : FieldMap.Trenches.BLUE_TRENCH_MIN_X;
+                double maxX = opponentInRedTrench ? FieldMap.Trenches.RED_TRENCH_MAX_X
+                        : FieldMap.Trenches.BLUE_TRENCH_MAX_X;
+                double trenchX = Math.max(minX, Math.min(maxX, world.opponentPose().getX()));
+                navTarget = new Pose2d(trenchX, trenchMouthY, Rotation2d.fromDegrees(opponentAtTop ? 90.0 : -90.0));
+                rationale = "Contesting the occupied trench approach.";
+                break;
+
+            case SCREEN_FOR_ALLY:
+                Pose2d screeningAlly = knowledge.allyPoses().get(0);
+                Pose2d nearestDefender = knowledge.opponentPoses().stream()
+                        .min((a, b) -> Double.compare(
+                                a.getTranslation().getDistance(screeningAlly.getTranslation()),
+                                b.getTranslation().getDistance(screeningAlly.getTranslation())))
+                        .orElse(world.opponentPose());
+                Translation2d screenMidpoint = screeningAlly.getTranslation()
+                        .plus(nearestDefender.getTranslation()).div(2.0);
+                navTarget = new Pose2d(screenMidpoint,
+                        nearestDefender.getTranslation().minus(screenMidpoint).getAngle());
+                rationale = "Screening the nearest defender away from a loaded ally.";
+                break;
+
+            case BAIT_PIN_FOUL:
+                navTarget = world.selfPose();
+                rationale = "Holding position during an observed pin.";
+                break;
+
             case LEAD_INTERCEPT:
                 navTarget = solveLeadPursuitIntercept(
                         world.selfPose(), world.opponentPose(),
@@ -439,12 +651,16 @@ public class JevDecisionEngine {
 
             case DENY_SHOOTING_LANE:
                 Translation2d oppGoal = FieldMap.Hubs.getHubLocation2d(!world.isRedAlliance());
-                Translation2d dir = oppGoal.minus(world.opponentPose().getTranslation());
-                if (dir.getNorm() > 1e-3)
-                    dir = dir.div(dir.getNorm());
-                Translation2d blockPos = world.opponentPose().getTranslation().plus(dir.times(1.5));
+                Translation2d toGoal = oppGoal.minus(world.opponentPose().getTranslation());
+                double distToGoal = toGoal.getNorm();
+                Translation2d dir = (distToGoal > 1e-3) ? toGoal.div(distToGoal) : new Translation2d(1, 0);
+
+                // Step halfway or 1.5m, but clamp so we never get closer than 1.6m to the Hub
+                // center:
+                double blockDist = Math.min(1.5, Math.max(0.5, distToGoal - 1.60));
+                Translation2d blockPos = world.opponentPose().getTranslation().plus(dir.times(blockDist));
                 Rotation2d faceOpp = world.opponentPose().getTranslation().minus(blockPos).getAngle();
-                navTarget = new Pose2d(blockPos, faceOpp);
+                navTarget = StaticPathfinder.ensurePoseOutsideObstacles(new Pose2d(blockPos, faceOpp));
                 intakeCmd = IntakeState.STANDBY;
                 shooterCmd = ShooterState.STOPPED;
                 rationale = "Blocking opponent shooting corridor.";
@@ -496,15 +712,118 @@ public class JevDecisionEngine {
                 break;
         }
 
+        boolean isLowClearance = FieldMap.Trenches.isLowClearance(world.selfPose());
+        boolean hasHopperSpace = world.heldFuelCount() < WorldState.DEFAULT_MAX_CAPACITY;
+        if ((bestObjective.isDefensive() || bestObjective == StrategicObjective.STAGE_STANDOFF)
+                && !isLowClearance && hasHopperSpace) {
+            intakeCmd = IntakeState.INTAKING;
+        }
+
+        if (usedCloud) {
+            rationale = "TypeSafe Jev selected " + bestObjective.name() + " (confidence "
+                    + String.format("%.2f", maxUtility) + "). " + rationale;
+        }
+
         double latencyMs = (System.nanoTime() - startNanos) / 1_000_000.0;
         Logger.recordOutput("JevAI/ActiveObjective", bestObjective.name());
         Logger.recordOutput("JevAI/Confidence", maxUtility);
         Logger.recordOutput("JevAI/Rationale", rationale);
         Logger.recordOutput("JevAI/PolicyLatencyMs", latencyMs);
+        String telemetryPrefix = cloudContext == null ? "JevAI" : "JevAI/" + cloudContext;
+        Logger.recordOutput(telemetryPrefix + "/UsingCloudAI", usedCloud);
+        Logger.recordOutput(telemetryPrefix + "/ActiveDecisionMode", activeDecisionMode.name());
+        SmartDashboard.putBoolean(telemetryPrefix + "/UsingCloudAI", usedCloud);
+        SmartDashboard.putString(telemetryPrefix + "/ActiveDecisionMode", activeDecisionMode.name());
+        if (cloudDecision != null) {
+            Logger.recordOutput(telemetryPrefix + "/CloudConfidence", cloudDecision.confidence());
+            Logger.recordOutput(telemetryPrefix + "/CloudLatencyMs", cloudDecision.latencyMs());
+            Logger.recordOutput(telemetryPrefix + "/CloudProbabilities",
+                    cloudDecision.probabilityDistribution().toString());
+            SmartDashboard.putNumber(telemetryPrefix + "/CloudConfidence", cloudDecision.confidence());
+            SmartDashboard.putNumber(telemetryPrefix + "/CloudLatencyMs", cloudDecision.latencyMs());
+            SmartDashboard.putString(telemetryPrefix + "/CloudProbabilities",
+                    cloudDecision.probabilityDistribution().toString());
+        }
+        double opponentThreat = cloudDecision == null ? 0.0 : cloudDecision.opponentThreatProbability();
+        Logger.recordOutput(telemetryPrefix + "/OpponentThreatProbability", opponentThreat);
+        SmartDashboard.putNumber(telemetryPrefix + "/OpponentThreatProbability", opponentThreat);
+        String cloudError = cloudClient.getLastError(cloudContext);
+        if (!cloudError.equals(lastPublishedCloudErrors.get(telemetryPrefix))) {
+            lastPublishedCloudErrors.put(telemetryPrefix, cloudError);
+            Logger.recordOutput(telemetryPrefix + "/CloudError", cloudError);
+            SmartDashboard.putString(telemetryPrefix + "/CloudError", cloudError);
+        }
 
+        StrategicPlan plan = new StrategicPlan(bestObjective, nextObjective, timeToTransitionSec);
         return new AIActionIntent(
                 bestObjective, navTarget, aimOverride, intakeCmd, shooterCmd, targetRPM, triggerKicker, maxUtility,
-                rationale);
+                rationale, plan);
+    }
+
+    private DecisionMode resolveDecisionMode() {
+        if (!Dashboard.isUseTypeSafeJevEnabled()) {
+            decisionMode = DecisionMode.LOCAL_HEURISTIC;
+            return DecisionMode.LOCAL_HEURISTIC;
+        }
+        String requestedMode = Dashboard.getJevDecisionModeName();
+        try {
+            decisionMode = DecisionMode.valueOf(requestedMode);
+        } catch (IllegalArgumentException | NullPointerException exception) {
+            Dashboard.setJevDecisionModeName(decisionMode.name());
+        }
+        return decisionMode;
+    }
+
+    private static StrategicObjective evaluateLocalUtilityMatrix(Map<StrategicObjective, Double> utilities) {
+        StrategicObjective bestObjective = StrategicObjective.VACUUM_MIDFIELD;
+        double bestUtility = -1.0;
+        for (Map.Entry<StrategicObjective, Double> entry : utilities.entrySet()) {
+            if (entry.getValue() > bestUtility) {
+                bestUtility = entry.getValue();
+                bestObjective = entry.getKey();
+            }
+        }
+        return bestObjective;
+    }
+
+    static boolean isCloudObjectiveAdmissible(
+            StrategicObjective objective,
+            Map<StrategicObjective, Double> utilities,
+            WorldState world,
+            MatchKnowledge knowledge,
+            StrategicObjective localObjective,
+            double localUtility) {
+        if (objective == null || !isTypeSafeChoice(objective)
+                || utilities.getOrDefault(objective, 0.0) <= 0.0) {
+            return false;
+        }
+        if (localUtility >= LOCAL_PRIORITY_OVERRIDE_THRESHOLD && objective != localObjective) {
+            return false;
+        }
+        if (objective.isDefensive() && !knowledge.opponentObserved()) {
+            return false;
+        }
+        if (world.isAutonomous()) {
+            // Keep all remotely selected autonomous targets on the robot's own
+            // half. Defensive and opponent-zone objectives are never accepted.
+            return objective == StrategicObjective.CYCLE_SCORE_HUB
+                    || objective == StrategicObjective.STAGE_STANDOFF
+                    || objective == StrategicObjective.VACUUM_MIDFIELD
+                    || objective == StrategicObjective.STOCKPILE_DEPOT
+                    || objective == StrategicObjective.SWEEP_ALLIANCE_ZONE;
+        }
+        return true;
+    }
+
+    private static boolean isTypeSafeChoice(StrategicObjective objective) {
+        return objective == StrategicObjective.CYCLE_SCORE_HUB
+                || objective == StrategicObjective.STAGE_STANDOFF
+                || objective == StrategicObjective.VACUUM_MIDFIELD
+                || objective == StrategicObjective.STOCKPILE_DEPOT
+                || objective == StrategicObjective.SWEEP_ALLIANCE_ZONE
+                || objective == StrategicObjective.DENY_SHOOTING_LANE
+                || objective == StrategicObjective.LEAD_INTERCEPT
+                || objective == StrategicObjective.RUSH_CLIMB;
     }
 
     /**
@@ -595,8 +914,17 @@ public class JevDecisionEngine {
                 Translation2d delta = cand.minus(robotPose.getTranslation());
                 double angleDiff = Math.abs(robotPose.getRotation().minus(delta.getAngle()).getRadians());
                 double alignBonus = 0.70 + 0.30 * Math.max(0.0, Math.cos(angleDiff));
+                Translation2d homeCenter = new Translation2d(isRedAlliance ? 14.2 : 2.3,
+                        FieldMap.FIELD_WIDTH / 2.0);
+                Translation2d toHome = homeCenter.minus(cand);
+                Translation2d travel = delta;
+                double directionBonus = 0.0;
+                if (toHome.getNorm() > 1e-9 && travel.getNorm() > 1e-9) {
+                    directionBonus = 0.35 * Math.max(0.0,
+                            (travel.div(travel.getNorm())).dot(toHome.div(toHome.getNorm())));
+                }
 
-                double scent = (Math.pow(density, 1.5) / (dist + 0.40)) * alignBonus;
+                double scent = (Math.pow(density, 1.5) / (dist + 0.40)) * (alignBonus + directionBonus);
 
                 if (scent > highestScent) {
                     highestScent = scent;
@@ -617,6 +945,115 @@ public class JevDecisionEngine {
         double midY = (robotPose.getY() > 4.0) ? 5.80 : 2.40;
         return StaticPathfinder.ensurePoseOutsideObstacles(
                 new Pose2d(midX, midY, Rotation2d.fromDegrees(isRedAlliance ? 180 : 0)), robotPose.getTranslation());
+    }
+
+    /**
+     * Selects the densest reachable Fuel cluster strictly inside our alliance zone.
+     */
+    public Pose2d findAllianceZoneFuelTarget(Pose2d robotPose, boolean isRedAlliance) {
+        return findFuelTargetInZone(robotPose, isRedAlliance, false);
+    }
+
+    /**
+     * Selects the densest reachable Fuel cluster strictly inside the opponent zone.
+     */
+    public Pose2d findOpponentZoneFuelTarget(Pose2d robotPose, boolean isRedAlliance) {
+        return findFuelTargetInZone(robotPose, !isRedAlliance, true);
+    }
+
+    private Pose2d findFuelTargetInZone(Pose2d robotPose, boolean zoneIsRed, boolean strictOpponentZone) {
+        SimulatedArena arena = SimulatedArena.getInstance();
+        Translation2d best = null;
+        double bestScore = -1.0;
+        if (arena != null) {
+            try {
+                List<Translation2d> candidates = new ArrayList<>();
+                Set<GamePieceOnFieldSimulation> pieces = arena.gamePiecesOnField();
+                if (pieces != null) {
+                    for (GamePieceOnFieldSimulation piece : pieces) {
+                        if (piece == null || !"Fuel".equals(piece.getType()))
+                            continue;
+                        Translation2d point = piece.getPoseOnField().getTranslation();
+                        if (!FieldMap.AllianceZones.isInAllianceZone(point, zoneIsRed))
+                            continue;
+                        if (strictOpponentZone && (zoneIsRed ? point.getX() < 12.0 : point.getX() > 4.5))
+                            continue;
+                        if (StaticPathfinder.isPointInHardObstacle(point)
+                                || StaticPathfinder.isPointNearDynamicObstacle(point))
+                            continue;
+                        candidates.add(point);
+                    }
+                }
+                for (Translation2d candidate : candidates) {
+                    double density = 1.0;
+                    for (Translation2d neighbor : candidates) {
+                        double distance = candidate.getDistance(neighbor);
+                        if (distance > 1e-9 && distance <= 1.3) {
+                            density += Math.exp(-(distance * distance) / 0.5);
+                        }
+                    }
+                    double distance = robotPose.getTranslation().getDistance(candidate);
+                    double score = Math.pow(density, 1.5) / (distance + 0.4);
+                    if (score > bestScore) {
+                        bestScore = score;
+                        best = candidate;
+                    }
+                }
+            } catch (Exception ignored) {
+                // The real robot has no SimulatedArena; callers receive the safe fallback
+                // below.
+            }
+        }
+        if (best != null) {
+            return StaticPathfinder.wallStandoffApproach(best, robotPose.getTranslation());
+        }
+        Translation2d fallback = FieldMap.AllianceZones.isInAllianceZone(robotPose, zoneIsRed)
+                ? robotPose.getTranslation()
+                : new Translation2d(zoneIsRed ? FieldMap.FIELD_LENGTH - 2.3 : 2.3,
+                        FieldMap.FIELD_WIDTH / 2.0);
+        return StaticPathfinder.ensurePoseOutsideObstacles(
+                new Pose2d(fallback, new Rotation2d()), robotPose.getTranslation());
+    }
+
+    private int countFuelInZone(boolean isRedZone, boolean strictOpponentZone) {
+        SimulatedArena arena = SimulatedArena.getInstance();
+        if (arena == null)
+            return 0;
+        try {
+            Set<GamePieceOnFieldSimulation> pieces = arena.gamePiecesOnField();
+            if (pieces == null)
+                return 0;
+            int count = 0;
+            for (GamePieceOnFieldSimulation piece : pieces) {
+                if (piece != null && "Fuel".equals(piece.getType())
+                        && FieldMap.AllianceZones.isInAllianceZone(
+                                piece.getPoseOnField().getTranslation(), isRedZone)
+                        && (!strictOpponentZone || (isRedZone
+                                ? piece.getPoseOnField().getTranslation().getX() >= 12.0
+                                : piece.getPoseOnField().getTranslation().getX() <= 4.5))
+                        && !StaticPathfinder.isPointInHardObstacle(piece.getPoseOnField().getTranslation())
+                        && !StaticPathfinder.isPointNearDynamicObstacle(piece.getPoseOnField().getTranslation())) {
+                    count++;
+                }
+            }
+            return count;
+        } catch (Exception ignored) {
+            return 0;
+        }
+    }
+
+    private StrategicObjective resolveNextObjective(StrategicObjective current, WorldState world) {
+        return switch (current) {
+            case SWEEP_ALLIANCE_ZONE -> world.isAllianceHubActive()
+                    ? StrategicObjective.CYCLE_SCORE_HUB
+                    : StrategicObjective.STAGE_STANDOFF;
+            case VACUUM_MIDFIELD -> StrategicObjective.CYCLE_SCORE_HUB;
+            case STOCKPILE_DEPOT, STAGE_STANDOFF -> StrategicObjective.CYCLE_SCORE_HUB;
+            case POACH_OPPONENT_ZONE -> StrategicObjective.CYCLE_SCORE_HUB;
+            case LONG_RANGE_SNIPE, SHUTTLE_PASS -> StrategicObjective.CYCLE_SCORE_HUB;
+            case CHOKE_TRENCH, SCREEN_FOR_ALLY, BAIT_PIN_FOUL -> StrategicObjective.LEAD_INTERCEPT;
+            default -> current;
+        };
     }
 
     private boolean isShootingLaneBlocked(Pose2d shooterPose, Translation2d targetHub, Pose2d opponentPose) {

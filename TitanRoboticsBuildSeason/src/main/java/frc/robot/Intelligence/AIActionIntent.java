@@ -17,5 +17,22 @@ public record AIActionIntent(
         double targetFlywheelRPM,
         boolean triggerFeedKicker,
         double confidence,
-        String rationale
-) {}
+        String rationale,
+        StrategicPlan plan
+) {
+    /** Backward-compatible constructor for callers that do not provide a lookahead. */
+    public AIActionIntent(
+            StrategicObjective objective,
+            Pose2d navigationTarget,
+            Rotation2d aimOverride,
+            IntakeState intakeCommand,
+            ShooterState shooterCommand,
+            double targetFlywheelRPM,
+            boolean triggerFeedKicker,
+            double confidence,
+            String rationale) {
+        this(objective, navigationTarget, aimOverride, intakeCommand, shooterCommand,
+                targetFlywheelRPM, triggerFeedKicker, confidence, rationale,
+                new StrategicPlan(objective, objective, 0.0));
+    }
+}

@@ -10,7 +10,7 @@ Must use the WPILib 2026 JDK or builds fail (`Unsupported class file major versi
 $env:JAVA_HOME = "C:\Users\Public\wpilib\2026\jdk"
 $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 .\gradlew compileJava --offline   # fast compile
-.\gradlew test --offline          # JUnit 5 suite (25 test files, ~190 tests)
+.\gradlew test --offline          # JUnit 5 suite (27 test files, 211 tests as of 2026-09-26)
 .\gradlew simulateJava            # desktop SimGUI + IronMaple arena
 .\gradlew deploy                  # deploy to RoboRIO (same JAVA_HOME)
 ```

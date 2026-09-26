@@ -12,7 +12,8 @@ import frc.robot.Utils.AllianceFlipUtil;
 
 /**
  * Tactical navigation waypoints (Glide Points) and Auto-Tunneling routes.
- * Defined strictly in canonical Blue-origin coordinates and dynamically mirrored for Red Alliance.
+ * Defined strictly in canonical Blue-origin coordinates and dynamically
+ * mirrored for Red Alliance.
  */
 public class GlidePoints {
 
@@ -56,7 +57,7 @@ public class GlidePoints {
             new GlidePoint("Blue Feeder Top", new Pose2d(1.50, 6.00, Rotation2d.fromDegrees(-35))),
             new GlidePoint("Blue Feeder Bottom", new Pose2d(1.50, 2.20, Rotation2d.fromDegrees(35))),
             new GlidePoint("Blue Right Side Climb", new Pose2d(1.05, 2.88, Rotation2d.fromDegrees(180))),
-            new GlidePoint("Blue Hub Front", new Pose2d(5.60, 4.035, Rotation2d.fromDegrees(180))),
+            new GlidePoint("Blue Hub Front", new Pose2d(5.75, 4.035, Rotation2d.fromDegrees(180))),
             new GlidePoint("Blue Hub Back", new Pose2d(2.60, 4.035, Rotation2d.fromDegrees(0))),
             new GlidePoint("Blue Top Trench",
                     new Pose2d(3.50, Y_TOP_LANE, Rotation2d.fromDegrees(0)), true,
@@ -65,8 +66,7 @@ public class GlidePoints {
                     new Pose2d(3.50, Y_BOT_LANE, Rotation2d.fromDegrees(0)), true,
                     new Pose2d(5.75, Y_BOT_LANE, Rotation2d.fromDegrees(0))),
             new GlidePoint("Midfield Top", new Pose2d(8.27, 6.10, Rotation2d.fromDegrees(-90))),
-            new GlidePoint("Midfield Bottom", new Pose2d(8.27, 2.00, Rotation2d.fromDegrees(90)))
-    );
+            new GlidePoint("Midfield Bottom", new Pose2d(8.27, 2.00, Rotation2d.fromDegrees(90))));
 
     // ----------------------------------------------------------------
     // RED ALLIANCE WAYPOINTS (Dynamically Mirrored via AllianceFlipUtil)
@@ -84,7 +84,8 @@ public class GlidePoints {
                         : null;
                 redPoints.add(new GlidePoint(redName, redPose, p.isTunnelEntrance, redExit));
             } else {
-                // Neutral field features (e.g. Midfield Top/Bottom) retain canonical coordinates
+                // Neutral field features (e.g. Midfield Top/Bottom) retain canonical
+                // coordinates
                 redPoints.add(p);
             }
         }
@@ -105,21 +106,25 @@ public class GlidePoints {
     }
 
     /**
-     * Finds a matching tunnel entrance waypoint for the given target pose if within tolerance.
+     * Finds a matching tunnel entrance waypoint for the given target pose if within
+     * tolerance.
      *
      * @param targetPose The target pose to check
-     * @return The matching GlidePoint if it is a tunnel entrance, or null if not found
+     * @return The matching GlidePoint if it is a tunnel entrance, or null if not
+     *         found
      */
     public static GlidePoint getMatchingTunnelEntrance(Pose2d targetPose) {
         return getMatchingTunnelEntrance(targetPose, 0.40);
     }
 
     /**
-     * Finds a matching tunnel entrance waypoint for the given target pose if within specified tolerance.
+     * Finds a matching tunnel entrance waypoint for the given target pose if within
+     * specified tolerance.
      *
-     * @param targetPose The target pose to check
+     * @param targetPose      The target pose to check
      * @param toleranceMeters Distance tolerance in meters
-     * @return The matching GlidePoint if it is a tunnel entrance, or null if not found
+     * @return The matching GlidePoint if it is a tunnel entrance, or null if not
+     *         found
      */
     public static GlidePoint getMatchingTunnelEntrance(Pose2d targetPose, double toleranceMeters) {
         if (targetPose == null) {

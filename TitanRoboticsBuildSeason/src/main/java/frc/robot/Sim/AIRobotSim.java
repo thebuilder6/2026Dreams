@@ -159,6 +159,8 @@ public class AIRobotSim implements Subsystem {
     // Multi-robot sparring pool
     private final List<AIRobotInstance> additionalBots = new ArrayList<>();
     private final List<AIRobotInstance> allyBots = new ArrayList<>();
+    private AIRobotInstance trainingBluePrimaryBot;
+    private volatile TrainingMatchScenario trainingScenario;
 
     public static synchronized AIRobotSim getInstance() {
         if (instance == null) {
@@ -203,6 +205,43 @@ public class AIRobotSim implements Subsystem {
         bot0Instance.setRobotPose(pose);
     }
 
+    /** Enables or clears scenario-controlled team rosters and resets bot state. */
+    public synchronized void configureTrainingScenario(TrainingMatchScenario scenario) {
+        trainingScenario = scenario;
+        if (scenario != null && trainingBluePrimaryBot == null) {
+            trainingBluePrimaryBot = new AIRobotInstance(100, ROBOT_QUEUING_POSITIONS[0],
+                    scenario.bluePlayerRobot().archetype(), true);
+        }
+        reset();
+        if (scenario == null) return;
+
+        trainingBluePrimaryBot.reset(scenario.bluePlayerRobot());
+
+        for (int i = 1; i < scenario.redOpponentRobots().size(); i++) {
+            if (additionalBots.size() < i) {
+                additionalBots.add(new AIRobotInstance(i, ROBOT_QUEUING_POSITIONS[i],
+                        scenario.redOpponentRobots().get(i).archetype()));
+            }
+        }
+        for (int i = 1; i < scenario.blueRobots().size(); i++) {
+            int allyIndex = i - 1;
+            if (allyBots.size() <= allyIndex) {
+                allyBots.add(new AIRobotInstance(100 + i, ALLY_QUEUING_POSITIONS[allyIndex],
+                        scenario.blueRobots().get(i).archetype(), true));
+            }
+        }
+
+        bot0Instance.reset(scenario.redOpponentRobots().get(0));
+        for (int i = 1; i < scenario.redOpponentRobots().size(); i++) {
+            additionalBots.get(i - 1).reset(scenario.redOpponentRobots().get(i));
+        }
+        for (int i = 1; i < scenario.blueRobots().size(); i++) {
+            allyBots.get(i - 1).reset(scenario.blueRobots().get(i));
+        }
+        lastSpawnedPlayerIsRed = AllianceFlipUtil.isRedAlliance();
+        wasOpponentEnabled = true;
+    }
+
     public void reset() {
         wasOpponentEnabled = false;
         lastSpawnedPlayerIsRed = false;
@@ -243,14 +282,21 @@ public class AIRobotSim implements Subsystem {
         for (var ally : allyBots) {
             ally.reset();
         }
+        if (trainingBluePrimaryBot != null) {
+            trainingBluePrimaryBot.reset();
+        }
     }
 
     @Override
     public void simulationUpdate() {
-        boolean opponentEnabled = Dashboard.isOpponentRobotEnabled();
-        boolean manualDefenseMode = Dashboard.is2PlayerDefenseEnabled();
-        int allyCount = (int) Math.max(0,
-                Math.min(2, SmartDashboard.getNumber("Simulation/AllyCount", Dashboard.getAllyCount())));
+        TrainingMatchScenario scenario = trainingScenario;
+        boolean trainingMode = scenario != null;
+        boolean opponentEnabled = trainingMode || Dashboard.isOpponentRobotEnabled();
+        boolean manualDefenseMode = !trainingMode && Dashboard.is2PlayerDefenseEnabled();
+        int allyCount = trainingMode
+                ? scenario.blueAllyRobots().size()
+                : (int) Math.max(0,
+                        Math.min(2, SmartDashboard.getNumber("Simulation/AllyCount", Dashboard.getAllyCount())));
         boolean anyBotActive = opponentEnabled || allyCount > 0;
 
         if (!anyBotActive) {
@@ -285,14 +331,22 @@ public class AIRobotSim implements Subsystem {
         }
 
         // Lazy initialization of additional opponent bots
-        int opponentCount = (int) Math.max(1,
-                Math.min(3, SmartDashboard.getNumber("Simulation/OpponentCount", Dashboard.getOpponentCount())));
+        int opponentCount = trainingMode
+                ? scenario.redOpponentRobots().size()
+                : (int) Math.max(1,
+                        Math.min(3, SmartDashboard.getNumber("Simulation/OpponentCount", Dashboard.getOpponentCount())));
         try {
             if (opponentCount >= 2 && additionalBots.isEmpty()) {
-                additionalBots.add(new AIRobotInstance(1, ROBOT_QUEUING_POSITIONS[1], Archetype.DEFENSE_BULLY));
+                TrainingMatchScenario.RobotConfig config = trainingMode ? scenario.redOpponentRobots().get(1) : null;
+                additionalBots.add(new AIRobotInstance(1,
+                        config == null ? ROBOT_QUEUING_POSITIONS[1] : config.startingPose(),
+                        config == null ? Archetype.DEFENSE_BULLY : config.archetype()));
             }
             if (opponentCount >= 3 && additionalBots.size() < 2) {
-                additionalBots.add(new AIRobotInstance(2, ROBOT_QUEUING_POSITIONS[2], Archetype.ADAPTIVE_COMPETITOR));
+                TrainingMatchScenario.RobotConfig config = trainingMode ? scenario.redOpponentRobots().get(2) : null;
+                additionalBots.add(new AIRobotInstance(2,
+                        config == null ? ROBOT_QUEUING_POSITIONS[2] : config.startingPose(),
+                        config == null ? Archetype.ADAPTIVE_COMPETITOR : config.archetype()));
             }
         } catch (Exception | NoClassDefFoundError e) {
             System.err.println("[AIRobotSim] Failed to spawn additional opponent bot: " + e.getMessage());
@@ -302,10 +356,16 @@ public class AIRobotSim implements Subsystem {
         // Lazy initialization of ally bots
         try {
             if (allyCount >= 1 && allyBots.isEmpty()) {
-                allyBots.add(new AIRobotInstance(101, ALLY_QUEUING_POSITIONS[0], Archetype.AUTONOMOUS_CYCLER, true));
+                TrainingMatchScenario.RobotConfig config = trainingMode ? scenario.blueAllyRobots().get(0) : null;
+                allyBots.add(new AIRobotInstance(101,
+                        config == null ? ALLY_QUEUING_POSITIONS[0] : config.startingPose(),
+                        config == null ? Archetype.AUTONOMOUS_CYCLER : config.archetype(), true));
             }
             if (allyCount >= 2 && allyBots.size() < 2) {
-                allyBots.add(new AIRobotInstance(102, ALLY_QUEUING_POSITIONS[1], Archetype.ADAPTIVE_COMPETITOR, true));
+                TrainingMatchScenario.RobotConfig config = trainingMode ? scenario.blueAllyRobots().get(1) : null;
+                allyBots.add(new AIRobotInstance(102,
+                        config == null ? ALLY_QUEUING_POSITIONS[1] : config.startingPose(),
+                        config == null ? Archetype.ADAPTIVE_COMPETITOR : config.archetype(), true));
             }
         } catch (Exception | NoClassDefFoundError e) {
             System.err.println("[AIRobotSim] Failed to spawn ally bot: " + e.getMessage());
@@ -329,7 +389,16 @@ public class AIRobotSim implements Subsystem {
 
         // Initial spawn / alliance flip positioning
         if (!wasOpponentEnabled || playerIsRed != lastSpawnedPlayerIsRed) {
-            if (opponentEnabled) {
+            if (trainingMode) {
+                List<TrainingMatchScenario.RobotConfig> redRoster = scenario.redOpponentRobots();
+                for (int i = 0; i < redRoster.size(); i++) {
+                    getOpponents().get(i).reset(redRoster.get(i));
+                }
+                List<TrainingMatchScenario.RobotConfig> blueAllies = scenario.blueAllyRobots();
+                for (int i = 0; i < blueAllies.size(); i++) {
+                    allyBots.get(i).reset(blueAllies.get(i));
+                }
+            } else if (opponentEnabled) {
                 Pose2d initialPose = getOpponentSpawnPose(playerIsRed, activeMode);
                 setRobotPose(initialPose);
                 if (additionalBots.size() >= 1) {
@@ -358,8 +427,12 @@ public class AIRobotSim implements Subsystem {
                 Math.min(1.0, Dashboard.getAllySpeedPercent() / 100.0));
         double allyMaxSpeed = Constants.MAX_SPEED * allySpeedScale;
 
-        Pose2d playerPose = SwerveBase.getInstance().getPose();
-        ChassisSpeeds playerSpeeds = SwerveBase.getInstance().getFieldVelocity();
+        Pose2d playerPose = trainingMode
+                ? trainingBluePrimaryBot.getActualPose()
+                : SwerveBase.getInstance().getPose();
+        ChassisSpeeds playerSpeeds = trainingMode
+                ? trainingBluePrimaryBot.getFieldVelocity()
+                : SwerveBase.getInstance().getFieldVelocity();
         Pose2d currentPose = driveSimulation.getActualPoseInSimulationWorld();
 
         // ── 2. Handle Opponent Bot 0 Lifecycle ───────────────────────────────
@@ -388,7 +461,9 @@ public class AIRobotSim implements Subsystem {
             // every other sparring bot (Jev policy + trajectory + contact
             // arbitration + intake/shooter + obstacle registration).
             Archetype bot0Archetype;
-            switch (activeMode) {
+            if (trainingMode) {
+                bot0Archetype = scenario.redOpponentRobots().get(0).archetype();
+            } else switch (activeMode) {
                 case TACTICAL_DEFENSE:
                     bot0Archetype = Archetype.TACTICAL_DEFENDER;
                     break;
@@ -434,7 +509,7 @@ public class AIRobotSim implements Subsystem {
                     bot0Peers.add(a.getActualPose());
                 }
                 bot0Peers.add(0, playerPose);
-                if (bot0Archetype.isDefensive()) {
+                if (trainingMode || bot0Archetype.isDefensive()) {
                     MarkCandidate bot0Mark = resolveDefensiveMark(false, bot0Instance.getActualPose());
                     SmartDashboard.putString("Simulation/Bot0/Mark", bot0Mark.label());
                     bot0Instance.update(bot0Peers, playerIsRed, maxSpeed, bot0Mark.pose(), bot0Mark.velocity());
@@ -453,20 +528,24 @@ public class AIRobotSim implements Subsystem {
         // shared AIRobotInstance pipeline over one field picture ─────────────
         List<AIRobotInstance> opponents = getOpponents();
         List<Pose2d> fieldPicture = collectActiveRobotPoses(playerPose, currentPose,
-                opponentEnabled, opponentCount, allyCount);
+                opponentEnabled, opponentCount, allyCount, trainingMode);
 
         // Route Dashboard choosers straight to their instances.
         if (additionalBots.size() >= 1) {
-            additionalBots.get(0).setArchetype(getBot1Archetype());
+            additionalBots.get(0).setArchetype(trainingMode
+                    ? scenario.redOpponentRobots().get(1).archetype() : getBot1Archetype());
         }
         if (additionalBots.size() >= 2) {
-            additionalBots.get(1).setArchetype(getBot2Archetype());
+            additionalBots.get(1).setArchetype(trainingMode
+                    ? scenario.redOpponentRobots().get(2).archetype() : getBot2Archetype());
         }
         if (allyBots.size() >= 1) {
-            allyBots.get(0).setArchetype(getAlly1Archetype());
+            allyBots.get(0).setArchetype(trainingMode
+                    ? scenario.blueAllyRobots().get(0).archetype() : getAlly1Archetype());
         }
         if (allyBots.size() >= 2) {
-            allyBots.get(1).setArchetype(getAlly2Archetype());
+            allyBots.get(1).setArchetype(trainingMode
+                    ? scenario.blueAllyRobots().get(1).archetype() : getAlly2Archetype());
         }
 
         int oppCount = opponentEnabled ? Math.min(opponentCount, opponents.size()) : 0;
@@ -474,7 +553,7 @@ public class AIRobotSim implements Subsystem {
             AIRobotInstance bot = opponents.get(i);
             List<Pose2d> botPeers = new ArrayList<>(fieldPicture);
             botPeers.remove(bot.getActualPose());
-            if (bot.getArchetype().isDefensive()) {
+            if (trainingMode || bot.getArchetype().isDefensive()) {
                 MarkCandidate mark = resolveDefensiveMark(false, bot.getActualPose());
                 SmartDashboard.putString("Simulation/Bot" + bot.getBotId() + "/Mark", mark.label());
                 bot.update(botPeers, playerIsRed, maxSpeed, mark.pose(), mark.velocity());
@@ -491,12 +570,19 @@ public class AIRobotSim implements Subsystem {
         SmartDashboard.putString("Simulation/Bot2/Archetype", getBot2Archetype().displayName);
 
         // Execute Allies
+        if (trainingMode) {
+            List<Pose2d> primaryPeers = new ArrayList<>(fieldPicture);
+            primaryPeers.remove(trainingBluePrimaryBot.getActualPose());
+            MarkCandidate mark = resolveDefensiveMark(true, trainingBluePrimaryBot.getActualPose());
+            trainingBluePrimaryBot.update(primaryPeers, playerIsRed, allyMaxSpeed,
+                    mark.pose(), mark.velocity());
+        }
         if (!allyBots.isEmpty()) {
             for (int i = 0; i < allyCount && i < allyBots.size(); i++) {
                 AIRobotInstance ally = allyBots.get(i);
                 List<Pose2d> allyPeers = new ArrayList<>(fieldPicture);
                 allyPeers.remove(ally.getActualPose());
-                if (ally.getArchetype().isDefensive()) {
+                if (trainingMode || ally.getArchetype().isDefensive()) {
                     MarkCandidate mark = resolveDefensiveMark(true, ally.getActualPose());
                     SmartDashboard.putString(
                             "Simulation/Ally" + (ally.getBotId() - 100) + "/Mark", mark.label());
@@ -531,9 +617,9 @@ public class AIRobotSim implements Subsystem {
      * for the fleet tick.
      */
     private List<Pose2d> collectActiveRobotPoses(Pose2d playerPose, Pose2d bot0Pose,
-            boolean opponentEnabled, int opponentCount, int allyCount) {
+            boolean opponentEnabled, int opponentCount, int allyCount, boolean trainingMode) {
         List<Pose2d> picture = new ArrayList<>();
-        picture.add(playerPose);
+        picture.add(trainingMode ? trainingBluePrimaryBot.getActualPose() : playerPose);
         if (opponentEnabled && bot0Pose != null && bot0Pose.getY() > 0.0) {
             picture.add(bot0Pose);
         }
@@ -590,21 +676,29 @@ public class AIRobotSim implements Subsystem {
     /**
      * Resolves which enemy a defensive bot should mark this tick.
      *
-     * @param defenderIsAlly True for ally bots (enemies = opponent bots), false for
-     *            opponent bots (enemies = player + ally bots)
+     * @param defenderIsAlly True for Blue bots (enemies = opponent bots), false for
+     *            opponent bots (enemies = player and Blue bots)
      * @param defenderPose Current pose of the defending bot
      * @return Selected mark (player entry doubles as the fallback default)
      */
     public MarkCandidate resolveDefensiveMark(boolean defenderIsAlly, Pose2d defenderPose) {
-        Pose2d playerPose = SwerveBase.getInstance().getPose();
-        MarkCandidate playerEntry = new MarkCandidate("Player",
-                playerPose, SwerveBase.getInstance().getFieldVelocity(),
-                GameSim.getInstance().getHeldBalls(),
-                MatchScoreTracker.getInstance().getPlayerShotsScored());
+        boolean trainingMode = trainingScenario != null;
+        AIRobotInstance primaryBlue = trainingMode ? trainingBluePrimaryBot : null;
+        Pose2d playerPose = primaryBlue != null
+                ? primaryBlue.getActualPose() : SwerveBase.getInstance().getPose();
+        ChassisSpeeds playerVelocity = primaryBlue != null
+                ? primaryBlue.getFieldVelocity() : SwerveBase.getInstance().getFieldVelocity();
+        int playerFuel = primaryBlue != null
+                ? primaryBlue.getFuelCount() : GameSim.getInstance().getHeldBalls();
+        int playerScore = primaryBlue != null
+                ? primaryBlue.getScoreCount() : MatchScoreTracker.getInstance().getPlayerShotsScored();
+        MarkCandidate playerEntry = new MarkCandidate(primaryBlue != null ? "Ally0" : "Player",
+                playerPose, playerVelocity, playerFuel, playerScore);
         List<MarkCandidate> enemies = new ArrayList<>();
-        enemies.add(playerEntry);
+        if (!trainingMode) enemies.add(playerEntry);
         try {
             if (!defenderIsAlly) {
+                if (primaryBlue != null) enemies.add(playerEntry);
                 for (AIRobotInstance ally : allyBots) {
                     if (ally == null || ally.getActualPose() == null) {
                         continue;
@@ -694,7 +788,8 @@ public class AIRobotSim implements Subsystem {
     }
 
     public boolean isShootingLaneBlocked(Pose2d shooterPose, Translation2d targetHub) {
-        Pose2d playerPose = SwerveBase.getInstance().getPose();
+        Pose2d playerPose = trainingScenario != null && trainingBluePrimaryBot != null
+                ? trainingBluePrimaryBot.getActualPose() : SwerveBase.getInstance().getPose();
         Translation2d botPos = shooterPose.getTranslation();
         Translation2d toHub = targetHub.minus(botPos);
         Translation2d toPlayer = playerPose.getTranslation().minus(botPos);
@@ -957,7 +1052,9 @@ public class AIRobotSim implements Subsystem {
         int bot0Score = bot0Instance.getScoreCount();
         int bot0Fuel = bot0Instance.getFuelCount();
         boolean bot0Stalled = bot0Instance.isStalled();
-        boolean active = Dashboard.isOpponentRobotEnabled();
+        TrainingMatchScenario activeScenario = trainingScenario;
+        boolean trainingMode = activeScenario != null;
+        boolean active = trainingMode || Dashboard.isOpponentRobotEnabled();
 
         Logger.recordOutput("AI_Telemetry/ActualPose", pose);
         Logger.recordOutput("AI_Telemetry/TargetPose", bot0Target);
@@ -983,7 +1080,8 @@ public class AIRobotSim implements Subsystem {
         Logger.recordOutput("AI_Telemetry/ActualVyField", actualPhysicsSpeeds.vyMetersPerSecond);
         Logger.recordOutput("AI_Telemetry/ActualOmega", actualPhysicsSpeeds.omegaRadiansPerSecond);
 
-        Pose2d playerPose = SwerveBase.getInstance().getPose();
+        Pose2d playerPose = trainingMode
+                ? trainingBluePrimaryBot.getActualPose() : SwerveBase.getInstance().getPose();
         double distToPlayer = pose.getTranslation().getDistance(playerPose.getTranslation());
         Logger.recordOutput("AI_Telemetry/DistanceToPlayer", distToPlayer);
 
@@ -1028,7 +1126,8 @@ public class AIRobotSim implements Subsystem {
         // Multi-bot aggregate telemetry
         int totalScore = bot0Score;
         int totalFuel = bot0Fuel;
-        int opponentCount = Dashboard.getOpponentCount();
+        int opponentCount = trainingMode
+                ? activeScenario.redOpponentRobots().size() : Dashboard.getOpponentCount();
         for (int i = 0; i < opponentCount - 1 && i < additionalBots.size(); i++) {
             totalScore += additionalBots.get(i).getScoreCount();
             totalFuel += additionalBots.get(i).getFuelCount();
@@ -1037,16 +1136,17 @@ public class AIRobotSim implements Subsystem {
         SmartDashboard.putNumber("Simulation/TotalOpponentFuel", totalFuel);
         SmartDashboard.putNumber("Simulation/MultiBotActiveCount", opponentCount);
 
-        int totalAllyScore = 0;
-        int totalAllyFuel = 0;
-        int allyCount = Dashboard.getAllyCount();
+        int totalAllyScore = trainingMode ? trainingBluePrimaryBot.getScoreCount() : 0;
+        int totalAllyFuel = trainingMode ? trainingBluePrimaryBot.getFuelCount() : 0;
+        int allyCount = trainingMode
+                ? activeScenario.blueAllyRobots().size() : Dashboard.getAllyCount();
         for (int i = 0; i < allyCount && i < allyBots.size(); i++) {
             totalAllyScore += allyBots.get(i).getScoreCount();
             totalAllyFuel += allyBots.get(i).getFuelCount();
         }
         SmartDashboard.putNumber("Simulation/TotalAllyScore", totalAllyScore);
         SmartDashboard.putNumber("Simulation/TotalAllyFuel", totalAllyFuel);
-        SmartDashboard.putNumber("Simulation/AllyActiveCount", allyCount);
+        SmartDashboard.putNumber("Simulation/AllyActiveCount", allyCount + (trainingMode ? 1 : 0));
 
         double now = Timer.getFPGATimestamp();
         ChassisSpeeds bot0CmdSpeeds = bot0Instance.getCurrentTargetSpeeds();
@@ -1157,6 +1257,19 @@ public class AIRobotSim implements Subsystem {
 
     public List<AIRobotInstance> getAllyBots() {
         return Collections.unmodifiableList(allyBots);
+    }
+
+    /** Returns the independent Blue slot 0 instance while a training scenario is active. */
+    public AIRobotInstance getTrainingBluePrimaryBot() {
+        return trainingBluePrimaryBot;
+    }
+
+    public Archetype getTrainingBluePrimaryArchetype() {
+        return trainingScenario == null ? null : trainingScenario.bluePlayerRobot().archetype();
+    }
+
+    public boolean isTrainingScenarioActive() {
+        return trainingScenario != null;
     }
 
     @Override

@@ -86,6 +86,10 @@ To control the robot with a physical gamepad:
 
 ## 📊 Connecting Elastic Dashboard
 
+### Optional TypeSafe decisions for simulator bots
+
+The `Features/Use TypeSafe Jev AI` toggle applies to simulator sparring bots as well as the player Co-Pilot. Set `TYPESAFE_API_KEY` in the environment that launches Gradle (or set the `typesafe.api.key` JVM property), enable the toggle, and choose `TYPESAFE_CLOUD` or `AUTO_FALLBACK` in `JevAI/DecisionMode`. With the toggle off, bots remain fully local. Each bot keeps its own asynchronous request and decision state and dispatches at most once per second. A shared FIFO dispatcher spaces requests by 150 ms and replaces queued bot snapshots with the latest state. Bot telemetry is under `JevAI/Sim/<bot path>`. Local eligibility, confidence, freshness, and safety checks still gate every cloud choice. There is no per-match request or spending cap; API use can incur charges, so leave the toggle off for offline runs.
+
 Elastic Dashboard is pre-configured with 7 tabs (Driver Dashboard, AI Coach & Practice, Pre-Flight Diagnostics, SysID & Characterization, Simulation & Match Info, Match Scoreboard, Tuning & PID) adhering strictly to the official [Elastic Widget Reference](https://frc-elastic.gitbook.io/docs/additional-features-and-references/widgets-list-and-properties-reference).
 
 ### Instant Setup via Remote Layout Downloading (Recommended)
@@ -130,6 +134,18 @@ AdvantageScope gives you a live 3D rendering of the arena, robot, articulated me
 ---
 
 ## 🎮 How to Test & Operate in Simulation
+
+### Training scenario input validation
+
+The current training scenario API applies a match duration, a seeded subset of the existing preplaced depot/midfield fuel positions, and every robot's archetype, starting pose, and preload. Blue slot 0 is an independent `AIRobotInstance`; later Blue slots use the ally pool and Red slots use the opponent pool. The physical `SwerveBase` is parked off-field during the scenario and restored when it is cleared. The headless match lifecycle and result summary are not wired yet. Run the focused JUnit tests from `TitanRoboticsBuildSeason/` to check scenario setup:
+
+```powershell
+$env:JAVA_HOME = "C:\Users\Public\wpilib\2026\jdk"
+$env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
+.\gradlew test --offline --tests "frc.robot.Sim.TrainingMatchScenarioTest" --tests "frc.robot.Sim.TrainingMatchScenarioApplicationTest"
+```
+
+This validates scenario inputs; it does not run a training match.
 
 ### 1. Enabling the Robot
 In the WPILib SimGUI:

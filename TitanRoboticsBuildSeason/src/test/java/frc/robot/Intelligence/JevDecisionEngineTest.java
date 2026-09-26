@@ -16,10 +16,13 @@ import frc.robot.Sim.AIRobotSim;
 import frc.robot.Intelligence.JevDecisionEngine.DecisionResult;
 import frc.robot.Intelligence.JevDecisionEngine.TacticalAction;
 import frc.robot.Subsystems.Shooter.ShooterState;
+import frc.robot.Subsystems.Intake.IntakeState;
 import frc.robot.Intelligence.AIActionIntent;
 import frc.robot.Intelligence.Archetype;
 import frc.robot.Intelligence.StrategicObjective;
 import frc.robot.Intelligence.WorldState;
+import swervelib.simulation.ironmaple.simulation.SimulatedArena;
+import swervelib.simulation.ironmaple.simulation.seasonspecific.rebuilt2026.RebuiltFuelOnField;
 
 public class JevDecisionEngineTest {
 
@@ -30,6 +33,7 @@ public class JevDecisionEngineTest {
         edu.wpi.first.hal.HAL.initialize(500, 0);
         edu.wpi.first.wpilibj.simulation.DriverStationSim.resetData();
         edu.wpi.first.wpilibj.simulation.DriverStationSim.setMatchTime(-1.0);
+        SimulatedArena.getInstance().clearGamePieces();
         engine = JevDecisionEngine.getInstance();
     }
 
@@ -638,5 +642,102 @@ public class JevDecisionEngineTest {
         assertEquals(StrategicObjective.CYCLE_SCORE_HUB,
                 engine.evaluatePolicy(clockLow, Archetype.AUTONOMOUS_CYCLER).objective(),
                 "Auto bot with expiring clock must dump its partial batch");
+    }
+
+    @Test
+    public void testObjectiveCategoriesAndPlanSchema() {
+        assertEquals(16, StrategicObjective.values().length,
+                "Seven requested objectives extend the existing nine objective values");
+        assertTrue(StrategicObjective.SWEEP_ALLIANCE_ZONE.isOffensive());
+        assertTrue(StrategicObjective.POACH_OPPONENT_ZONE.isOffensive());
+        assertTrue(StrategicObjective.SHUTTLE_PASS.isTeamwork());
+        assertTrue(StrategicObjective.LONG_RANGE_SNIPE.isOffensive());
+        assertTrue(StrategicObjective.CHOKE_TRENCH.isDefensive());
+        assertTrue(StrategicObjective.SCREEN_FOR_ALLY.isTeamwork());
+        assertTrue(StrategicObjective.BAIT_PIN_FOUL.isDefensive());
+
+        WorldState world = new WorldState(new Pose2d(8.0, 4.0, new Rotation2d()),
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(), 0,
+                new Pose2d(12.0, 4.0, new Rotation2d()),
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                90.0, false, false, 10.0, false);
+        AIActionIntent intent = engine.evaluatePolicy(world, Archetype.AUTONOMOUS_CYCLER);
+        assertNotNull(intent.plan());
+        assertEquals(intent.objective(), intent.plan().currentObjective());
+        assertEquals(StrategicObjective.CYCLE_SCORE_HUB, intent.plan().nextObjective());
+    }
+
+    @Test
+    public void testSweepAllianceZoneOutprioritizesMidfield() {
+        SimulatedArena arena = SimulatedArena.getInstance();
+        arena.clearGamePieces();
+        arena.addGamePiece(new RebuiltFuelOnField(new Translation2d(2.0, 4.0)));
+        arena.addGamePiece(new RebuiltFuelOnField(new Translation2d(8.0, 4.0)));
+
+        WorldState world = new WorldState(new Pose2d(9.5, 4.0, new Rotation2d()),
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(), 1,
+                new Pose2d(12.0, 4.0, new Rotation2d()),
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                90.0, true, false, 15.0, false);
+        AIActionIntent intent = engine.evaluatePolicy(world, Archetype.AUTONOMOUS_CYCLER);
+        assertEquals(StrategicObjective.SWEEP_ALLIANCE_ZONE, intent.objective());
+        Pose2d target = engine.findAllianceZoneFuelTarget(world.selfPose(), false);
+        assertTrue(FieldMap.AllianceZones.isInAllianceZone(new Translation2d(2.0, 4.0), false));
+        assertNotNull(target);
+        assertTrue(target.getX() <= FieldMap.AllianceZones.BLUE_ZONE_MAX_X,
+                "Zone-restricted targeting must keep its target on our side of the Hub");
+        arena.clearGamePieces();
+    }
+
+    @Test
+    public void testOpportunisticCowcatcherIntakeDuringDefense() {
+        WorldState world = new WorldState(new Pose2d(2.0, 2.0, new Rotation2d()),
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(), 5,
+                new Pose2d(3.0, 2.0, new Rotation2d()),
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                90.0, false, true, 10.0, false);
+        AIActionIntent intent = engine.evaluatePolicy(world, Archetype.LEAD_PURSUIT_INTERCEPTOR);
+        assertEquals(StrategicObjective.LEAD_INTERCEPT, intent.objective());
+        assertEquals(IntakeState.INTAKING, intent.intakeCommand());
+    }
+
+    @Test
+    public void testTransitionBudgetCutsHarvestBeforeHubShift() {
+        WorldState world = new WorldState(new Pose2d(10.0, 4.0, new Rotation2d()),
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(), 10,
+                new Pose2d(13.0, 4.0, new Rotation2d()),
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                90.0, true, false, 1.0, false);
+        AIActionIntent intent = engine.evaluatePolicy(world, Archetype.AUTONOMOUS_CYCLER);
+        assertEquals(StrategicObjective.CYCLE_SCORE_HUB, intent.objective());
+        assertEquals(0.0, intent.plan().timeToTransitionSec(), 1e-9);
+    }
+
+    @Test
+    public void testDirectionalHarvestBias() {
+        SimulatedArena arena = SimulatedArena.getInstance();
+        arena.clearGamePieces();
+        for (int i = 0; i < 3; i++) {
+            arena.addGamePiece(new RebuiltFuelOnField(new Translation2d(7.0, 3.8 + i * 0.2)));
+            arena.addGamePiece(new RebuiltFuelOnField(new Translation2d(11.0, 3.8 + i * 0.2)));
+        }
+
+        Pose2d target = engine.findClusterWeightedFuelTarget(
+                new Pose2d(9.0, 4.0, Rotation2d.fromDegrees(180)), false);
+        assertTrue(target.getX() < 9.0,
+                "Equal-density clusters should favor travel toward the Blue home zone");
+        arena.clearGamePieces();
+    }
+
+    @Test
+    public void testShuttlePassDoesNotLaunchOutsideAllianceZone() {
+        WorldState world = new WorldState(new Pose2d(10.0, 4.0, new Rotation2d()),
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(), 18,
+                new Pose2d(13.0, 4.0, new Rotation2d()),
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                90.0, false, false, 5.0, false);
+        AIActionIntent intent = engine.evaluatePolicy(world, Archetype.AUTONOMOUS_CYCLER);
+        assertNotEquals(StrategicObjective.SHUTTLE_PASS, intent.objective());
+        assertNotEquals(ShooterState.SHOOTING, intent.shooterCommand());
     }
 }

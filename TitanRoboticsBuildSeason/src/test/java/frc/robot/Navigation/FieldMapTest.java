@@ -2,6 +2,8 @@ package frc.robot.Navigation;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.util.List;
+
 import org.junit.jupiter.api.Test;
 
 import edu.wpi.first.math.geometry.Pose2d;
@@ -13,18 +15,18 @@ public class FieldMapTest {
 
     @Test
     public void testFieldDimensionsAndCenterline() {
-        assertEquals(16.535, FieldMap.FIELD_LENGTH, 1e-3);
-        assertEquals(8.052, FieldMap.FIELD_WIDTH, 1e-3);
-        assertEquals(8.27, FieldMap.CENTERLINE_X, 1e-2);
+        assertEquals(16.541, FieldMap.FIELD_LENGTH, 1e-3);
+        assertEquals(8.069, FieldMap.FIELD_WIDTH, 1e-3);
+        assertEquals(8.2705, FieldMap.CENTERLINE_X, 1e-2);
         assertTrue(FieldMap.CENTERLINE_X < FieldMap.FIELD_LENGTH / 2.0 + 0.1);
     }
 
     @Test
     public void testHubLocationsAndStandoff() {
-        assertEquals(4.5974, FieldMap.Hubs.BLUE_HUB_2D.getX(), 1e-3);
-        assertEquals(4.0345, FieldMap.Hubs.BLUE_HUB_2D.getY(), 1e-3);
-        assertEquals(11.9380, FieldMap.Hubs.RED_HUB_2D.getX(), 1e-3);
-        assertEquals(4.0345, FieldMap.Hubs.RED_HUB_2D.getY(), 1e-3);
+        assertEquals(4.6256, FieldMap.Hubs.BLUE_HUB_2D.getX(), 1e-3);
+        assertEquals(4.0346, FieldMap.Hubs.BLUE_HUB_2D.getY(), 1e-3);
+        assertEquals(16.541 - 4.6256, FieldMap.Hubs.RED_HUB_2D.getX(), 1e-3);
+        assertEquals(4.0346, FieldMap.Hubs.RED_HUB_2D.getY(), 1e-3);
 
         assertEquals(FieldMap.Hubs.BLUE_HUB_2D, FieldMap.Hubs.getHubLocation2d(false));
         assertEquals(FieldMap.Hubs.RED_HUB_2D, FieldMap.Hubs.getHubLocation2d(true));
@@ -84,20 +86,100 @@ public class FieldMapTest {
     }
 
     @Test
-    public void testAABBIntersectionAndContainment() {
-        FieldMap.AABB blueObstacle = FieldMap.Obstacles.BLUE_HUB_AND_RAMPS;
-        assertTrue(blueObstacle.contains(4.60, 4.035));
-        assertFalse(blueObstacle.contains(2.0, 4.035));
+    public void testSeparatedPhysicalObstaclesAndTrenchClearance() {
+        assertEquals(1.1938, FieldMap.Obstacles.BLUE_HUB_CORE.getWidth(), 1e-3);
+        assertEquals(1.1938, FieldMap.Obstacles.BLUE_HUB_CORE.getHeight(), 1e-3);
+        assertEquals(0.3048, FieldMap.Obstacles.BLUE_NORTH_TRENCH_WALL.getHeight(), 1e-3);
+        assertEquals(1.8542, FieldMap.Obstacles.BLUE_NORTH_RAMP.getHeight(), 1e-3);
+        assertTrue(FieldMap.TrenchWalls.BLUE_NORTH_WALL.contains(
+                FieldMap.TrenchWalls.BLUE_CENTER_X, FieldMap.TrenchWalls.NORTH_CENTER_Y));
+        assertTrue(FieldMap.Ramps.isPoseOnRamp(new Translation2d(4.62, 5.5)));
+        assertFalse(StaticPathfinder.isPointInHardObstacle(new Translation2d(4.62, 5.5)),
+                "Ramp slope must not be treated as a hard footprint");
 
-        // Segment crossing the obstacle
-        Translation2d p1 = new Translation2d(2.0, 4.035);
-        Translation2d p2 = new Translation2d(7.0, 4.035);
-        assertTrue(blueObstacle.intersectsSegment(p1, p2));
+        FieldMap.setObstacleHandling(FieldMap.ObstacleHandling.PHYSICS);
+        assertTrue(StaticPathfinder.isLineOfSightClear(
+                new Translation2d(2.0, 7.42), new Translation2d(7.0, 7.42)));
+        assertTrue(StaticPathfinder.isLineOfSightClear(
+                new Translation2d(2.0, 0.65), new Translation2d(7.0, 0.65)));
+    }
 
-        // Segment through the Top Trench corridor (Y = 7.42)
-        Translation2d trench1 = new Translation2d(2.0, 7.42);
-        Translation2d trench2 = new Translation2d(7.0, 7.42);
-        assertFalse(blueObstacle.intersectsSegment(trench1, trench2));
+    @Test
+    public void testObstacleHandlingModes() {
+        try {
+            int expectedObstacleCount = FieldMap.Obstacles.ALL_OBSTACLES.size();
+            for (FieldMap.ObstacleHandling mode : FieldMap.ObstacleHandling.values()) {
+                FieldMap.setObstacleHandling(mode);
+                assertEquals(mode, FieldMap.getObstacleHandling());
+                assertEquals(expectedObstacleCount, FieldMap.Obstacles.getActiveObstacles().size(),
+                        "Every compatibility mode must keep all five physical pieces per hub blocking");
+                assertFalse(StaticPathfinder.isLineOfSightClear(
+                        new Translation2d(4.0, 5.5), new Translation2d(5.2, 5.5)),
+                        "Ramp exclusion must remain active in " + mode);
+            }
+        } finally {
+            FieldMap.setObstacleHandling(FieldMap.ObstacleHandling.IMPASSABLE);
+        }
+    }
+
+    @Test
+    public void testHubTunnelCornerAndFarSideRoutesStayConnected() {
+        FieldMap.ObstacleHandling previous = FieldMap.getObstacleHandling();
+        try {
+            FieldMap.setObstacleHandling(FieldMap.ObstacleHandling.IMPASSABLE);
+            assertTrue(StaticPathfinder.isPointInStaticObstacle(new Translation2d(3.60, 5.75)),
+                    "Robot center closer than bumper radius to a ramp must be treated as obstructed");
+            Pose2d[] starts = {
+                    new Pose2d(3.59, 5.75, new Rotation2d()),
+                    new Pose2d(3.59, 6.90, new Rotation2d()),
+                    new Pose2d(1.80, 6.00, new Rotation2d())
+            };
+            Pose2d[] targets = {
+                    new Pose2d(6.20, 5.75, new Rotation2d()),
+                    new Pose2d(6.20, 5.75, new Rotation2d()),
+                    new Pose2d(14.74, 6.00, new Rotation2d())
+            };
+
+            for (int route = 0; route < starts.length; route++) {
+                Pose2d safeStart = StaticPathfinder.ensurePoseOutsideObstacles(
+                        starts[route], targets[route].getTranslation());
+                assertFalse(StaticPathfinder.isPointInStaticObstacle(safeStart.getTranslation()),
+                        "Route " + route + " start must be projected clear of the ramp footprint");
+                java.util.List<Pose2d> path = StaticPathfinder.findPath(starts[route], targets[route]);
+                assertFalse(path.isEmpty(), "Route " + route + " should remain connected");
+
+                Translation2d previousPoint = safeStart.getTranslation();
+                for (Pose2d waypoint : path) {
+                    assertTrue(StaticPathfinder.isLineOfSightClear(previousPoint, waypoint.getTranslation()),
+                            "Route " + route + " contains a segment through a blocked corner");
+                    previousPoint = waypoint.getTranslation();
+                }
+            }
+        } finally {
+            FieldMap.setObstacleHandling(previous);
+        }
+    }
+
+    @Test
+    public void testTrenchTurnLookaheadDoesNotClipWall() {
+        FieldMap.setObstacleHandling(FieldMap.ObstacleHandling.IMPASSABLE);
+        Pose2d start = new Pose2d(6.20, 5.75, new Rotation2d());
+        Pose2d target = new Pose2d(1.80, 6.00, new Rotation2d());
+
+        List<Pose2d> path = StaticPathfinder.findPath(start, target);
+        assertFalse(path.isEmpty());
+
+        // Simulate lookahead interpolation (0.5m lookahead radius) across all waypoint
+        // transitions
+        for (int i = 0; i < path.size() - 1; i++) {
+            Translation2d p1 = path.get(i).getTranslation();
+            Translation2d p2 = path.get(i + 1).getTranslation();
+            for (double t = 0.0; t <= 1.0; t += 0.1) {
+                Translation2d sample = p1.interpolate(p2, t);
+                assertFalse(StaticPathfinder.isPointInStaticObstacle(sample),
+                        "Lookahead path clipped corner at (" + sample.getX() + ", " + sample.getY() + ")");
+            }
+        }
     }
 
     @Test
@@ -114,5 +196,14 @@ public class FieldMapTest {
         Translation2d clampedInside = FieldMap.clampToField(inside);
         assertEquals(5.0, clampedInside.getX(), 1e-3);
         assertEquals(4.0, clampedInside.getY(), 1e-3);
+    }
+
+    @Test
+    public void testGlidePointsClearOfInflatedObstacles() {
+        FieldMap.setObstacleHandling(FieldMap.ObstacleHandling.IMPASSABLE);
+        for (GlidePoints.GlidePoint gp : GlidePoints.BLUE_GLIDE_POINTS) {
+            assertFalse(StaticPathfinder.isPointInStaticObstacle(gp.pose.getTranslation()),
+                    "GlidePoint '" + gp.name + "' is inside an inflated obstacle!");
+        }
     }
 }

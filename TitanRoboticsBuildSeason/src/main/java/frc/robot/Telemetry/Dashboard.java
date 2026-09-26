@@ -12,12 +12,14 @@ import edu.wpi.first.networktables.BooleanSubscriber;
 import edu.wpi.first.networktables.NetworkTable;
 import edu.wpi.first.networktables.NetworkTableInstance;
 import edu.wpi.first.networktables.DoubleSubscriber;
+import edu.wpi.first.networktables.StringSubscriber;
 import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.DriverStation.Alliance;
 import edu.wpi.first.wpilibj.smartdashboard.SendableChooser;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import frc.robot.BuildConstants;
 import frc.robot.Interfaces.Subsystem;
+import frc.robot.Intelligence.TypeSafeJevClient;
 import frc.robot.Sim.SimDashboardKeys;
 import frc.robot.Subsystems.Intake;
 import frc.robot.Subsystems.Shooter;
@@ -37,6 +39,8 @@ public class Dashboard implements Subsystem {
 
     // NT4 Cached Subscribers and Table Handle
     private static final NetworkTable table = NetworkTableInstance.getDefault().getTable("SmartDashboard");
+    private static final BooleanSubscriber useTypeSafeJevSub = table.getBooleanTopic("Features/Use TypeSafe Jev AI").subscribe(false);
+    private static final StringSubscriber jevDecisionModeSub = table.getStringTopic("JevAI/DecisionMode").subscribe("AUTO_FALLBACK");
     private static final BooleanSubscriber snapToTurnSub = table.getBooleanTopic("Features/Snap to Turn").subscribe(true);
     private static final BooleanSubscriber ballHuntSub = table.getBooleanTopic("Features/Ball Hunt").subscribe(true);
     private static final BooleanSubscriber glidePointsSub = table.getBooleanTopic("Features/Glide Points").subscribe(true);
@@ -88,6 +92,9 @@ public class Dashboard implements Subsystem {
     }
 
     private void setupLayout() {
+        // Construct the HTTP client during robot initialization, never on the 50 Hz assist path.
+        TypeSafeJevClient.getInstance();
+
         // Publish Git commit metadata, compile date, and robot name for Elastic Dashboard and auditability
         SmartDashboard.putString("Build/RobotName", BuildConstants.ROBOT_NAME);
         SmartDashboard.putString("Build/GitSHA", BuildConstants.GIT_SHA);
@@ -108,6 +115,8 @@ public class Dashboard implements Subsystem {
         ensureTopicDefault("Features/Ally Bots", false);
         ensureTopicDefault("Features/2 Player Defense", false);
         ensureTopicDefault("Features/Pit Mode", false);
+        ensureTopicDefault("Features/Use TypeSafe Jev AI", false);
+        ensureStringTopicDefault("JevAI/DecisionMode", "AUTO_FALLBACK");
         ensureTopicDefault("Operator/HapticCollisionEnabled", !edu.wpi.first.wpilibj.RobotBase.isSimulation());
         ensureNumberDefault(SimDashboardKeys.OPPONENT_COUNT, 1.0);
         ensureNumberDefault(SimDashboardKeys.OPPONENT_SPEED_PERCENT, 75.0);
@@ -131,6 +140,18 @@ public class Dashboard implements Subsystem {
         return hapticCollisionSub.get();
     }
 
+    public static boolean isUseTypeSafeJevEnabled() {
+        return useTypeSafeJevSub.get();
+    }
+
+    public static String getJevDecisionModeName() {
+        return jevDecisionModeSub.get();
+    }
+
+    public static void setJevDecisionModeName(String modeName) {
+        table.getStringTopic("JevAI/DecisionMode").publish().set(modeName);
+    }
+
     private void ensureTopicDefault(String topicPath, boolean defaultVal) {
         if (!table.containsKey(topicPath)) {
             table.getBooleanTopic(topicPath).publish().set(defaultVal);
@@ -140,6 +161,12 @@ public class Dashboard implements Subsystem {
     private void ensureNumberDefault(String topicPath, double defaultVal) {
         if (!table.containsKey(topicPath)) {
             table.getDoubleTopic(topicPath).publish().set(defaultVal);
+        }
+    }
+
+    private void ensureStringTopicDefault(String topicPath, String defaultVal) {
+        if (!table.containsKey(topicPath)) {
+            table.getStringTopic(topicPath).publish().set(defaultVal);
         }
     }
 

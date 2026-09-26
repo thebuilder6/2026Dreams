@@ -3,6 +3,7 @@ package frc.robot.Sim;
 import static org.junit.jupiter.api.Assertions.*;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import edu.wpi.first.hal.HAL;
@@ -27,6 +28,8 @@ public class AIRobotSimTest {
 
     @BeforeEach
     public void setup() {
+        frc.robot.Navigation.FieldMap.setObstacleHandling(
+                frc.robot.Navigation.FieldMap.ObstacleHandling.PHYSICS);
         HAL.initialize(500, 0);
         aiSim = AIRobotSim.getInstance();
         aiSim.reset();
@@ -121,6 +124,13 @@ public class AIRobotSimTest {
 
     @Test
     public void testHubAndRampObstacleAvoidanceInPathfinder() {
+        // All modes block every split Hub, ramp, and trench-wall piece. Set the
+        // default explicitly here so the route assertion is independent of test order.
+        frc.robot.Navigation.FieldMap.setObstacleHandling(
+                frc.robot.Navigation.FieldMap.ObstacleHandling.IMPASSABLE);
+        assertEquals(frc.robot.Navigation.FieldMap.ObstacleHandling.IMPASSABLE,
+                frc.robot.Navigation.FieldMap.getObstacleHandling(),
+                "Explicit obstacle mode selection should take effect immediately");
         // Line across the Blue ramp should be completely blocked
         Translation2d blueAllianceSide = new Translation2d(3.0, 5.75);
         Translation2d blueMidfieldSide = new Translation2d(6.2, 5.75);
@@ -147,6 +157,14 @@ public class AIRobotSimTest {
             boolean insideRamp = (x >= 3.55 && x <= 5.65 && y >= 1.05 && y <= 7.00);
             assertFalse(insideRamp, "Waypoint at (" + x + ", " + y + ") must NOT be inside the Hub and Ramp collider");
         }
+        frc.robot.Navigation.FieldMap.setObstacleHandling(
+                frc.robot.Navigation.FieldMap.ObstacleHandling.PHYSICS);
+    }
+
+    @AfterEach
+    public void restoreObstacleHandling() {
+        frc.robot.Navigation.FieldMap.setObstacleHandling(
+                frc.robot.Navigation.FieldMap.ObstacleHandling.PHYSICS);
     }
 
     @Test
@@ -163,7 +181,8 @@ public class AIRobotSimTest {
 
         // AI bot should be pushed back or deflected laterally away from player
         assertTrue(speeds.vxMetersPerSecond > -3.0 || Math.abs(speeds.vyMetersPerSecond) > 0.05,
-                "AI bot should deflect or slow down to avoid player obstacle");
+                "AI bot should deflect or slow down to avoid player obstacle (vx="
+                        + speeds.vxMetersPerSecond + ", vy=" + speeds.vyMetersPerSecond + ")");
     }
 
     @Test
@@ -407,7 +426,8 @@ public class AIRobotSimTest {
         // 2. Heading alignment: Should drive with heading aligned parallel to trench walls (0 deg)
         // With current rotation at 15 deg and target at 0 deg, omega should steer back towards 0
         assertTrue(speeds.omegaRadiansPerSecond < 0.0,
-                "Heading controller must correct towards 0 deg parallel to trench wall");
+                "Heading controller must correct towards 0 deg parallel to trench wall (omega="
+                        + speeds.omegaRadiansPerSecond + ")");
 
         // 3. APF player repulsion must be suppressed in trench to prevent wall pinning
         // Positive forward velocity maintained despite player at X=5.0

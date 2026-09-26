@@ -20,6 +20,7 @@ Check here before web-searching; prefer pinned vendor versions in `vendordeps/`.
 - https://docs.yagsl.com/ — YAGSL swerve (2026.1.14 pinned)
 - https://yet-another-software-suite.github.io/YAGSL/javadocs/ — YAGSL API
 - https://choreo.autos/ — Choreo trajectories
+- https://api.typesafe.ai/docs — TypeSafe System One endpoint, request/response schema, and model discovery
 
 ## Vision / sim
 

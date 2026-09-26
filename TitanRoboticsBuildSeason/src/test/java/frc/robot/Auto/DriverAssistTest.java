@@ -261,6 +261,49 @@ public class DriverAssistTest {
     }
 
     @Test
+    public void testWaypointProgressDoesNotSkipMissedTunnelCorner() {
+        TrajectoryController controller = newTestController();
+        Pose2d corner = new Pose2d(3.0, 2.0, new Rotation2d());
+        Pose2d target = new Pose2d(3.0, 3.0, new Rotation2d());
+        controller.setExplicitWaypoints(java.util.List.of(
+                new Pose2d(2.0, 2.0, new Rotation2d()),
+                corner,
+                target));
+
+        controller.calculate(new Pose2d(2.0, 2.0, new Rotation2d()),
+                new ChassisSpeeds(), target, 2.0, false, false);
+        assertEquals(1, controller.getCurrentWaypointIndex(), "Controller should advance to the corner");
+
+        // The robot crossed the corner's plane but missed it by 1 m laterally.
+        controller.calculate(new Pose2d(3.1, 3.0, new Rotation2d()),
+                new ChassisSpeeds(), target, 2.0, false, false);
+        assertEquals(1, controller.getCurrentWaypointIndex(),
+                "A large cross-track error must not skip a turn waypoint");
+    }
+
+    @Test
+    public void testControllerEvacuatesRampBeforeFollowingBehindRampTarget() {
+        frc.robot.Navigation.FieldMap.setObstacleHandling(
+                frc.robot.Navigation.FieldMap.ObstacleHandling.IMPASSABLE);
+        Pose2d againstRamp = new Pose2d(3.59, 5.75, new Rotation2d());
+        Pose2d behindRamp = new Pose2d(6.20, 5.75, new Rotation2d());
+        assertTrue(StaticPathfinder.isPointInStaticObstacle(againstRamp.getTranslation()));
+
+        TrajectoryController controller = newTestController();
+        ChassisSpeeds command = controller.calculate(
+                againstRamp, new ChassisSpeeds(), behindRamp, 2.0, false, false);
+
+        assertFalse(controller.getWaypoints().isEmpty());
+        Pose2d escapeWaypoint = controller.getWaypoints().get(0);
+        assertFalse(StaticPathfinder.isPointInStaticObstacle(escapeWaypoint.getTranslation()),
+                "First waypoint must move the robot clear of the ramp safety footprint");
+        assertEquals(0, controller.getCurrentWaypointIndex(),
+                "Controller must retain the escape waypoint while the robot remains against the ramp");
+        assertTrue(command.vxMetersPerSecond < 0.0,
+                "Robot should initially move away from the ramp toward the safe start point");
+    }
+
+    @Test
     public void testSmartAssistDynamicTargetTracking() {
         Pose2d start = new Pose2d(2.0, 4.035, new Rotation2d());
         Pose2d targetA = new Pose2d(3.0, 3.0, new Rotation2d());

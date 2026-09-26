@@ -1,7 +1,9 @@
 package frc.robot.Sim;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
@@ -55,12 +57,6 @@ public class GameSim implements Subsystem {
         static final double CENTER_HALF_Y_MIN = 2.0;
         static final double CENTER_HALF_Y_MAX = 6.0;
 
-        // Field boundaries for validation (Consolidated via FieldMap)
-        static final double FIELD_X_MIN = 0.0;
-        static final double FIELD_X_MAX = FieldMap.FIELD_LENGTH;
-        static final double FIELD_Y_MIN = 0.0;
-        static final double FIELD_Y_MAX = FieldMap.FIELD_WIDTH;
-
         // Initial game state
         static final int INITIAL_HELD_BALLS = 8;
         static final int LIGHTWEIGHT_BALL_COUNT = 54; // Strategic balanced physics mode (54 balls: 12 Blue, 12 Red, 30
@@ -102,7 +98,9 @@ public class GameSim implements Subsystem {
     private volatile boolean lastShotScored = false;
 
     // Respawn system
-    private final Random rng = new Random();
+    private Random rng = new Random();
+    private TrainingMatchScenario trainingScenario;
+    private Pose2d playerPoseBeforeTraining;
     private volatile int pendingRespawns = 0;
     private volatile double lastRespawnTime = 0;
 
@@ -413,15 +411,44 @@ public class GameSim implements Subsystem {
      * Resets the game to initial state with comprehensive cleanup.
      */
     public void resetGame() {
+        resetGame(trainingScenario);
+    }
+
+    /**
+     * Applies a training scenario and resets match state to its deterministic
+     * initial conditions. Passing {@code null} restores the interactive defaults.
+     *
+     * @param scenario scenario to apply, or {@code null} for the dashboard setup
+     */
+    public synchronized void resetGame(TrainingMatchScenario scenario) {
+        TrainingMatchScenario previousScenario = trainingScenario;
+        if (scenario != null && previousScenario == null && RobotBase.isSimulation()) {
+            playerPoseBeforeTraining = SwerveBase.getInstance().getSimulationPose();
+        }
+        trainingScenario = scenario;
+        rng = scenario == null ? new Random() : new Random(scenario.seed());
         try {
-            heldBalls = Config.INITIAL_HELD_BALLS;
+            int initialHeldBalls = scenario == null ? Config.INITIAL_HELD_BALLS : 0;
+            heldBalls = initialHeldBalls;
             var mapleIntake = Intake.getInstance().getMapleIntakeSim();
             if (mapleIntake != null) {
-                mapleIntake.setGamePiecesCount(Config.INITIAL_HELD_BALLS);
+                mapleIntake.setGamePiecesCount(initialHeldBalls);
             }
+            if (scenario != null && RobotBase.isSimulation()) {
+                DriverStationSim.setAllianceStationId(edu.wpi.first.hal.AllianceStationID.Blue1);
+                DriverStationSim.notifyNewData();
+                SwerveBase.getInstance().setSimulationPose(AIRobotSim.ROBOT_QUEUING_POSITIONS[0]);
+            } else if (scenario == null && previousScenario != null && RobotBase.isSimulation()
+                    && playerPoseBeforeTraining != null) {
+                SwerveBase.getInstance().setSimulationPose(playerPoseBeforeTraining);
+                playerPoseBeforeTraining = null;
+            }
+            AIRobotSim.getInstance().configureTrainingScenario(scenario);
             score = 0;
             MatchScoreTracker.getInstance().reset();
-            simTimeRemainingSec = Config.MATCH_DURATION_SEC;
+            simTimeRemainingSec = scenario == null
+                    ? Config.MATCH_DURATION_SEC
+                    : scenario.durationSeconds();
             simRunning = false;
             lastSimScoreCount = Shooter.getInstance().getSimScoreCount();
             shotsConsumedWithBall = 0;
@@ -446,7 +473,7 @@ public class GameSim implements Subsystem {
                 arena2026.setShouldRunClock(false);
             }
             arena.clearGamePieces();
-            spawnPickupBalls();
+            spawnPickupBalls(scenario);
 
             // Default shift order until the AUTO result seeds it at teleopInit.
             HubSchedule.reset();
@@ -488,58 +515,90 @@ public class GameSim implements Subsystem {
      * bays.
      */
     private void spawnPickupBalls() {
+        spawnPickupBalls(trainingScenario);
+    }
+
+    private void spawnPickupBalls(TrainingMatchScenario scenario) {
         try {
             SimulatedArena arena = SimulatedArena.getInstance();
             arena.clearGamePieces();
 
+            if (scenario != null) {
+                spawnScenarioFuel(arena, scenario.fieldFuelCount());
+                return;
+            }
+
             boolean fullDensity = SmartDashboard.getBoolean("Simulation/FullMatchBallDensity", false);
-            int depotRows = fullDensity ? 6 : 3;
-
-            // 1. Blue Alliance Depot (Top-Left corner against driver station wall X ~ 0m, Y
-            // ~ 5.53m - 6.44m)
-            for (int i = 0; i < 4; i++) {
-                double x = Config.BLUE_DEPOT_X + (i * Config.BALL_SPACING_X);
-                for (int j = 0; j < depotRows; j++) {
-                    double y = (fullDensity ? Config.BLUE_DEPOT_FULL_Y : Config.BLUE_DEPOT_Y)
-                            + (j * Config.BALL_SPACING_Y);
-                    arena.addGamePiece(new RebuiltFuelOnField(new Translation2d(x, y)));
-                }
-            }
-
-            // 2. Red Alliance Depot (Bottom-Right corner against driver station wall X ~
-            // 16.54m, Y ~ 1.65m - 2.56m)
-            for (int i = 0; i < 4; i++) {
-                double x = Config.RED_DEPOT_X + (i * Config.BALL_SPACING_X);
-                for (int j = 0; j < depotRows; j++) {
-                    double y = (fullDensity ? Config.RED_DEPOT_FULL_Y : Config.RED_DEPOT_Y)
-                            + (j * Config.BALL_SPACING_Y);
-                    arena.addGamePiece(new RebuiltFuelOnField(new Translation2d(x, y)));
-                }
-            }
-
-            // 3. Center Neutral Zone (Full or lightweight 3x10 grid along the centerline)
-            if (fullDensity) {
-                // Full center grid: 12 columns x 30 rows
-                for (int col = 0; col < 12; col++) {
-                    double x = 7.36 + (col * Config.BALL_SPACING_X);
-                    for (int row = 0; row < 30; row++) {
-                        double y = 1.72 + (row * Config.BALL_SPACING_Y);
-                        arena.addGamePiece(new RebuiltFuelOnField(new Translation2d(x, y)));
-                    }
-                }
-            } else {
-                // Strategic Balanced Physics Mode (30 balls: 3x10 grid along the centerline)
-                for (int col = 0; col < 3; col++) {
-                    double x = 8.02 + (col * 0.25);
-                    for (int row = 0; row < 10; row++) {
-                        double y = 1.6 + (row * 0.53);
-                        arena.addGamePiece(new RebuiltFuelOnField(new Translation2d(x, y)));
-                    }
-                }
-            }
+            spawnFuelAtPositions(arena, getPreplacedFuelPositions(fullDensity));
         } catch (Exception e) {
             logRateLimitedError("spawnPickupBalls", e);
         }
+    }
+
+    /** Places a seeded subset of the existing depot and midfield fuel layouts. */
+    private void spawnScenarioFuel(SimulatedArena arena, int count) {
+        spawnFuelAtPositions(arena, selectScenarioFuelPositions(count, rng));
+    }
+
+    static List<Translation2d> selectScenarioFuelPositions(int count, Random random) {
+        Objects.requireNonNull(random, "random");
+        if (count < 0 || count > TrainingMatchScenario.MAX_FIELD_FUEL_COUNT) {
+            throw new IllegalArgumentException("count is outside the supported scenario range");
+        }
+        if (count == 0) return List.of();
+
+        List<Translation2d> positions = getPreplacedFuelPositions(count > Config.LIGHTWEIGHT_BALL_COUNT);
+        Collections.shuffle(positions, random);
+        return List.copyOf(positions.subList(0, count));
+    }
+
+    private void spawnFuelAtPositions(SimulatedArena arena, List<Translation2d> positions) {
+        for (Translation2d position : positions) {
+            arena.addGamePiece(new RebuiltFuelOnField(position));
+        }
+    }
+
+    /** Returns the 54 strategic or full-density positions used by the sim. */
+    static List<Translation2d> getPreplacedFuelPositions(boolean fullDensity) {
+        List<Translation2d> positions = new ArrayList<>();
+        int depotRows = fullDensity ? 6 : 3;
+
+        // Preserve the normal spawn order: Blue depot, Red depot, then midfield.
+        for (int i = 0; i < 4; i++) {
+            double blueX = Config.BLUE_DEPOT_X + (i * Config.BALL_SPACING_X);
+            for (int j = 0; j < depotRows; j++) {
+                double blueY = (fullDensity ? Config.BLUE_DEPOT_FULL_Y : Config.BLUE_DEPOT_Y)
+                        + (j * Config.BALL_SPACING_Y);
+                positions.add(new Translation2d(blueX, blueY));
+            }
+        }
+        for (int i = 0; i < 4; i++) {
+            double redX = Config.RED_DEPOT_X + (i * Config.BALL_SPACING_X);
+            for (int j = 0; j < depotRows; j++) {
+                double redY = (fullDensity ? Config.RED_DEPOT_FULL_Y : Config.RED_DEPOT_Y)
+                        + (j * Config.BALL_SPACING_Y);
+                positions.add(new Translation2d(redX, redY));
+            }
+        }
+
+        if (fullDensity) {
+            for (int col = 0; col < 12; col++) {
+                double x = 7.36 + (col * Config.BALL_SPACING_X);
+                for (int row = 0; row < 30; row++) {
+                    double y = 1.72 + (row * Config.BALL_SPACING_Y);
+                    positions.add(new Translation2d(x, y));
+                }
+            }
+        } else {
+            for (int col = 0; col < 3; col++) {
+                double x = 8.02 + (col * 0.25);
+                for (int row = 0; row < 10; row++) {
+                    double y = 1.6 + (row * 0.53);
+                    positions.add(new Translation2d(x, y));
+                }
+            }
+        }
+        return positions;
     }
 
     @Override

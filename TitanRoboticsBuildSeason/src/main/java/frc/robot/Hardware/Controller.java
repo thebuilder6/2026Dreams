@@ -11,14 +11,14 @@ public class Controller extends XboxController {
 
     public enum RumblePattern {
         NONE,
-        TARGET_LOCKED,      // Two crisp pulses indicating vision lock
-        BALL_ACQUIRED,      // Single confirmation pulse when ball is loaded
-        HARDWARE_WARNING,   // Rapid triple buzz for degraded sensors or faults
+        TARGET_LOCKED, // Two crisp pulses indicating vision lock
+        BALL_ACQUIRED, // Single confirmation pulse when ball is loaded
+        HARDWARE_WARNING, // Rapid triple buzz for degraded sensors or faults
         MATCH_TIME_WARNING, // Long deep rumble alerting endgame timing
-        PIN_WARNING,        // Rapid high-frequency vibration warning of imminent G-rule pin foul
-        HUB_PHASE_SHIFT,    // Double rhythm pulse alerting that Hub will shift phase in 3s
-        COLLISION_IMPACT,   // Sharp maximum-intensity shock jolt for physical impact/collision
-        MODE_ENGAGED,       // Short crisp click when assist mode engages
+        PIN_WARNING, // Rapid high-frequency vibration warning of imminent G-rule pin foul
+        HUB_PHASE_SHIFT, // Double rhythm pulse alerting that Hub will shift phase in 3s
+        COLLISION_IMPACT, // Sharp maximum-intensity shock jolt for physical impact/collision
+        MODE_ENGAGED, // Short crisp click when assist mode engages
         OVERRIDE_DISENGAGED // Soft downward buzz when driver breakout disengages assist
     }
 
@@ -86,34 +86,30 @@ public class Controller extends XboxController {
         }
     }
 
-    private double applyDeadband(double value) {
-        return MathUtil.applyDeadband(value, Constants.OperatorConstants.DEADBAND);
-    }
-
     @Override
     public double getLeftX() {
-        return applyDeadband(super.getLeftX());
+        return super.getLeftX();
     }
 
     @Override
     public double getLeftY() {
-        return applyDeadband(super.getLeftY());
+        return super.getLeftY();
     }
 
     @Override
     public double getRightX() {
-        return applyDeadband(super.getRightX());
+        return super.getRightX();
     }
 
     @Override
     public double getRightY() {
-        return applyDeadband(super.getRightY());
+        return super.getRightY();
     }
 
     /**
      * Trigger a simple single rumble pulse.
      *
-     * @param intensity Rumble magnitude [0.0, 1.0]
+     * @param intensity   Rumble magnitude [0.0, 1.0]
      * @param durationSec Duration in seconds
      */
     public void pulseRumble(double intensity, double durationSec) {
@@ -135,7 +131,7 @@ public class Controller extends XboxController {
      * Triggers a directional rumble alert on the left or right controller grip
      * indicating an opponent robot flanking in a blindspot.
      *
-     * @param isLeft True for left flank threat, false for right flank threat
+     * @param isLeft      True for left flank threat, false for right flank threat
      * @param durationSec Duration of warning vibration
      */
     public void triggerDirectionalFlankAlert(boolean isLeft, double durationSec) {
@@ -150,7 +146,8 @@ public class Controller extends XboxController {
     }
 
     /**
-     * Non-blocking periodic update for active rumble patterns. Call once per robot loop.
+     * Non-blocking periodic update for active rumble patterns. Call once per robot
+     * loop.
      */
     public void updateRumble() {
         double now = Timer.getTimestamp();

@@ -158,8 +158,18 @@ public final class WorldStateBuilder {
         ChassisSpeeds playerVel = new ChassisSpeeds();
         try {
             playerIsRed = AllianceFlipUtil.isRedAlliance();
-            playerPose = SwerveBase.getInstance().getPose();
-            playerVel = SwerveBase.getInstance().getFieldVelocity();
+            AIRobotSim sim = AIRobotSim.getInstance();
+            AIRobotInstance trainingPrimary = sim != null && sim.isTrainingScenarioActive()
+                    ? sim.getTrainingBluePrimaryBot() : null;
+            if (trainingPrimary != null) {
+                playerPose = trainingPrimary.getActualPose();
+                playerVel = trainingPrimary.getFieldVelocity();
+                playerHeld = trainingPrimary.getFuelCount();
+                playerScored = trainingPrimary.getScoreCount();
+            } else {
+                playerPose = SwerveBase.getInstance().getPose();
+                playerVel = SwerveBase.getInstance().getFieldVelocity();
+            }
         } catch (Exception e) {
             playerIsRed = !botIsRed;
         }

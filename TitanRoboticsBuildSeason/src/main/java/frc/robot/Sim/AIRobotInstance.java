@@ -173,9 +173,38 @@ public class AIRobotInstance {
     }
 
     public void reset() {
-        setRobotPose(queuingPose);
+        reset(queuingPose, AIRobotSim.INITIAL_HELD_BALLS);
+    }
+
+    /** Applies a scenario robot's archetype, start pose, and preload. */
+    public void reset(TrainingMatchScenario.RobotConfig robotConfig) {
+        if (robotConfig == null) {
+            throw new IllegalArgumentException("robotConfig must not be null");
+        }
+        setArchetype(robotConfig.archetype());
+        reset(robotConfig.startingPose(), robotConfig.preloadFuel());
+    }
+
+    public void setFuelCount(int fuelCount) {
+        if (fuelCount < 0 || fuelCount > Constants.IntakeConstants.MAX_HELD_BALLS) {
+            throw new IllegalArgumentException("fuelCount is outside the robot hopper capacity");
+        }
         if (intakeSimulation != null) {
-            intakeSimulation.setGamePiecesCount(AIRobotSim.INITIAL_HELD_BALLS);
+            intakeSimulation.setGamePiecesCount(fuelCount);
+        }
+    }
+
+    /** Resets the bot to scenario-provided initial conditions. */
+    public void reset(Pose2d startingPose, int preloadFuel) {
+        if (startingPose == null) {
+            throw new IllegalArgumentException("startingPose must not be null");
+        }
+        if (preloadFuel < 0 || preloadFuel > Constants.IntakeConstants.MAX_HELD_BALLS) {
+            throw new IllegalArgumentException("preloadFuel is outside the robot hopper capacity");
+        }
+        setRobotPose(startingPose);
+        if (intakeSimulation != null) {
+            intakeSimulation.setGamePiecesCount(preloadFuel);
             intakeSimulation.stopIntake();
         }
         scoreCount = 0;
@@ -230,7 +259,10 @@ public class AIRobotInstance {
         // 0. Update Archetype from chooser or dashboard if modified
         if (isAlly) {
             int allyIndex = botId - 100;
-            if (allyIndex == 1 && AIRobotSim.getInstance() != null) {
+            if (allyIndex == 0 && AIRobotSim.getInstance() != null
+                    && AIRobotSim.getInstance().isTrainingScenarioActive()) {
+                this.archetype = AIRobotSim.getInstance().getTrainingBluePrimaryArchetype();
+            } else if (allyIndex == 1 && AIRobotSim.getInstance() != null) {
                 this.archetype = AIRobotSim.getInstance().getAlly1Archetype();
             } else if (allyIndex == 2 && AIRobotSim.getInstance() != null) {
                 this.archetype = AIRobotSim.getInstance().getAlly2Archetype();
@@ -264,7 +296,7 @@ public class AIRobotInstance {
         WorldState worldState;
         Pose2d opponentPose;
         ChassisSpeeds opponentVel;
-        if (markPose != null && archetype.isDefensive()) {
+        if (markPose != null) {
             opponentPose = markPose;
             opponentVel = (markVelocity != null) ? markVelocity : new ChassisSpeeds();
             worldState = WorldStateBuilder.buildForSimBot(
@@ -280,7 +312,13 @@ public class AIRobotInstance {
 
         // 2. Evaluate unified Jev policy (stateless System 2 + System 1)
         AIActionIntent intent = JevDecisionEngine.getInstance().evaluatePolicy(
-                worldState, knowledge, archetype);
+                worldState, knowledge, archetype,
+                "Sim/" + (isAlly ? "Alliance/Ally" + (botId - 100) : "Opponents/Bot" + botId));
+        String intentPrefix = isAlly ? "Alliance/Ally" + (botId - 100) : "Opponents/Bot" + botId;
+        edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putString(
+                intentPrefix + "/NextIntent", intent.plan().nextObjective().name());
+        edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putNumber(
+                intentPrefix + "/TimeToTransitionSec", intent.plan().timeToTransitionSec());
 
         // 3. Compute drive trajectory speeds
         currentTargetPose = intent.navigationTarget();

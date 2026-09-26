@@ -99,6 +99,9 @@ public class AIRobotInstance {
                     IntakeSimulation.IntakeSide.FRONT,
                     Constants.IntakeConstants.MAX_HELD_BALLS
             );
+            if (this.intakeSimulation != null) {
+                this.intakeSimulation.setGamePiecesCount(AIRobotSim.INITIAL_HELD_BALLS);
+            }
         } catch (Exception e) {
             System.err.println("[" + (isAlly ? "AllyBot-" : "AIRobotInstance-") + botId + "] Could not attach IntakeSimulation: " + e.getMessage());
         }
@@ -152,7 +155,7 @@ public class AIRobotInstance {
     public void reset() {
         setRobotPose(queuingPose);
         if (intakeSimulation != null) {
-            intakeSimulation.setGamePiecesCount(0);
+            intakeSimulation.setGamePiecesCount(AIRobotSim.INITIAL_HELD_BALLS);
             intakeSimulation.stopIntake();
         }
         scoreCount = 0;

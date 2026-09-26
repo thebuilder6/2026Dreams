@@ -65,7 +65,8 @@ public class AIRobotSim implements Subsystem {
         }
 
         public static AIMode fromString(String name) {
-            if (name == null) return TACTICAL_DEFENSE;
+            if (name == null)
+                return TACTICAL_DEFENSE;
             for (AIMode m : values()) {
                 if (m.name().equalsIgnoreCase(name) || m.displayName.equalsIgnoreCase(name)) {
                     return m;
@@ -93,6 +94,9 @@ public class AIRobotSim implements Subsystem {
             new Pose2d(2.5, -5, new Rotation2d()),
             new Pose2d(3.0, -5, new Rotation2d())
     };
+
+    /** Fuel each sim robot (player, opponents, allies) carries at match/reset start. */
+    public static final int INITIAL_HELD_BALLS = 8;
 
     private final SelfControlledSwerveDriveSimulation driveSimulation;
     private final Pose2d queuingPose;
@@ -159,7 +163,8 @@ public class AIRobotSim implements Subsystem {
         try {
             this.driveSimulation.getDriveTrainSimulation().getGyroSimulation().setRotation(queuingPose.getRotation());
             this.driveSimulation.resetOdometry(queuingPose);
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        }
 
         SimulatedArena.getInstance().addDriveTrainSimulation(driveSimulation.getDriveTrainSimulation());
 
@@ -170,14 +175,18 @@ public class AIRobotSim implements Subsystem {
                     Meters.of(0.70),
                     Meters.of(0.30),
                     IntakeSimulation.IntakeSide.FRONT,
-                    Constants.IntakeConstants.MAX_HELD_BALLS 
-            );
+                    Constants.IntakeConstants.MAX_HELD_BALLS);
+            if (this.intakeSimulation != null) {
+                this.intakeSimulation.setGamePiecesCount(INITIAL_HELD_BALLS);
+            }
         } catch (Exception e) {
             System.err.println("[AIRobotSim] Could not attach IntakeSimulation: " + e.getMessage());
         }
 
-        this.xController = new PIDController(AutonConstants.AUTO_DRIVE_KP, AutonConstants.AUTO_DRIVE_KI, AutonConstants.AUTO_DRIVE_KD);
-        this.yController = new PIDController(AutonConstants.AUTO_DRIVE_KP, AutonConstants.AUTO_DRIVE_KI, AutonConstants.AUTO_DRIVE_KD);
+        this.xController = new PIDController(AutonConstants.AUTO_DRIVE_KP, AutonConstants.AUTO_DRIVE_KI,
+                AutonConstants.AUTO_DRIVE_KD);
+        this.yController = new PIDController(AutonConstants.AUTO_DRIVE_KP, AutonConstants.AUTO_DRIVE_KI,
+                AutonConstants.AUTO_DRIVE_KD);
 
         var config = SwerveBase.getInstance().getSwerveController().config;
         this.headingController = new PIDController(config.headingPIDF.p, config.headingPIDF.i, config.headingPIDF.d);
@@ -203,7 +212,8 @@ public class AIRobotSim implements Subsystem {
         try {
             driveSimulation.getDriveTrainSimulation().getGyroSimulation().setRotation(pose.getRotation());
             driveSimulation.resetOdometry(pose);
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        }
     }
 
     public void reset() {
@@ -225,7 +235,7 @@ public class AIRobotSim implements Subsystem {
         pinWatchdog.reset();
         setRobotPose(queuingPose);
         if (intakeSimulation != null) {
-            intakeSimulation.setGamePiecesCount(0);
+            intakeSimulation.setGamePiecesCount(INITIAL_HELD_BALLS);
             intakeSimulation.stopIntake();
         }
         latchedShootTarget = null;
@@ -241,7 +251,8 @@ public class AIRobotSim implements Subsystem {
             field.getObject("AllyTarget1").setPoses(new ArrayList<>());
             field.getObject("AllyBot2").setPoses(new ArrayList<>());
             field.getObject("AllyTarget2").setPoses(new ArrayList<>());
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        }
         for (var bot : additionalBots) {
             bot.reset();
         }
@@ -254,7 +265,8 @@ public class AIRobotSim implements Subsystem {
     public void simulationUpdate() {
         boolean opponentEnabled = Dashboard.isOpponentRobotEnabled();
         boolean manualDefenseMode = Dashboard.is2PlayerDefenseEnabled();
-        int allyCount = (int) Math.max(0, Math.min(2, SmartDashboard.getNumber("Simulation/AllyCount", Dashboard.getAllyCount())));
+        int allyCount = (int) Math.max(0,
+                Math.min(2, SmartDashboard.getNumber("Simulation/AllyCount", Dashboard.getAllyCount())));
         boolean anyBotActive = opponentEnabled || allyCount > 0;
 
         if (!anyBotActive) {
@@ -277,7 +289,8 @@ public class AIRobotSim implements Subsystem {
                 field.getObject("AllyTarget1").setPoses(new ArrayList<>());
                 field.getObject("AllyBot2").setPoses(new ArrayList<>());
                 field.getObject("AllyTarget2").setPoses(new ArrayList<>());
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) {
+            }
             for (var bot : additionalBots) {
                 bot.reset();
             }
@@ -288,7 +301,8 @@ public class AIRobotSim implements Subsystem {
         }
 
         // Lazy initialization of additional opponent bots
-        int opponentCount = (int) Math.max(1, Math.min(3, SmartDashboard.getNumber("Simulation/OpponentCount", Dashboard.getOpponentCount())));
+        int opponentCount = (int) Math.max(1,
+                Math.min(3, SmartDashboard.getNumber("Simulation/OpponentCount", Dashboard.getOpponentCount())));
         try {
             if (opponentCount >= 2 && additionalBots.isEmpty()) {
                 additionalBots.add(new AIRobotInstance(1, ROBOT_QUEUING_POSITIONS[1], Archetype.DEFENSE_BULLY));
@@ -353,9 +367,12 @@ public class AIRobotSim implements Subsystem {
             lastSpawnedPlayerIsRed = playerIsRed;
         }
 
-        double speedPercent = Dashboard.getOpponentSpeedPercent();
-        double speedScale = Math.max(0.20, Math.min(1.0, speedPercent / 100.0));
-        double maxSpeed = Constants.MAX_SPEED * speedScale;
+        double opponentSpeedPercent = Dashboard.getOpponentSpeedPercent();
+        double opponentSpeedScale = Math.max(0.20, Math.min(1.0, opponentSpeedPercent / 100.0));
+        double maxSpeed = Constants.MAX_SPEED * opponentSpeedScale;
+        double allySpeedScale = Math.max(0.20,
+                Math.min(1.0, Dashboard.getAllySpeedPercent() / 100.0));
+        double allyMaxSpeed = Constants.MAX_SPEED * allySpeedScale;
 
         Pose2d playerPose = SwerveBase.getInstance().getPose();
         ChassisSpeeds playerSpeeds = SwerveBase.getInstance().getFieldVelocity();
@@ -377,21 +394,24 @@ public class AIRobotSim implements Subsystem {
                 field.getObject("OpponentTarget1").setPoses(new ArrayList<>());
                 field.getObject("OpponentBot2").setPoses(new ArrayList<>());
                 field.getObject("OpponentTarget2").setPoses(new ArrayList<>());
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) {
+            }
             for (var bot : additionalBots) {
                 bot.reset();
             }
         } else {
             try {
                 driveSimulation.periodic();
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) {
+            }
 
-            ChassisSpeeds currentSpeeds = driveSimulation.getDriveTrainSimulation() != null 
+            ChassisSpeeds currentSpeeds = driveSimulation.getDriveTrainSimulation() != null
                     ? driveSimulation.getDriveTrainSimulation().getDriveTrainSimulatedChassisSpeedsFieldRelative()
                     : new ChassisSpeeds();
 
             double matchTime = Timer.getMatchTime();
-            if (matchTime < 0) matchTime = 150.0;
+            if (matchTime < 0)
+                matchTime = 150.0;
 
             int heldFuel = intakeSimulation != null ? intakeSimulation.getGamePiecesAmount() : 0;
             boolean selfHubActive = isHubActiveForAlliance(opponentIsRed);
@@ -409,9 +429,11 @@ public class AIRobotSim implements Subsystem {
                     rot = Math.abs(rot) < 0.1 ? 0 : rot;
                 }
                 currentTargetSpeeds = new ChassisSpeeds(x * maxSpeed, y * maxSpeed, rot * 5.0);
-                currentTargetPose = currentPose.plus(new edu.wpi.first.math.geometry.Transform2d(x, y, new Rotation2d(rot)));
+                currentTargetPose = currentPose
+                        .plus(new edu.wpi.first.math.geometry.Transform2d(x, y, new Rotation2d(rot)));
                 currentAIStateDetail = "MANUAL_2_PLAYER";
-                lastRobotRelativeSpeeds = ChassisSpeeds.fromFieldRelativeSpeeds(currentTargetSpeeds, currentPose.getRotation());
+                lastRobotRelativeSpeeds = ChassisSpeeds.fromFieldRelativeSpeeds(currentTargetSpeeds,
+                        currentPose.getRotation());
                 driveSimulation.runChassisSpeeds(lastRobotRelativeSpeeds, new Translation2d(), false, true);
             } else {
                 WorldState worldState = new WorldState(
@@ -425,35 +447,46 @@ public class AIRobotSim implements Subsystem {
                         oppHubActive,
                         timeUntilShift,
                         opponentIsRed,
-                        DriverStation.isAutonomous()
-                );
+                        DriverStation.isAutonomous());
 
                 Archetype archetype;
                 switch (activeMode) {
-                    case TACTICAL_DEFENSE: archetype = Archetype.TACTICAL_DEFENDER; break;
-                    case LEAD_PURSUIT_INTERCEPT: archetype = Archetype.LEAD_PURSUIT_INTERCEPTOR; break;
-                    case PINNING_BULLY: archetype = Archetype.DEFENSE_BULLY; break;
+                    case TACTICAL_DEFENSE:
+                        archetype = Archetype.TACTICAL_DEFENDER;
+                        break;
+                    case LEAD_PURSUIT_INTERCEPT:
+                        archetype = Archetype.LEAD_PURSUIT_INTERCEPTOR;
+                        break;
+                    case PINNING_BULLY:
+                        archetype = Archetype.DEFENSE_BULLY;
+                        break;
                     case AUTONOMOUS_CYCLER:
-                    default: archetype = Archetype.AUTONOMOUS_CYCLER; break;
+                    default:
+                        archetype = Archetype.AUTONOMOUS_CYCLER;
+                        break;
                 }
 
                 AIActionIntent intent = JevDecisionEngine.getInstance().evaluatePolicy(worldState, archetype);
                 currentTargetPose = intent.navigationTarget();
-                currentAIStateDetail = intent.objective().name() + " (" + String.format("%.0f%%", intent.confidence() * 100) + ")";
+                currentAIStateDetail = intent.objective().name() + " ("
+                        + String.format("%.0f%%", intent.confidence() * 100) + ")";
 
                 if (intakeSimulation != null) {
                     if (intent.intakeCommand() == IntakeState.INTAKING) {
-                        if (!intakeSimulation.isRunning()) intakeSimulation.startIntake();
+                        if (!intakeSimulation.isRunning())
+                            intakeSimulation.startIntake();
                         checkProximityPickup(currentPose);
                     } else {
-                        if (intakeSimulation.isRunning()) intakeSimulation.stopIntake();
+                        if (intakeSimulation.isRunning())
+                            intakeSimulation.stopIntake();
                     }
                 }
 
                 if (intent.triggerFeedKicker() && heldFuel > 0 && canShootNow(currentPose, opponentIsRed)) {
                     Translation2d hub = FieldMap.Hubs.getHubLocation2d(opponentIsRed);
                     launchOpponentShot(currentPose, hub, opponentIsRed);
-                    if (intakeSimulation != null) intakeSimulation.obtainGamePieceFromIntake();
+                    if (intakeSimulation != null)
+                        intakeSimulation.obtainGamePieceFromIntake();
                     lastShotTimestamp = Timer.getFPGATimestamp();
                 }
 
@@ -466,14 +499,16 @@ public class AIRobotSim implements Subsystem {
                 currentTargetSpeeds = computeDriveToPoseSpeeds(currentPose, currentTargetPose, maxSpeed);
 
                 double distToPlayer = currentPose.getTranslation().getDistance(playerPose.getTranslation());
-                boolean isContacting = (distToPlayer < 1.05) && (isStalled(currentPose) || (distToPlayer < 0.95 && Math.hypot(currentTargetSpeeds.vxMetersPerSecond, currentTargetSpeeds.vyMetersPerSecond) > 0.5));
+                boolean isContacting = (distToPlayer < 1.05) && (isStalled(currentPose) || (distToPlayer < 0.95 && Math
+                        .hypot(currentTargetSpeeds.vxMetersPerSecond, currentTargetSpeeds.vyMetersPerSecond) > 0.5));
                 pinWatchdog.update(isContacting, currentPose, playerPose, 0.02);
 
                 if (pinWatchdog.isForcedBackoffActive() && archetype.isDefensive()) {
                     Pose2d backoffPose = pinWatchdog.getBackOffTarget(currentPose, playerPose);
                     currentTargetPose = backoffPose;
                     currentTargetSpeeds = computeDriveToPoseSpeeds(currentPose, currentTargetPose, maxSpeed);
-                    currentAIStateDetail = String.format("PIN_RULE_BACKOFF (%.1fs, >=3ft)", pinWatchdog.getBackoffRemainingSec());
+                    currentAIStateDetail = String.format("PIN_RULE_BACKOFF (%.1fs, >=3ft)",
+                            pinWatchdog.getBackoffRemainingSec());
                 }
 
                 // Peer soft separation for Bot 0 against other opponents and allies
@@ -485,7 +520,8 @@ public class AIRobotSim implements Subsystem {
                     bot0Peers.add(a.getActualPose());
                 }
                 for (Pose2d peerPose : bot0Peers) {
-                    if (peerPose == null) continue;
+                    if (peerPose == null)
+                        continue;
                     double dist = currentPose.getTranslation().getDistance(peerPose.getTranslation());
                     if (dist > 0.05 && dist < 1.10) {
                         Translation2d diff = currentPose.getTranslation().minus(peerPose.getTranslation());
@@ -496,7 +532,8 @@ public class AIRobotSim implements Subsystem {
                     }
                 }
 
-                lastRobotRelativeSpeeds = ChassisSpeeds.fromFieldRelativeSpeeds(currentTargetSpeeds, currentPose.getRotation());
+                lastRobotRelativeSpeeds = ChassisSpeeds.fromFieldRelativeSpeeds(currentTargetSpeeds,
+                        currentPose.getRotation());
                 driveSimulation.runChassisSpeeds(lastRobotRelativeSpeeds, new Translation2d(), false, true);
             }
         }
@@ -549,7 +586,7 @@ public class AIRobotSim implements Subsystem {
                 }
                 List<Pose2d> allyPeers = new ArrayList<>(allRobots);
                 allyPeers.remove(ally.getActualPose());
-                ally.update(allyPeers, playerIsRed, maxSpeed);
+                ally.update(allyPeers, playerIsRed, allyMaxSpeed);
             }
 
             for (int i = allyCount; i < allyBots.size(); i++) {
@@ -592,7 +629,8 @@ public class AIRobotSim implements Subsystem {
         }
         double actualMoveDist = currentWorldPose.getTranslation().getDistance(lastActualPose.getTranslation());
         double actualSpeed = actualMoveDist / dt;
-        double commandedSpeed = Math.hypot(currentTargetSpeeds.vxMetersPerSecond, currentTargetSpeeds.vyMetersPerSecond);
+        double commandedSpeed = Math.hypot(currentTargetSpeeds.vxMetersPerSecond,
+                currentTargetSpeeds.vyMetersPerSecond);
 
         if (commandedSpeed > 0.80 && actualSpeed < 0.15) {
             stallDuration += dt;
@@ -607,7 +645,8 @@ public class AIRobotSim implements Subsystem {
 
     private ChassisSpeeds updateAutonomousCycler(Pose2d currentPose, boolean playerIsRed, double maxSpeed) {
         boolean opponentIsRed = !playerIsRed;
-        Translation2d opponentHub = opponentIsRed ? Constants.RED_HUB_LOCATION.toTranslation2d() : Constants.BLUE_HUB_LOCATION.toTranslation2d();
+        Translation2d opponentHub = opponentIsRed ? Constants.RED_HUB_LOCATION.toTranslation2d()
+                : Constants.BLUE_HUB_LOCATION.toTranslation2d();
 
         int heldPieces = (intakeSimulation != null) ? intakeSimulation.getGamePiecesAmount() : 0;
         boolean hubActive = isOpponentHubActive(opponentIsRed);
@@ -626,25 +665,27 @@ public class AIRobotSim implements Subsystem {
                 boolean hopperFull = heldPieces >= targetCapacity;
                 boolean huntTimedOut = (heldPieces >= 6 && cyclerTimer.get() > 6.5) || cyclerTimer.get() > 12.0;
 
-                 if (hopperFull || huntTimedOut) {
+                if (hopperFull || huntTimedOut) {
                     if (hubActive && heldPieces >= 4) {
                         cyclerPhase = CyclerPhase.SCORE_HUB;
                         cyclerTimer.restart();
                         latchedShootTarget = null; // Clear so SCORE_HUB computes fresh target
-                        if (intakeSimulation != null) intakeSimulation.stopIntake();
+                        if (intakeSimulation != null)
+                            intakeSimulation.stopIntake();
                     } else if (heldPieces >= 10 || cyclerTimer.get() > 12.0) {
                         // Hub inactive: compute staging target ONCE and latch it
                         if (latchedShootTarget == null) {
                             latchedShootTarget = getOptimalShootingPose(currentPose, opponentIsRed);
                         }
                         currentTargetPose = latchedShootTarget;
-                        if (intakeSimulation != null) intakeSimulation.stopIntake();
+                        if (intakeSimulation != null)
+                            intakeSimulation.stopIntake();
                         currentAIStateDetail = String.format("CYCLER_STAGING (%d/30, Hub Inactive)", heldPieces);
                         return computeDriveToPoseSpeeds(currentPose, latchedShootTarget, maxSpeed);
                     }
                 }
 
-                currentAIStateDetail = String.format("CYCLER_HUNTING (%d/%d, Hub: %s)", 
+                currentAIStateDetail = String.format("CYCLER_HUNTING (%d/%d, Hub: %s)",
                         heldPieces, targetCapacity, hubActive ? "ACT" : "INACT");
                 return computeDriveToPoseSpeeds(currentPose, huntTargetPose, maxSpeed);
 
@@ -670,7 +711,8 @@ public class AIRobotSim implements Subsystem {
                     latchedShootTarget = null; // Clear latch for next cycle
                 }
 
-                currentAIStateDetail = String.format("CYCLER_TRANSIT (Fuel: %d, Hub: %s)", heldPieces, hubActive ? "ACT" : "INACT");
+                currentAIStateDetail = String.format("CYCLER_TRANSIT (Fuel: %d, Hub: %s)", heldPieces,
+                        hubActive ? "ACT" : "INACT");
                 return computeDriveToPoseSpeeds(currentPose, latchedShootTarget, maxSpeed);
 
             case SHOOTING:
@@ -684,13 +726,15 @@ public class AIRobotSim implements Subsystem {
                 Rotation2d targetYaw = opponentHub.minus(currentPose.getTranslation()).getAngle();
                 currentTargetPose = new Pose2d(currentPose.getTranslation(), targetYaw);
 
-                double omega = headingController.calculate(currentPose.getRotation().getRadians(), targetYaw.getRadians());
+                double omega = headingController.calculate(currentPose.getRotation().getRadians(),
+                        targetYaw.getRadians());
                 omega = Math.max(-4.5, Math.min(4.5, omega));
 
                 if (isShootingLaneBlocked(currentPose, opponentHub)) {
                     Translation2d toHub = opponentHub.minus(currentPose.getTranslation());
                     Translation2d lateral = new Translation2d(-toHub.getY(), toHub.getX());
-                    if (lateral.getNorm() > 0.1) lateral = lateral.div(lateral.getNorm());
+                    if (lateral.getNorm() > 0.1)
+                        lateral = lateral.div(lateral.getNorm());
                     double strafeSign = (currentPose.getY() > 4.035) ? -1.4 : 1.4;
                     currentAIStateDetail = "CYCLER_EVADING_DEFENDER";
                     return new ChassisSpeeds(lateral.getX() * strafeSign, lateral.getY() * strafeSign, omega);
@@ -698,7 +742,8 @@ public class AIRobotSim implements Subsystem {
 
                 if (canShootNow(currentPose, opponentIsRed)) {
                     launchOpponentShot(currentPose, opponentHub, opponentIsRed);
-                    if (intakeSimulation != null) intakeSimulation.obtainGamePieceFromIntake();
+                    if (intakeSimulation != null)
+                        intakeSimulation.obtainGamePieceFromIntake();
                     lastShotTimestamp = Timer.getFPGATimestamp();
                 } else if (heldPieces == 0 && cyclerTimer.get() > 0.4) {
                     cyclerPhase = CyclerPhase.HUNT_FUEL;
@@ -763,37 +808,49 @@ public class AIRobotSim implements Subsystem {
     }
 
     public boolean isValidShootingLocation(Pose2d pose, boolean opponentIsRed) {
-        if (pose == null) return false;
+        if (pose == null)
+            return false;
         Translation2d hub = FieldMap.Hubs.getHubLocation2d(opponentIsRed);
         double dist = pose.getTranslation().getDistance(hub);
-        if (dist < 1.40 || dist > 4.00) return false;
-        if (isPoseInLowClearanceZone(pose)) return false;
+        if (dist < 1.40 || dist > 4.00)
+            return false;
+        if (isPoseInLowClearanceZone(pose))
+            return false;
 
         double x = pose.getX();
         double y = pose.getY();
-        if (x < 0.6 || x > 15.9 || y < 1.60 || y > 6.45) return false;
+        if (x < 0.6 || x > 15.9 || y < 1.60 || y > 6.45)
+            return false;
         return FieldMap.AllianceZones.isInAllianceZone(pose, opponentIsRed);
     }
 
     public boolean canShootNow(Pose2d currentPose, boolean opponentIsRed) {
-        if (!isOpponentHubActive(opponentIsRed)) return false;
-        if (getFuelCount() <= 0) return false;
-        if (!isValidShootingLocation(currentPose, opponentIsRed)) return false;
+        if (!isOpponentHubActive(opponentIsRed))
+            return false;
+        if (getFuelCount() <= 0)
+            return false;
+        if (!isValidShootingLocation(currentPose, opponentIsRed))
+            return false;
 
-        Translation2d hub = opponentIsRed ? Constants.RED_HUB_LOCATION.toTranslation2d() : Constants.BLUE_HUB_LOCATION.toTranslation2d();
-        if (isShootingLaneBlocked(currentPose, hub)) return false;
+        Translation2d hub = opponentIsRed ? Constants.RED_HUB_LOCATION.toTranslation2d()
+                : Constants.BLUE_HUB_LOCATION.toTranslation2d();
+        if (isShootingLaneBlocked(currentPose, hub))
+            return false;
 
         Rotation2d aimAngle = hub.minus(currentPose.getTranslation()).getAngle();
         double headingErr = Math.abs(currentPose.getRotation().minus(aimAngle).getRadians());
-        if (headingErr > Math.toRadians(8.0)) return false;
+        if (headingErr > Math.toRadians(8.0))
+            return false;
 
         double now = Timer.getFPGATimestamp();
         return (now - lastShotTimestamp >= 0.08); // Changed from 0.15s to 0.08s for continuous streaming
     }
 
     /**
-     * Calculates an optimal standoff pose using a polar sector projection around the Hub.
-     * Guarantees target is strictly outside the Hub ramps and inside the Alliance Zone.
+     * Calculates an optimal standoff pose using a polar sector projection around
+     * the Hub.
+     * Guarantees target is strictly outside the Hub ramps and inside the Alliance
+     * Zone.
      */
     public Pose2d calculatePolarStandoffPose(Pose2d robotPose, boolean opponentIsRed) {
         return JevDecisionEngine.getInstance().calculatePolarStandoffPose(robotPose, opponentIsRed);
@@ -823,16 +880,21 @@ public class AIRobotSim implements Subsystem {
                 Set<GamePieceOnFieldSimulation> pieces = arena.gamePiecesOnField();
                 if (pieces != null && !pieces.isEmpty()) {
                     for (var piece : pieces) {
-                        if (piece == null || !"Fuel".equals(piece.getType())) continue;
+                        if (piece == null || !"Fuel".equals(piece.getType()))
+                            continue;
                         Translation2d pos = piece.getPoseOnField().getTranslation();
 
                         // Must be on the field carpet
-                        if (pos.getX() < 0.05 || pos.getX() > 16.48 || pos.getY() < 0.05 || pos.getY() > 8.00) continue;
-                        if (StaticPathfinder.isPointInObstacle(pos)) continue;
+                        if (pos.getX() < 0.05 || pos.getX() > 16.48 || pos.getY() < 0.05 || pos.getY() > 8.00)
+                            continue;
+                        if (StaticPathfinder.isPointInObstacle(pos))
+                            continue;
 
                         // Focus on opponent's half + center zone
-                        if (opponentIsRed && pos.getX() < 4.0) continue;
-                        if (!opponentIsRed && pos.getX() > 12.5) continue;
+                        if (opponentIsRed && pos.getX() < 4.0)
+                            continue;
+                        if (!opponentIsRed && pos.getX() > 12.5)
+                            continue;
 
                         double dist = currentPose.getTranslation().getDistance(pos);
                         if (dist < minDistance) {
@@ -841,27 +903,32 @@ public class AIRobotSim implements Subsystem {
                         }
                     }
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) {
+            }
         }
 
         if (bestFuel != null) {
             // ── WALL STANDOFF OFFSET ─────────────────────────────────────────
             // If the ball is tight against a perimeter wall, position the robot center
-            // 0.48m off the ball so the front intake rests right on top of it without ramming.
+            // 0.48m off the ball so the front intake rests right on top of it without
+            // ramming.
             double approachX = bestFuel.getX();
             double approachY = bestFuel.getY();
             Rotation2d targetHeading;
 
             if (bestFuel.getX() > 15.60) {
-                // Ball near Red driver wall: face wall (0 deg), stop chassis at X = ballX - 0.48m
+                // Ball near Red driver wall: face wall (0 deg), stop chassis at X = ballX -
+                // 0.48m
                 approachX = Math.min(15.98, bestFuel.getX() - 0.48);
                 targetHeading = Rotation2d.fromDegrees(0);
             } else if (bestFuel.getX() < 0.90) {
-                // Ball near Blue driver wall: face wall (180 deg), stop chassis at X = ballX + 0.48m
+                // Ball near Blue driver wall: face wall (180 deg), stop chassis at X = ballX +
+                // 0.48m
                 approachX = Math.max(0.55, bestFuel.getX() + 0.48);
                 targetHeading = Rotation2d.fromDegrees(180);
             } else if (bestFuel.getY() < 0.90) {
-                // Ball near bottom wall: face bottom wall (-90 deg), stop chassis at Y = ballY + 0.48m
+                // Ball near bottom wall: face bottom wall (-90 deg), stop chassis at Y = ballY
+                // + 0.48m
                 approachY = Math.max(0.55, bestFuel.getY() + 0.48);
                 targetHeading = Rotation2d.fromDegrees(-90);
             } else if (bestFuel.getY() > 7.15) {
@@ -877,7 +944,8 @@ public class AIRobotSim implements Subsystem {
             }
 
             Translation2d targetPos = new Translation2d(approachX, approachY);
-            return StaticPathfinder.ensurePoseOutsideObstacles(new Pose2d(targetPos, targetHeading), currentPose.getTranslation());
+            return StaticPathfinder.ensurePoseOutsideObstacles(new Pose2d(targetPos, targetHeading),
+                    currentPose.getTranslation());
         }
 
         // Fallback: Midline patrol
@@ -892,22 +960,27 @@ public class AIRobotSim implements Subsystem {
      * Captures balls pressed directly against perimeter walls or in corners.
      */
     public void checkProximityPickup(Pose2d robotPose) {
-        if (intakeSimulation == null || !intakeSimulation.isRunning()) return;
-        if (intakeSimulation.getGamePiecesAmount() >= Constants.IntakeConstants.MAX_HELD_BALLS) return;
+        if (intakeSimulation == null || !intakeSimulation.isRunning())
+            return;
+        if (intakeSimulation.getGamePiecesAmount() >= Constants.IntakeConstants.MAX_HELD_BALLS)
+            return;
 
         SimulatedArena arena = SimulatedArena.getInstance();
-        if (arena == null) return;
+        if (arena == null)
+            return;
 
         try {
             Set<GamePieceOnFieldSimulation> pieces = arena.gamePiecesOnField();
-            if (pieces == null) return;
+            if (pieces == null)
+                return;
 
             Translation2d botPos = robotPose.getTranslation();
             Rotation2d botHeading = robotPose.getRotation();
 
             int collectedThisTick = 0;
             for (var piece : pieces) {
-                if (piece == null || !"Fuel".equals(piece.getType())) continue;
+                if (piece == null || !"Fuel".equals(piece.getType()))
+                    continue;
                 Translation2d ball = piece.getPoseOnField().getTranslation();
 
                 // Transform ball to robot-relative frame (+X forward, +Y left)
@@ -916,36 +989,40 @@ public class AIRobotSim implements Subsystem {
                 // Rectangular intake zone:
                 // X: 0.20m to 0.75m in front of robot center (bumper is at ~0.45m)
                 // Y: +/- 0.45m lateral width (full bumper opening)
-                boolean inIntakeBox = (rel.getX() >= 0.20 && rel.getX() <= 0.78) 
-                                   && (Math.abs(rel.getY()) <= 0.45);
+                boolean inIntakeBox = (rel.getX() >= 0.20 && rel.getX() <= 0.78)
+                        && (Math.abs(rel.getY()) <= 0.45);
 
                 if (inIntakeBox) {
                     arena.removeGamePiece(piece);
                     intakeSimulation.addGamePieceToIntake();
                     collectedThisTick++;
 
-                    if (intakeSimulation.getGamePiecesAmount() >= Constants.IntakeConstants.MAX_HELD_BALLS 
+                    if (intakeSimulation.getGamePiecesAmount() >= Constants.IntakeConstants.MAX_HELD_BALLS
                             || collectedThisTick >= 10) { // Changed from 4 to 10
                         break;
                     }
                 }
             }
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        }
     }
 
     public boolean isNearAnyFuel(Translation2d botPos, double radius) {
         SimulatedArena arena = SimulatedArena.getInstance();
-        if (arena == null) return false;
+        if (arena == null)
+            return false;
         try {
             Set<GamePieceOnFieldSimulation> pieces = arena.gamePiecesOnField();
             if (pieces != null) {
                 for (var piece : pieces) {
                     if (piece != null && "Fuel".equals(piece.getType())) {
-                        if (piece.getPoseOnField().getTranslation().getDistance(botPos) <= radius) return true;
+                        if (piece.getPoseOnField().getTranslation().getDistance(botPos) <= radius)
+                            return true;
                     }
                 }
             }
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        }
         return false;
     }
 
@@ -983,8 +1060,7 @@ public class AIRobotSim implements Subsystem {
         try {
             var fuelOnFly = new RebuiltFuelOnFly(
                     botPos, shooterOffset, robotVel, randomYaw,
-                    Meters.of(0.53), MetersPerSecond.of(randomExitVelocity), Radians.of(randomPitch)
-            );
+                    Meters.of(0.53), MetersPerSecond.of(randomExitVelocity), Radians.of(randomPitch));
             fuelOnFly.withTargetPosition(() -> funnelTarget)
                     .withTargetTolerance(new Translation3d(0.38, 0.38, 0.20))
                     .withHitTargetCallBack(() -> {
@@ -1011,7 +1087,8 @@ public class AIRobotSim implements Subsystem {
         Logger.recordOutput("AI_Telemetry/StateDetail", currentAIStateDetail);
         Logger.recordOutput("AI_Telemetry/CyclerPhase", cyclerPhase.name());
         Logger.recordOutput("AI_Telemetry/ScoreCount", aiScoreCount);
-        Logger.recordOutput("AI_Telemetry/HeldFuel", intakeSimulation != null ? intakeSimulation.getGamePiecesAmount() : 0);
+        Logger.recordOutput("AI_Telemetry/HeldFuel",
+                intakeSimulation != null ? intakeSimulation.getGamePiecesAmount() : 0);
         Logger.recordOutput("AI_Telemetry/IsStalled", isStalled());
         Logger.recordOutput("AI_Telemetry/StallDurationSec", stallDuration);
         Logger.recordOutput("AI_Telemetry/Waypoints", aiTrajectoryController.getWaypoints().toArray(new Pose2d[0]));
@@ -1035,11 +1112,14 @@ public class AIRobotSim implements Subsystem {
         Logger.recordOutput("AI_Telemetry/DistanceToPlayer", distToPlayer);
 
         SmartDashboard.putBoolean("Simulation/OpponentActive", active);
-        SmartDashboard.putNumberArray("Simulation/OpponentPose", new double[] { pose.getX(), pose.getY(), pose.getRotation().getDegrees() });
-        SmartDashboard.putNumberArray("Simulation/OpponentTargetPose", new double[] { currentTargetPose.getX(), currentTargetPose.getY(), currentTargetPose.getRotation().getDegrees() });
+        SmartDashboard.putNumberArray("Simulation/OpponentPose",
+                new double[] { pose.getX(), pose.getY(), pose.getRotation().getDegrees() });
+        SmartDashboard.putNumberArray("Simulation/OpponentTargetPose", new double[] { currentTargetPose.getX(),
+                currentTargetPose.getY(), currentTargetPose.getRotation().getDegrees() });
         SmartDashboard.putString("Simulation/OpponentAIState", currentAIStateDetail);
         SmartDashboard.putNumber("Simulation/OpponentScoreCount", aiScoreCount);
-        SmartDashboard.putNumber("Simulation/OpponentFuelCount", intakeSimulation != null ? intakeSimulation.getGamePiecesAmount() : 0);
+        SmartDashboard.putNumber("Simulation/OpponentFuelCount",
+                intakeSimulation != null ? intakeSimulation.getGamePiecesAmount() : 0);
         SmartDashboard.putBoolean("Simulation/OpponentStalled", isStalled());
 
         if (active) {
@@ -1047,7 +1127,8 @@ public class AIRobotSim implements Subsystem {
                 var field = SwerveBase.getInstance().getField();
                 field.getObject("OpponentBot0").setPose(pose);
                 field.getObject("OpponentTarget0").setPose(currentTargetPose);
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) {
+            }
         }
 
         // Standardized Bot 0 telemetry
@@ -1055,15 +1136,19 @@ public class AIRobotSim implements Subsystem {
         Logger.recordOutput("AI_Telemetry/Bot0/TargetPose", currentTargetPose);
         Logger.recordOutput("AI_Telemetry/Bot0/StateDetail", currentAIStateDetail);
         Logger.recordOutput("AI_Telemetry/Bot0/Score", aiScoreCount);
-        Logger.recordOutput("AI_Telemetry/Bot0/HeldFuel", intakeSimulation != null ? intakeSimulation.getGamePiecesAmount() : 0);
+        Logger.recordOutput("AI_Telemetry/Bot0/HeldFuel",
+                intakeSimulation != null ? intakeSimulation.getGamePiecesAmount() : 0);
         Logger.recordOutput("AI_Telemetry/Bot0/Archetype", getAIMode().name());
 
-        SmartDashboard.putNumberArray("Simulation/Bot0/Pose", new double[] { pose.getX(), pose.getY(), pose.getRotation().getDegrees() });
-        SmartDashboard.putNumberArray("Simulation/Bot0/TargetPose", new double[] { currentTargetPose.getX(), currentTargetPose.getY(), currentTargetPose.getRotation().getDegrees() });
+        SmartDashboard.putNumberArray("Simulation/Bot0/Pose",
+                new double[] { pose.getX(), pose.getY(), pose.getRotation().getDegrees() });
+        SmartDashboard.putNumberArray("Simulation/Bot0/TargetPose", new double[] { currentTargetPose.getX(),
+                currentTargetPose.getY(), currentTargetPose.getRotation().getDegrees() });
         SmartDashboard.putString("Simulation/Bot0/StateDetail", currentAIStateDetail);
         SmartDashboard.putString("Simulation/Bot0/Objective", getAIMode().name());
         SmartDashboard.putNumber("Simulation/Bot0/Score", aiScoreCount);
-        SmartDashboard.putNumber("Simulation/Bot0/Fuel", intakeSimulation != null ? intakeSimulation.getGamePiecesAmount() : 0);
+        SmartDashboard.putNumber("Simulation/Bot0/Fuel",
+                intakeSimulation != null ? intakeSimulation.getGamePiecesAmount() : 0);
         SmartDashboard.putBoolean("Simulation/Bot0/Stalled", isStalled());
         SmartDashboard.putString("Simulation/Bot0/Archetype", getAIMode().name());
 
@@ -1094,26 +1179,26 @@ public class AIRobotSim implements Subsystem {
         double commandedMag = Math.hypot(currentTargetSpeeds.vxMetersPerSecond, currentTargetSpeeds.vyMetersPerSecond);
         double actualMag = Math.hypot(actualPhysicsSpeeds.vxMetersPerSecond, actualPhysicsSpeeds.vyMetersPerSecond);
 
-        if (active && commandedMag > 0.5 && actualMag < 0.15 && (now - lastConsoleDumpTime > 1.5)) {
+        boolean isStuck = active && commandedMag > 0.5 && actualMag < 0.15;
+        SmartDashboard.putBoolean("AI_Telemetry/IsStuck", isStuck);
+        org.littletonrobotics.junction.Logger.recordOutput("AI_Telemetry/IsStuck", isStuck);
+
+        // Only dump multi-line diagnostics to stdout if explicitly requested via
+        // SmartDashboard
+        boolean debugAI = SmartDashboard.getBoolean("Simulation/DebugAI", false);
+        if (isStuck && debugAI && (now - lastConsoleDumpTime > 2.0)) {
             lastConsoleDumpTime = now;
             System.out.printf(
-                    "[AI DIAGNOSTIC] STUCK DETECTED! Mode: %s | Phase: %s | State: %s%n" +
-                    "  -> Actual Pose: (%.2f, %.2f, %.1f deg) | Target: (%.2f, %.2f)%n" +
-                    "  -> DistToPlayer: %.2fm | StallDuration: %.2fs%n" +
-                    "  -> Cmd Speeds: [Vx=%.2f, Vy=%.2f, Omega=%.2f] | Act Speeds: [Vx=%.2f, Vy=%.2f]%n" +
-                    "  -> Waypoints Count: %d | Current WP Index: %d%n",
-                    getAIMode().name(), cyclerPhase.name(), currentAIStateDetail,
-                    pose.getX(), pose.getY(), pose.getRotation().getDegrees(),
+                    "[AI DIAGNOSTIC] STUCK: Mode: %s | Phase: %s | Pose: (%.2f, %.2f) | Target: (%.2f, %.2f) | Stall: %.2fs%n",
+                    getAIMode().name(), cyclerPhase.name(),
+                    pose.getX(), pose.getY(),
                     currentTargetPose.getX(), currentTargetPose.getY(),
-                    distToPlayer, stallDuration,
-                    currentTargetSpeeds.vxMetersPerSecond, currentTargetSpeeds.vyMetersPerSecond, currentTargetSpeeds.omegaRadiansPerSecond,
-                    actualPhysicsSpeeds.vxMetersPerSecond, actualPhysicsSpeeds.vyMetersPerSecond,
-                    aiTrajectoryController.getWaypoints().size(), aiTrajectoryController.getCurrentWaypointIndex()
-            );
+                    stallDuration);
         }
 
         if (active && pose.getY() > 0.0 && pose.getX() > 0.0) {
-            Translation2d vel = new Translation2d(currentTargetSpeeds.vxMetersPerSecond, currentTargetSpeeds.vyMetersPerSecond);
+            Translation2d vel = new Translation2d(currentTargetSpeeds.vxMetersPerSecond,
+                    currentTargetSpeeds.vyMetersPerSecond);
             boolean isContacting = distToPlayer < 0.85;
             DynamicRouter.registerObstacle(pose.getTranslation(), vel, 0.55, 0.35, isContacting);
         }
@@ -1138,7 +1223,8 @@ public class AIRobotSim implements Subsystem {
         bot1ArchetypeChooser.setDefaultOption(Archetype.DEFENSE_BULLY.displayName, Archetype.DEFENSE_BULLY);
         bot2ArchetypeChooser.setDefaultOption(Archetype.ADAPTIVE_COMPETITOR.displayName, Archetype.ADAPTIVE_COMPETITOR);
         ally1ArchetypeChooser.setDefaultOption(Archetype.AUTONOMOUS_CYCLER.displayName, Archetype.AUTONOMOUS_CYCLER);
-        ally2ArchetypeChooser.setDefaultOption(Archetype.ADAPTIVE_COMPETITOR.displayName, Archetype.ADAPTIVE_COMPETITOR);
+        ally2ArchetypeChooser.setDefaultOption(Archetype.ADAPTIVE_COMPETITOR.displayName,
+                Archetype.ADAPTIVE_COMPETITOR);
 
         SmartDashboard.putData("Simulation/Bot1/ArchetypeChooser", bot1ArchetypeChooser);
         SmartDashboard.putData("Simulation/Bot2/ArchetypeChooser", bot2ArchetypeChooser);
@@ -1204,6 +1290,7 @@ public class AIRobotSim implements Subsystem {
         SmartDashboard.setDefaultString("Simulation/AIMode", AIMode.AUTONOMOUS_CYCLER.name());
         SmartDashboard.setDefaultNumber("Simulation/OpponentCount", 1.0);
         SmartDashboard.setDefaultNumber("Simulation/OpponentSpeedPercent", 75.0);
+        SmartDashboard.setDefaultNumber("Simulation/AllySpeedPercent", 75.0);
         SmartDashboard.setDefaultNumber("Simulation/AllyCount", 0.0);
         SmartDashboard.setDefaultString("Simulation/Bot0/Archetype", AIMode.AUTONOMOUS_CYCLER.name());
         SmartDashboard.setDefaultString("Simulation/Bot1/Archetype", Archetype.DEFENSE_BULLY.name());
@@ -1215,9 +1302,15 @@ public class AIRobotSim implements Subsystem {
     public static Pose2d getAllySpawnPose(int allyIndex, boolean playerIsRed) {
         double y;
         switch (allyIndex) {
-            case 1: y = 5.80; break;
-            case 2: y = 2.25; break;
-            default: y = 4.035; break;
+            case 1:
+                y = 5.80;
+                break;
+            case 2:
+                y = 2.25;
+                break;
+            default:
+                y = 4.035;
+                break;
         }
         if (playerIsRed) {
             return new Pose2d(AllianceFlipUtil.FIELD_LENGTH - 2.00, y, Rotation2d.fromDegrees(180));
@@ -1233,10 +1326,16 @@ public class AIRobotSim implements Subsystem {
     public static Pose2d getOpponentSpawnPose(int botIndex, boolean playerIsRed) {
         double y;
         switch (botIndex) {
-            case 1: y = 5.80; break;
-            case 2: y = 2.25; break;
+            case 1:
+                y = 5.80;
+                break;
+            case 2:
+                y = 2.25;
+                break;
             case 0:
-            default: y = 4.035; break;
+            default:
+                y = 4.035;
+                break;
         }
         if (playerIsRed) {
             return new Pose2d(2.00, y, Rotation2d.fromDegrees(0));

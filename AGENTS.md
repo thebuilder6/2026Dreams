@@ -47,4 +47,5 @@ $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 - Tests live in `src/test/java/frc/robot/` mirroring package names (`Sim/`, `Auto/`, `Subsystems/`, `Utils/`, `Test/`, `Devices/`, `Data/`).
 - Simulation stack: IronMaple swerve physics + `GameSim` (54 Fuel pieces) + `ShooterSim` + `AIRobotSim` (1–3 Jev AI opponents) + PhotonVision sim. Reset via Elastic `Simulation & Match Info` tab, not code changes.
 - `bind() to port 1181 failed` warning in sim is non-fatal — ignore it.
+- MapleSim `SimulatedBattery` is one static battery shared by all sim robots; `Robot.simulationInit()` disables it via `disableBatterySim()` (its own escape hatch). Do not remove — without it, multi-bot sim browns out and spams the console every sub-tick. `Robot.simulationPeriodic()`'s `BatterySim` model stays authoritative for RoboRIO voltage.
 - Docs: `ARCHITECTURE.md` (subsystem contracts), `SIMULATION_GUIDE.md` (SimGUI/Elastic/AdvantageScope setup), `OPERATORS_GUIDE.md` (controller map), `src/main/java/frc/robot/Test/README.md` (TestMode/SysId). Trust `build.gradle`/code over prose when they conflict.

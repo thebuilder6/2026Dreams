@@ -8,23 +8,26 @@ Status tags: `[OPEN]`, `[EXPLAINED]` (working as designed, UX problem), `[STALE]
 - [x] `[RESOLVED]` Robot drives slowly on manual controls; suspect brownout logic. **Fixed: Simulation current draw model retuned.**
   - `SwerveBase.getSimulationCurrentDraw()` previously used an exaggerated heuristic (15A idle per module = 60A at rest, up to 160A drive alone). When summed with shooter and intake in `Robot.simulationPeriodic()`, the simulated battery voltage dropped below 9.5V, triggering brownout speed scaling down to 0.35 and slow recovery (+0.03/cycle).
   - Retuned `SwerveBase.getSimulationCurrentDraw()` to realistic physics (~0.5A idle per module quiescent, ~20A per module at full sprint = 82A max). Simulated battery voltage now rests at ~12.4V and drops to ~10.5V under full sprint with flywheels running, preserving full speed (scale 1.0) while protecting against real brownout spikes.
+  - Related drive-feel fix (same day): `teleop.init()` is now called on `teleopInit`, resetting input limiters/slew state when entering teleop so stale limiter state can't cap initial response.
 - [x] `[RESOLVED]` Smart Assist / Glide pathfinding issues (differs from AI sparring bots). **Fixed: Restored StaticPathfinder roadmap, eliminated Virtual Rail damper, and prevented 50Hz action reset thrashing.**
   - `DriveToPoseAction` constructor previously added `targetPose` to `waypoints` and passed it to `setExplicitWaypoints()`, which set `isExplicitPath = true` in `TrajectoryController`, permanently disabling `StaticPathfinder.findPath(...)` and driving blindly in a straight line into Hub/Ramp obstacles.
   - The Trench "Virtual Rail Damper" in `TrajectoryController` was overriding `vx`, `vy`, and `desiredHeading` while disabling dynamic avoidance whenever touching `y <= 1.55` or `y >= 6.50`, severely fighting both the pathfinder and the driver's shared-authority stick inputs. Replaced with clean heading alignment in low-clearance areas without corrupting holonomic translation or dynamic avoidance.
   - `AutonomousTeleopAgent` previously allowed `DriveToPoseAction` to finish immediately upon reaching 0.12m of standoff, destroying and recreating actions 50 times/sec. Added `setHoldPosition(true)` and dynamic `setTargetPose()` streaming so the robot holds its standoff stance smoothly, aims at the Hub on the fly, and transitions naturally when balls are depleted.
-- [ ] `[OPEN]` Console/dashboard log spam from AI diagnostics + brownout. **Partially checked, needs a riolog capture to confirm.**
-  - No per-loop `System.out/err` found in `Sim/`, `MatchCoach`, `Utils/`, `Teleop`: `Alert` (`Utils/Alert.java`) never touches console; `Diagnostics` prints are event-driven (`Test/Diagnostics.java:350-491`); `Vision` prints are setter-driven (`Subsystems/Vision.java:340-354`); `GameSim`/`AIRobot*` print only on caught exceptions.
-  - Two real spam risks remain: (a) exception-path `System.err` fires every loop if the same exception recurs (e.g. `GameSim: Error in ...`, `AIRobotSim: ...`); (b) per-loop SmartDashboard/NT writes (`SwerveBase.log()` ~15 `Power/*` keys, `MatchScoreTracker.publishTelemetry()` ~30 `Scoreboard/*` keys, bot telemetry) — noisy in NT logs, not console.
-  - Next step: capture riolog during a spam episode and match lines to source before changing anything.
+- [x] `[RESOLVED]` MapleSim brownout console spam (`[MapleSim] BrownOut Detected, protecting battery voltage...` every sub-tick via `DriverStation.reportError`). **Fixed Sep 25: `SimulatedBattery.disableBatterySim()` in `Robot.simulationInit()` (`Robot.java`).**
+  - Root cause (verified in YAGSL 2026.1.14 sources): `SimulatedBattery` is a single **static** battery shared by every registered drivetrain — player + up to 3 opponents + 2 allies ≈ 48 motor sims on one 13.5 V model. Inevitable sag below brownout voltage → `reportError` every sub-tick (100s of lines/sec). The sagged voltage also fed our `SwerveBase` brownout throttle, compounding slow-drive symptoms in multi-bot sim.
+  - `disableBatterySim()` is the library author's own escape hatch ("lazy quick fix to help the opponent simulation"): locks voltage to nominal 13.5 V, no more spam. Our `Robot.simulationPeriodic()` BatterySim model (runs after the arena update) remains authoritative for RoboRIO voltage, so our brownout protection still sees realistic sag. Sim-only call; compile + 154/154 tests green.
+- [ ] `[OPEN]` Remaining console-spam risk: exception-path `System.err` (`GameSim`, `AIRobotSim`, `AIRobotInstance`) fires every loop if the same exception recurs.
+  - `GameSim` now routes catch-blocks through rate-limited `logRateLimitedError()` (verify committed). Still TODO: same treatment for `AIRobotSim`/`AIRobotInstance`, then a riolog capture to confirm before closing.
+  - No per-loop `System.out` found elsewhere (`Alert` never touches console; `Diagnostics`/`Vision` prints are event-driven). Per-loop SmartDashboard/NT writes (`Power/*`, `Scoreboard/*`, bot telemetry) are NT noise, not console.
 
 ## B. Scoring is confusing (likely working as designed)
 
-- [ ] `[EXPLAINED]` Score counting does not make sense. **No counting bug found; there are 4 overlapping counters plus a 0-point rule that looks like lost points.**
+- [ ] `[EXPLAINED]` Score counting does not make sense. **No counting bug found; there are 5 overlapping counters plus a 0-point rule that looks like lost points.**
   - Shots into an **inactive** Hub score 0 by design (`Sim/ShooterSim.java:123-137` → `recordWastedShot`). In teleop the Hub alternates every 25 s (`Subsystems/Dashboard.java:241-312`), so ~half of all teleop shots are *supposed* to score nothing. In autonomous the Hub is forced active (`:248-251`), so auto shots always count.
-  - The counters disagree on purpose: `GameSim.score` (`Simulation/Score`, player only, capped by balls consumed `:388-408`) vs `MatchScoreTracker` red/blue totals (`Scoreboard/Match/*`, all robots) vs `AIRobotSim` bot counts (`Simulation/BotN/Score`) vs `ShooterSim` raw (`simScoreCount`). Before "fixing" scoring, say *which two counters* disagree and when (auto/teleop, hub active/inactive).
+  - The counters disagree on purpose: `GameSim.score` (`Simulation/Score`, player only, capped by balls consumed `:388-408`) vs `MatchScoreTracker` red/blue totals (`Scoreboard/Match/*`, all robots **including foul penalty points since Sep 25**) vs `AIRobotSim` bot counts (`Simulation/BotN/Score`) vs `ShooterSim` raw (`simScoreCount`) vs `RefereeSim` foul awards (`Scoreboard/Referee/*`). Before "fixing" scoring, say *which two counters* disagree and when (auto/teleop, hub active/inactive).
   - Real UX gap (matches feature list): no single match UI showing both alliances, wasted shots, and per-bot breakdown together.
 
-## C. Autonomous is broken (two root causes found, neither fixed)
+## C. Autonomous (both root causes found and fixed Sep 25 — verified in code + 154/154 tests green)
 
 - [x] `[RESOLVED]` "Advanced Choreo Shot" auto path does not shoot. **Fixed: `AutoAimAction` integrated with Shooter state machine.**
   - Refactored `AutoAimAction` (`Auto/Actions/AutoAimAction.java`) to command `shooter.shoot()` and `shooter.prepareToShoot()` instead of setting raw kicker voltage via `setKickerSpeed(...)`. The `Shooter` 50 Hz state machine now cleanly arbitrates flywheel velocity and kicker voltage in lockstep.
@@ -36,8 +39,7 @@ Status tags: `[OPEN]`, `[EXPLAINED]` (working as designed, UX problem), `[STALE]
 
 ## D. JVM crashes (stale — keep logs, close on no repro)
 
-- [ ] `[STALE]` Debug-sim JVM crash (`hs_err_pid12944.log`, Sep 23): C2 `refcount has gone to zero` under JDWP + Temurin 17.0.16+8 (wrong JDK). No recurrence since; always run sim under `JAVA_HOME=C:\Users\Public\wpilib\2026\jdk` per `AGENTS.md`.
-- [x] `[RESOLVED]` Test-worker crash (`hs_err_pid51348.log`, `hs_err_pid55220.log`): `EXCEPTION_ACCESS_VIOLATION` in `wpiHal.dll`. **Fixed: Pinned Gradle test worker JVM to WPILib 2026 JDK.**
+- [x] `[RESOLVED]` Test-worker crash (`hs_err_pid12944.log`, `hs_err_pid51348.log`, `hs_err_pid55220.log`): `EXCEPTION_ACCESS_VIOLATION` in `wpiHal.dll` / C2 compiler crash under JDWP. **Fixed: Pinned Gradle test worker JVM to WPILib 2026 JDK. Verified Sep 25: full suite 19 classes / 154 tests / 0 failures, exit 0.**
   - Gradle test workers (`forkEvery = 1`) previously defaulted to the system Eclipse Temurin JDK, which failed native JNI calls in WPILib HAL. Explicitly set `executable = wpilibJava.absolutePath` in `build.gradle`, ensuring all test forks run on `C:\Users\Public\wpilib\2026\jdk\bin\java.exe`.
 - [ ] `[EXPLAINED]` Sim prints `bind() to port 1181 failed` on startup. Non-fatal (CameraServer vs PhotonVision/Limelight sim ports; see `SIMULATION_GUIDE.md`). Ignore; listed so nobody "fixes" it.
 

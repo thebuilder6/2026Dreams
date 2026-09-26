@@ -303,7 +303,7 @@ public class JevDecisionEngineTest {
         sim.reset();
 
         assertNotNull(sim.getDriveSimulation());
-        assertEquals(0, sim.getFuelCount());
+        assertEquals(AIRobotSim.INITIAL_HELD_BALLS, sim.getFuelCount());
 
         edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putBoolean("Features/Opponent Robot", true);
         edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putNumber("Simulation/OpponentCount", 3);
@@ -320,8 +320,8 @@ public class JevDecisionEngineTest {
         assertEquals(Archetype.ADAPTIVE_COMPETITOR, bots.get(1).getArchetype());
 
         sim.reset();
-        assertEquals(0, sim.getFuelCount());
-        assertEquals(0, bots.get(0).getFuelCount());
+        assertEquals(AIRobotSim.INITIAL_HELD_BALLS, sim.getFuelCount());
+        assertEquals(AIRobotSim.INITIAL_HELD_BALLS, bots.get(0).getFuelCount());
     }
 
     @Test

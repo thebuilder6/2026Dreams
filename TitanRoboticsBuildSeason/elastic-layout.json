@@ -503,7 +503,7 @@
             "height": 128.0,
             "type": "Text Display",
             "properties": {
-              "topic": "/SmartDashboard/Simulation/AIMode",
+              "topic": "/SmartDashboard/Simulation/Bot0/Objective",
               "period": 0.06,
               "show_submit_button": false
             }
@@ -1112,35 +1112,9 @@
             }
           },
           {
-            "title": "OPPONENT CONTROLS",
-            "x": 1024.0,
-            "y": 0.0,
-            "width": 384.0,
-            "height": 128.0,
-            "type": "Text Display",
-            "properties": {
-              "topic": "/SmartDashboard/Simulation/OpponentHeader",
-              "period": 0.06,
-              "show_submit_button": false
-            }
-          },
-          {
-            "title": "ALLY CONTROLS",
-            "x": 1408.0,
-            "y": 0.0,
-            "width": 384.0,
-            "height": 128.0,
-            "type": "Text Display",
-            "properties": {
-              "topic": "/SmartDashboard/Simulation/AllyHeader",
-              "period": 0.06,
-              "show_submit_button": false
-            }
-          },
-          {
             "title": "Opponent AI Active",
             "x": 1024.0,
-            "y": 128.0,
+            "y": 0.0,
             "width": 256.0,
             "height": 128.0,
             "type": "Toggle Switch",
@@ -1154,7 +1128,7 @@
           {
             "title": "Opponent Count",
             "x": 1280.0,
-            "y": 128.0,
+            "y": 0.0,
             "width": 256.0,
             "height": 128.0,
             "type": "ComboBox Chooser",
@@ -1167,7 +1141,7 @@
           {
             "title": "Opponent Speed %",
             "x": 1536.0,
-            "y": 128.0,
+            "y": 0.0,
             "width": 256.0,
             "height": 128.0,
             "type": "Number Slider",
@@ -1182,7 +1156,7 @@
           },
           {
             "title": "Ally Bots Active",
-            "x": 1408.0,
+            "x": 1024.0,
             "y": 128.0,
             "width": 256.0,
             "height": 128.0,
@@ -1196,7 +1170,7 @@
           },
           {
             "title": "Ally Count",
-            "x": 1664.0,
+            "x": 1280.0,
             "y": 128.0,
             "width": 256.0,
             "height": 128.0,
@@ -1208,27 +1182,30 @@
             }
           },
           {
-            "title": "OPPONENT BOTS",
-            "x": 0.0,
+            "title": "Ally Speed %",
+            "x": 1536.0,
             "y": 128.0,
-            "width": 896.0,
+            "width": 256.0,
             "height": 128.0,
-            "type": "Text Display",
+            "type": "Number Slider",
             "properties": {
-              "topic": "/SmartDashboard/Simulation/OpponentBotsHeader",
+              "topic": "/SmartDashboard/Simulation/AllySpeedPercent",
               "period": 0.06,
-              "show_submit_button": false
+              "min_value": 20.0,
+              "max_value": 100.0,
+              "divisions": 16,
+              "publish_all": true
             }
           },
           {
             "title": "Bot 0 Mode (Lead Spar)",
             "x": 0.0,
-            "y": 256.0,
+            "y": 128.0,
             "width": 320.0,
             "height": 128.0,
             "type": "ComboBox Chooser",
             "properties": {
-              "topic": "/SmartDashboard/Simulation/AIModeChooser",
+              "topic": "/SmartDashboard/Simulation/Bot0/ArchetypeChooser",
               "period": 0.06,
               "sort_options": false
             }
@@ -1236,7 +1213,7 @@
           {
             "title": "Bot 0 State & Objective",
             "x": 320.0,
-            "y": 256.0,
+            "y": 128.0,
             "width": 352.0,
             "height": 128.0,
             "type": "Text Display",
@@ -1249,7 +1226,7 @@
           {
             "title": "Bot 0 Score",
             "x": 672.0,
-            "y": 256.0,
+            "y": 128.0,
             "width": 224.0,
             "height": 128.0,
             "type": "Text Display",
@@ -1262,7 +1239,7 @@
           {
             "title": "Bot 1 Archetype",
             "x": 0.0,
-            "y": 384.0,
+            "y": 256.0,
             "width": 320.0,
             "height": 128.0,
             "type": "ComboBox Chooser",
@@ -1275,7 +1252,7 @@
           {
             "title": "Bot 1 State & Objective",
             "x": 320.0,
-            "y": 384.0,
+            "y": 256.0,
             "width": 352.0,
             "height": 128.0,
             "type": "Text Display",
@@ -1288,7 +1265,7 @@
           {
             "title": "Bot 1 Score",
             "x": 672.0,
-            "y": 384.0,
+            "y": 256.0,
             "width": 224.0,
             "height": 128.0,
             "type": "Text Display",
@@ -1299,9 +1276,48 @@
             }
           },
           {
+            "title": "Ally 1 Archetype",
+            "x": 1024.0,
+            "y": 256.0,
+            "width": 320.0,
+            "height": 128.0,
+            "type": "ComboBox Chooser",
+            "properties": {
+              "topic": "/SmartDashboard/Simulation/Ally1/ArchetypeChooser",
+              "period": 0.06,
+              "sort_options": false
+            }
+          },
+          {
+            "title": "Ally 1 State & Objective",
+            "x": 1344.0,
+            "y": 256.0,
+            "width": 352.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Simulation/Ally1/StateDetail",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Ally 1 Score",
+            "x": 1696.0,
+            "y": 256.0,
+            "width": 224.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Simulation/Ally1/Score",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
             "title": "Bot 2 Archetype",
             "x": 0.0,
-            "y": 512.0,
+            "y": 384.0,
             "width": 320.0,
             "height": 128.0,
             "type": "ComboBox Chooser",
@@ -1314,7 +1330,7 @@
           {
             "title": "Bot 2 State & Objective",
             "x": 320.0,
-            "y": 512.0,
+            "y": 384.0,
             "width": 352.0,
             "height": 128.0,
             "type": "Text Display",
@@ -1327,7 +1343,7 @@
           {
             "title": "Bot 2 Score",
             "x": 672.0,
-            "y": 512.0,
+            "y": 384.0,
             "width": 224.0,
             "height": 128.0,
             "type": "Text Display",
@@ -1338,9 +1354,48 @@
             }
           },
           {
+            "title": "Ally 2 Archetype",
+            "x": 1024.0,
+            "y": 384.0,
+            "width": 320.0,
+            "height": 128.0,
+            "type": "ComboBox Chooser",
+            "properties": {
+              "topic": "/SmartDashboard/Simulation/Ally2/ArchetypeChooser",
+              "period": 0.06,
+              "sort_options": false
+            }
+          },
+          {
+            "title": "Ally 2 State & Objective",
+            "x": 1344.0,
+            "y": 384.0,
+            "width": 352.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Simulation/Ally2/StateDetail",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Ally 2 Score",
+            "x": 1696.0,
+            "y": 384.0,
+            "width": 224.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Simulation/Ally2/Score",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
             "title": "Total Opponent Score",
             "x": 0.0,
-            "y": 640.0,
+            "y": 512.0,
             "width": 320.0,
             "height": 128.0,
             "type": "Text Display",
@@ -1353,7 +1408,7 @@
           {
             "title": "Total Opponent Fuel",
             "x": 320.0,
-            "y": 640.0,
+            "y": 512.0,
             "width": 352.0,
             "height": 128.0,
             "type": "Text Display",
@@ -1364,99 +1419,8 @@
             }
           },
           {
-            "title": "ALLY BOTS",
-            "x": 896.0,
-            "y": 128.0,
-            "width": 896.0,
-            "height": 128.0,
-            "type": "Text Display",
-            "properties": {
-              "topic": "/SmartDashboard/Simulation/AllyBotsHeader",
-              "period": 0.06,
-              "show_submit_button": false
-            }
-          },
-          {
-            "title": "Ally Bot 0 Archetype",
-            "x": 896.0,
-            "y": 256.0,
-            "width": 320.0,
-            "height": 128.0,
-            "type": "ComboBox Chooser",
-            "properties": {
-              "topic": "/SmartDashboard/Simulation/AllyBot0/ArchetypeChooser",
-              "period": 0.06,
-              "sort_options": false
-            }
-          },
-          {
-            "title": "Ally Bot 0 State",
-            "x": 1216.0,
-            "y": 256.0,
-            "width": 352.0,
-            "height": 128.0,
-            "type": "Text Display",
-            "properties": {
-              "topic": "/SmartDashboard/Simulation/AllyBot0/StateDetail",
-              "period": 0.06,
-              "show_submit_button": false
-            }
-          },
-          {
-            "title": "Ally Bot 0 Score",
-            "x": 1568.0,
-            "y": 256.0,
-            "width": 224.0,
-            "height": 128.0,
-            "type": "Text Display",
-            "properties": {
-              "topic": "/SmartDashboard/Simulation/AllyBot0/Score",
-              "period": 0.06,
-              "show_submit_button": false
-            }
-          },
-          {
-            "title": "Ally Bot 1 Archetype",
-            "x": 896.0,
-            "y": 384.0,
-            "width": 320.0,
-            "height": 128.0,
-            "type": "ComboBox Chooser",
-            "properties": {
-              "topic": "/SmartDashboard/Simulation/AllyBot1/ArchetypeChooser",
-              "period": 0.06,
-              "sort_options": false
-            }
-          },
-          {
-            "title": "Ally Bot 1 State",
-            "x": 1216.0,
-            "y": 384.0,
-            "width": 352.0,
-            "height": 128.0,
-            "type": "Text Display",
-            "properties": {
-              "topic": "/SmartDashboard/Simulation/AllyBot1/StateDetail",
-              "period": 0.06,
-              "show_submit_button": false
-            }
-          },
-          {
-            "title": "Ally Bot 1 Score",
-            "x": 1568.0,
-            "y": 384.0,
-            "width": 224.0,
-            "height": 128.0,
-            "type": "Text Display",
-            "properties": {
-              "topic": "/SmartDashboard/Simulation/AllyBot1/Score",
-              "period": 0.06,
-              "show_submit_button": false
-            }
-          },
-          {
             "title": "Total Ally Score",
-            "x": 896.0,
+            "x": 1024.0,
             "y": 512.0,
             "width": 320.0,
             "height": 128.0,
@@ -1469,7 +1433,7 @@
           },
           {
             "title": "Total Ally Fuel",
-            "x": 1216.0,
+            "x": 1344.0,
             "y": 512.0,
             "width": 352.0,
             "height": 128.0,
@@ -1910,7 +1874,7 @@
             }
           },
           {
-            "title": "Translation Slew (m/s²)",
+            "title": "Translation Slew (m/s\u00c2\u00b2)",
             "x": 1024.0,
             "y": 512.0,
             "width": 256.0,
@@ -1923,7 +1887,7 @@
             }
           },
           {
-            "title": "Rotation Slew (rad/s²)",
+            "title": "Rotation Slew (rad/s\u00c2\u00b2)",
             "x": 1280.0,
             "y": 512.0,
             "width": 256.0,

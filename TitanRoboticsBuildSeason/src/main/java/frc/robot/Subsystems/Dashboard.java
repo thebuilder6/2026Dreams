@@ -46,6 +46,7 @@ public class Dashboard implements Subsystem {
             .subscribe(!edu.wpi.first.wpilibj.RobotBase.isSimulation());
     private static final DoubleSubscriber opponentCountSub = table.getDoubleTopic("Simulation/OpponentCount").subscribe(1.0);
     private static final DoubleSubscriber opponentSpeedSub = table.getDoubleTopic("Simulation/OpponentSpeedPercent").subscribe(75.0);
+    private static final DoubleSubscriber allySpeedSub = table.getDoubleTopic("Simulation/AllySpeedPercent").subscribe(75.0);
     private static final DoubleSubscriber allyCountSub = table.getDoubleTopic("Simulation/AllyCount").subscribe(0.0);
 
     // Dropdown chooser for Opponent Count
@@ -105,6 +106,7 @@ public class Dashboard implements Subsystem {
         ensureTopicDefault("Operator/HapticCollisionEnabled", !edu.wpi.first.wpilibj.RobotBase.isSimulation());
         ensureNumberDefault("Simulation/OpponentCount", 1.0);
         ensureNumberDefault("Simulation/OpponentSpeedPercent", 75.0);
+        ensureNumberDefault("Simulation/AllySpeedPercent", 75.0);
         ensureNumberDefault("Simulation/AllyCount", 0.0);
 
         // Configure Opponent Count Dropdown Menu
@@ -466,5 +468,9 @@ public class Dashboard implements Subsystem {
 
     public static double getOpponentSpeedPercent() {
         return Math.max(20.0, Math.min(100.0, opponentSpeedSub.get()));
+    }
+
+    public static double getAllySpeedPercent() {
+        return Math.max(20.0, Math.min(100.0, allySpeedSub.get()));
     }
 }

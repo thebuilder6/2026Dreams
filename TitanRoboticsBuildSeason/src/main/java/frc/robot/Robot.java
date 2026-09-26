@@ -275,6 +275,19 @@ public class Robot extends LoggedRobot {
   /** This function is called once when the robot is first started up. */
   @Override
   public void simulationInit() {
+    // MapleSim's SimulatedBattery is a single STATIC battery shared by every registered
+    // drivetrain (player + up to 3 opponents + 2 allies = ~48 motor sims on one 13.5V model).
+    // That sags below brownout voltage and spams DriverStation.reportError every sub-tick
+    // ("[MapleSim] BrownOut Detected..."), and the sagged voltage also feeds our own
+    // SwerveBase brownout throttle. The library's own escape hatch locks voltage to nominal;
+    // our Robot.simulationPeriodic BatterySim model remains authoritative for RoboRIO voltage.
+    try {
+      if (isSimulation()) {
+        swervelib.simulation.ironmaple.simulation.motorsims.SimulatedBattery.disableBatterySim();
+      }
+    } catch (Throwable t) {
+      System.out.println("[SimulatedBattery] Notice: could not disable MapleSim battery sim: " + t.getMessage());
+    }
   }
 
   /** This function is called periodically whilst in simulation. */

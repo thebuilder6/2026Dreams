@@ -1,5 +1,9 @@
 package frc.robot.Auto.Missions;
 
+import frc.robot.Subsystems.Intake;
+
+import frc.robot.Subsystems.Shooter;
+
 //import these so that the mission is an option when testing
 import frc.robot.Auto.AutoMissionChooser;
 import frc.robot.Auto.AutoMissionEndedException;

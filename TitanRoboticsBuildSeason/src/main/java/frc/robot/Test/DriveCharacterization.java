@@ -1,5 +1,7 @@
 package frc.robot.Test;
 
+import frc.robot.Telemetry.Dashboard;
+
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.CommandScheduler;
 import edu.wpi.first.wpilibj2.command.sysid.SysIdRoutine;
@@ -8,7 +10,7 @@ import edu.wpi.first.units.measure.Voltage;
 import static edu.wpi.first.units.Units.Volts;
 import static edu.wpi.first.units.Units.Meters;
 import static edu.wpi.first.units.Units.MetersPerSecond;
-import frc.robot.Devices.Controller;
+import frc.robot.HMI.Controller;
 import frc.robot.Subsystems.SwerveBase;
 import frc.robot.Data.TunableNumber;
 

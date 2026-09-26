@@ -1,5 +1,7 @@
 package frc.robot.Auto.Missions;
 
+import frc.robot.Subsystems.Intake;
+
 import frc.robot.Auto.AutoMissionEndedException;
 import frc.robot.Auto.Actions.IntakeAction;
 import frc.robot.Auto.Actions.ShootAction;

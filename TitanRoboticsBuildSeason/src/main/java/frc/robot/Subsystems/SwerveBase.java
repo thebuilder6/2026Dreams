@@ -1,5 +1,9 @@
 package frc.robot.Subsystems;
 
+import frc.robot.Hardware.Drive.*;
+
+import frc.robot.Telemetry.Dashboard;
+
 import static edu.wpi.first.units.Units.Meter;
 import static edu.wpi.first.units.Units.DegreesPerSecond;
 import edu.wpi.first.units.Units;
@@ -42,12 +46,12 @@ import frc.robot.Data.GlideConstants;
 import frc.robot.Interfaces.Subsystem;
 import frc.robot.Sim.LimelightSim;
 import frc.robot.Sim.VisionSim;
-import frc.robot.Subsystems.drive.DriveIO;
-import frc.robot.Subsystems.drive.DriveIOInputsAutoLogged;
-import frc.robot.Subsystems.drive.DriveIOSparkMax;
-import frc.robot.Subsystems.drive.DriveIOSim;
-import frc.robot.Utils.Alert;
-import frc.robot.Utils.Alert.AlertType;
+import frc.robot.Hardware.Drive.DriveIO;
+import frc.robot.Hardware.Drive.DriveIOInputsAutoLogged;
+import frc.robot.Hardware.Drive.DriveIOSparkMax;
+import frc.robot.Hardware.Drive.DriveIOSim;
+import frc.robot.HMI.Alerts.Alert;
+import frc.robot.HMI.Alerts.Alert.AlertType;
 import frc.robot.Utils.AllianceFlipUtil;
 import swervelib.SwerveController;
 import swervelib.SwerveDrive;

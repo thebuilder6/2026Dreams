@@ -1,11 +1,13 @@
 package frc.robot.Test;
 
+import frc.robot.Telemetry.Dashboard;
+
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import frc.robot.Data.Constants;
 import frc.robot.Data.TunableNumber;
-import frc.robot.Devices.Controller;
+import frc.robot.HMI.Controller;
 import frc.robot.Subsystems.Shooter;
 import frc.robot.Subsystems.SwerveBase;
 

@@ -1,11 +1,13 @@
 package frc.robot.Test;
 
+import frc.robot.Telemetry.Dashboard;
+
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import frc.robot.Data.Constants;
 import frc.robot.Data.PortMap;
-import frc.robot.Devices.Controller;
+import frc.robot.HMI.Controller;
 import frc.robot.Subsystems.Intake;
-import frc.robot.Subsystems.LEDs;
+import frc.robot.HMI.LEDs;
 import frc.robot.Subsystems.Shooter;
 import frc.robot.Subsystems.SubsystemManager;
 import frc.robot.Subsystems.SwerveBase;

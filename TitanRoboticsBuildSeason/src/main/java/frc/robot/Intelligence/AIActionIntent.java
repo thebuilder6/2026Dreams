@@ -1,13 +1,8 @@
 package frc.robot.Intelligence;
-import frc.robot.Intelligence.Archetype;
-import frc.robot.Intelligence.State.WorldState;
-import frc.robot.Intelligence.State.WorldStateBuilder;
-import frc.robot.Intelligence.State.MatchScoreTracker;
-import frc.robot.Intelligence.AIActionIntent;
-import frc.robot.Intelligence.StrategicObjective;
-import frc.robot.Intelligence.JevDecisionEngine;
-import frc.robot.Intelligence.Sparring.AIRobotSim;
-import frc.robot.Intelligence.Sparring.AIRobotInstance;
+
+import frc.robot.Subsystems.Intake;
+
+import frc.robot.Subsystems.Shooter;
 
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;

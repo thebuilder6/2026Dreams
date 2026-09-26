@@ -1,27 +1,29 @@
 package frc.robot;
 
+import frc.robot.HMI.Alerts.Alert;
+
 import edu.wpi.first.math.filter.SlewRateLimiter;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.Joystick;
-import frc.robot.Auto.AutonomousTeleopAgent;
+import frc.robot.HMI.CoPilot;
 import frc.robot.Auto.Actions.BallHuntAction;
 import frc.robot.Auto.Actions.DriveToPoseAction;
 import frc.robot.Data.Constants;
 import frc.robot.Data.GlideConstants;
 import frc.robot.Data.PortMap;
-import frc.robot.Devices.Controller;
-import frc.robot.Devices.Controller.RumblePattern;
+import frc.robot.HMI.Controller;
+import frc.robot.HMI.Controller.RumblePattern;
 import frc.robot.Intelligence.JevDecisionEngine;
 import frc.robot.Intelligence.StrategicObjective;
-import frc.robot.Subsystems.Dashboard;
+import frc.robot.Telemetry.Dashboard;
 import frc.robot.Subsystems.Intake;
 import frc.robot.Subsystems.Shooter;
 import frc.robot.Subsystems.Shooter.ShootingSolution;
 import frc.robot.Subsystems.SwerveBase;
-import frc.robot.Utils.AlertManager;
+import frc.robot.HMI.Alerts.AlertManager;
 import frc.robot.Utils.AllianceFlipUtil;
 
 /*
@@ -82,7 +84,7 @@ public class Teleop {
     private double driverRotation;
 
     // Advanced Actions (Glide / Ball Hunt)
-    private final AutonomousTeleopAgent coPilot = AutonomousTeleopAgent.getInstance();
+    private final CoPilot coPilot = CoPilot.getInstance();
     private frc.robot.Interfaces.Actions activeAction = null;
     private boolean wasGlideHeld = false;
 

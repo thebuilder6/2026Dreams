@@ -1,5 +1,7 @@
 package frc.robot.Auto;
 
+import frc.robot.Telemetry.Dashboard;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;

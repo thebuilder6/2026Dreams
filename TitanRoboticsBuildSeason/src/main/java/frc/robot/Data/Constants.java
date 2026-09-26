@@ -1,5 +1,9 @@
 package frc.robot.Data;
 
+import frc.robot.Subsystems.Intake;
+
+import frc.robot.Subsystems.Shooter;
+
 import edu.wpi.first.math.geometry.Translation3d;
 import edu.wpi.first.math.util.Units;
 import edu.wpi.first.units.measure.Angle;
@@ -18,8 +22,8 @@ import swervelib.math.Matter;
  * - This file contains core robot framework, chassis physics, and operator configuration.
  * - Seasonal field geometry lives in {@link FieldMap}.
  * - Mechanism-specific constants (tuning, setpoints, geometry) live directly within their subsystem
- *   packages (e.g. {@link frc.robot.Subsystems.shooter.ShooterConstants},
- *   {@link frc.robot.Subsystems.intake.IntakeConstants}).
+ *   packages (e.g. {@link MechanismConstants.Shooter},
+ *   {@link MechanismConstants.Intake}).
  */
 public class Constants {
 
@@ -179,93 +183,93 @@ public class Constants {
     public static final Translation3d RED_HUB_LOCATION = FieldMap.Hubs.RED_HUB_3D;
     public static final Translation3d BLUE_HUB_LOCATION = FieldMap.Hubs.BLUE_HUB_3D;
 
-    // Shooter Delegates -> frc.robot.Subsystems.shooter.ShooterConstants
-    public static final double SHOOTER_PREDICTIVE_LOOK_AHEAD = frc.robot.Subsystems.shooter.ShooterConstants.SHOOTER_PREDICTIVE_LOOK_AHEAD;
-    public static final double SHOOTER_OFFSET = frc.robot.Subsystems.shooter.ShooterConstants.SHOOTER_OFFSET;
-    public static final double FIRING_ANGLE = frc.robot.Subsystems.shooter.ShooterConstants.FIRING_ANGLE;
-    public static final double HEIGHT_DIFFERENCE = frc.robot.Subsystems.shooter.ShooterConstants.HEIGHT_DIFFERENCE;
-    public static final double FLYWHEEL_KS = frc.robot.Subsystems.shooter.ShooterConstants.FLYWHEEL_KS_VAL;
-    public static final double FLYWHEEL_KV = frc.robot.Subsystems.shooter.ShooterConstants.FLYWHEEL_KV_VAL;
-    public static final double FLYWHEEL_KA = frc.robot.Subsystems.shooter.ShooterConstants.FLYWHEEL_KA_VAL;
-    public static final double FLYWHEEL_KP = frc.robot.Subsystems.shooter.ShooterConstants.FLYWHEEL_KP_VAL;
-    public static final double FLYWHEEL_KI = frc.robot.Subsystems.shooter.ShooterConstants.FLYWHEEL_KI_VAL;
-    public static final double FLYWHEEL_KD = frc.robot.Subsystems.shooter.ShooterConstants.FLYWHEEL_KD_VAL;
-    public static final double KICKER_VOLTAGE = frc.robot.Subsystems.shooter.ShooterConstants.KICKER_VOLTAGE;
-    public static final Voltage KICKER_VOLTAGE_MEASURE = frc.robot.Subsystems.shooter.ShooterConstants.KICKER_VOLTAGE_MEASURE;
+    // Shooter Delegates -> MechanismConstants.Shooter
+    public static final double SHOOTER_PREDICTIVE_LOOK_AHEAD = MechanismConstants.Shooter.SHOOTER_PREDICTIVE_LOOK_AHEAD;
+    public static final double SHOOTER_OFFSET = MechanismConstants.Shooter.SHOOTER_OFFSET;
+    public static final double FIRING_ANGLE = MechanismConstants.Shooter.FIRING_ANGLE;
+    public static final double HEIGHT_DIFFERENCE = MechanismConstants.Shooter.HEIGHT_DIFFERENCE;
+    public static final double FLYWHEEL_KS = MechanismConstants.Shooter.FLYWHEEL_KS_VAL;
+    public static final double FLYWHEEL_KV = MechanismConstants.Shooter.FLYWHEEL_KV_VAL;
+    public static final double FLYWHEEL_KA = MechanismConstants.Shooter.FLYWHEEL_KA_VAL;
+    public static final double FLYWHEEL_KP = MechanismConstants.Shooter.FLYWHEEL_KP_VAL;
+    public static final double FLYWHEEL_KI = MechanismConstants.Shooter.FLYWHEEL_KI_VAL;
+    public static final double FLYWHEEL_KD = MechanismConstants.Shooter.FLYWHEEL_KD_VAL;
+    public static final double KICKER_VOLTAGE = MechanismConstants.Shooter.KICKER_VOLTAGE;
+    public static final Voltage KICKER_VOLTAGE_MEASURE = MechanismConstants.Shooter.KICKER_VOLTAGE_MEASURE;
 
     public static final class ShooterConstants {
-        public static final double FEED_SPEED = frc.robot.Subsystems.shooter.ShooterConstants.FEED_SPEED;
-        public static final double SHOOTER_ANGLE_RAD = frc.robot.Subsystems.shooter.ShooterConstants.SHOOTER_ANGLE_RAD;
-        public static final TunableNumber SHOOTER_HEIGHT_METERS = frc.robot.Subsystems.shooter.ShooterConstants.SHOOTER_HEIGHT_METERS;
-        public static final TunableNumber SHOOTER_OFFSET_METERS = frc.robot.Subsystems.shooter.ShooterConstants.SHOOTER_OFFSET_METERS;
-        public static final double IDLE_RPM = frc.robot.Subsystems.shooter.ShooterConstants.IDLE_RPM;
-        public static final AngularVelocity IDLE_RPM_MEASURE = frc.robot.Subsystems.shooter.ShooterConstants.IDLE_RPM_MEASURE;
-        public static final double RPM_TOLERANCE = frc.robot.Subsystems.shooter.ShooterConstants.RPM_TOLERANCE;
-        public static final double ALIGNMENT_HEADING_TOLERANCE_DEG = frc.robot.Subsystems.shooter.ShooterConstants.ALIGNMENT_HEADING_TOLERANCE_DEG;
-        public static final double LIMELIGHT_TX_TOLERANCE_DEG = frc.robot.Subsystems.shooter.ShooterConstants.LIMELIGHT_TX_TOLERANCE_DEG;
-        public static final TunableNumber FLYWHEEL_KP = frc.robot.Subsystems.shooter.ShooterConstants.FLYWHEEL_KP;
-        public static final TunableNumber FLYWHEEL_KI = frc.robot.Subsystems.shooter.ShooterConstants.FLYWHEEL_KI;
-        public static final TunableNumber FLYWHEEL_KD = frc.robot.Subsystems.shooter.ShooterConstants.FLYWHEEL_KD;
-        public static final TunableNumber FLYWHEEL_KS = frc.robot.Subsystems.shooter.ShooterConstants.FLYWHEEL_KS;
-        public static final TunableNumber FLYWHEEL_KV = frc.robot.Subsystems.shooter.ShooterConstants.FLYWHEEL_KV;
-        public static final TunableNumber FLYWHEEL_KA = frc.robot.Subsystems.shooter.ShooterConstants.FLYWHEEL_KA;
-        public static final double FLYWHEEL_CURRENT_LIMIT = frc.robot.Subsystems.shooter.ShooterConstants.FLYWHEEL_CURRENT_LIMIT;
-        public static final double KICKER_CURRENT_LIMIT = frc.robot.Subsystems.shooter.ShooterConstants.KICKER_CURRENT_LIMIT;
-        public static final Current FLYWHEEL_CURRENT_LIMIT_MEASURE = frc.robot.Subsystems.shooter.ShooterConstants.FLYWHEEL_CURRENT_LIMIT_MEASURE;
-        public static final Current KICKER_CURRENT_LIMIT_MEASURE = frc.robot.Subsystems.shooter.ShooterConstants.KICKER_CURRENT_LIMIT_MEASURE;
-        public static final double SIM_GEARING = frc.robot.Subsystems.shooter.ShooterConstants.SIM_GEARING;
-        public static final double SIM_MOI = frc.robot.Subsystems.shooter.ShooterConstants.SIM_MOI;
-        public static final double BALL_SPAWN_INTERVAL = frc.robot.Subsystems.shooter.ShooterConstants.BALL_SPAWN_INTERVAL;
-        public static final double SHOOTER_WHEEL_CIRCUMFERENCE = frc.robot.Subsystems.shooter.ShooterConstants.SHOOTER_WHEEL_CIRCUMFERENCE;
-        public static final TunableNumber BALL_LAUNCH_EFFICIENCY = frc.robot.Subsystems.shooter.ShooterConstants.BALL_LAUNCH_EFFICIENCY;
+        public static final double FEED_SPEED = MechanismConstants.Shooter.FEED_SPEED;
+        public static final double SHOOTER_ANGLE_RAD = MechanismConstants.Shooter.SHOOTER_ANGLE_RAD;
+        public static final TunableNumber SHOOTER_HEIGHT_METERS = MechanismConstants.Shooter.SHOOTER_HEIGHT_METERS;
+        public static final TunableNumber SHOOTER_OFFSET_METERS = MechanismConstants.Shooter.SHOOTER_OFFSET_METERS;
+        public static final double IDLE_RPM = MechanismConstants.Shooter.IDLE_RPM;
+        public static final AngularVelocity IDLE_RPM_MEASURE = MechanismConstants.Shooter.IDLE_RPM_MEASURE;
+        public static final double RPM_TOLERANCE = MechanismConstants.Shooter.RPM_TOLERANCE;
+        public static final double ALIGNMENT_HEADING_TOLERANCE_DEG = MechanismConstants.Shooter.ALIGNMENT_HEADING_TOLERANCE_DEG;
+        public static final double LIMELIGHT_TX_TOLERANCE_DEG = MechanismConstants.Shooter.LIMELIGHT_TX_TOLERANCE_DEG;
+        public static final TunableNumber FLYWHEEL_KP = MechanismConstants.Shooter.FLYWHEEL_KP;
+        public static final TunableNumber FLYWHEEL_KI = MechanismConstants.Shooter.FLYWHEEL_KI;
+        public static final TunableNumber FLYWHEEL_KD = MechanismConstants.Shooter.FLYWHEEL_KD;
+        public static final TunableNumber FLYWHEEL_KS = MechanismConstants.Shooter.FLYWHEEL_KS;
+        public static final TunableNumber FLYWHEEL_KV = MechanismConstants.Shooter.FLYWHEEL_KV;
+        public static final TunableNumber FLYWHEEL_KA = MechanismConstants.Shooter.FLYWHEEL_KA;
+        public static final double FLYWHEEL_CURRENT_LIMIT = MechanismConstants.Shooter.FLYWHEEL_CURRENT_LIMIT;
+        public static final double KICKER_CURRENT_LIMIT = MechanismConstants.Shooter.KICKER_CURRENT_LIMIT;
+        public static final Current FLYWHEEL_CURRENT_LIMIT_MEASURE = MechanismConstants.Shooter.FLYWHEEL_CURRENT_LIMIT_MEASURE;
+        public static final Current KICKER_CURRENT_LIMIT_MEASURE = MechanismConstants.Shooter.KICKER_CURRENT_LIMIT_MEASURE;
+        public static final double SIM_GEARING = MechanismConstants.Shooter.SIM_GEARING;
+        public static final double SIM_MOI = MechanismConstants.Shooter.SIM_MOI;
+        public static final double BALL_SPAWN_INTERVAL = MechanismConstants.Shooter.BALL_SPAWN_INTERVAL;
+        public static final double SHOOTER_WHEEL_CIRCUMFERENCE = MechanismConstants.Shooter.SHOOTER_WHEEL_CIRCUMFERENCE;
+        public static final TunableNumber BALL_LAUNCH_EFFICIENCY = MechanismConstants.Shooter.BALL_LAUNCH_EFFICIENCY;
     }
 
-    // Intake Delegates -> frc.robot.Subsystems.intake.IntakeConstants
-    public static final double INTAKE_ARM_KP = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_ARM_KP_VAL;
-    public static final double INTAKE_ARM_KI = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_ARM_KI_VAL;
-    public static final double INTAKE_ARM_KD = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_ARM_KD_VAL;
-    public static final double INTAKE_ARM_KS = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_ARM_KS_VAL;
-    public static final double INTAKE_ARM_KG = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_ARM_KG_VAL;
-    public static final double INTAKE_ARM_KV = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_ARM_KV_VAL;
-    public static final double INTAKE_ARM_KA = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_ARM_KA_VAL;
-    public static final double MAX_ARM_VELOCITY = frc.robot.Subsystems.intake.IntakeConstants.MAX_ARM_VELOCITY;
-    public static final double MAX_ARM_ACCELERATION = frc.robot.Subsystems.intake.IntakeConstants.MAX_ARM_ACCELERATION;
-    public static final double INTAKE_UP_POSITION = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_UP_POSITION;
-    public static final double INTAKE_DOWN_POSITION = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_DOWN_POSITION;
-    public static final double INTAKE_HORIZONTAL_POSITION = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_HORIZONTAL_POSITION;
-    public static final Angle INTAKE_UP_POSITION_MEASURE = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_UP_POSITION_MEASURE;
-    public static final Angle INTAKE_DOWN_POSITION_MEASURE = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_DOWN_POSITION_MEASURE;
-    public static final Angle INTAKE_HORIZONTAL_POSITION_MEASURE = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_HORIZONTAL_POSITION_MEASURE;
-    public static final boolean INTAKE_ARM_INVERTED = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_ARM_INVERTED;
-    public static final boolean INTAKE_WHEELS_INVERTED = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_WHEELS_INVERTED;
-    public static final double INTAKE_POSITION_OFFSET = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_POSITION_OFFSET;
+    // Intake Delegates -> MechanismConstants.Intake
+    public static final double INTAKE_ARM_KP = MechanismConstants.Intake.INTAKE_ARM_KP_VAL;
+    public static final double INTAKE_ARM_KI = MechanismConstants.Intake.INTAKE_ARM_KI_VAL;
+    public static final double INTAKE_ARM_KD = MechanismConstants.Intake.INTAKE_ARM_KD_VAL;
+    public static final double INTAKE_ARM_KS = MechanismConstants.Intake.INTAKE_ARM_KS_VAL;
+    public static final double INTAKE_ARM_KG = MechanismConstants.Intake.INTAKE_ARM_KG_VAL;
+    public static final double INTAKE_ARM_KV = MechanismConstants.Intake.INTAKE_ARM_KV_VAL;
+    public static final double INTAKE_ARM_KA = MechanismConstants.Intake.INTAKE_ARM_KA_VAL;
+    public static final double MAX_ARM_VELOCITY = MechanismConstants.Intake.MAX_ARM_VELOCITY;
+    public static final double MAX_ARM_ACCELERATION = MechanismConstants.Intake.MAX_ARM_ACCELERATION;
+    public static final double INTAKE_UP_POSITION = MechanismConstants.Intake.INTAKE_UP_POSITION;
+    public static final double INTAKE_DOWN_POSITION = MechanismConstants.Intake.INTAKE_DOWN_POSITION;
+    public static final double INTAKE_HORIZONTAL_POSITION = MechanismConstants.Intake.INTAKE_HORIZONTAL_POSITION;
+    public static final Angle INTAKE_UP_POSITION_MEASURE = MechanismConstants.Intake.INTAKE_UP_POSITION_MEASURE;
+    public static final Angle INTAKE_DOWN_POSITION_MEASURE = MechanismConstants.Intake.INTAKE_DOWN_POSITION_MEASURE;
+    public static final Angle INTAKE_HORIZONTAL_POSITION_MEASURE = MechanismConstants.Intake.INTAKE_HORIZONTAL_POSITION_MEASURE;
+    public static final boolean INTAKE_ARM_INVERTED = MechanismConstants.Intake.INTAKE_ARM_INVERTED;
+    public static final boolean INTAKE_WHEELS_INVERTED = MechanismConstants.Intake.INTAKE_WHEELS_INVERTED;
+    public static final double INTAKE_POSITION_OFFSET = MechanismConstants.Intake.INTAKE_POSITION_OFFSET;
 
     public static final class IntakeConstants {
-        public static final boolean INTAKE_ARM_INVERTED = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_ARM_INVERTED;
-        public static final boolean INTAKE_WHEELS_INVERTED = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_WHEELS_INVERTED;
-        public static final double INTAKE_POSITION_OFFSET = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_POSITION_OFFSET;
-        public static final double STALL_CURRENT_LIMIT = frc.robot.Subsystems.intake.IntakeConstants.STALL_CURRENT_LIMIT;
-        public static final double STALL_TIME = frc.robot.Subsystems.intake.IntakeConstants.STALL_TIME;
-        public static final double EJECT_TIME = frc.robot.Subsystems.intake.IntakeConstants.EJECT_TIME;
-        public static final Current STALL_CURRENT_LIMIT_MEASURE = frc.robot.Subsystems.intake.IntakeConstants.STALL_CURRENT_LIMIT_MEASURE;
-        public static final Time STALL_TIME_MEASURE = frc.robot.Subsystems.intake.IntakeConstants.STALL_TIME_MEASURE;
-        public static final Time EJECT_TIME_MEASURE = frc.robot.Subsystems.intake.IntakeConstants.EJECT_TIME_MEASURE;
-        public static final double INTAKE_SPEED = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_SPEED;
-        public static final double HOPPER_SPEED = frc.robot.Subsystems.intake.IntakeConstants.HOPPER_SPEED;
-        public static final TunableNumber ARM_KP = frc.robot.Subsystems.intake.IntakeConstants.ARM_KP;
-        public static final TunableNumber ARM_KI = frc.robot.Subsystems.intake.IntakeConstants.ARM_KI;
-        public static final TunableNumber ARM_KD = frc.robot.Subsystems.intake.IntakeConstants.ARM_KD;
-        public static final TunableNumber ARM_KS = frc.robot.Subsystems.intake.IntakeConstants.ARM_KS;
-        public static final TunableNumber ARM_KG = frc.robot.Subsystems.intake.IntakeConstants.ARM_KG;
-        public static final TunableNumber ARM_KV = frc.robot.Subsystems.intake.IntakeConstants.ARM_KV;
-        public static final TunableNumber ARM_KA = frc.robot.Subsystems.intake.IntakeConstants.ARM_KA;
-        public static final double MAX_ARM_VELOCITY = frc.robot.Subsystems.intake.IntakeConstants.MAX_ARM_VELOCITY;
-        public static final double MAX_ARM_ACCELERATION = frc.robot.Subsystems.intake.IntakeConstants.MAX_ARM_ACCELERATION;
-        public static final double ARM_INTAKE_POS = frc.robot.Subsystems.intake.IntakeConstants.ARM_INTAKE_POS;
-        public static final double ARM_IDLE_POS = frc.robot.Subsystems.intake.IntakeConstants.ARM_IDLE_POS;
-        public static final int MAX_HELD_BALLS = frc.robot.Subsystems.intake.IntakeConstants.MAX_HELD_BALLS;
-        public static final double SIM_ARM_GEARING = frc.robot.Subsystems.intake.IntakeConstants.SIM_ARM_GEARING;
-        public static final double SIM_ARM_LENGTH = frc.robot.Subsystems.intake.IntakeConstants.SIM_ARM_LENGTH;
-        public static final double SIM_ARM_MASS = frc.robot.Subsystems.intake.IntakeConstants.SIM_ARM_MASS;
+        public static final boolean INTAKE_ARM_INVERTED = MechanismConstants.Intake.INTAKE_ARM_INVERTED;
+        public static final boolean INTAKE_WHEELS_INVERTED = MechanismConstants.Intake.INTAKE_WHEELS_INVERTED;
+        public static final double INTAKE_POSITION_OFFSET = MechanismConstants.Intake.INTAKE_POSITION_OFFSET;
+        public static final double STALL_CURRENT_LIMIT = MechanismConstants.Intake.STALL_CURRENT_LIMIT;
+        public static final double STALL_TIME = MechanismConstants.Intake.STALL_TIME;
+        public static final double EJECT_TIME = MechanismConstants.Intake.EJECT_TIME;
+        public static final Current STALL_CURRENT_LIMIT_MEASURE = MechanismConstants.Intake.STALL_CURRENT_LIMIT_MEASURE;
+        public static final Time STALL_TIME_MEASURE = MechanismConstants.Intake.STALL_TIME_MEASURE;
+        public static final Time EJECT_TIME_MEASURE = MechanismConstants.Intake.EJECT_TIME_MEASURE;
+        public static final double INTAKE_SPEED = MechanismConstants.Intake.INTAKE_SPEED;
+        public static final double HOPPER_SPEED = MechanismConstants.Intake.HOPPER_SPEED;
+        public static final TunableNumber ARM_KP = MechanismConstants.Intake.ARM_KP;
+        public static final TunableNumber ARM_KI = MechanismConstants.Intake.ARM_KI;
+        public static final TunableNumber ARM_KD = MechanismConstants.Intake.ARM_KD;
+        public static final TunableNumber ARM_KS = MechanismConstants.Intake.ARM_KS;
+        public static final TunableNumber ARM_KG = MechanismConstants.Intake.ARM_KG;
+        public static final TunableNumber ARM_KV = MechanismConstants.Intake.ARM_KV;
+        public static final TunableNumber ARM_KA = MechanismConstants.Intake.ARM_KA;
+        public static final double MAX_ARM_VELOCITY = MechanismConstants.Intake.MAX_ARM_VELOCITY;
+        public static final double MAX_ARM_ACCELERATION = MechanismConstants.Intake.MAX_ARM_ACCELERATION;
+        public static final double ARM_INTAKE_POS = MechanismConstants.Intake.ARM_INTAKE_POS;
+        public static final double ARM_IDLE_POS = MechanismConstants.Intake.ARM_IDLE_POS;
+        public static final int MAX_HELD_BALLS = MechanismConstants.Intake.MAX_HELD_BALLS;
+        public static final double SIM_ARM_GEARING = MechanismConstants.Intake.SIM_ARM_GEARING;
+        public static final double SIM_ARM_LENGTH = MechanismConstants.Intake.SIM_ARM_LENGTH;
+        public static final double SIM_ARM_MASS = MechanismConstants.Intake.SIM_ARM_MASS;
     }
 }

@@ -8,13 +8,24 @@ import frc.robot.Auto.AutoMissionEndedException;
 import frc.robot.Auto.Actions.WaitAction;
 import frc.robot.Auto.Actions.FollowChoreoPath;
 
-/*
+/**
  * Class: ExampleMission
- * Description: This mission is an example mission.
- *              It has examples of a normal action and a choreo path action
+ *
+ * Description:
+ * This file serves as a TEMPLATE and documentation reference for creating new autonomous
+ * missions within the codebase.
+ *
+ * HOW TO USE THIS FILE:
+ * 1. Copy this file and rename the class to match your new strategy (e.g., `ThreeNoteAuto.java`).
+ * 2. Ensure it extends `MissionBase`.
+ * 3. Override the `routine()` method.
+ * 4. Use `runAction(new YourActionHere())` to queue sequential commands.
+ *    For parallel commands, use `ParallelAction` or `ParallelRaceAction`.
+ * 5. Important: Ensure you register your new mission in `AutoMissionChooser.java` so it appears
+ *    on the dashboard!
+ *
  * Author: Rhea
  */
-
 public class ExampleMission extends MissionBase {
     @Override
     protected void routine() throws AutoMissionEndedException {

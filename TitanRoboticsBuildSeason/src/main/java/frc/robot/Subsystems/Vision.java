@@ -1,5 +1,9 @@
 package frc.robot.Subsystems;
 
+import frc.robot.Hardware.Vision.*;
+
+import frc.robot.Telemetry.Dashboard;
+
 import static edu.wpi.first.units.Units.DegreesPerSecond;
 
 import edu.wpi.first.math.Matrix;
@@ -13,11 +17,11 @@ import edu.wpi.first.wpilibj.RobotBase;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import frc.robot.Data.Constants.DrivebaseConstants;
 import frc.robot.Interfaces.Subsystem;
-import frc.robot.Subsystems.vision.VisionIO;
-import frc.robot.Subsystems.vision.VisionIOInputsAutoLogged;
-import frc.robot.Subsystems.vision.VisionIOLimelight;
-import frc.robot.Subsystems.vision.VisionIOPhotonVision;
-import frc.robot.Subsystems.vision.VisionIOSim;
+import frc.robot.Hardware.Vision.VisionIO;
+import frc.robot.Hardware.Vision.VisionIOInputsAutoLogged;
+import frc.robot.Hardware.Vision.VisionIOLimelight;
+import frc.robot.Hardware.Vision.VisionIOPhotonVision;
+import frc.robot.Hardware.Vision.VisionIOSim;
 import edu.wpi.first.math.geometry.Pose3d;
 
 /**

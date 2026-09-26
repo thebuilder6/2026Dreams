@@ -1,5 +1,13 @@
 package frc.robot.Sim;
 
+import frc.robot.Data.MechanismConstants;
+
+
+
+import frc.robot.Subsystems.Intake;
+
+import frc.robot.Telemetry.Dashboard;
+
 import edu.wpi.first.math.system.plant.DCMotor;
 import edu.wpi.first.wpilibj.simulation.SingleJointedArmSim;
 import edu.wpi.first.wpilibj.smartdashboard.Mechanism2d;

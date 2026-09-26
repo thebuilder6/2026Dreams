@@ -1,17 +1,14 @@
 package frc.robot.Intelligence;
-import frc.robot.Subsystems.SwerveBase;
-import frc.robot.Subsystems.Intake;
-import frc.robot.Subsystems.Shooter;
-import frc.robot.Subsystems.Dashboard;
+
 import frc.robot.Subsystems.SubsystemManager;
-import frc.robot.Intelligence.Sparring.AIRobotSim;
-import frc.robot.Intelligence.Sparring.AIRobotSim.AIMode;
-import frc.robot.Intelligence.AIActionIntent;
-import frc.robot.Intelligence.Archetype;
-import frc.robot.Intelligence.JevDecisionEngine;
-import frc.robot.Intelligence.StrategicObjective;
-import frc.robot.Intelligence.State.WorldState;
-import frc.robot.Intelligence.State.WorldStateBuilder;
+
+import frc.robot.Subsystems.Intake;
+
+import frc.robot.Subsystems.Shooter;
+
+import frc.robot.Subsystems.SwerveBase;
+
+import frc.robot.Telemetry.Dashboard;
 
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
@@ -21,12 +18,20 @@ import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.smartdashboard.SendableChooser;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import frc.robot.Auto.DynamicRouter;
-import frc.robot.Auto.LegalPinningWatchdog;
+import frc.robot.HMI.Watchdogs.LegalPinningWatchdog;
 import frc.robot.Auto.SmartTunnelRouter;
 import frc.robot.Data.Constants;
 import frc.robot.Data.GlideConstants;
 import frc.robot.Interfaces.Subsystem;
+import frc.robot.Intelligence.Sparring.AIRobotSim;
+import frc.robot.Intelligence.Sparring.AIRobotSim.AIMode;
+import frc.robot.Intelligence.AIActionIntent;
+import frc.robot.Intelligence.Archetype;
 import frc.robot.Sim.GameSim;
+import frc.robot.Intelligence.JevDecisionEngine;
+import frc.robot.Intelligence.StrategicObjective;
+import frc.robot.Intelligence.State.WorldState;
+import frc.robot.Intelligence.State.WorldStateBuilder;
 import frc.robot.Utils.AllianceFlipUtil;
 import org.littletonrobotics.junction.Logger;
 

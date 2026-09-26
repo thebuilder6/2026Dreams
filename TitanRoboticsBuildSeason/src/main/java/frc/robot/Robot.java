@@ -4,6 +4,8 @@
 
 package frc.robot;
 
+import frc.robot.HMI.Alerts.Alert;
+
 import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.Notifier;
 import edu.wpi.first.wpilibj.XboxController;
@@ -21,16 +23,16 @@ import frc.robot.Auto.AutoMissionExecutor;
 import frc.robot.Auto.Missions.MissionBase;
 import frc.robot.Intelligence.Sparring.AIRobotSim;
 import frc.robot.Sim.GameSim;
-import frc.robot.Subsystems.Dashboard;
+import frc.robot.Telemetry.Dashboard;
 import frc.robot.Subsystems.Intake;
-import frc.robot.Subsystems.LEDs;
+import frc.robot.HMI.LEDs;
 import frc.robot.Intelligence.MatchCoach;
 import frc.robot.Subsystems.Shooter;
 import frc.robot.Subsystems.SubsystemManager;
 import frc.robot.Subsystems.SwerveBase;
 import frc.robot.Subsystems.Vision;
 import frc.robot.Test.TestMode;
-import frc.robot.Utils.AlertManager;
+import frc.robot.HMI.Alerts.AlertManager;
 
 /**
  * The methods in this class are called automatically corresponding to each

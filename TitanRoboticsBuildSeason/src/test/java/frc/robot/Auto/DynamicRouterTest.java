@@ -13,7 +13,7 @@ import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import frc.robot.Auto.DynamicRouter.AvoidanceAlgorithm;
 import frc.robot.Data.Constants;
 import frc.robot.Subsystems.Vision;
-import frc.robot.Subsystems.vision.VisionIOSim;
+import frc.robot.Hardware.Vision.VisionIOSim;
 
 public class DynamicRouterTest {
 

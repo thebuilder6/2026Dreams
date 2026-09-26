@@ -1,5 +1,11 @@
 package frc.robot.Sim;
 
+import frc.robot.Data.MechanismConstants;
+
+
+
+import frc.robot.Subsystems.Shooter;
+
 import frc.robot.Intelligence.State.MatchScoreTracker;
 
 import static edu.wpi.first.units.Units.Meters;

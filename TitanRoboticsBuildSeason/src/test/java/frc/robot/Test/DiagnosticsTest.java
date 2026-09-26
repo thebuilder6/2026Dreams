@@ -1,5 +1,9 @@
 package frc.robot.Test;
 
+import frc.robot.Subsystems.Intake;
+
+import frc.robot.Subsystems.Shooter;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.Map;

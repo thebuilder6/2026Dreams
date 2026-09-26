@@ -1,5 +1,7 @@
 package frc.robot.Test;
 
+import frc.robot.Telemetry.Dashboard;
+
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -17,8 +19,8 @@ import frc.robot.Subsystems.Shooter;
 import frc.robot.Subsystems.SubsystemManager;
 import frc.robot.Subsystems.SwerveBase;
 import frc.robot.Subsystems.Vision;
-import frc.robot.Utils.Alert;
-import frc.robot.Utils.Alert.AlertType;
+import frc.robot.HMI.Alerts.Alert;
+import frc.robot.HMI.Alerts.Alert.AlertType;
 
 /**
  * Diagnostics subsystem for safe hardware verification and automated Pre-Flight pit checks.

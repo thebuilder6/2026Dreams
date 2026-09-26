@@ -1,5 +1,15 @@
 package frc.robot.Sim;
 
+import frc.robot.Subsystems.Intake;
+import frc.robot.Subsystems.Shooter;
+
+import frc.robot.Data.MechanismConstants;
+
+
+
+
+import frc.robot.Telemetry.Dashboard;
+
 import frc.robot.Intelligence.State.MatchScoreTracker;
 
 import java.util.ArrayList;

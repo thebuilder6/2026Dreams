@@ -1,5 +1,15 @@
 package frc.robot.Subsystems;
 
+import frc.robot.Data.MechanismConstants;
+
+import frc.robot.Hardware.Intake.*;
+
+
+
+import frc.robot.Sim.ArmSim;
+
+import frc.robot.Telemetry.Dashboard;
+
 import com.revrobotics.spark.config.SparkMaxConfig;
 
 import edu.wpi.first.math.MathUtil;
@@ -26,12 +36,12 @@ import frc.robot.Data.Constants;
 import frc.robot.Data.Constants.IntakeConstants;
 import frc.robot.Data.FieldMap;
 import frc.robot.Interfaces.Subsystem;
-import frc.robot.Subsystems.intake.IntakeIO;
-import frc.robot.Subsystems.intake.IntakeIOInputsAutoLogged;
-import frc.robot.Subsystems.intake.IntakeIOSim;
-import frc.robot.Subsystems.intake.IntakeIOSparkMax;
-import frc.robot.Utils.Alert;
-import frc.robot.Utils.Alert.AlertType;
+import frc.robot.Hardware.Intake.IntakeIO;
+import frc.robot.Hardware.Intake.IntakeIOInputsAutoLogged;
+import frc.robot.Hardware.Intake.IntakeIOSim;
+import frc.robot.Hardware.Intake.IntakeIOSparkMax;
+import frc.robot.HMI.Alerts.Alert;
+import frc.robot.HMI.Alerts.Alert.AlertType;
 
 /**
  * Ground intake mechanism featuring an articulated pivot arm with feedforward

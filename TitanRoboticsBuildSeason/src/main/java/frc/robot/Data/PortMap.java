@@ -1,5 +1,9 @@
 package frc.robot.Data;
 
+import frc.robot.Subsystems.Intake;
+
+import frc.robot.Subsystems.Shooter;
+
 public final class PortMap {
 
     public static final int DRIVER_CONTROLLER = 0;

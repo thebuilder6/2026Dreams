@@ -1,5 +1,9 @@
 package frc.robot.Auto;
 
+import frc.robot.Subsystems.Shooter;
+
+import frc.robot.Telemetry.Dashboard;
+
 import frc.robot.Auto.Missions.*;
 
 import java.io.File;
@@ -135,4 +139,4 @@ public class AutoMissionChooser {
     public Optional<MissionBase> getAutoMission() {
         return autoMission;
     }
-}
+}

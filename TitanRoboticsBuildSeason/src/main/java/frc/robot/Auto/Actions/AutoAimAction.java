@@ -1,5 +1,7 @@
 package frc.robot.Auto.Actions;
 
+import frc.robot.Telemetry.Dashboard;
+
 import choreo.trajectory.SwerveSample;
 import edu.wpi.first.math.controller.PIDController;
 import edu.wpi.first.math.geometry.Pose2d;

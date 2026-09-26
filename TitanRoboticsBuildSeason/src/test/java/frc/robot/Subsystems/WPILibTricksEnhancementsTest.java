@@ -16,7 +16,7 @@ import edu.wpi.first.wpilibj.simulation.BatterySim;
 import edu.wpi.first.wpilibj.simulation.RoboRioSim;
 import frc.robot.Data.Constants;
 import frc.robot.Data.Constants.IntakeConstants;
-import frc.robot.Subsystems.vision.VisionIOSim;
+import frc.robot.Hardware.Vision.VisionIOSim;
 
 /**
  * Unit test suite verifying the 4 WPILib architectural upgrades:
@@ -240,7 +240,7 @@ public class WPILibTricksEnhancementsTest {
 
     @Test
     public void testControllerRumbleCaching() {
-        frc.robot.Devices.Controller controller = new frc.robot.Devices.Controller(0);
+        frc.robot.HMI.Controller controller = new frc.robot.HMI.Controller(0);
         assertDoesNotThrow(() -> {
             controller.setRumble(edu.wpi.first.wpilibj.GenericHID.RumbleType.kLeftRumble, 0.5);
             controller.setRumble(edu.wpi.first.wpilibj.GenericHID.RumbleType.kLeftRumble, 0.5); // Should hit cache

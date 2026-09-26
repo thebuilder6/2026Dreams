@@ -1,18 +1,11 @@
 package frc.robot.Intelligence.State;
-import frc.robot.Intelligence.Archetype;
-import frc.robot.Intelligence.State.WorldState;
-import frc.robot.Intelligence.State.WorldStateBuilder;
-import frc.robot.Intelligence.State.MatchScoreTracker;
-import frc.robot.Intelligence.AIActionIntent;
-import frc.robot.Intelligence.StrategicObjective;
-import frc.robot.Intelligence.JevDecisionEngine;
+
 import frc.robot.Intelligence.Sparring.AIRobotSim;
-import frc.robot.Intelligence.Sparring.AIRobotInstance;
 
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import edu.wpi.first.wpilibj.Timer;
-import frc.robot.Subsystems.Dashboard;
+import frc.robot.Telemetry.Dashboard;
 import frc.robot.Subsystems.SwerveBase;
 import frc.robot.Utils.AllianceFlipUtil;
 

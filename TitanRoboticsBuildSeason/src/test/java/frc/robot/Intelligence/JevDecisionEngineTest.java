@@ -1,15 +1,14 @@
 package frc.robot.Intelligence;
-import frc.robot.Intelligence.Archetype;
-import frc.robot.Intelligence.State.WorldState;
-import frc.robot.Intelligence.State.WorldStateBuilder;
-import frc.robot.Intelligence.State.MatchScoreTracker;
-import frc.robot.Intelligence.AIActionIntent;
-import frc.robot.Intelligence.StrategicObjective;
-import frc.robot.Intelligence.JevDecisionEngine;
-import frc.robot.Intelligence.Sparring.AIRobotSim;
+
+import frc.robot.Subsystems.Shooter;
+
+import frc.robot.Telemetry.Dashboard;
+
 import frc.robot.Intelligence.Sparring.AIRobotInstance;
-import frc.robot.Intelligence.JevDecisionEngine.DecisionResult;
-import frc.robot.Intelligence.JevDecisionEngine.TacticalAction;
+
+import frc.robot.Intelligence.Sparring.AIRobotSim;
+
+import frc.robot.Intelligence.State.WorldState;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -21,6 +20,8 @@ import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
 import frc.robot.Data.Constants;
 import frc.robot.Data.FieldMap;
+import frc.robot.Intelligence.JevDecisionEngine.DecisionResult;
+import frc.robot.Intelligence.JevDecisionEngine.TacticalAction;
 
 public class JevDecisionEngineTest {
 

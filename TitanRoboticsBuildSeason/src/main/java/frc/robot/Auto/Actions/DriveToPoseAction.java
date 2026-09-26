@@ -8,7 +8,7 @@ import edu.wpi.first.math.controller.PIDController;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.kinematics.ChassisSpeeds;
-import frc.robot.Auto.LegalPinningWatchdog;
+import frc.robot.HMI.Watchdogs.LegalPinningWatchdog;
 import frc.robot.Auto.SmartTunnelRouter;
 import frc.robot.Auto.SmartTunnelRouter.TunnelRoute;
 import frc.robot.Auto.TrajectoryController;

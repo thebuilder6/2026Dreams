@@ -1,3 +1,23 @@
 Files placed in this directory will be deployed to the RoboRIO into the
 'deploy' directory in the home folder. Use the 'Filesystem.getDeployDirectory' wpilib function
 to get a proper path relative to the deploy directory.
+=========================================
+TEMPLATE / DOCUMENTATION REFERENCE
+=========================================
+This `deploy/` directory is critical for runtime resources!
+
+What belongs here?
+- Choreo `.traj` files (Autonomous paths)
+- Custom JSON layouts for Elastic Dashboard
+- Vision pipeline configuration files
+- Look-up tables or AI weights (if stored statically)
+
+How to load these files in code:
+```java
+import edu.wpi.first.wpilibj.Filesystem;
+import java.io.File;
+
+File deployDirectory = Filesystem.getDeployDirectory();
+File myData = new File(deployDirectory, "myfolder/data.json");
+```
+Do NOT hardcode absolute paths like `/home/lvuser/deploy/`, always use the `Filesystem` utility to ensure compatibility across real hardware and desktop simulation!

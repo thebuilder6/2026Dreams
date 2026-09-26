@@ -1,11 +1,22 @@
 package frc.robot.Intelligence.Sparring;
-import frc.robot.Intelligence.Archetype;
-import frc.robot.Intelligence.State.WorldState;
-import frc.robot.Intelligence.State.WorldStateBuilder;
-import frc.robot.Intelligence.State.MatchScoreTracker;
+
+import frc.robot.Subsystems.Intake;
+
+import frc.robot.Subsystems.Shooter;
+
+import frc.robot.Telemetry.Dashboard;
+
 import frc.robot.Intelligence.AIActionIntent;
-import frc.robot.Intelligence.StrategicObjective;
+
 import frc.robot.Intelligence.JevDecisionEngine;
+
+import frc.robot.Intelligence.State.MatchScoreTracker;
+
+import frc.robot.Intelligence.State.WorldStateBuilder;
+
+import frc.robot.Intelligence.State.WorldState;
+
+import frc.robot.Intelligence.Archetype;
 
 import static edu.wpi.first.units.Units.Meters;
 import static edu.wpi.first.units.Units.MetersPerSecond;
@@ -62,7 +73,7 @@ public class AIRobotInstance {
     private String currentAIStateDetail = "IDLE";
     private int scoreCount = 0;
     private double lastShotTimestamp = 0.0;
-    private final frc.robot.Auto.LegalPinningWatchdog pinWatchdog = new frc.robot.Auto.LegalPinningWatchdog();
+    private final frc.robot.HMI.Watchdogs.LegalPinningWatchdog pinWatchdog = new frc.robot.HMI.Watchdogs.LegalPinningWatchdog();
 
     // Stall watchdog
     private Pose2d lastActualPose = new Pose2d();

@@ -1,5 +1,15 @@
 package frc.robot.Subsystems;
 
+import frc.robot.Data.MechanismConstants;
+
+import frc.robot.Hardware.Shooter.*;
+
+
+
+import frc.robot.Sim.ShooterSim;
+
+import frc.robot.Telemetry.Dashboard;
+
 import java.util.Optional;
 
 import edu.wpi.first.math.controller.PIDController;
@@ -24,10 +34,10 @@ import edu.wpi.first.wpilibj2.command.Commands;
 import frc.robot.Data.Constants;
 import frc.robot.Data.Constants.ShooterConstants;
 import frc.robot.Interfaces.Subsystem;
-import frc.robot.Subsystems.shooter.ShooterIO;
-import frc.robot.Subsystems.shooter.ShooterIOInputsAutoLogged;
-import frc.robot.Subsystems.shooter.ShooterIOSim;
-import frc.robot.Subsystems.shooter.ShooterIOSparkMax;
+import frc.robot.Hardware.Shooter.ShooterIO;
+import frc.robot.Hardware.Shooter.ShooterIOInputsAutoLogged;
+import frc.robot.Hardware.Shooter.ShooterIOSim;
+import frc.robot.Hardware.Shooter.ShooterIOSparkMax;
 import frc.robot.Utils.AllianceFlipUtil;
 import org.littletonrobotics.junction.Logger;
 

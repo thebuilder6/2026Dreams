@@ -1448,6 +1448,456 @@
       }
     },
     {
+      "name": "Match Scoreboard",
+      "grid_layout": {
+        "layouts": [],
+        "containers": [
+          {
+            "title": "RED TOTAL",
+            "x": 0.0,
+            "y": 0.0,
+            "width": 384.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Scoreboard/Red/TotalScore",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "BLUE TOTAL",
+            "x": 384.0,
+            "y": 0.0,
+            "width": 384.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Scoreboard/Blue/TotalScore",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Leader",
+            "x": 768.0,
+            "y": 0.0,
+            "width": 640.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Scoreboard/Match/Leader",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Lead Margin",
+            "x": 1408.0,
+            "y": 0.0,
+            "width": 512.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Scoreboard/Match/LeadMargin",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Red Fuel",
+            "x": 0.0,
+            "y": 128.0,
+            "width": 240.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Scoreboard/Red/FuelCount",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Red Auto Fuel",
+            "x": 240.0,
+            "y": 128.0,
+            "width": 240.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Scoreboard/Red/AutoFuelCount",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Red Teleop Fuel",
+            "x": 480.0,
+            "y": 128.0,
+            "width": 240.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Scoreboard/Red/TeleopFuelCount",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Red Penalty Pts",
+            "x": 720.0,
+            "y": 128.0,
+            "width": 240.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Scoreboard/Red/PenaltyPoints",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Red Minors",
+            "x": 960.0,
+            "y": 128.0,
+            "width": 240.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Scoreboard/Red/MinorFouls",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Red Majors",
+            "x": 1200.0,
+            "y": 128.0,
+            "width": 240.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Scoreboard/Red/MajorFouls",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Red Climb Pts",
+            "x": 1440.0,
+            "y": 128.0,
+            "width": 240.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Scoreboard/Red/ClimbPoints",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Red Climbed",
+            "x": 1680.0,
+            "y": 128.0,
+            "width": 240.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Scoreboard/Red/ClimbedRobots",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Blue Fuel",
+            "x": 0.0,
+            "y": 256.0,
+            "width": 240.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Scoreboard/Blue/FuelCount",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Blue Auto Fuel",
+            "x": 240.0,
+            "y": 256.0,
+            "width": 240.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Scoreboard/Blue/AutoFuelCount",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Blue Teleop Fuel",
+            "x": 480.0,
+            "y": 256.0,
+            "width": 240.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Scoreboard/Blue/TeleopFuelCount",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Blue Penalty Pts",
+            "x": 720.0,
+            "y": 256.0,
+            "width": 240.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Scoreboard/Blue/PenaltyPoints",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Blue Minors",
+            "x": 960.0,
+            "y": 256.0,
+            "width": 240.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Scoreboard/Blue/MinorFouls",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Blue Majors",
+            "x": 1200.0,
+            "y": 256.0,
+            "width": 240.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Scoreboard/Blue/MajorFouls",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Blue Climb Pts",
+            "x": 1440.0,
+            "y": 256.0,
+            "width": 240.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Scoreboard/Blue/ClimbPoints",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Blue Climbed",
+            "x": 1680.0,
+            "y": 256.0,
+            "width": 240.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Scoreboard/Blue/ClimbedRobots",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Player Balls",
+            "x": 0.0,
+            "y": 384.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Scoreboard/Player/FuelScored",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Bot 0 Balls",
+            "x": 256.0,
+            "y": 384.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Scoreboard/Opponents/Bot0_FuelScored",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Bot 1 Balls",
+            "x": 512.0,
+            "y": 384.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Scoreboard/Opponents/Bot1_FuelScored",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Bot 2 Balls",
+            "x": 768.0,
+            "y": 384.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Scoreboard/Opponents/Bot2_FuelScored",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Ally 1 Balls",
+            "x": 1024.0,
+            "y": 384.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Scoreboard/Allies/Ally1_FuelScored",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Ally 2 Balls",
+            "x": 1280.0,
+            "y": 384.0,
+            "width": 256.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Scoreboard/Allies/Ally2_FuelScored",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Player Accuracy %",
+            "x": 1536.0,
+            "y": 384.0,
+            "width": 384.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Scoreboard/Player/AccuracyPercent",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Last Foul",
+            "x": 0.0,
+            "y": 512.0,
+            "width": 1280.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Scoreboard/Referee/LastFoul",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Red RP",
+            "x": 1280.0,
+            "y": 512.0,
+            "width": 320.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Scoreboard/Red/RankingPoints",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Blue RP",
+            "x": 1600.0,
+            "y": 512.0,
+            "width": 320.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Scoreboard/Blue/RankingPoints",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Shift Seed (1st Inactive)",
+            "x": 0.0,
+            "y": 640.0,
+            "width": 480.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Scoreboard/Match/ShiftSeed",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Phase",
+            "x": 480.0,
+            "y": 640.0,
+            "width": 480.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Scoreboard/Match/Phase",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Red Hub Active",
+            "x": 960.0,
+            "y": 640.0,
+            "width": 480.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Scoreboard/Match/RedHubActive",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Blue Hub Active",
+            "x": 1440.0,
+            "y": 640.0,
+            "width": 480.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Scoreboard/Match/BlueHubActive",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          }
+        ]
+      }
+    },
+    {
       "name": "Tuning & PID",
       "grid_layout": {
         "layouts": [],

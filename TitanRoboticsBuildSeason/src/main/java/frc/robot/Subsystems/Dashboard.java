@@ -246,17 +246,21 @@ public class Dashboard implements Subsystem {
             gameData = DriverStation.getGameSpecificMessage();
         }
 
+        // No valid clock (disabled/disconnected): fail open on active.
+        if (matchTime < 0.0) {
+            isMyHubActive = true;
+            return;
+        }
+
         // 2. Default to true (Active) if Auto, Transition, End Game, or no data yet
         if (DriverStation.isAutonomous() || gameData.isEmpty()) {
             isMyHubActive = true;
             return;
         }
 
-        // 3. Logic for Teleop Shifts
+        // 3. Logic for Teleop Shifts (official 6.4 table via HubSchedule)
         // 'R' = Red Hub Inactive first. 'B' = Blue Hub Inactive first.
         char targetChar = gameData.charAt(0);
-        boolean redStartsInactive = (targetChar == 'R');
-        boolean blueStartsInactive = (targetChar == 'B');
 
         Optional<Alliance> myAlliance = DriverStation.getAlliance();
 
@@ -265,6 +269,11 @@ public class Dashboard implements Subsystem {
             isMyHubActive = true;
             return;
         }
+
+        boolean myIsRed = myAlliance.get() == Alliance.Red;
+        frc.robot.Sim.HubSchedule.Phase phase =
+                frc.robot.Sim.HubSchedule.phaseFor(matchTime, DriverStation.isAutonomous());
+        isMyHubActive = frc.robot.Sim.HubSchedule.isHubActive(myIsRed, phase, targetChar);
 
         // Match Time counts DOWN. Teleop starts at 2:20 (140s).
         // Transition: 140 -> 130
@@ -275,10 +284,10 @@ public class Dashboard implements Subsystem {
         // End Game: 30 -> 0
 
         if (matchTime > 130 || matchTime <= 30) {
-            // Transition Period or End Game
-            isMyHubActive = true;
+            // Transition Period or End Game: countdown/progress display only.
+            // The active decision above (HubSchedule) already covers these.
             hubSwitchProgress = 1.0; // Fully active
-            timeUntilSwitch = (matchTime > 130) ? (matchTime - 130) : matchTime;
+            timeUntilSwitch = (matchTime > 130) ? (matchTime - 130) : Math.max(0.0, matchTime);
         } else {
             // SHIFTS (25s intervals)
             double shiftStartTime = 0;
@@ -294,22 +303,6 @@ public class Dashboard implements Subsystem {
             double elapsedInShift = shiftStartTime - matchTime;
             hubSwitchProgress = Math.min(1.0, elapsedInShift / 25.0);
             timeUntilSwitch = Math.max(0.0, 25.0 - elapsedInShift);
-
-            if ((matchTime <= 130 && matchTime > 105) || (matchTime <= 80 && matchTime > 55)) {
-                // SHIFT 1 or SHIFT 3
-                if (myAlliance.get() == Alliance.Red) {
-                    isMyHubActive = !redStartsInactive;
-                } else {
-                    isMyHubActive = !blueStartsInactive;
-                }
-            } else if ((matchTime <= 105 && matchTime > 80) || (matchTime <= 55 && matchTime > 30)) {
-                // SHIFT 2 or SHIFT 4 (Statuses flip)
-                if (myAlliance.get() == Alliance.Red) {
-                    isMyHubActive = redStartsInactive;
-                } else {
-                    isMyHubActive = blueStartsInactive;
-                }
-            }
         }
     }
 
@@ -360,6 +353,14 @@ public class Dashboard implements Subsystem {
 
     public frc.robot.Auto.AutoMissionChooser getAutoChooser() {
         return autoMissionChooser;
+    }
+
+    /**
+     * Overwrites the cached FMS game-data message (SHIFT 1 order seed).
+     * Used when the sim acts as FMS and seeds the order from the AUTO result.
+     */
+    public void setGameData(String data) {
+        this.gameData = (data == null) ? "" : data;
     }
 
     // Getter for other subsystems (e.g., Shooter) to check before firing

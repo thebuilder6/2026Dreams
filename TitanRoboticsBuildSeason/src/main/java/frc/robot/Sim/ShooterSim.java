@@ -18,7 +18,6 @@ import frc.robot.Data.Constants.ShooterConstants;
 import frc.robot.Subsystems.SwerveBase;
 import frc.robot.Utils.AllianceFlipUtil;
 import swervelib.simulation.ironmaple.simulation.SimulatedArena;
-import swervelib.simulation.ironmaple.simulation.seasonspecific.rebuilt2026.Arena2026Rebuilt;
 import swervelib.simulation.ironmaple.simulation.seasonspecific.rebuilt2026.RebuiltFuelOnFly;
 
 public class ShooterSim {
@@ -90,6 +89,7 @@ public class ShooterSim {
             int ballsToFire = GameSim.getInstance().consumeHeldBallsForShot(2);
             if (ballsToFire > 0) {
                 Pose2d robotPose = SwerveBase.getInstance().getPose();
+                RefereeSim.checkShotLegality(robotPose, AllianceFlipUtil.isRedAlliance(), "Player");
                 ChassisSpeeds robotVel = SwerveBase.getInstance().getFieldVelocity();
                 double wheelSurfaceVelocity = (flywheelVelocityRPM / 60.0) * ShooterConstants.SHOOTER_WHEEL_CIRCUMFERENCE;
                 double exitVelocity = wheelSurfaceVelocity * ShooterConstants.BALL_LAUNCH_EFFICIENCY.get();
@@ -105,6 +105,10 @@ public class ShooterSim {
                     Rotation2d randomYaw = robotPose.getRotation().plus(Rotation2d.fromDegrees((Math.random() - 0.5) * 1.0));
                     double randomPitch = ShooterConstants.SHOOTER_ANGLE_RAD + (Math.random() - 0.5) * 0.035; // ~2 deg total spread
 
+                    // Alliance of the targeted hub (player always shoots its own hub)
+                    boolean isBlueGoal = targetLoc.equals(Constants.FieldConstants.BLUE_GOAL_LOCATION);
+                    boolean isRedGoal = !isBlueGoal;
+
                     var fuelOnFly = new RebuiltFuelOnFly(
                             robotPose.getTranslation(),
                             shooterOffset,
@@ -118,24 +122,18 @@ public class ShooterSim {
                     // so the ball visibly crosses through the 1.575m rim into the goal before registering the score
                     Translation3d funnelTarget = new Translation3d(targetLoc.getX(), targetLoc.getY(), 1.48);
 
+                    // Scoring is resolved by ShotTracker: the hub physically captures
+                    // balls before the projectile's analytic hit-time elapses, so the
+                    // hit callback alone would silently drop most scores.
+                    ShotTracker.track(fuelOnFly, funnelTarget, isRedGoal,
+                            () -> {
+                                simScoreCount++;
+                                MatchScoreTracker.getInstance().recordPlayerScore(isRedGoal);
+                            },
+                            () -> MatchScoreTracker.getInstance().recordWastedShot(isRedGoal));
+
                     fuelOnFly.withTargetPosition(() -> funnelTarget)
                             .withTargetTolerance(new Translation3d(0.35, 0.35, 0.15))
-                            .withHitTargetCallBack(() -> {
-                                boolean isBlueGoal = targetLoc.equals(Constants.FieldConstants.BLUE_GOAL_LOCATION);
-                                boolean isRedGoal = !isBlueGoal;
-                                if (SimulatedArena.getInstance() instanceof Arena2026Rebuilt) {
-                                    Arena2026Rebuilt arena = (Arena2026Rebuilt) SimulatedArena.getInstance();
-                                    if (arena.isActive(isBlueGoal)) {
-                                        simScoreCount++;
-                                        MatchScoreTracker.getInstance().recordPlayerScore(isRedGoal);
-                                    } else {
-                                        MatchScoreTracker.getInstance().recordWastedShot(isRedGoal);
-                                    }
-                                } else {
-                                    simScoreCount++;
-                                    MatchScoreTracker.getInstance().recordPlayerScore(isRedGoal);
-                                }
-                            })
                             .withProjectileTrajectoryDisplayCallBack(
                                 (poses) -> org.littletonrobotics.junction.Logger.recordOutput("FieldSimulation/SuccessfulShotsTrajectory", poses.toArray(edu.wpi.first.math.geometry.Pose3d[]::new)),
                                 (poses) -> org.littletonrobotics.junction.Logger.recordOutput("FieldSimulation/MissedShotsTrajectory", poses.toArray(edu.wpi.first.math.geometry.Pose3d[]::new))

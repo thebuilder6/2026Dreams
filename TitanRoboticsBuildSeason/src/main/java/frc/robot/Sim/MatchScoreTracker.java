@@ -22,21 +22,23 @@ import org.littletonrobotics.junction.Logger;
  * Provides comprehensive real-time score tracking for both alliances and all robots:
  * - Red Alliance vs. Blue Alliance live scoreboard.
  * - Dynamic Player Alliance vs. Opponent Alliance mapping.
- * - Fuel scoring breakdowns (Active Hub Fuel = 1 pt, Inactive Wasted Shots = 0 pts).
+ * - Fuel scoring breakdowns (Active Hub Fuel = 1 pt, Inactive Wasted Shots = 0 pts),
+ *   split by AUTO vs TELEOP period.
  * - Tower climb & endgame parking detection for all active robots (10 pts per climbed robot).
+ * - Fouls: MINOR FOUL = 5 pts, MAJOR FOUL = 15 pts credited to the opponent's total.
  * - FRC Ranking Point (RP) evaluation:
  *     * Win = 2 RP, Tie = 1 RP
  *     * Energized / Fuel RP: >= 40 total fuel scored (+1 RP)
  *     * Supercharged / Tower Climb RP: >= 2 robots climbed (+1 RP)
- * - Per-robot shot attribution (Player accuracy %, Bot 0, Bot 1, Bot 2, and Ally Bots).
+ * - Per-robot shot attribution (Player, Bot 0, Bot 1, Bot 2, Ally 1, Ally 2).
  * - Live AdvantageKit and SmartDashboard telemetry publishing.
  */
 public class MatchScoreTracker implements Subsystem {
 
     public static final int POINTS_PER_FUEL = 1;
     public static final int POINTS_PER_CLIMB = 10;
-    public static final int POINTS_PER_MINOR_FOUL = 2;
-    public static final int POINTS_PER_TECH_FOUL = 5;
+    public static final int POINTS_PER_MINOR_FOUL = 5;
+    public static final int POINTS_PER_MAJOR_FOUL = 15;
     public static final int FUEL_RP_THRESHOLD = 40;
     public static final int CLIMB_RP_ROBOT_COUNT = 2;
     public static final double TOWER_CLIMB_RADIUS_METERS = 1.20;
@@ -53,14 +55,18 @@ public class MatchScoreTracker implements Subsystem {
     // Fuel scores
     private int redFuelCount = 0;
     private int blueFuelCount = 0;
+    private int redAutoFuelCount = 0;
+    private int blueAutoFuelCount = 0;
+    private int redTeleopFuelCount = 0;
+    private int blueTeleopFuelCount = 0;
     private int redWastedFuelCount = 0;
     private int blueWastedFuelCount = 0;
 
-    // Fouls committed & penalty points awarded
+    // Fouls committed & penalty points awarded (MINOR = 5 pts, MAJOR = 15 pts to opponent)
     private int redFoulCount = 0;
     private int blueFoulCount = 0;
-    private int redTechFoulCount = 0;
-    private int blueTechFoulCount = 0;
+    private int redMajorFoulCount = 0;
+    private int blueMajorFoulCount = 0;
     private int redPenaltyPoints = 0; // Points given to Red (because Blue committed fouls)
     private int bluePenaltyPoints = 0; // Points given to Blue (because Red committed fouls)
     private String lastFoulDescription = "None";
@@ -92,15 +98,27 @@ public class MatchScoreTracker implements Subsystem {
     }
 
     /**
-     * Records a fuel score for an alliance.
+     * Records a fuel score for an alliance, attributing it to the current
+     * match period (AUTO vs TELEOP).
      *
      * @param isRedAlliance True if scored into the Red Alliance Hub
      */
     public synchronized void recordFuelScore(boolean isRedAlliance) {
+        boolean isAuto = DriverStation.isAutonomous();
         if (isRedAlliance) {
             redFuelCount++;
+            if (isAuto) {
+                redAutoFuelCount++;
+            } else {
+                redTeleopFuelCount++;
+            }
         } else {
             blueFuelCount++;
+            if (isAuto) {
+                blueAutoFuelCount++;
+            } else {
+                blueTeleopFuelCount++;
+            }
         }
     }
 
@@ -156,25 +174,36 @@ public class MatchScoreTracker implements Subsystem {
 
     /**
      * Records a foul committed by an alliance, awarding penalty points to the opposing alliance.
+     * MINOR FOUL = 5 pts, MAJOR FOUL = 15 pts.
      *
      * @param committedByRed True if Red Alliance committed the infraction
-     * @param isTechFoul True for Tech Foul (5 pts), false for Minor Foul (2 pts)
+     * @param isMajorFoul True for MAJOR FOUL (15 pts), false for MINOR FOUL (5 pts)
      * @param reason Rule citation or description of the infraction
      */
-    public synchronized void recordFoul(boolean committedByRed, boolean isTechFoul, String reason) {
-        int pts = isTechFoul ? POINTS_PER_TECH_FOUL : POINTS_PER_MINOR_FOUL;
+    public synchronized void recordFoul(boolean committedByRed, boolean isMajorFoul, String reason) {
+        int pts = isMajorFoul ? POINTS_PER_MAJOR_FOUL : POINTS_PER_MINOR_FOUL;
         if (committedByRed) {
             redFoulCount++;
-            if (isTechFoul) redTechFoulCount++;
+            if (isMajorFoul) redMajorFoulCount++;
             bluePenaltyPoints += pts;
-            lastFoulDescription = "[RED " + (isTechFoul ? "TECH FOUL" : "FOUL") + "] " + reason + " (+" + pts + " pts to Blue)";
+            lastFoulDescription = "[RED " + (isMajorFoul ? "MAJOR FOUL" : "MINOR FOUL") + "] " + reason + " (+" + pts + " pts to Blue)";
         } else {
             blueFoulCount++;
-            if (isTechFoul) blueTechFoulCount++;
+            if (isMajorFoul) blueMajorFoulCount++;
             redPenaltyPoints += pts;
-            lastFoulDescription = "[BLUE " + (isTechFoul ? "TECH FOUL" : "FOUL") + "] " + reason + " (+" + pts + " pts to Red)";
+            lastFoulDescription = "[BLUE " + (isMajorFoul ? "MAJOR FOUL" : "MINOR FOUL") + "] " + reason + " (+" + pts + " pts to Red)";
         }
         Logger.recordOutput("Scoreboard/LastFoul", lastFoulDescription);
+    }
+
+    /** Convenience wrapper for a MINOR FOUL (5 pts to the opponent). */
+    public synchronized void recordMinorFoul(boolean committedByRed, String reason) {
+        recordFoul(committedByRed, false, reason);
+    }
+
+    /** Convenience wrapper for a MAJOR FOUL (15 pts to the opponent). */
+    public synchronized void recordMajorFoul(boolean committedByRed, String reason) {
+        recordFoul(committedByRed, true, reason);
     }
 
     // ── Score Totals & Calculations ──────────────────────────────────────────
@@ -212,12 +241,25 @@ public class MatchScoreTracker implements Subsystem {
     }
 
     public synchronized int getRedTechFoulCount() {
-        return redTechFoulCount;
+        return redMajorFoulCount;
     }
 
     public synchronized int getBlueTechFoulCount() {
-        return blueTechFoulCount;
+        return blueMajorFoulCount;
     }
+
+    public synchronized int getRedMajorFoulCount() {
+        return redMajorFoulCount;
+    }
+
+    public synchronized int getBlueMajorFoulCount() {
+        return blueMajorFoulCount;
+    }
+
+    public synchronized int getRedAutoFuelCount() { return redAutoFuelCount; }
+    public synchronized int getBlueAutoFuelCount() { return blueAutoFuelCount; }
+    public synchronized int getRedTeleopFuelCount() { return redTeleopFuelCount; }
+    public synchronized int getBlueTeleopFuelCount() { return blueTeleopFuelCount; }
 
     public synchronized String getLastFoulDescription() {
         return lastFoulDescription;
@@ -405,6 +447,7 @@ public class MatchScoreTracker implements Subsystem {
     @Override
     public void simulationUpdate() {
         updateClimbEvaluation();
+        ShotTracker.resolve();
         publishTelemetry();
     }
 
@@ -429,8 +472,13 @@ public class MatchScoreTracker implements Subsystem {
         // ── Red Alliance Breakdown ───────────────────────────────────────────
         SmartDashboard.putNumber("Scoreboard/Red/FuelPoints", getRedFuelScore());
         SmartDashboard.putNumber("Scoreboard/Red/FuelCount", redFuelCount);
+        SmartDashboard.putNumber("Scoreboard/Red/AutoFuelCount", redAutoFuelCount);
+        SmartDashboard.putNumber("Scoreboard/Red/TeleopFuelCount", redTeleopFuelCount);
         SmartDashboard.putNumber("Scoreboard/Red/ClimbPoints", getRedClimbScore());
         SmartDashboard.putNumber("Scoreboard/Red/ClimbedRobots", redClimbCount);
+        SmartDashboard.putNumber("Scoreboard/Red/PenaltyPoints", redPenaltyPoints);
+        SmartDashboard.putNumber("Scoreboard/Red/MinorFouls", redFoulCount - redMajorFoulCount);
+        SmartDashboard.putNumber("Scoreboard/Red/MajorFouls", redMajorFoulCount);
         SmartDashboard.putNumber("Scoreboard/Red/TotalScore", getRedTotalScore());
         SmartDashboard.putNumber("Scoreboard/Red/RankingPoints", getRedRankingPoints());
         SmartDashboard.putBoolean("Scoreboard/Red/FuelRPAchieved", isRedFuelRpAchieved());
@@ -439,8 +487,13 @@ public class MatchScoreTracker implements Subsystem {
         // ── Blue Alliance Breakdown ──────────────────────────────────────────
         SmartDashboard.putNumber("Scoreboard/Blue/FuelPoints", getBlueFuelScore());
         SmartDashboard.putNumber("Scoreboard/Blue/FuelCount", blueFuelCount);
+        SmartDashboard.putNumber("Scoreboard/Blue/AutoFuelCount", blueAutoFuelCount);
+        SmartDashboard.putNumber("Scoreboard/Blue/TeleopFuelCount", blueTeleopFuelCount);
         SmartDashboard.putNumber("Scoreboard/Blue/ClimbPoints", getBlueClimbScore());
         SmartDashboard.putNumber("Scoreboard/Blue/ClimbedRobots", blueClimbCount);
+        SmartDashboard.putNumber("Scoreboard/Blue/PenaltyPoints", bluePenaltyPoints);
+        SmartDashboard.putNumber("Scoreboard/Blue/MinorFouls", blueFoulCount - blueMajorFoulCount);
+        SmartDashboard.putNumber("Scoreboard/Blue/MajorFouls", blueMajorFoulCount);
         SmartDashboard.putNumber("Scoreboard/Blue/TotalScore", getBlueTotalScore());
         SmartDashboard.putNumber("Scoreboard/Blue/RankingPoints", getBlueRankingPoints());
         SmartDashboard.putBoolean("Scoreboard/Blue/FuelRPAchieved", isBlueFuelRpAchieved());
@@ -449,6 +502,7 @@ public class MatchScoreTracker implements Subsystem {
         // ── Player Robot Analytics ───────────────────────────────────────────
         SmartDashboard.putNumber("Scoreboard/Player/ShotsAttempted", playerShotsAttempted);
         SmartDashboard.putNumber("Scoreboard/Player/ShotsScored", playerShotsScored);
+        SmartDashboard.putNumber("Scoreboard/Player/FuelScored", playerShotsScored);
         SmartDashboard.putNumber("Scoreboard/Player/AccuracyPercent", getPlayerAccuracyPercent());
         SmartDashboard.putBoolean("Scoreboard/Player/Climbed", playerClimbed);
 
@@ -460,6 +514,13 @@ public class MatchScoreTracker implements Subsystem {
         SmartDashboard.putBoolean("Scoreboard/Opponents/Bot0_Climbed", bot0Climbed);
         SmartDashboard.putBoolean("Scoreboard/Opponents/Bot1_Climbed", bot1Climbed);
         SmartDashboard.putBoolean("Scoreboard/Opponents/Bot2_Climbed", bot2Climbed);
+
+        // ── Ally Robot Contributions ─────────────────────────────────────────
+        SmartDashboard.putNumber("Scoreboard/Allies/Ally1_FuelScored", ally1FuelScored);
+        SmartDashboard.putNumber("Scoreboard/Allies/Ally2_FuelScored", ally2FuelScored);
+        SmartDashboard.putNumber("Scoreboard/Allies/TotalFuelScored", ally1FuelScored + ally2FuelScored);
+        SmartDashboard.putBoolean("Scoreboard/Allies/Ally1_Climbed", ally1Climbed);
+        SmartDashboard.putBoolean("Scoreboard/Allies/Ally2_Climbed", ally2Climbed);
 
         // ── Referee & Penalty Breakdown ──────────────────────────────────────
         SmartDashboard.putNumber("Scoreboard/Red/PenaltyPoints", redPenaltyPoints);
@@ -477,15 +538,18 @@ public class MatchScoreTracker implements Subsystem {
      * Resets all match scores and robot tracking state.
      */
     public synchronized void reset() {
-        redFuelCount = 0;
-        blueFuelCount = 0;
+        redFuelCount = 0;        blueFuelCount = 0;
+        redAutoFuelCount = 0;
+        blueAutoFuelCount = 0;
+        redTeleopFuelCount = 0;
+        blueTeleopFuelCount = 0;
         redWastedFuelCount = 0;
         blueWastedFuelCount = 0;
 
         redFoulCount = 0;
         blueFoulCount = 0;
-        redTechFoulCount = 0;
-        blueTechFoulCount = 0;
+        redMajorFoulCount = 0;
+        blueMajorFoulCount = 0;
         redPenaltyPoints = 0;
         bluePenaltyPoints = 0;
         lastFoulDescription = "None";
@@ -508,10 +572,14 @@ public class MatchScoreTracker implements Subsystem {
 
         redClimbCount = 0;
         blueClimbCount = 0;
+
+        ShotTracker.clear();
     }
 
     public synchronized int getRedFuelCount() { return redFuelCount; }
     public synchronized int getBlueFuelCount() { return blueFuelCount; }
+    public synchronized int getRedWastedFuelCount() { return redWastedFuelCount; }
+    public synchronized int getBlueWastedFuelCount() { return blueWastedFuelCount; }
     public synchronized int getPlayerShotsAttempted() { return playerShotsAttempted; }
     public synchronized int getPlayerShotsScored() { return playerShotsScored; }
     public synchronized int getBot0FuelScored() { return bot0FuelScored; }

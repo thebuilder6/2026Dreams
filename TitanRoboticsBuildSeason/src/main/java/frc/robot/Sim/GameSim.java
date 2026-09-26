@@ -257,6 +257,9 @@ public class GameSim implements Subsystem {
                         simRunning = false;
                     }
                 }
+
+                // Keep the official hub schedule in step with match time.
+                HubSchedule.update(simTimeRemainingSec, DriverStation.isAutonomous());
             }
         } catch (Exception e) {
             logRateLimitedError("updateSimulationTime", e);
@@ -274,12 +277,11 @@ public class GameSim implements Subsystem {
             SmartDashboard.putNumber("Simulation/HeldBalls", heldBalls);
             SmartDashboard.putBoolean("Simulation/LastShotScored", lastShotScored);
 
-            // --- Rebuilt 2026 Specific Telemetry ---
+            // --- Rebuilt 2026 Specific Telemetry (official 6.4 schedule) ---
             SimulatedArena arena = getCachedArena();
             if (arena instanceof Arena2026Rebuilt) {
-                Arena2026Rebuilt arena2026 = (Arena2026Rebuilt) arena;
-                SmartDashboard.putBoolean("Simulation/HubActive/Blue", arena2026.isActive(true));
-                SmartDashboard.putBoolean("Simulation/HubActive/Red", arena2026.isActive(false));
+                SmartDashboard.putBoolean("Simulation/HubActive/Blue", HubSchedule.isHubActiveNow(false));
+                SmartDashboard.putBoolean("Simulation/HubActive/Red", HubSchedule.isHubActiveNow(true));
             }
 
             // --- AdvantageScope Consolidation ---
@@ -437,9 +439,18 @@ public class GameSim implements Subsystem {
                 // Keep efficiency mode active: reduces active ball count from 360+ to ~120 on
                 // the carpet
                 arena2026.setEfficiencyMode(true);
+                // Freeze the library's own 25 s hub clock with both hubs physically
+                // capturable. Hub allowance/scoring follows the official 6.4
+                // schedule (HubSchedule) alone, so arbitrary library flips can
+                // never desync shot legality from the rulebook.
+                arena2026.setShouldRunClock(false);
             }
             arena.clearGamePieces();
             spawnPickupBalls();
+
+            // Default shift order until the AUTO result seeds it at teleopInit.
+            HubSchedule.reset();
+            frc.robot.Subsystems.Dashboard.getInstance().setGameData(Config.DEFAULT_GAME_MESSAGE);
 
             // Reset dashboard commands
             SmartDashboard.putBoolean("Simulation/Reset", false);

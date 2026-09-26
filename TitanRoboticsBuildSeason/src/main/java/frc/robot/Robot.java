@@ -226,6 +226,19 @@ public class Robot extends LoggedRobot {
   @Override
   public void teleopInit() {
     teleop.init();
+    if (isSimulation()) {
+      // Sim acts as FMS: seed the SHIFT 1 hub order from the AUTO fuel result
+      // (most AUTO fuel -> own hub inactive first; tie -> random per 6.4.1).
+      char seed = frc.robot.Sim.HubSchedule.seedFromAutoResult();
+      frc.robot.Sim.HubSchedule.setShiftSeed(seed);
+      Dashboard.getInstance().setGameData(String.valueOf(seed));
+      try {
+        edu.wpi.first.wpilibj.simulation.DriverStationSim
+            .setGameSpecificMessage(String.valueOf(seed));
+      } catch (Exception ignored) {
+      }
+      System.out.println("[HubSchedule] SHIFT 1 seed from AUTO: '" + seed + "' inactive first");
+    }
   }
 
   /** This function is called periodically during operator control. */

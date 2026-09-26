@@ -767,20 +767,11 @@ public class AIRobotSim implements Subsystem {
     }
 
     public boolean isHubActiveForAlliance(boolean isRedAlliance) {
-        SimulatedArena arena = SimulatedArena.getInstance();
-        if (arena instanceof Arena2026Rebuilt arena2026) {
-            boolean isBlueGoal = !isRedAlliance;
-            return arena2026.isActive(isBlueGoal);
-        }
-
-        double matchTime = Timer.getMatchTime();
-        if (matchTime < 0 || matchTime > 130.0 || matchTime <= 30.0) {
-            return true;
-        }
-
-        boolean playerIsRed = AllianceFlipUtil.isRedAlliance();
-        boolean playerHubActive = Dashboard.getInstance().isHubActive();
-        return (isRedAlliance == playerIsRed) ? playerHubActive : !playerHubActive;
+        // Official 6.4 schedule (seeded by the AUTO result). The library
+        // arena clock is frozen with both hubs physically capturable
+        // (see GameSim.resetGame), so this schedule alone decides allowance.
+        HubSchedule.refreshFromMatchState();
+        return HubSchedule.isHubActiveNow(isRedAlliance);
     }
 
     public boolean isOpponentHubActive(boolean opponentIsRed) {
@@ -1026,7 +1017,7 @@ public class AIRobotSim implements Subsystem {
         return false;
     }
 
-    public void launchOpponentShot(Pose2d robotPose, Translation2d opponentHub, boolean opponentIsRed) {
+    public void launchOpponentShot(Pose2d robotPose, Translation2d opponentHub, boolean opponentIsRed) {        RefereeSim.checkShotLegality(robotPose, opponentIsRed, "Bot 0");
         Translation3d hub3d = opponentIsRed ? Constants.RED_HUB_LOCATION : Constants.BLUE_HUB_LOCATION;
         Translation3d funnelTarget = new Translation3d(hub3d.getX(), hub3d.getY(), 1.48);
 
@@ -1061,12 +1052,13 @@ public class AIRobotSim implements Subsystem {
             var fuelOnFly = new RebuiltFuelOnFly(
                     botPos, shooterOffset, robotVel, randomYaw,
                     Meters.of(0.53), MetersPerSecond.of(randomExitVelocity), Radians.of(randomPitch));
+            // Scoring is resolved by ShotTracker (see class docs): the hub
+            // captures balls before the analytic hit-time, so the hit callback
+            // alone would silently drop most scores.
+            ShotTracker.track(fuelOnFly, funnelTarget, opponentIsRed,
+                    () -> recordBot0ScoredHit(opponentIsRed), null);
             fuelOnFly.withTargetPosition(() -> funnelTarget)
-                    .withTargetTolerance(new Translation3d(0.38, 0.38, 0.20))
-                    .withHitTargetCallBack(() -> {
-                        aiScoreCount++;
-                        MatchScoreTracker.getInstance().recordBotScore(0, opponentIsRed);
-                    });
+                    .withTargetTolerance(new Translation3d(0.38, 0.38, 0.20));
             SimulatedArena.getInstance().addGamePieceProjectile(fuelOnFly);
         } catch (Exception e) {
             System.err.println("[AIRobotSim] Error launching fuel projectile: " + e.getMessage());
@@ -1420,6 +1412,15 @@ public class AIRobotSim implements Subsystem {
         if (intakeSimulation != null) {
             intakeSimulation.setGamePiecesCount(count);
         }
+    }
+
+    /**
+     * Records one scored ball for Bot 0 (invoked by {@link ShotTracker} when a
+     * tracked shot resolves as scored).
+     */
+    public void recordBot0ScoredHit(boolean opponentIsRed) {
+        aiScoreCount++;
+        MatchScoreTracker.getInstance().recordBotScore(0, opponentIsRed);
     }
 
     public SelfControlledSwerveDriveSimulation getDriveSimulation() {

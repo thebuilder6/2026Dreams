@@ -352,6 +352,8 @@ public class AIRobotInstance {
     }
 
     public void launchShot(Pose2d robotPose, boolean botAllianceIsRed) {
+        String label = isAlly ? ("Ally " + (botId - 100)) : ("Opponent Bot " + botId);
+        RefereeSim.checkShotLegality(robotPose, botAllianceIsRed, label);
         Translation3d hub3d = botAllianceIsRed ? Constants.RED_HUB_LOCATION : Constants.BLUE_HUB_LOCATION;
         Translation3d funnelTarget = new Translation3d(hub3d.getX(), hub3d.getY(), 1.48);
 
@@ -387,12 +389,17 @@ public class AIRobotInstance {
                     botPos, shooterOffset, robotVel, randomYaw,
                     Meters.of(0.53), MetersPerSecond.of(randomExitVelocity), Radians.of(randomPitch)
             );
-            fuelOnFly.withTargetPosition(() -> funnelTarget)
-                    .withTargetTolerance(new Translation3d(0.38, 0.38, 0.20))
-                    .withHitTargetCallBack(() -> {
-                        scoreCount++;
+            // Scoring is resolved by ShotTracker (see class docs): the hub
+            // captures balls before the analytic hit-time, so the hit callback
+            // alone would silently drop most scores.
+            ShotTracker.track(fuelOnFly, funnelTarget, botAllianceIsRed,
+                    () -> {
+                        noteScoredHit();
                         MatchScoreTracker.getInstance().recordBotScore(botId, botAllianceIsRed);
-                    });
+                    },
+                    null);
+            fuelOnFly.withTargetPosition(() -> funnelTarget)
+                    .withTargetTolerance(new Translation3d(0.38, 0.38, 0.20));
             SimulatedArena.getInstance().addGamePieceProjectile(fuelOnFly);
         } catch (Exception e) {
             System.err.println("[" + (isAlly ? "AllyBot-" : "AIRobotInstance-") + botId + "] Error launching fuel projectile: " + e.getMessage());
@@ -477,6 +484,14 @@ public class AIRobotInstance {
 
     public int getScoreCount() {
         return scoreCount;
+    }
+
+    /**
+     * Records one scored ball for this bot (invoked by {@link ShotTracker}
+     * when a tracked shot resolves as scored).
+     */
+    public void noteScoredHit() {
+        scoreCount++;
     }
 
     public int getFuelCount() {

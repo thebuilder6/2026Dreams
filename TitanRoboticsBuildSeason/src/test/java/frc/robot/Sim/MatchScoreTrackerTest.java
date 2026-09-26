@@ -5,6 +5,9 @@ import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import edu.wpi.first.hal.HAL;
+import edu.wpi.first.wpilibj.simulation.DriverStationSim;
+
 public class MatchScoreTrackerTest {
 
     private MatchScoreTracker tracker;
@@ -99,6 +102,65 @@ public class MatchScoreTrackerTest {
         assertEquals(3, tracker.getRedRankingPoints());
         // Loss RP (0) = 0 RP
         assertEquals(0, tracker.getBlueRankingPoints());
+    }
+
+    @Test
+    public void testAllyAttribution() {
+        // Ally 1 scores 3 for Red, Ally 2 scores 2 for Blue
+        for (int i = 0; i < 3; i++) {
+            tracker.recordBotScore(101, true);
+        }
+        for (int i = 0; i < 2; i++) {
+            tracker.recordBotScore(102, false);
+        }
+
+        assertEquals(3, tracker.getAlly1FuelScored());
+        assertEquals(2, tracker.getAlly2FuelScored());
+        assertEquals(3, tracker.getRedTotalScore());
+        assertEquals(2, tracker.getBlueTotalScore());
+    }
+
+    @Test
+    public void testMinorAndMajorFoulValues() {
+        // MINOR FOUL credits 5 pts to the opponent
+        tracker.recordMinorFoul(true, "G418 Pin");
+        assertEquals(5, tracker.getBluePenaltyScore());
+        assertEquals(5, tracker.getBlueTotalScore());
+
+        // MAJOR FOUL credits 15 pts to the opponent
+        tracker.recordMajorFoul(false, "G407 Zone Shot");
+        assertEquals(15, tracker.getRedPenaltyScore());
+        assertEquals(15, tracker.getRedTotalScore());
+        assertEquals(1, tracker.getBlueMajorFoulCount());
+    }
+
+    @Test
+    public void testAutoTeleopFuelSplit() {
+        HAL.initialize(500, 0);
+        DriverStationSim.resetData();
+        DriverStationSim.setEnabled(true);
+        DriverStationSim.notifyNewData();
+
+        DriverStationSim.setAutonomous(true);
+        DriverStationSim.notifyNewData();
+        tracker.recordFuelScore(true);
+        assertEquals(1, tracker.getRedAutoFuelCount());
+        assertEquals(0, tracker.getRedTeleopFuelCount());
+
+        DriverStationSim.setAutonomous(false);
+        DriverStationSim.notifyNewData();
+        tracker.recordFuelScore(true);
+        tracker.recordFuelScore(false);
+        assertEquals(1, tracker.getRedAutoFuelCount());
+        assertEquals(1, tracker.getRedTeleopFuelCount());
+        assertEquals(1, tracker.getBlueTeleopFuelCount());
+        assertEquals(0, tracker.getBlueAutoFuelCount());
+
+        // Totals still combine both periods
+        assertEquals(2, tracker.getRedFuelScore());
+        DriverStationSim.setAutonomous(false);
+        DriverStationSim.notifyNewData();
+        DriverStationSim.setEnabled(false);
     }
 
     @Test

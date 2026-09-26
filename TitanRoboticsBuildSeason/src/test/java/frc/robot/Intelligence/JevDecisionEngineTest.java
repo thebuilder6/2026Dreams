@@ -22,6 +22,9 @@ import frc.robot.Data.Constants;
 import frc.robot.Data.FieldMap;
 import frc.robot.Intelligence.JevDecisionEngine.DecisionResult;
 import frc.robot.Intelligence.JevDecisionEngine.TacticalAction;
+import frc.robot.Intelligence.JevDecisionEngine.DecisionResult;
+import frc.robot.Intelligence.JevDecisionEngine.TacticalAction;
+import frc.robot.Subsystems.Shooter.ShooterState;
 
 public class JevDecisionEngineTest {
 
@@ -285,7 +288,15 @@ public class JevDecisionEngineTest {
                 false
         );
         AIActionIntent endgameIntent = engine.evaluatePolicy(endgameState, Archetype.AUTONOMOUS_CYCLER);
-        assertEquals(StrategicObjective.RUSH_CLIMB, endgameIntent.objective());
+        assertNotEquals(StrategicObjective.RUSH_CLIMB, endgameIntent.objective(),
+                "Sim bots have no climber: even in endgame they must keep playing, not rush climb");
+        assertEquals(StrategicObjective.CYCLE_SCORE_HUB, endgameIntent.objective(),
+                "Endgame bot with fuel and active hub must keep cycling");
+
+        // The player-facing co-pilot (which advises a robot WITH a climber) still climbs.
+        AIActionIntent coPilotEndgame = engine.evaluatePolicy(endgameState, Archetype.CO_PILOT);
+        assertEquals(StrategicObjective.RUSH_CLIMB, coPilotEndgame.objective(),
+                "CO_PILOT advises the real robot, which has a climber");
     }
 
     @Test
@@ -312,7 +323,7 @@ public class JevDecisionEngineTest {
         sim.reset();
 
         assertNotNull(sim.getDriveSimulation());
-        assertEquals(0, sim.getFuelCount());
+        assertEquals(AIRobotSim.INITIAL_HELD_BALLS, sim.getFuelCount());
 
         edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putBoolean("Features/Opponent Robot", true);
         edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putNumber("Simulation/OpponentCount", 3);
@@ -329,8 +340,8 @@ public class JevDecisionEngineTest {
         assertEquals(Archetype.ADAPTIVE_COMPETITOR, bots.get(1).getArchetype());
 
         sim.reset();
-        assertEquals(0, sim.getFuelCount());
-        assertEquals(0, bots.get(0).getFuelCount());
+        assertEquals(AIRobotSim.INITIAL_HELD_BALLS, sim.getFuelCount());
+        assertEquals(AIRobotSim.INITIAL_HELD_BALLS, bots.get(0).getFuelCount());
     }
 
     @Test
@@ -466,5 +477,171 @@ public class JevDecisionEngineTest {
         assertTrue(Archetype.LEAD_PURSUIT_INTERCEPTOR.isDefensive());
         assertFalse(Archetype.AUTONOMOUS_CYCLER.isDefensive());
         assertFalse(Archetype.CO_PILOT.isDefensive());
+    }
+
+    @Test
+    public void testAutonomousModePreventsPrematureRushClimb() {
+        Pose2d botPose = new Pose2d(3.0, 4.0, new Rotation2d());
+        // Autonomous world: 12 seconds remaining in auto, bot has 18 fuel, active hub, isAutonomous = true
+        WorldState autoWorld = new WorldState(
+                botPose,
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                18,
+                new Pose2d(8.0, 4.0, new Rotation2d()),
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                12.0,
+                true,
+                true,
+                15.0,
+                false, // Blue alliance
+                true   // Autonomous mode active!
+        );
+        AIActionIntent autoIntent = engine.evaluatePolicy(autoWorld, Archetype.AUTONOMOUS_CYCLER);
+        assertNotEquals(StrategicObjective.RUSH_CLIMB, autoIntent.objective(),
+                "In autonomous mode, bot must NOT rush to climb even when match time is <= 15 seconds");
+        assertEquals(StrategicObjective.CYCLE_SCORE_HUB, autoIntent.objective(),
+                "In autonomous mode, bot with 18 fuel should prioritize cycling and scoring fuel");
+
+        // Teleop endgame world: 12 seconds remaining in teleop, isAutonomous = false
+        WorldState teleopEndgameWorld = new WorldState(
+                botPose,
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                18,
+                new Pose2d(8.0, 4.0, new Rotation2d()),
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                12.0,
+                true,
+                true,
+                15.0,
+                false, // Blue alliance
+                false  // Teleop mode
+        );
+        AIActionIntent endgameIntent = engine.evaluatePolicy(teleopEndgameWorld, Archetype.AUTONOMOUS_CYCLER);
+        assertNotEquals(StrategicObjective.RUSH_CLIMB, endgameIntent.objective(),
+                "Sim bots have no climber: teleop endgame must not select rush climb either");
+        assertEquals(StrategicObjective.CYCLE_SCORE_HUB, endgameIntent.objective(),
+                "In teleop endgame (<= 15s), bot with fuel and active hub keeps cycling");
+    }
+
+    @Test
+    public void testShootingRejectionOutsideAllianceZone() {
+        // Blue Hub is at (4.597, 4.035). Place robot in midfield at (6.0, 4.035).
+        // Distance is ~1.403m (well within 1.4m - 3.6m shooting distance), but outside Blue Alliance Zone (X <= 4.5974)
+        Pose2d midfieldPose = new Pose2d(6.0, 4.035, new Rotation2d(Math.PI)); // Facing Hub
+        WorldState midfieldWorld = new WorldState(
+                midfieldPose,
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                20,
+                new Pose2d(10.0, 4.0, new Rotation2d()),
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                90.0,
+                true,
+                false,
+                15.0,
+                false, // Blue alliance
+                false
+        );
+
+        AIActionIntent intent = engine.evaluatePolicy(midfieldWorld, Archetype.AUTONOMOUS_CYCLER);
+        assertNotEquals(ShooterState.SHOOTING, intent.shooterCommand(),
+                "Bot outside Alliance Zone must not command SHOOTING");
+        assertFalse(intent.triggerFeedKicker(),
+                "Bot outside Alliance Zone must not trigger feed kicker");
+    }
+
+    @Test
+    public void testAutonomousDefenseSuppressionAndCenterlineBoundary() {
+        Pose2d botPose = new Pose2d(3.0, 4.0, new Rotation2d());
+        Pose2d playerPose = new Pose2d(10.0, 4.0, new Rotation2d());
+
+        // Auto world with 10 balls preloaded, bot is TACTICAL_DEFENDER
+        WorldState autoWithPreload = new WorldState(
+                botPose,
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                10,
+                playerPose,
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                15.0,
+                true,
+                false,
+                15.0,
+                false, // Blue alliance
+                true   // Autonomous mode
+        );
+
+        AIActionIntent autoDefenderIntent = engine.evaluatePolicy(autoWithPreload, Archetype.TACTICAL_DEFENDER);
+        assertEquals(StrategicObjective.CYCLE_SCORE_HUB, autoDefenderIntent.objective(),
+                "In autonomous mode, even defender archetypes must score their preloaded fuel instead of illegal defense");
+
+        AIActionIntent autoBullyIntent = engine.evaluatePolicy(autoWithPreload, Archetype.DEFENSE_BULLY);
+        assertEquals(StrategicObjective.CYCLE_SCORE_HUB, autoBullyIntent.objective(),
+                "In autonomous mode, bully archetypes must score preload rather than cross-field intercept");
+
+        // Blue alliance fuel search in auto must not cross centerline (X=8.27m)
+        Pose2d blueAutoFuelTarget = engine.findClusterWeightedFuelTarget(botPose, false, true);
+        assertNotNull(blueAutoFuelTarget);
+        assertTrue(blueAutoFuelTarget.getX() <= FieldMap.CENTERLINE_X + 0.05,
+                "Blue alliance auto fuel target must not cross centerline into opponent territory: " + blueAutoFuelTarget.getX());
+
+        // Red alliance fuel search in auto must not cross centerline (X=8.27m)
+        Pose2d redAutoFuelTarget = engine.findClusterWeightedFuelTarget(playerPose, true, true);
+        assertNotNull(redAutoFuelTarget);
+        assertTrue(redAutoFuelTarget.getX() >= FieldMap.CENTERLINE_X - 0.05,
+                "Red alliance auto fuel target must not cross centerline into opponent territory: " + redAutoFuelTarget.getX());
+    }
+
+    @Test
+    public void testAutoFillThenVolleyBatching() {
+        Pose2d midfieldPose = new Pose2d(10.0, 4.0, new Rotation2d()); // ~5.4m from hub: out of range
+        Pose2d inRangePose = new Pose2d(3.0, 4.0, new Rotation2d()); // ~1.6m from hub: in range
+        Pose2d oppPose = new Pose2d(13.0, 4.0, new Rotation2d());
+
+        // Partial batch (3 fuel), plenty of clock: keep harvesting, don't cycle one ball at a time.
+        WorldState lightLoad = new WorldState(
+                midfieldPose,
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                3,
+                oppPose,
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                12.0, true, true, 15.0, false, true);
+        assertEquals(StrategicObjective.VACUUM_MIDFIELD,
+                engine.evaluatePolicy(lightLoad, Archetype.AUTONOMOUS_CYCLER).objective(),
+                "Auto bot with a partial batch out of range must harvest, not cycle");
+
+        // Full batch (8 fuel): commit to the scoring trip.
+        WorldState fullBatch = new WorldState(
+                midfieldPose,
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                8,
+                oppPose,
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                12.0, true, true, 15.0, false, true);
+        assertEquals(StrategicObjective.CYCLE_SCORE_HUB,
+                engine.evaluatePolicy(fullBatch, Archetype.AUTONOMOUS_CYCLER).objective(),
+                "Auto bot with a full batch must commit to scoring");
+
+        // Already in range with a partial batch: finish the volley, don't drive away.
+        WorldState inRange = new WorldState(
+                inRangePose,
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                3,
+                oppPose,
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                12.0, true, true, 15.0, false, true);
+        assertEquals(StrategicObjective.CYCLE_SCORE_HUB,
+                engine.evaluatePolicy(inRange, Archetype.AUTONOMOUS_CYCLER).objective(),
+                "Auto bot already in range must fire its partial batch");
+
+        // Clock nearly out: dump the hopper rather than carrying balls home.
+        WorldState clockLow = new WorldState(
+                midfieldPose,
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                3,
+                oppPose,
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                4.0, true, true, 15.0, false, true);
+        assertEquals(StrategicObjective.CYCLE_SCORE_HUB,
+                engine.evaluatePolicy(clockLow, Archetype.AUTONOMOUS_CYCLER).objective(),
+                "Auto bot with expiring clock must dump its partial batch");
     }
 }

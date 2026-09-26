@@ -17,10 +17,31 @@ public record WorldState(
         boolean isAllianceHubActive,
         boolean isOpponentHubActive,
         double timeUntilHubShift,
-        boolean isRedAlliance
+        boolean isRedAlliance,
+        boolean isAutonomous
 ) {
     public static final int DEFAULT_MAX_CAPACITY = 30;
     public static final int CO_PILOT_CAPACITY = 30; // Changed from 8 to 30
+
+    /**
+     * Backward-compatible 10-parameter constructor defaulting isAutonomous to false.
+     */
+    public WorldState(
+            Pose2d selfPose,
+            ChassisSpeeds selfVelocity,
+            int heldFuelCount,
+            Pose2d opponentPose,
+            ChassisSpeeds opponentVelocity,
+            double matchTimeRemaining,
+            boolean isAllianceHubActive,
+            boolean isOpponentHubActive,
+            double timeUntilHubShift,
+            boolean isRedAlliance
+    ) {
+        this(selfPose, selfVelocity, heldFuelCount, opponentPose, opponentVelocity,
+                matchTimeRemaining, isAllianceHubActive, isOpponentHubActive,
+                timeUntilHubShift, isRedAlliance, false);
+    }
 
     // Self hub active alias:
     public boolean isSelfHubActive() { return isAllianceHubActive; }

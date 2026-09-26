@@ -1,5 +1,11 @@
 package frc.robot.Intelligence.Sparring;
 
+import frc.robot.Sim.MatchKnowledge;
+import frc.robot.Sim.RefereeSim;
+import frc.robot.Sim.ShotTracker;
+
+import frc.robot.Sim.DeadlockResolver;
+
 import frc.robot.Subsystems.Intake;
 
 import frc.robot.Subsystems.Shooter;
@@ -81,6 +87,9 @@ public class AIRobotInstance {
     private boolean lastStallResult = false;
     private double lastStallEvalTimestamp = -1.0;
 
+    // Deadlock recovery (head-on trench meetings, same-target scrums)
+    private final DeadlockResolver deadlockResolver = new DeadlockResolver();
+
     public AIRobotInstance(int botId, Pose2d queuingPose, Archetype defaultArchetype) {
         this(botId, queuingPose, defaultArchetype, false);
     }
@@ -117,6 +126,9 @@ public class AIRobotInstance {
                     IntakeSimulation.IntakeSide.FRONT,
                     Constants.IntakeConstants.MAX_HELD_BALLS
             );
+            if (this.intakeSimulation != null) {
+                this.intakeSimulation.setGamePiecesCount(AIRobotSim.INITIAL_HELD_BALLS);
+            }
         } catch (Exception e) {
             System.err.println("[" + (isAlly ? "AllyBot-" : "AIRobotInstance-") + botId + "] Could not attach IntakeSimulation: " + e.getMessage());
         }
@@ -159,6 +171,19 @@ public class AIRobotInstance {
         return driveSimulation.getActualPoseInSimulationWorld();
     }
 
+    /**
+     * Current field-relative chassis velocity (for lead-pursuit mark tracking).
+     */
+    public ChassisSpeeds getFieldVelocity() {
+        try {
+            if (driveSimulation.getDriveTrainSimulation() != null) {
+                return driveSimulation.getDriveTrainSimulation()
+                        .getDriveTrainSimulatedChassisSpeedsFieldRelative();
+            }
+        } catch (Exception ignored) {}
+        return new ChassisSpeeds();
+    }
+
     public void setRobotPose(Pose2d pose) {
         driveSimulation.setSimulationWorldPose(pose);
         try {
@@ -170,13 +195,14 @@ public class AIRobotInstance {
     public void reset() {
         setRobotPose(queuingPose);
         if (intakeSimulation != null) {
-            intakeSimulation.setGamePiecesCount(0);
+            intakeSimulation.setGamePiecesCount(AIRobotSim.INITIAL_HELD_BALLS);
             intakeSimulation.stopIntake();
         }
         scoreCount = 0;
         stallDuration = 0.0;
         lastShotTimestamp = 0.0;
         pinWatchdog.reset();
+        deadlockResolver.reset();
         trajectoryController.reset();
         try {
             String botName = isAlly ? ("AllyBot" + (botId - 100)) : ("OpponentBot" + botId);
@@ -194,6 +220,19 @@ public class AIRobotInstance {
      * @param maxSpeed Maximum chassis speed in m/s
      */
     public void update(List<Pose2d> peerRobotPoses, boolean playerIsRed, double maxSpeed) {
+        update(peerRobotPoses, playerIsRed, maxSpeed, null, null);
+    }
+
+    /**
+     * Same as {@link #update(List, boolean, double)}, but defensive archetypes
+     * track the given mark as their opponent instead of defaulting to the player.
+     * A null mark falls back to the player pose/velocity.
+     *
+     * @param markPose Opponent mark pose (null = player)
+     * @param markVelocity Opponent mark field-relative velocity (null = player velocity)
+     */
+    public void update(List<Pose2d> peerRobotPoses, boolean playerIsRed, double maxSpeed,
+            Pose2d markPose, ChassisSpeeds markVelocity) {
         try {
             driveSimulation.periodic();
         } catch (Exception ignored) {}
@@ -239,12 +278,28 @@ public class AIRobotInstance {
             }
         }
 
-        // 1. Build immutable WorldState snapshot
-        WorldState worldState = WorldStateBuilder.buildForSimBot(
-                currentPose, currentVel, heldPieces, botAllianceIsRed, hubActive);
+        // 1. Build immutable WorldState snapshot. Defensive bots track their
+        // assigned mark as the opponent; everyone else defaults to the player.
+        WorldState worldState;
+        Pose2d opponentPose;
+        ChassisSpeeds opponentVel;
+        if (markPose != null && archetype.isDefensive()) {
+            opponentPose = markPose;
+            opponentVel = (markVelocity != null) ? markVelocity : new ChassisSpeeds();
+            worldState = WorldStateBuilder.buildForSimBot(
+                    currentPose, currentVel, heldPieces, botAllianceIsRed, hubActive,
+                    opponentPose, opponentVel);
+        } else {
+            opponentPose = SwerveBase.getInstance().getPose();
+            opponentVel = SwerveBase.getInstance().getFieldVelocity();
+            worldState = WorldStateBuilder.buildForSimBot(
+                    currentPose, currentVel, heldPieces, botAllianceIsRed, hubActive);
+        }
+        MatchKnowledge knowledge = WorldStateBuilder.buildMatchKnowledgeForSimBot(botAllianceIsRed);
 
         // 2. Evaluate unified Jev policy (stateless System 2 + System 1)
-        AIActionIntent intent = JevDecisionEngine.getInstance().evaluatePolicy(worldState, archetype);
+        AIActionIntent intent = JevDecisionEngine.getInstance().evaluatePolicy(
+                worldState, knowledge, archetype);
 
         // 3. Compute drive trajectory speeds
         currentTargetPose = intent.navigationTarget();
@@ -253,17 +308,21 @@ public class AIRobotInstance {
         currentTargetSpeeds = trajectoryController.calculate(
                 currentPose, currentTargetSpeeds, currentTargetPose, maxSpeed, stalled, true);
 
-        // Track pinning against the player (peer index 0) - only for opponent bots
+        // Track pinning against the assigned mark (or the player by default) -
+        // only for opponent bots. RefereeSim scores the actual foul; this drives
+        // the backoff maneuver.
         if (!isAlly) {
-            Pose2d playerPose = (peerRobotPoses != null && !peerRobotPoses.isEmpty()) ? peerRobotPoses.get(0) : null;
-            if (playerPose != null) {
-                double distToPlayer = currentPose.getTranslation().getDistance(playerPose.getTranslation());
+            Pose2d pinReference = (markPose != null && archetype.isDefensive())
+                    ? markPose
+                    : ((peerRobotPoses != null && !peerRobotPoses.isEmpty()) ? peerRobotPoses.get(0) : null);
+            if (pinReference != null) {
+                double distToPlayer = currentPose.getTranslation().getDistance(pinReference.getTranslation());
                 boolean isContacting = (distToPlayer < 1.05) && (isStalled() || (distToPlayer < 0.95 && Math.hypot(currentTargetSpeeds.vxMetersPerSecond, currentTargetSpeeds.vyMetersPerSecond) > 0.5));
-                pinWatchdog.update(isContacting, currentPose, playerPose, 0.02);
+                pinWatchdog.update(isContacting, currentPose, pinReference, 0.02);
             }
 
-            if (pinWatchdog.isForcedBackoffActive() && archetype.isDefensive()) {
-                Pose2d backoff = pinWatchdog.getBackOffTarget(currentPose, playerPose);
+            if (pinWatchdog.isForcedBackoffActive() && archetype.isDefensive() && pinReference != null) {
+                Pose2d backoff = pinWatchdog.getBackOffTarget(currentPose, pinReference);
                 currentTargetPose = backoff;
                 currentTargetSpeeds = trajectoryController.calculate(
                         currentPose, currentTargetSpeeds, currentTargetPose, maxSpeed, false, false);
@@ -284,6 +343,28 @@ public class AIRobotInstance {
                     currentTargetSpeeds.vyMetersPerSecond += nudge.getY();
                 }
             }
+        }
+
+        // Deadlock recovery: sustained stall pressed against a peer means the
+        // symmetric separation nudges above have stalemated (trench head-on or
+        // shared target). Yield forward drive and jink laterally to break it.
+        double nearestPeerDist = Double.MAX_VALUE;
+        if (peerRobotPoses != null) {
+            for (Pose2d peerPose : peerRobotPoses) {
+                if (peerPose == null) continue;
+                double d = currentPose.getTranslation().getDistance(peerPose.getTranslation());
+                if (d > 0.05 && d < nearestPeerDist) nearestPeerDist = d;
+            }
+        }
+        DeadlockResolver.Resolution deadlock = deadlockResolver.update(stalled, nearestPeerDist, 0.02);
+        if (deadlock.recovering()) {
+            Translation2d jinkField = new Translation2d(0, deadlock.lateralJink())
+                    .rotateBy(currentPose.getRotation());
+            currentTargetSpeeds.vxMetersPerSecond =
+                    currentTargetSpeeds.vxMetersPerSecond * deadlock.forwardScale() + jinkField.getX();
+            currentTargetSpeeds.vyMetersPerSecond =
+                    currentTargetSpeeds.vyMetersPerSecond * deadlock.forwardScale() + jinkField.getY();
+            currentAIStateDetail = "DEADLOCK_RECOVERY";
         }
 
         // Heading aim override (e.g. during shooting or tracking target)
@@ -367,6 +448,8 @@ public class AIRobotInstance {
     }
 
     public void launchShot(Pose2d robotPose, boolean botAllianceIsRed) {
+        String label = isAlly ? ("Ally " + (botId - 100)) : ("Opponent Bot " + botId);
+        RefereeSim.checkShotLegality(robotPose, botAllianceIsRed, label);
         Translation3d hub3d = botAllianceIsRed ? Constants.RED_HUB_LOCATION : Constants.BLUE_HUB_LOCATION;
         Translation3d funnelTarget = new Translation3d(hub3d.getX(), hub3d.getY(), 1.48);
 
@@ -402,12 +485,17 @@ public class AIRobotInstance {
                     botPos, shooterOffset, robotVel, randomYaw,
                     Meters.of(0.53), MetersPerSecond.of(randomExitVelocity), Radians.of(randomPitch)
             );
-            fuelOnFly.withTargetPosition(() -> funnelTarget)
-                    .withTargetTolerance(new Translation3d(0.38, 0.38, 0.20))
-                    .withHitTargetCallBack(() -> {
-                        scoreCount++;
+            // Scoring is resolved by ShotTracker (see class docs): the hub
+            // captures balls before the analytic hit-time, so the hit callback
+            // alone would silently drop most scores.
+            ShotTracker.track(fuelOnFly, funnelTarget, botAllianceIsRed,
+                    () -> {
+                        noteScoredHit();
                         MatchScoreTracker.getInstance().recordBotScore(botId, botAllianceIsRed);
-                    });
+                    },
+                    null);
+            fuelOnFly.withTargetPosition(() -> funnelTarget)
+                    .withTargetTolerance(new Translation3d(0.38, 0.38, 0.20));
             SimulatedArena.getInstance().addGamePieceProjectile(fuelOnFly);
         } catch (Exception e) {
             System.err.println("[" + (isAlly ? "AllyBot-" : "AIRobotInstance-") + botId + "] Error launching fuel projectile: " + e.getMessage());
@@ -492,6 +580,14 @@ public class AIRobotInstance {
 
     public int getScoreCount() {
         return scoreCount;
+    }
+
+    /**
+     * Records one scored ball for this bot (invoked by {@link ShotTracker}
+     * when a tracked shot resolves as scored).
+     */
+    public void noteScoredHit() {
+        scoreCount++;
     }
 
     public int getFuelCount() {

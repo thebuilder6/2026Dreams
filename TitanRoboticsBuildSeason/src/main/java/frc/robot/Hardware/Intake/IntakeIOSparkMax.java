@@ -1,6 +1,7 @@
 package frc.robot.Hardware.Intake;
 
-import frc.robot.Subsystems.Intake;
+import frc.robot.Data.MechanismConstants.Intake;
+
 
 import edu.wpi.first.math.MathUtil;
 import edu.wpi.first.wpilibj.DutyCycleEncoder;
@@ -21,13 +22,28 @@ public class IntakeIOSparkMax implements IntakeIO {
 
     public IntakeIOSparkMax() {
         armMotor = new NeoSparkMaxMotor(PortMap.INTAKE_ARM_MOTOR_ID);
-        armMotor.setInverted(Constants.INTAKE_ARM_INVERTED);
-        armMotor.setBrakeMode(true);
+        com.revrobotics.spark.config.SparkMaxConfig armConfig = new com.revrobotics.spark.config.SparkMaxConfig();
+        armConfig.inverted(Constants.INTAKE_ARM_INVERTED);
+        armConfig.idleMode(com.revrobotics.spark.config.SparkBaseConfig.IdleMode.kBrake);
+        armConfig.smartCurrentLimit(40);
+        NeoSparkMaxMotor.optimizeCanBusUtilization(armConfig, true, true);
+        armMotor.configure(armConfig);
 
         wheelsMotor = new NeoSparkMaxMotor(PortMap.INTAKE_WHEELS_MOTOR_ID);
-        wheelsMotor.setInverted(Constants.INTAKE_WHEELS_INVERTED);
+        com.revrobotics.spark.config.SparkMaxConfig wheelsConfig = new com.revrobotics.spark.config.SparkMaxConfig();
+        wheelsConfig.inverted(Constants.INTAKE_WHEELS_INVERTED);
+        wheelsConfig.idleMode(com.revrobotics.spark.config.SparkBaseConfig.IdleMode.kCoast);
+        wheelsConfig.smartCurrentLimit((int) Intake.STALL_CURRENT_LIMIT);
+        NeoSparkMaxMotor.optimizeCanBusUtilization(wheelsConfig, false, true);
+        wheelsMotor.configure(wheelsConfig);
 
         hopperMotor = new NeoSparkMaxMotor(PortMap.HOPPER_MOTOR_CANID);
+        com.revrobotics.spark.config.SparkMaxConfig hopperConfig = new com.revrobotics.spark.config.SparkMaxConfig();
+        hopperConfig.inverted(false);
+        hopperConfig.idleMode(com.revrobotics.spark.config.SparkBaseConfig.IdleMode.kBrake);
+        hopperConfig.smartCurrentLimit((int) Intake.STALL_CURRENT_LIMIT);
+        NeoSparkMaxMotor.optimizeCanBusUtilization(hopperConfig, false, true);
+        hopperMotor.configure(hopperConfig);
 
         pivotEncoder = new DutyCycleEncoder(PortMap.INTAKE_ENCODER_ID);
     }

@@ -161,9 +161,9 @@ The decision-making across simulation sparring, teleoperated co-pilot assist, an
                                        │ Action Commands
                                        ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                    MULTI-ROBOT & SUBSYSTEM EXECUTION                         │
-│  - AIRobotSim & AIRobotInstance: 1 to 3 concurrent sparring bots in sim     │
-│  - AutonomousTeleopAgent: One-Button Auto-Cycle Co-Pilot on real robot       │
+│                    MULTI-ROBOT & SUBSYSTEM EXECUTION                        │
+│  - AIRobotSim & AIRobotInstance: 1 to 6 concurrent sparring bots in sim     │
+│  - AutonomousTeleopAgent: One-Button Auto-Cycle Co-Pilot on real robot      │
 │  - MatchCoach: Real-time driver coaching HUD recommendations                │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -171,19 +171,34 @@ The decision-making across simulation sparring, teleoperated co-pilot assist, an
 1. **Game-Agnostic Abstraction Layer**:
    - [`StrategicObjective`](file:///c:/Users/jumpi/Documents/Github/2026Dreams/TitanRoboticsBuildSeason/src/main/java/frc/robot/Sim/StrategicObjective.java): Universal FRC macro objectives (`STOCKPILE_DEPOT`, `VACUUM_MIDFIELD`, `CYCLE_SCORE_HUB`, `STAGE_STANDOFF`, `DENY_SHOOTING_LANE`, `SHADOW_MIDLINE`, `LEAD_INTERCEPT`, `RUSH_CLIMB`, `IDLE`) with game-agnostic static aliases (`SCORE_GOAL`, `HARVEST_FEEDER`, `HARVEST_FIELD_PIECES`).
    - [`WorldState`](file:///c:/Users/jumpi/Documents/Github/2026Dreams/TitanRoboticsBuildSeason/src/main/java/frc/robot/Sim/WorldState.java): Immutable snapshot representing the world state, providing game-agnostic accessors (`heldGamePieces()`, `isPrimaryGoalActive()`) alongside 2026 convenience delegates (`heldFuelCount()`, `isAllianceHubActive()`).
+   - [`MatchKnowledge`](file:///c:/Users/jumpi/Documents/Github/2026Dreams/TitanRoboticsBuildSeason/src/main/java/frc/robot/Sim/MatchKnowledge.java): Two-tier information model. Driver-assist tier (`unknown()`): only self-perceivable state, opponents unobserved. Sim-sparring tier: robot knowledge plus player-visible match context (score differential, both sides' poses/velocities, held/scored balls).
    - [`AIActionIntent`](file:///c:/Users/jumpi/Documents/Github/2026Dreams/TitanRoboticsBuildSeason/src/main/java/frc/robot/Sim/AIActionIntent.java): Concrete subsystem output record linking directly to `IntakeState` and `ShooterState`.
 
 2. **Multi-Robot Simultaneous Execution (`AIRobotSim` & `AIRobotInstance`)**:
    - `AIRobotInstance`: Encapsulates an independent simulated swerve drive chassis, intake mechanism, PID controllers, and behavior archetype.
-   - `AIRobotSim`: Multi-robot manager that dynamically scales the sparring pool based on `Simulation/OpponentCount` (1 to 3 bots).
+   - `AIRobotSim`: Multi-robot manager that dynamically scales the sparring pool based on `Simulation/OpponentCount` (1 to 3 bots) and `Simulation/AllyCount` (0 to 2 bots), with independent opponent/ally speed scales. Every sim robot opens with 8 fuel.
+   - Opponents skate against the player, allies skate with the player; per-bot archetype choosers on the Simulation Elastic tab.
    - **Soft Peer Separation**: Applies inverse-distance repulsive forces ($r < 1.10\text{m}$) across peer robots, preventing clustering or jamming during contested pickups.
    - **Staggered Spawning**: Staggers initial positions across non-overlapping corridor coordinates ($Y = 4.035\text{m}, 5.80\text{m}, 2.25\text{m}$).
+   - **Wall-Band Fuel Targeting**: Fuel filters skip only hard footprints (hub ramps, tower poles) plus live dynamic obstacles — never the 0.45 m perimeter band — and hunt approaches use wall-normal standoffs, so balls tight to walls stay collectable.
 
 3. **Dual-Use Engine (Simulation Sparring + Real-Robot Co-Pilot)**:
-   - The identical `evaluatePolicy(worldState, archetype)` pipeline drives:
-     - The Sparring Opponents in simulation (`Archetype.AUTONOMOUS_CYCLER`, `DEFENSE_BULLY`, `ADAPTIVE_COMPETITOR`).
-     - The Driver Assist Co-Pilot on the real robot (`Archetype.CO_PILOT` via `AutonomousTeleopAgent`).
+   - The identical `evaluatePolicy` pipeline drives:
+     - The Sparring Opponents in simulation (`Archetype.AUTONOMOUS_CYCLER`, `DEFENSE_BULLY`, `ADAPTIVE_COMPETITOR`) with full player-visible `MatchKnowledge`.
+     - The Driver Assist Co-Pilot on the real robot (`Archetype.CO_PILOT` via `AutonomousTeleopAgent`) with `MatchKnowledge.unknown()` — opponents unobserved, lane left to the driver.
      - The Match Coach in the pit / driver station (`MatchCoach.java`).
+
+---
+
+### K. Simulation Match Engine (Scoring, Hub Schedule & Rules)
+
+Practice matches run a complete rulebook-aware scoring loop in `Sim/`:
+
+- **Official hub schedule (`Sim/HubSchedule.java`, rules 6.4/6.4.1)**: AUTO/TRANSITION/END GAME both-active; SHIFT 1–4 alternate a single active hub, seeded by AUTO fuel totals (most AUTO fuel sits out first; tie → random). The sim acts as FMS at `teleopInit`, mirroring the seed to game data. The MapleSim arena's own 25 s clock is frozen with both hubs physically capturable so the schedule alone decides legality — hub lights stay lit, Elastic shows the official states.
+- **3-second processing grace (rule 6.5)**: balls already scored keep counting up to 3 s after deactivation; new launches into an inactive hub stay illegal (G407).
+- **Reliable score capture (`Sim/ShotTracker.java`)**: the hub physically swallows balls before the projectile's analytic hit-time, which used to silently drop most scores. Every launch is tracked; disappearance near the funnel resolves exactly once as scored (active hub, full per-robot attribution), wasted (inactive hub), or clean miss.
+- **Scoreboard (`Sim/MatchScoreTracker.java`)**: 1 pt per fuel (active hub only, split AUTO/TELEOP), 10 pts per climb, MINOR 5 / MAJOR 15 foul points to the opponent, plus win/fuel/climb ranking points. Live red/blue totals, per-robot balls (Player, Bot 0–2, Ally 1–2), and penalty breakdowns publish under `Scoreboard/*` to the dedicated Elastic Match Scoreboard tab.
+- **Sim referee (`Sim/RefereeSim.java`)**: AUTO centerline contact (MAJOR), G407 zone shooting (MAJOR, checked at every launch site), G418 pins (MINOR, then MAJOR per uncorrected 3 s), G420 tower protection in the last 30 s (MAJOR).
 
 ---
 

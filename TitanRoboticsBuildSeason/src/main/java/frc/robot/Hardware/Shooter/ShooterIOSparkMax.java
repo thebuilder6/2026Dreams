@@ -1,6 +1,5 @@
 package frc.robot.Hardware.Shooter;
 
-import frc.robot.Subsystems.Shooter;
 
 import com.revrobotics.spark.config.SparkMaxConfig;
 import frc.robot.Data.Constants.ShooterConstants;
@@ -26,6 +25,7 @@ public class ShooterIOSparkMax implements ShooterIO {
         leftConfig.inverted(false);
         leftConfig.idleMode(com.revrobotics.spark.config.SparkBaseConfig.IdleMode.kCoast);
         leftConfig.smartCurrentLimit((int) ShooterConstants.FLYWHEEL_CURRENT_LIMIT);
+        NeoSparkMaxMotor.optimizeCanBusUtilization(leftConfig, false, true);
         flywheelMotorLeft.configure(leftConfig);
 
         // Configure Right Flywheel
@@ -33,6 +33,7 @@ public class ShooterIOSparkMax implements ShooterIO {
         rightConfig.inverted(true);
         rightConfig.idleMode(com.revrobotics.spark.config.SparkBaseConfig.IdleMode.kCoast);
         rightConfig.smartCurrentLimit((int) ShooterConstants.FLYWHEEL_CURRENT_LIMIT);
+        NeoSparkMaxMotor.optimizeCanBusUtilization(rightConfig, false, true);
         flywheelMotorRight.configure(rightConfig);
 
         // Configure Kicker
@@ -40,6 +41,7 @@ public class ShooterIOSparkMax implements ShooterIO {
         kickerConfig.inverted(false);
         kickerConfig.idleMode(com.revrobotics.spark.config.SparkBaseConfig.IdleMode.kBrake);
         kickerConfig.smartCurrentLimit((int) ShooterConstants.KICKER_CURRENT_LIMIT);
+        NeoSparkMaxMotor.optimizeCanBusUtilization(kickerConfig, false, true);
         kickerMotor.configure(kickerConfig);
     }
 

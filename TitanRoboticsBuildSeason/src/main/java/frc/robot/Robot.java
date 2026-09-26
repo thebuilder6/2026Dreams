@@ -227,6 +227,20 @@ public class Robot extends LoggedRobot {
   /** This function is called once when teleop is enabled. */
   @Override
   public void teleopInit() {
+    teleop.init();
+    if (isSimulation()) {
+      // Sim acts as FMS: seed the SHIFT 1 hub order from the AUTO fuel result
+      // (most AUTO fuel -> own hub inactive first; tie -> random per 6.4.1).
+      char seed = frc.robot.Sim.HubSchedule.seedFromAutoResult();
+      frc.robot.Sim.HubSchedule.setShiftSeed(seed);
+      Dashboard.getInstance().setGameData(String.valueOf(seed));
+      try {
+        edu.wpi.first.wpilibj.simulation.DriverStationSim
+            .setGameSpecificMessage(String.valueOf(seed));
+      } catch (Exception ignored) {
+      }
+      System.out.println("[HubSchedule] SHIFT 1 seed from AUTO: '" + seed + "' inactive first");
+    }
   }
 
   /** This function is called periodically during operator control. */
@@ -276,6 +290,19 @@ public class Robot extends LoggedRobot {
   /** This function is called once when the robot is first started up. */
   @Override
   public void simulationInit() {
+    // MapleSim's SimulatedBattery is a single STATIC battery shared by every registered
+    // drivetrain (player + up to 3 opponents + 2 allies = ~48 motor sims on one 13.5V model).
+    // That sags below brownout voltage and spams DriverStation.reportError every sub-tick
+    // ("[MapleSim] BrownOut Detected..."), and the sagged voltage also feeds our own
+    // SwerveBase brownout throttle. The library's own escape hatch locks voltage to nominal;
+    // our Robot.simulationPeriodic BatterySim model remains authoritative for RoboRIO voltage.
+    try {
+      if (isSimulation()) {
+        swervelib.simulation.ironmaple.simulation.motorsims.SimulatedBattery.disableBatterySim();
+      }
+    } catch (Throwable t) {
+      System.out.println("[SimulatedBattery] Notice: could not disable MapleSim battery sim: " + t.getMessage());
+    }
   }
 
   /** This function is called periodically whilst in simulation. */

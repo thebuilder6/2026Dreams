@@ -85,6 +85,7 @@ test {
     useJUnitPlatform()
     systemProperty 'junit.jupiter.extensions.autodetection.enabled', 'true'
     forkEvery = 1
+
 }
 
 // Simulation configuration (e.g. environment variables).

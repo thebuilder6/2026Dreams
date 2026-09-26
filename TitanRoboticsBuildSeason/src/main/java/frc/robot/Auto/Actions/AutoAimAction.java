@@ -85,7 +85,7 @@ public class AutoAimAction implements Actions {
         SmartDashboard.putNumber("AutoAim/TargetYaw", solution.turretAngle().getDegrees());
 
         if (solution.possible()) {
-            shooter.setTargetRPM(solution.flywheelRPM());
+            shooter.setTargetRPM(solution.flywheelRPM(), solution.flywheelRPM());
 
             // 3. Handle Aiming (Path Override vs Manual Drive)
             double headingErrorDegrees = Math.abs(swerve.getHeading().minus(solution.turretAngle()).getDegrees());
@@ -102,14 +102,14 @@ public class AutoAimAction implements Actions {
             }
 
             // 4. Fire Check
-            // Check if aimed (< 3.0 deg), Flywheel Ready, and Solution Valid
+            // Check if aimed (< 5.0 deg), Flywheel Ready, and Solution Valid
             boolean aimed = headingErrorDegrees < 5.0;
             boolean ready = shooter.isAtTargetVelocity();
             if (aimed && ready) {
-                shooter.setKickerSpeed(ShooterConstants.FEED_SPEED);
+                shooter.shoot();
                 SmartDashboard.putString("AutoAim/Status", "FIRING");
             } else {
-                shooter.setKickerSpeed(0);
+                shooter.prepareToShoot();
 
                 // Detailed Status for Debugging
                 StringBuilder status = new StringBuilder("Wait: ");
@@ -122,7 +122,7 @@ public class AutoAimAction implements Actions {
 
         } else {
             // Shot Impossible (e.g. too close/far)
-            shooter.setKickerSpeed(0);
+            shooter.prepareToShoot();
             shooter.setTargetRPM(Constants.ShooterConstants.IDLE_RPM);
             SmartDashboard.putString("AutoAim/Status", "Solution Impossible");
 
@@ -144,16 +144,9 @@ public class AutoAimAction implements Actions {
             path.setRotationOverride(null);
         }
 
-        // FIX: Don't stop the flywheel immediately if we are in the middle of firing.
-        // Instead, just stop the feeder to prevent wasting balls, but let the flywheel
-        // spin down naturally
-        // or stay spinning if another action picks it up.
-        shooter.setKickerSpeed(0);
-
-        // Optional: Only stop flywheel if we really want to shut down
-        // shooter.stop();
-
-        // Better yet: Set to IDLE speed so it doesn't take 0.5s to spin up again later
+        // Return shooter to PREPARING with IDLE speed so feeder is stopped,
+        // but flywheels stay warm for subsequent actions
+        shooter.prepareToShoot();
         shooter.setTargetRPM(Constants.ShooterConstants.IDLE_RPM);
 
         timer.stop();

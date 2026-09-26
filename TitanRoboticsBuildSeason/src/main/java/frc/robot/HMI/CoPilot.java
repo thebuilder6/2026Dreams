@@ -10,7 +10,6 @@ import frc.robot.Telemetry.Dashboard;
 
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
-import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.wpilibj.Timer;
 import frc.robot.Auto.Actions.*;
 import frc.robot.Data.FieldMap;
@@ -19,6 +18,13 @@ import frc.robot.Interfaces.Actions;
 import frc.robot.Intelligence.AIActionIntent;
 import frc.robot.Intelligence.Archetype;
 import frc.robot.Intelligence.JevDecisionEngine;
+import frc.robot.Intelligence.StrategicObjective;
+import frc.robot.Intelligence.State.WorldState;
+import frc.robot.Intelligence.State.WorldStateBuilder;
+import frc.robot.Intelligence.AIActionIntent;
+import frc.robot.Intelligence.Archetype;
+import frc.robot.Intelligence.JevDecisionEngine;
+import frc.robot.Sim.MatchKnowledge;
 import frc.robot.Intelligence.StrategicObjective;
 import frc.robot.Intelligence.State.WorldState;
 import frc.robot.Intelligence.State.WorldStateBuilder;
@@ -61,7 +67,6 @@ public class CoPilot {
 
     private static final int MAX_FUEL_CAPACITY = frc.robot.Data.Constants.IntakeConstants.MAX_HELD_BALLS; // 30
     private int estimatedHeldBalls = 0;
-    private Pose2d latchedStandoffPose = null;
 
     /**
      * Activates Smart Assist mode. Evaluates current WorldState and launches the appropriate action.
@@ -70,7 +75,6 @@ public class CoPilot {
         assistActive = true;
         breakoutTriggered = false;
         activeObjective = null;
-        latchedStandoffPose = null;
         updateSmartAssist(0.0, 0.0, 0.0);
     }
 
@@ -86,17 +90,17 @@ public class CoPilot {
         if (!assistActive) return false;
 
         // 1. Ingest Ground Truth Snapshot
-        int heldCount;
+        int heldCount = estimatedHeldBalls;
         if (intake.getMapleIntakeSim() != null) {
-            heldCount = Math.max(intake.getMapleIntakeSim().getGamePiecesAmount(), estimatedHeldBalls);
-        } else {
-            if (intake.hasFuel()) {
-                estimatedHeldBalls = Math.max(1, estimatedHeldBalls);
-            }
-            heldCount = Math.max(estimatedHeldBalls, intake.hasFuel() ? 1 : 0);
+            heldCount = Math.max(heldCount, intake.getMapleIntakeSim().getGamePiecesAmount());
+        }
+        if (intake.hasFuel()) {
+            estimatedHeldBalls = Math.max(1, estimatedHeldBalls);
+            heldCount = Math.max(1, heldCount);
         }
         WorldState world = WorldStateBuilder.buildForPlayerRobot(heldCount);
-        latestIntent = JevDecisionEngine.getInstance().evaluatePolicy(world, Archetype.CO_PILOT);
+        latestIntent = JevDecisionEngine.getInstance().evaluatePolicy(
+                world, MatchKnowledge.unknown(), Archetype.CO_PILOT);
         StrategicObjective objective = latestIntent.objective();
 
         Logger.recordOutput("CoPilot/ActiveObjective", objective.name());
@@ -107,11 +111,17 @@ public class CoPilot {
         // 2. React to Strategic Objective Shifts
         if (currentAction == null || activeObjective != objective) {
             transitionToObjective(objective, latestIntent.navigationTarget());
-        } else if (currentAction instanceof DriveToPoseAction dtp && objective == StrategicObjective.VACUUM_MIDFIELD) {
-            // Dynamically track updating fuel cluster target if piece field shifts
-            Pose2d newCluster = latestIntent.navigationTarget();
-            if (newCluster != null && dtp.getTargetPose().getTranslation().getDistance(newCluster.getTranslation()) > 1.2) {
-                dtp.setTargetPose(newCluster);
+        } else if (currentAction instanceof DriveToPoseAction dtp && latestIntent.navigationTarget() != null) {
+            dtp.setTargetPose(latestIntent.navigationTarget());
+        }
+
+        // Apply Aim Override to Active Action (e.g. SOTF pointing at Hub while moving)
+        if (currentAction instanceof DriveToPoseAction dtp) {
+            if (latestIntent.aimOverride() != null) {
+                final Rotation2d aim = latestIntent.aimOverride();
+                dtp.setRotationOverride(() -> aim);
+            } else {
+                dtp.setRotationOverride(null);
             }
         }
 
@@ -146,19 +156,12 @@ public class CoPilot {
                 return false;
             }
             if (currentAction.isFinished()) {
+                currentAction.done();
+                currentAction = null;
+                // If objective was finished (e.g. arrived at parking or finished scoring), evaluate next step
                 if (objective == StrategicObjective.RUSH_CLIMB) {
-                    currentAction.done();
-                    currentAction = null;
                     stopAssist();
                     return false;
-                } else if (objective == StrategicObjective.CYCLE_SCORE_HUB || 
-                           objective == StrategicObjective.STAGE_STANDOFF || 
-                           objective == StrategicObjective.STOCKPILE_DEPOT) {
-                    // Holding position at standoff, staging area, or depot while completing subsystem tasks.
-                    // Do not kill the action; keep it active so it doesn't stutter in a 50Hz restart loop.
-                } else {
-                    currentAction.done();
-                    currentAction = null;
                 }
             }
         }
@@ -180,49 +183,47 @@ public class CoPilot {
 
         switch (objective) {
             case VACUUM_MIDFIELD:
-                latchedStandoffPose = null;
-                Pose2d harvestTarget = targetPose != null ? targetPose :
-                        JevDecisionEngine.getInstance().findClusterWeightedFuelTarget(swerve.getPose(), isRed);
-                currentAction = new DriveToPoseAction(harvestTarget);
+                currentAction = new BallHuntAction();
                 currentAction.start();
-                intake.setState(Intake.IntakeState.INTAKING);
                 break;
 
             case STOCKPILE_DEPOT:
-                latchedStandoffPose = null;
                 Pose2d depotPose = targetPose != null ? targetPose :
                         new Pose2d(FieldMap.Depots.getDepotApproach(isRed),
                                 Rotation2d.fromDegrees(isRed ? 0.0 : 180.0));
-                currentAction = new DriveToPoseAction(depotPose);
+                DriveToPoseAction depotAction = new DriveToPoseAction(depotPose);
+                depotAction.setHoldPosition(true);
+                currentAction = depotAction;
                 currentAction.start();
                 break;
 
             case CYCLE_SCORE_HUB:
             case STAGE_STANDOFF:
-                latchedStandoffPose = targetPose != null ? targetPose :
+                Pose2d standoffPose = targetPose != null ? targetPose :
                         JevDecisionEngine.getInstance().calculatePolarStandoffPose(swerve.getPose(), isRed);
-                DriveToPoseAction scoreAction = new DriveToPoseAction(latchedStandoffPose);
-                Translation2d selfHub = FieldMap.Hubs.getHubLocation2d(isRed);
-                scoreAction.setRotationOverride(() -> selfHub.minus(swerve.getPose().getTranslation()).getAngle());
+                DriveToPoseAction scoreAction = new DriveToPoseAction(standoffPose);
+                scoreAction.setHoldPosition(true);
                 currentAction = scoreAction;
                 currentAction.start();
                 break;
 
             case RUSH_CLIMB:
-                latchedStandoffPose = null;
                 // Target Alliance Parking Pose (no climber present)
                 String parkKey = isRed ? "Red Right Side Climb" : "Blue Right Side Climb";
                 Pose2d parkPose = GlideConstants.GLIDE_POINTS.containsKey(parkKey) ?
                         GlideConstants.GLIDE_POINTS.get(parkKey).pose() :
                         (targetPose != null ? targetPose : new Pose2d(isRed ? 15.48 : 1.05, 2.88, Rotation2d.fromDegrees(isRed ? 0 : 180)));
-                currentAction = new DriveToPoseAction(parkPose);
+                DriveToPoseAction parkAction = new DriveToPoseAction(parkPose);
+                parkAction.setHoldPosition(false);
+                currentAction = parkAction;
                 currentAction.start();
                 break;
 
             default:
-                latchedStandoffPose = null;
                 if (targetPose != null) {
-                    currentAction = new DriveToPoseAction(targetPose);
+                    DriveToPoseAction defaultAction = new DriveToPoseAction(targetPose);
+                    defaultAction.setHoldPosition(true);
+                    currentAction = defaultAction;
                     currentAction.start();
                 }
                 break;
@@ -231,17 +232,11 @@ public class CoPilot {
 
     private void manageSubsystems(AIActionIntent intent, WorldState world) {
         // Pre-spool flywheels during transit if approaching hub or shift is close
-        if (intent.shooterCommand() == Shooter.ShooterState.SHOOTING || intent.triggerFeedKicker()) {
-            double rpm = intent.targetFlywheelRPM() > 1000 ? intent.targetFlywheelRPM() : 3200.0;
-            shooter.setTargetRPM(rpm, rpm);
-            shooter.shoot();
-        } else if (intent.shooterCommand() == Shooter.ShooterState.PREPARING || 
+        if (intent.shooterCommand() == Shooter.ShooterState.PREPARING ||
             (intent.objective() == StrategicObjective.CYCLE_SCORE_HUB && world.isAllianceHubActive())) {
             double rpm = intent.targetFlywheelRPM() > 1000 ? intent.targetFlywheelRPM() : 3200.0;
             shooter.setTargetRPM(rpm, rpm);
             shooter.prepareToShoot();
-        } else {
-            shooter.stop();
         }
 
         if (intent.intakeCommand() == Intake.IntakeState.INTAKING || intent.objective() == StrategicObjective.VACUUM_MIDFIELD) {
@@ -255,12 +250,10 @@ public class CoPilot {
     public void stopAssist() {
         assistActive = false;
         activeObjective = null;
-        latchedStandoffPose = null;
         if (currentAction != null) {
             currentAction.done();
             currentAction = null;
         }
-        shooter.stop();
     }
 
     public boolean isAssistActive() {
@@ -295,10 +288,6 @@ public class CoPilot {
 
     public void resetBallCount() {
         estimatedHeldBalls = 0;
-    }
-
-    public void setEstimatedHeldBalls(int count) {
-        estimatedHeldBalls = Math.max(0, Math.min(MAX_FUEL_CAPACITY, count));
     }
 
     public int getEstimatedHeldBalls() {

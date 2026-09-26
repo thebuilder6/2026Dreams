@@ -360,6 +360,35 @@ public static boolean isLineOfSightClear(Translation2d p1, Translation2d p2) {
         if (isPointInStaticObstacle(p)) {
             return true;
         }
+        return isPointNearDynamicObstacle(p);
+    }
+
+    /**
+     * Checks if a 2D point is inside a hard footprint (hub ramps, tower poles)
+     * <i>excluding</i> the perimeter wall safety band. Fuel near walls is
+     * reachable with a wall-normal approach, so fuel-targeting filters must
+     * use this (plus {@link #isPointNearDynamicObstacle}) instead of
+     * {@link #isPointInObstacle}, which treats the whole wall band as blocked.
+     */
+    public static boolean isPointInHardObstacle(Translation2d p) {
+        if (p == null) {
+            return true;
+        }
+        for (FieldMap.AABB obs : FieldMap.Obstacles.STATIC_OBSTACLES) {
+            if (obs != null && obs.contains(p)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Checks if a 2D point is inside any unexpired dynamic (robot) obstacle.
+     */
+    public static boolean isPointNearDynamicObstacle(Translation2d p) {
+        if (p == null) {
+            return true;
+        }
         for (DynamicObstacle dynObs : DynamicRouter.getActiveObstacles()) {
             if (dynObs != null && !dynObs.isExpired(Timer.getTimestamp())) {
                 if (p.getDistance(dynObs.position) < (dynObs.radius + 0.15)) {

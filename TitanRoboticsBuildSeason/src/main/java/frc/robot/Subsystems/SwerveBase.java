@@ -590,7 +590,8 @@ public class SwerveBase implements Subsystem {
 
     /**
      * WPILib Commands v2 Subsystem.idle():
-     * Returns a command that locks swerve modules in an X-pattern to resist movement
+     * Returns a command that locks swerve modules in an X-pattern to resist
+     * movement
      * while the drivebase is idle.
      */
     @Override
@@ -714,8 +715,12 @@ public class SwerveBase implements Subsystem {
                         ? powerDistribution.getTotalCurrent()
                         : getSimulationCurrentDraw());
 
-        // Incipient brownout risk thresholds: V < 9.5V, I > 180A (Hardware cutoff at
-        // 6.8V)
+        // Incipient brownout risk thresholds:
+        // Real FRC SLA batteries commonly dip to 8.8V-9.2V on acceleration bursts
+        // without brownout.
+        // We set the software throttling threshold at 8.5V ramping down to 7.0V
+        // (hardware cutoff at 6.8V).
+        // Current threshold set at 210A ramping down to 270A.
         double targetScale = 1.0;
         if (simBatteryVoltage < 0 && RobotController.isBrownedOut()) {
             targetScale = 0.25; // Severe hardware brownout cutoff active
@@ -733,12 +738,12 @@ public class SwerveBase implements Subsystem {
             targetScale = Math.min(vScale, iScale);
         }
 
-        // Instantaneous cut on brownout risk, smooth recovery slew back to 1.0 (+3% per
-        // 20ms)
+        // Fast-cut on brownout hazard, responsive recovery (+5% per 20ms loop = full
+        // recovery in 260ms)
         if (targetScale < brownoutSpeedScale) {
             brownoutSpeedScale = targetScale;
         } else {
-            brownoutSpeedScale = Math.min(targetScale, brownoutSpeedScale + 0.03);
+            brownoutSpeedScale = Math.min(targetScale, brownoutSpeedScale + 0.05);
         }
 
         boolean isBrownoutThrottling = brownoutSpeedScale < 0.95;
@@ -1114,14 +1119,13 @@ public class SwerveBase implements Subsystem {
 
     /**
      * Estimates total current draw in simulation where no real PDH is available.
-     * Uses a rough heuristic based on commanded speed magnitude.
+     * Uses a realistic physical model: ~0.5A quiescent electronics idle per module,
+     * scaling up to ~20A per module at full sprint (82A total swerve drive).
      */
     public double getSimulationCurrentDraw() {
         ChassisSpeeds speeds = swerveDrive.getRobotVelocity();
         double speedMag = Math.hypot(speeds.vxMetersPerSecond, speeds.vyMetersPerSecond);
-        // Rough estimate: ~15A idle per module (4 modules), scaling up to ~40A at full
-        // speed
-        double perModuleCurrent = 15.0 + 25.0 * Math.min(speedMag / 4.5, 1.0);
+        double perModuleCurrent = 0.5 + 20.0 * Math.min(speedMag / 4.5, 1.0);
         return perModuleCurrent * 4.0;
     }
 

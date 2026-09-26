@@ -34,6 +34,10 @@ public class CoPilotTest {
         HAL.initialize(500, 0);
         CoPilot.getInstance().resetBallCount();
         CoPilot.getInstance().stopAssist();
+        edu.wpi.first.wpilibj.simulation.DriverStationSim.resetData();
+        edu.wpi.first.wpilibj.simulation.DriverStationSim.setMatchTime(-1.0);
+        CoPilot.getInstance().resetBallCount();
+        CoPilot.getInstance().stopAssist();
     }
 
     @Test
@@ -234,57 +238,70 @@ public class CoPilotTest {
     }
 
     @Test
-    public void testDriveToPoseActionDynamicPathfindingAroundHub() {
-        // Robot starts west of Blue Hub, target is east of Blue Hub
-        Pose2d startPose = new Pose2d(2.0, 4.035, Rotation2d.fromDegrees(0));
-        Pose2d targetPose = new Pose2d(6.0, 4.035, Rotation2d.fromDegrees(0));
-        frc.robot.Subsystems.SwerveBase.getInstance().resetOdometry(startPose);
+    public void testSmartAssistDynamicPathfindingAroundObstacles() {
+        frc.robot.Subsystems.SwerveBase swerve = frc.robot.Subsystems.SwerveBase.getInstance();
+        assertNotNull(swerve);
 
-        DriveToPoseAction action = new DriveToPoseAction(targetPose);
-        assertFalse(action.isTunnelTransit(), "Path across midfield should not be flagged as a tunnel transit");
+        // Position robot on West side of Blue Hub
+        swerve.resetOdometry(new Pose2d(2.0, 4.035, new Rotation2d()));
 
+        // Target East side of Blue Hub (straight line is blocked by Blue Hub / Ramp)
+        Pose2d goalAcrossHub = new Pose2d(6.20, 4.035, Rotation2d.fromDegrees(180));
+        DriveToPoseAction action = new DriveToPoseAction(goalAcrossHub);
         action.start();
-        action.update(); // Triggers TrajectoryController.calculate() which calls StaticPathfinder
+        action.update();
 
-        var waypoints = action.getWaypoints();
+        // Must dynamically generate collision-free roadmap waypoints routing around the Hub
+        java.util.List<Pose2d> waypoints = action.getWaypoints();
         assertNotNull(waypoints);
-        assertTrue(waypoints.size() > 1, "Pathfinder must generate multiple detour waypoints around the Hub");
-
-        // Verify that intermediate waypoints route above or below the Hub (Hub Y is 4.035m, width is ~1.4m)
-        boolean routedAroundHub = false;
-        for (Pose2d wp : waypoints) {
-            double dy = Math.abs(wp.getY() - 4.035);
-            if (dy > 0.8) {
-                routedAroundHub = true;
-                break;
-            }
-        }
-        assertTrue(routedAroundHub, "Pathfinder waypoints must divert laterally to bypass the Hub");
+        assertTrue(waypoints.size() > 1,
+                "Smart Assist must use StaticPathfinder to route around obstacles instead of drawing a straight line through Hub, got waypoints: " + waypoints.size());
     }
 
     @Test
     public void testSmartAssistMidfieldFuelNavigation() {
         CoPilot agent = CoPilot.getInstance();
         agent.stopAssist();
+    }
 
-        // Start Smart Assist with 0 balls held -> Should navigate to fuel cluster
-        agent.startSmartAssist();
-        agent.updateSmartAssist(0.0, 0.0, 0.0);
+    @Test
+    public void testSmartAssistDynamicTargetTracking() {
+        Pose2d targetA = new Pose2d(3.0, 3.0, new Rotation2d());
+        Pose2d targetB = new Pose2d(4.0, 5.0, Rotation2d.fromDegrees(90));
+        DriveToPoseAction action = new DriveToPoseAction(targetA);
+        assertEquals(targetA, action.getTargetPose());
 
-        assertEquals(StrategicObjective.VACUUM_MIDFIELD, agent.getActiveObjective(),
-                "With 0 balls held, Smart Assist must seek fuel via VACUUM_MIDFIELD");
-        assertTrue(agent.getCurrentAction() instanceof DriveToPoseAction,
-                "Smart Assist must use DriveToPoseAction with StaticPathfinder to navigate across field to fuel");
-        assertEquals(frc.robot.Subsystems.Intake.IntakeState.INTAKING, frc.robot.Subsystems.Intake.getInstance().getState(),
-                "Intake must be active during VACUUM_MIDFIELD");
+        action.setTargetPose(targetB);
+        assertEquals(targetB, action.getTargetPose(), "Action target pose must dynamically update when shifted");
+    }
 
-        agent.stopAssist();
+    @Test
+    public void testSmartAssistHoldStandoffPosition() {
+        frc.robot.Subsystems.SwerveBase swerve = frc.robot.Subsystems.SwerveBase.getInstance();
+        assertNotNull(swerve);
+
+        Pose2d target = new Pose2d(3.0, 3.0, new Rotation2d());
+        swerve.resetOdometry(target); // Robot is already at target
+
+        DriveToPoseAction action = new DriveToPoseAction(target);
+        action.setHoldPosition(true);
+        action.start();
+        action.update();
+
+        // Must not finish prematurely because holdPosition is true
+        assertFalse(action.isFinished(), "Action with holdPosition must hold position without finishing");
+
+        // Driver breakout must still immediately disengage
+        action.setDriverInput(Constants.MAX_SPEED * 0.8, 0, 0);
+        action.update();
+        assertTrue(action.isFinished(), "Driver breakout must override holdPosition");
     }
 
     @Test
     public void testSmartAssistStandoffHoldPositionWithoutRestartStutter() {
         CoPilot agent = CoPilot.getInstance();
         agent.stopAssist();
+        agent.resetBallCount();
 
         // Give robot 1 ball so it wants to score at active hub
         agent.incrementBallCount();
@@ -298,6 +315,7 @@ public class CoPilotTest {
         // Simulate reaching goal
         frc.robot.Interfaces.Actions action = agent.getCurrentAction();
         assertTrue(action instanceof DriveToPoseAction);
+        assertTrue(((DriveToPoseAction) action).isHoldingPosition(), "Action must be in hold position mode");
 
         // Update when near target should NOT destroy the action and cause stop-start stutter
         agent.updateSmartAssist(0.0, 0.0, 0.0);

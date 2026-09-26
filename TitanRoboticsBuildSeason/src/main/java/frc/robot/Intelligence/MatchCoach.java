@@ -197,11 +197,15 @@ public class MatchCoach implements Subsystem {
         if (isShooting && !wasShooting) {
             totalShotsAttempted++;
 
+            boolean inAllianceZone = AllianceFlipUtil.isPoseInAllianceZone(swerve.getPose());
             boolean hubActive = dashboard.isHubActive();
             boolean flywheelsAtSpeed = shooter.isAtCorrectSpeed();
-            boolean headingLinedUp = shooter.isLinedUp();
+            boolean headingLinedUp = shooter.isLinedUp()
+                    || (shooter.getLatestShootingSolution() != null && shooter.isReadyToFire(shooter.getLatestShootingSolution().turretAngle()));
 
-            if (!hubActive) {
+            if (!inAllianceZone) {
+                activeCoachingTip = "[OUTSIDE ZONE] Shot attempted outside Alliance Zone! Cross Hub line before shooting.";
+            } else if (!hubActive) {
                 wastedShotsInactiveHub++;
                 activeCoachingTip = "[WASTED SHOT] Hub is inactive! Hold fire and cycle inventory.";
             } else if (!headingLinedUp) {
@@ -264,7 +268,8 @@ public class MatchCoach implements Subsystem {
         try {
             int heldFuelEstimate = intake.hasFuel() ? 6 : 0;
             WorldState world = WorldStateBuilder.buildForPlayerRobot(heldFuelEstimate);
-            AIActionIntent intent = JevDecisionEngine.getInstance().evaluatePolicy(world, Archetype.CO_PILOT);
+            AIActionIntent intent = JevDecisionEngine.getInstance().evaluatePolicy(
+                    world, frc.robot.Sim.MatchKnowledge.unknown(), Archetype.CO_PILOT);
 
             switch (intent.objective()) {
                 case RUSH_CLIMB:

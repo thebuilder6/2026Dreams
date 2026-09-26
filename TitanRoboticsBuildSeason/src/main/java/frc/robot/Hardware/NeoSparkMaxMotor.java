@@ -46,6 +46,33 @@ public class NeoSparkMaxMotor {
         }
     }
 
+    /**
+     * Configures periodic CAN status frame periods on a {@link SparkMaxConfig} to minimize CAN bus traffic.
+     * Slows down unused auxiliary sensors (analog, alternate encoder, absolute encoder) to 500ms
+     * while tuning primary encoder position and velocity broadcast periods to subsystem requirements.
+     *
+     * @param config The SparkMaxConfig to tune
+     * @param highFreqPosition True if closed-loop position control relies on SparkMax internal encoder at 20ms
+     * @param highFreqVelocity True if velocity control/monitoring requires 20ms updates
+     */
+    public static void optimizeCanBusUtilization(SparkMaxConfig config, boolean highFreqPosition, boolean highFreqVelocity) {
+        config.signals.primaryEncoderPositionPeriodMs(highFreqPosition ? 20 : 250);
+        config.signals.primaryEncoderVelocityPeriodMs(highFreqVelocity ? 20 : 250);
+        config.signals.appliedOutputPeriodMs(20);
+        config.signals.busVoltagePeriodMs(50);
+        config.signals.outputCurrentPeriodMs(50);
+        config.signals.motorTemperaturePeriodMs(500);
+
+        // Throttle unused auxiliary sensor frames to 500ms
+        config.signals.analogVoltagePeriodMs(500);
+        config.signals.analogVelocityPeriodMs(500);
+        config.signals.analogPositionPeriodMs(500);
+        config.signals.externalOrAltEncoderPosition(500);
+        config.signals.externalOrAltEncoderVelocity(500);
+        config.signals.absoluteEncoderPositionPeriodMs(500);
+        config.signals.absoluteEncoderVelocityPeriodMs(500);
+    }
+
     public void set(double power) {
         simSpeed = power;
         if (m_motor != null) {

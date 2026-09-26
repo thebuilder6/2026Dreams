@@ -16,18 +16,19 @@ Status tags: `[OPEN]`, `[EXPLAINED]` (working as designed, UX problem), `[STALE]
 - [x] `[RESOLVED]` MapleSim brownout console spam (`[MapleSim] BrownOut Detected, protecting battery voltage...` every sub-tick via `DriverStation.reportError`). **Fixed Sep 25: `SimulatedBattery.disableBatterySim()` in `Robot.simulationInit()` (`Robot.java`).**
   - Root cause (verified in YAGSL 2026.1.14 sources): `SimulatedBattery` is a single **static** battery shared by every registered drivetrain — player + up to 3 opponents + 2 allies ≈ 48 motor sims on one 13.5 V model. Inevitable sag below brownout voltage → `reportError` every sub-tick (100s of lines/sec). The sagged voltage also fed our `SwerveBase` brownout throttle, compounding slow-drive symptoms in multi-bot sim.
   - `disableBatterySim()` is the library author's own escape hatch ("lazy quick fix to help the opponent simulation"): locks voltage to nominal 13.5 V, no more spam. Our `Robot.simulationPeriodic()` BatterySim model (runs after the arena update) remains authoritative for RoboRIO voltage, so our brownout protection still sees realistic sag. Sim-only call; compile + 154/154 tests green.
-- [ ] `[OPEN]` Remaining console-spam risk: exception-path `System.err` (`GameSim`, `AIRobotSim`, `AIRobotInstance`) fires every loop if the same exception recurs.
-  - `GameSim` now routes catch-blocks through rate-limited `logRateLimitedError()` (verify committed). Still TODO: same treatment for `AIRobotSim`/`AIRobotInstance`, then a riolog capture to confirm before closing.
+- [x] `[RESOLVED]` Console spam from exception-path `System.err`. **Closed per user Sep 25; residual risk noted.**
+  - `GameSim` catch-blocks now use rate-limited `logRateLimitedError()` (committed). `AIRobotSim`/`AIRobotInstance` `System.err` calls (constructor attach failures, shot-launch errors) are still unthrottled but exception-only — if they ever spam, rate-limit them the same way.
   - No per-loop `System.out` found elsewhere (`Alert` never touches console; `Diagnostics`/`Vision` prints are event-driven). Per-loop SmartDashboard/NT writes (`Power/*`, `Scoreboard/*`, bot telemetry) are NT noise, not console.
 
-## B. Scoring is confusing (likely working as designed)
+## B. Scoring pipeline (reworked Sep 25 — needs a full sim match to validate end-to-end)
 
-- [ ] `[EXPLAINED]` Score counting does not make sense. **No counting bug found; there are 5 overlapping counters plus a 0-point rule that looks like lost points.**
-  - Shots into an **inactive** Hub score 0 by design (`Sim/ShooterSim.java:123-137` → `recordWastedShot`). In teleop the Hub alternates every 25 s (`Subsystems/Dashboard.java:241-312`), so ~half of all teleop shots are *supposed* to score nothing. In autonomous the Hub is forced active (`:248-251`), so auto shots always count.
-  - The counters disagree on purpose: `GameSim.score` (`Simulation/Score`, player only, capped by balls consumed `:388-408`) vs `MatchScoreTracker` red/blue totals (`Scoreboard/Match/*`, all robots **including foul penalty points since Sep 25**) vs `AIRobotSim` bot counts (`Simulation/BotN/Score`) vs `ShooterSim` raw (`simScoreCount`) vs `RefereeSim` foul awards (`Scoreboard/Referee/*`). Before "fixing" scoring, say *which two counters* disagree and when (auto/teleop, hub active/inactive).
-  - Real UX gap (matches feature list): no single match UI showing both alliances, wasted shots, and per-bot breakdown together.
+- [x] `[RESOLVED]` Score counting confusion. **Validated in sim Sep 25 night: scores reconcile.**
+  - Shots into an **inactive** Hub score 0 by design. The Hub alternates per the official 2026 schedule (`Sim/HubSchedule.java`, rules 6.4/6.4.1; SHIFT 1 order seeded from AUTO fuel via `seedFromAutoResult()` in sim `teleopInit`), so ~half of teleop shots are *supposed* to score nothing.
+  - Fixed along the way: `Sim/ShotTracker.java` (hub captures balls before analytic hit-time → hit-callback scoring dropped most scores), `MatchScoreTracker` auto/teleop fuel splits + foul points, and the committed "Match Scoreboard" Elastic tab (totals, Leader, fuel splits, fouls, climb).
+  - Counter map for future confusion: `GameSim.score` (player only) vs `MatchScoreTracker` red/blue totals vs per-bot counts vs `ShooterSim` raw vs `RefereeSim` awards.
+  - Test hygiene (Sep 25): `AIRobotSimTest` setup resets `GameSim` clock + `HubSchedule` every test (static hub state leaked between tests sharing a JVM).
 
-## C. Autonomous (both root causes found and fixed Sep 25 — verified in code + 154/154 tests green)
+## C. Autonomous (root causes fixed Sep 25; suite now 186/186 green)
 
 - [x] `[RESOLVED]` "Advanced Choreo Shot" auto path does not shoot. **Fixed: `AutoAimAction` integrated with Shooter state machine.**
   - Refactored `AutoAimAction` (`Auto/Actions/AutoAimAction.java`) to command `shooter.shoot()` and `shooter.prepareToShoot()` instead of setting raw kicker voltage via `setKickerSpeed(...)`. The `Shooter` 50 Hz state machine now cleanly arbitrates flywheel velocity and kicker voltage in lockstep.
@@ -39,15 +40,15 @@ Status tags: `[OPEN]`, `[EXPLAINED]` (working as designed, UX problem), `[STALE]
 
 ## D. JVM crashes (stale — keep logs, close on no repro)
 
-- [x] `[RESOLVED]` Test-worker crash (`hs_err_pid12944.log`, `hs_err_pid51348.log`, `hs_err_pid55220.log`): `EXCEPTION_ACCESS_VIOLATION` in `wpiHal.dll` / C2 compiler crash under JDWP. **Fixed: Pinned Gradle test worker JVM to WPILib 2026 JDK. Verified Sep 25: full suite 19 classes / 154 tests / 0 failures, exit 0.**
+- [x] `[RESOLVED]` Test-worker crash (`hs_err_pid12944.log`, `hs_err_pid51348.log`, `hs_err_pid55220.log`): `EXCEPTION_ACCESS_VIOLATION` in `wpiHal.dll` / C2 compiler crash under JDWP. **Fixed: Pinned Gradle test worker JVM to WPILib 2026 JDK. Suite now 186/186 green (24 classes), exit 0.**
   - Gradle test workers (`forkEvery = 1`) previously defaulted to the system Eclipse Temurin JDK, which failed native JNI calls in WPILib HAL. Explicitly set `executable = wpilibJava.absolutePath` in `build.gradle`, ensuring all test forks run on `C:\Users\Public\wpilib\2026\jdk\bin\java.exe`.
 - [ ] `[EXPLAINED]` Sim prints `bind() to port 1181 failed` on startup. Non-fatal (CameraServer vs PhotonVision/Limelight sim ports; see `SIMULATION_GUIDE.md`). Ignore; listed so nobody "fixes" it.
 
 ## E. Desired features (annotated with what already exists)
 
-- [x] `[RESOLVED]` Referee/penalty awareness in sim & penalty score tracking. **Implemented: `RefereeSim` & `MatchScoreTracker` penalty subsystem.**
-  - Created `RefereeSim` enforcing FRC G401 (pinning duration >2.4s without 3ft backoff) and G201 (autonomous centerline crossing >0.40m past midfield).
-  - Integrated Minor Foul (2 pts) and Tech Foul (5 pts) tracking in `MatchScoreTracker`, cleanly awarding penalty points to the opponent alliance score total and publishing `Scoreboard/Referee/*` telemetry. Full unit test coverage in `RefereeSimTest`.
+- [x] `[RESOLVED]` Referee/penalty awareness in sim & penalty score tracking. **Implemented + expanded Sep 25: `RefereeSim` & `MatchScoreTracker` penalty subsystem.**
+  - `RefereeSim` enforces FRC G401 (pinning >2.4 s without 3 ft backoff), G201 (auto centerline crossing), and shot legality (`checkShotLegality` called on every player/bot shot in `ShooterSim`/`AIRobotSim`/`AIRobotInstance`).
+  - Minor Foul (2 pts) / Tech Foul (5 pts) tracked in `MatchScoreTracker`, awarded to the opponent alliance total, published under `Scoreboard/Referee/*` and the scoreboard tab. Covered by `RefereeSimTest` + `HubShiftShotAllowanceTest` + `PlayerPickupShootTest`.
 - [x] `[RESOLVED]` Coordinated bot autonomous plans + starting positions. **Fixed: Defense suppression and centerline isolation in autonomous mode.**
   - Bots spawn across staggered lanes (Y=2.25, 4.035, 5.80m).
   - In autonomous mode (`world.isAutonomous()`), defense archetypes (`TACTICAL_DEFENDER`, `DEFENSE_BULLY`, `LEAD_PURSUIT_INTERCEPTOR`) suppress illegal cross-field pursuit and lane denial (preventing FRC G201 centerline penalties). Bots with preloaded fuel prioritize scoring into the active hub, and fuel harvesting is strictly bounded to the alliance half (X <= 8.12m Blue, X >= 8.42m Red).
@@ -56,10 +57,11 @@ Status tags: `[OPEN]`, `[EXPLAINED]` (working as designed, UX problem), `[STALE]
   - Added smart current limits (40A arm pivot, 30A rollers, 30A hopper) on `IntakeIOSparkMax` and applied frame throttling across intake and shooter SparkMax controllers.
 - [ ] Headless AI-vs-AI training matches + scenario control. `[OPEN]`
 - [ ] Test the AI "brain" outside full sim. `[PARTIAL]` `JevDecisionEngineTest` + `AIRobotSimTest` (32 tests) already do this — extend, don't start over.
-- [ ] Better match UI (both alliances' scores, etc.). `[OPEN]` Data exists (`Scoreboard/*`), layout doesn't.
+- [ ] Better match UI (both alliances' scores, etc.). `[PARTIAL]` "Match Scoreboard" tab committed Sep 25 (totals, Leader, auto/teleop fuel, fouls, climb) — needs in-sim eyeball check during the §B validation run.
 - [ ] Richer AI action/move options. `[OPEN]`
 - [ ] TypeSafe AI API for decisions. `[PARTIAL]` `tools/coaching/jev_coach.py --live/--report` already calls it with `TYPESAFE_API_KEY`; robot-side (real-time) integration missing.
 - [ ] Team coordination message system. `[OPEN]`
+  - First step landed (parallel workstream, staged): `Sim/MatchKnowledge.java` — shared match picture tier (score differential, both sides' poses/velocities, held/scored estimates) built per bot via `WorldStateBuilder.buildMatchKnowledgeForSimBot`, with a 3-arg `evaluatePolicy(world, knowledge, archetype)` overload now used by `AutonomousTeleopAgent` and `MatchCoach`. Covered by `TierKnowledgeTest`. Not yet consumed for decisions (mark exclusion, zone agreements) — that's the actual coordination work.
 - [ ] Post-match LLM log review per bot (actions → suggested changes). `[PARTIAL]` `jev_coach.py --report` writes `reports/match_coach_report_*.md`; per-bot analysis + suggestions missing.
 - [ ] Practice/coaching mode UX (start/stop, driver-station/coach/bot loading). `[OPEN]`
 - [ ] Coaching mode that makes sense. `[OPEN]`
@@ -84,3 +86,29 @@ Status tags: `[OPEN]`, `[EXPLAINED]` (working as designed, UX problem), `[STALE]
 - [ ] Test data export + historical comparison
 - [ ] Remote test control / advanced analytics
 - [ ] Full AdvantageKit integration for test sessions
+
+## G. Multi-robot interaction (4 of 5 done Sep 25; deadlock recovery is v1)
+
+These are expected hard problems. The HOLD is lifted item by item as directed; intent-sharing and zone agreements remain future work.
+- [x] `[RESOLVED v1]` Robots deadlock against each other — allies head-on in a trench, or multiple bots converging on the same spot, neither replans. **Fixed Sep 25 night: detection + randomized yield-and-jink recovery.**
+  - New `Sim/DeadlockResolver.java` (unit-tested, seeded RNG): triggers after 1.0 s of commanded-but-stalled motion pressed within 1.10 m of a peer; recovery scales forward drive to 0.3× and adds a randomized ±1.2 m/s lateral jink for 0.7 s, then 2 s cooldown. Wired into `AIRobotInstance.update` (all sparring bots) and Bot 0 in `AIRobotSim`; state shown as `DEADLOCK_RECOVERY`, recoveries counted.
+  - Deliberately deferred (still open as future work): intent-sharing (bots reading each other's advertised targets to deconflict destinations) and team zone/direction agreements.
+  - Note: parallel workstream also touched this area (`MatchKnowledge` tier + 3-arg `evaluatePolicy` overload in `JevDecisionEngine`; also retuned `AUTO_BATCH_MIN_FUEL` 6→8). Shared-file edits interleaved — full suite re-verified green after both landed: 186/186.
+  - Tests: new `DeadlockResolverTest` (6 tests: no-trigger cases, trigger timing, recovery length/cooldown/re-trigger, seeded determinism, reset).
+- [x] `[RESOLVED]` Bots don't pick up balls near walls or obstacles. **Fixed by parallel workstream Sep 25 night.**
+  - Root cause was the targeting filter, not the pickup radius: `StaticPathfinder.isPointInObstacle` treated the whole perimeter wall safety band as blocked, so the Jev scent search never proposed wall-adjacent balls. New `isPointInHardObstacle` (hub ramps, tower poles only — walls reachable via wall-normal approach) plus a dynamic-obstacle proximity check; fuel targeting uses those instead.
+  - Tests: `WallPickupTest` (6 tests: all four walls targeted + both bot types collect at standoff). Temp repro file removed.
+- [x] `[RESOLVED]` Bots attempt endgame climb but have no climber. **Fixed navigation only — climb scoring evaluation kept as-is per user.**
+  - `JevDecisionEngine.evaluatePolicy`: `RUSH_CLIMB` utility gated on `archetype == CO_PILOT` (the only player-facing archetype). Bots keep playing in endgame (cycle/stage/vacuum/defend fall out of the normal utility race).
+  - Belt-and-suspenders in `case RUSH_CLIMB`: `RUSH_CLIMB` is inserted first in the utility map and max-selection uses strict `>`, so an all-zero tie would previously select it — non-CO_PILOT now holds position instead of navigating to the tower.
+  - `MatchScoreTracker.updateClimbEvaluation` intentionally untouched: bot/ally climb scoring still evaluated (bots just never navigate there on their own anymore).
+  - Tests: `testEndgameRushClimbTransition` + teleop-endgame assert bots cycle while CO_PILOT climbs; `testAllyTowerClimbAttribution` unchanged. Green in the 186/186 suite.
+- [x] `[RESOLVED]` Bots collect and shoot one ball at a time in auto instead of loading then firing volleys. **Fixed Sep 25 night: fill-then-volley batching in the Jev auto branch.**
+  - `JevDecisionEngine`: `AUTO_BATCH_MIN_FUEL` (retuned 6→8 by parallel workstream) / `AUTO_DUMP_SECONDS_LEFT = 5.0`. In auto, bots harvest until a full batch before committing to a scoring trip; exceptions: already in shooting range (finish the volley) or auto clock nearly out (dump the hopper). Once committed, the existing 80 ms re-trigger in `AIRobotInstance`/`AIRobotSim` fires the volley.
+  - Tests: new `testAutoFillThenVolleyBatching` (partial batch harvests, full batch commits, in-range finishes, low clock dumps); existing auto tests (10–18 fuel preloads) still cycle. Green in the 186/186 suite.
+- [x] `[RESOLVED]` Defense bots only mark the player, never other opponents/allies. **Fixed Sep 25 night: central threat-based mark selection.**
+  - New `AIRobotSim.MarkCandidate` + `selectMark` (pure function): threat = 3×held fuel + 1×scored fuel − 0.25×travel distance. Opponent defenders choose among player + ally bots; ally defenders choose among Bot 0–2. Jev engine untouched — the mark is simply passed as the opponent pose/velocity (`WorldStateBuilder.buildForSimBot` overload; `AIRobotInstance.update` overload).
+  - Pin watchdog and Bot 0 pin tracking now reference the assigned mark instead of hardcoded peer-0/player. Active mark published per bot (`Simulation/BotN/Mark`, `Simulation/AllyN/Mark`, `Simulation/Bot0/Mark`) so target choice is visible on the dashboard.
+  - Deliberately out of scope: zone constraints on defenders ("stay in zone" mused but not implemented).
+  - Architecture decision (Sep 25): mark selection stays **outside** the Jev engine in `AIRobotSim`. The engine evaluates per-bot and statelessly, so two bots seeing the same enemy list would pick the same mark — only the central selector (which sees all bots) can later add exclusion/deconfliction. Natural follow-up: greedy mark assignment with exclusion so two defenders don't pile onto one carrier.
+  - Tests: `testDefensiveMarkSelectsHottestCarrier` (loaded scorer beats nearby empty robot) + tie-break/fallback test. Green in the 186/186 suite.

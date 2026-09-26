@@ -136,6 +136,9 @@ public class AIRobotSim implements Subsystem {
     private boolean lastStallResult = false;
     private double lastStallEvalTimestamp = -1.0;
 
+    // Deadlock recovery for Bot 0 (same helper as sparring instances)
+    private final DeadlockResolver bot0DeadlockResolver = new DeadlockResolver();
+
     // Immutable latched target during transit/staging
     private Pose2d latchedShootTarget = null;
 
@@ -224,6 +227,7 @@ public class AIRobotSim implements Subsystem {
         cyclerPhase = CyclerPhase.HUNT_FUEL;
         aiScoreCount = 0;
         aiTrajectoryController.reset();
+        bot0DeadlockResolver.reset();
         lastPoseTimestamp = -1.0;
         stallDuration = 0.0;
         lastCommandedSpeed = 0.0;
@@ -436,18 +440,15 @@ public class AIRobotSim implements Subsystem {
                         currentPose.getRotation());
                 driveSimulation.runChassisSpeeds(lastRobotRelativeSpeeds, new Translation2d(), false, true);
             } else {
-                WorldState worldState = new WorldState(
+                WorldState worldState = WorldStateBuilder.buildForSimBot(
                         currentPose,
                         currentSpeeds,
                         heldFuel,
-                        playerPose,
-                        playerSpeeds,
-                        matchTime,
-                        selfHubActive,
-                        oppHubActive,
-                        timeUntilShift,
                         opponentIsRed,
-                        DriverStation.isAutonomous());
+                        selfHubActive,
+                        playerPose,
+                        playerSpeeds);
+                MatchKnowledge knowledge = WorldStateBuilder.buildMatchKnowledgeForSimBot(opponentIsRed);
 
                 Archetype archetype;
                 switch (activeMode) {
@@ -466,7 +467,25 @@ public class AIRobotSim implements Subsystem {
                         break;
                 }
 
-                AIActionIntent intent = JevDecisionEngine.getInstance().evaluatePolicy(worldState, archetype);
+                // Defensive mark selection: track the most threatening ball-carrier /
+                // scorer instead of always defaulting to the player. Rebuild the
+                // WorldState with the mark as the opponent before policy evaluation.
+                MarkCandidate bot0Mark = null;
+                if (archetype.isDefensive()) {
+                    bot0Mark = resolveDefensiveMark(false, currentPose);
+                    SmartDashboard.putString("Simulation/Bot0/Mark", bot0Mark.label());
+                    worldState = WorldStateBuilder.buildForSimBot(
+                            currentPose,
+                            currentSpeeds,
+                            heldFuel,
+                            opponentIsRed,
+                            selfHubActive,
+                            bot0Mark.pose(),
+                            bot0Mark.velocity());
+                }
+
+                AIActionIntent intent = JevDecisionEngine.getInstance().evaluatePolicy(
+                        worldState, knowledge, archetype);
                 currentTargetPose = intent.navigationTarget();
                 currentAIStateDetail = intent.objective().name() + " ("
                         + String.format("%.0f%%", intent.confidence() * 100) + ")";
@@ -498,13 +517,14 @@ public class AIRobotSim implements Subsystem {
 
                 currentTargetSpeeds = computeDriveToPoseSpeeds(currentPose, currentTargetPose, maxSpeed);
 
-                double distToPlayer = currentPose.getTranslation().getDistance(playerPose.getTranslation());
+                Pose2d pinReference = (bot0Mark != null) ? bot0Mark.pose() : playerPose;
+                double distToPlayer = currentPose.getTranslation().getDistance(pinReference.getTranslation());
                 boolean isContacting = (distToPlayer < 1.05) && (isStalled(currentPose) || (distToPlayer < 0.95 && Math
                         .hypot(currentTargetSpeeds.vxMetersPerSecond, currentTargetSpeeds.vyMetersPerSecond) > 0.5));
-                pinWatchdog.update(isContacting, currentPose, playerPose, 0.02);
+                pinWatchdog.update(isContacting, currentPose, pinReference, 0.02);
 
                 if (pinWatchdog.isForcedBackoffActive() && archetype.isDefensive()) {
-                    Pose2d backoffPose = pinWatchdog.getBackOffTarget(currentPose, playerPose);
+                    Pose2d backoffPose = pinWatchdog.getBackOffTarget(currentPose, pinReference);
                     currentTargetPose = backoffPose;
                     currentTargetSpeeds = computeDriveToPoseSpeeds(currentPose, currentTargetPose, maxSpeed);
                     currentAIStateDetail = String.format("PIN_RULE_BACKOFF (%.1fs, >=3ft)",
@@ -530,6 +550,29 @@ public class AIRobotSim implements Subsystem {
                         currentTargetSpeeds.vxMetersPerSecond += nudge.getX();
                         currentTargetSpeeds.vyMetersPerSecond += nudge.getY();
                     }
+                }
+
+                // Deadlock recovery for Bot 0: same yield-and-jink as sparring instances.
+                double bot0NearestPeer = Double.MAX_VALUE;
+                for (Pose2d peerPose : bot0Peers) {
+                    if (peerPose == null)
+                        continue;
+                    double d = currentPose.getTranslation().getDistance(peerPose.getTranslation());
+                    if (d > 0.05 && d < bot0NearestPeer)
+                        bot0NearestPeer = d;
+                }
+                DeadlockResolver.Resolution bot0Deadlock =
+                        bot0DeadlockResolver.update(isStalled(currentPose), bot0NearestPeer, 0.02);
+                if (bot0Deadlock.recovering()) {
+                    Translation2d bot0Jink = new Translation2d(0, bot0Deadlock.lateralJink())
+                            .rotateBy(currentPose.getRotation());
+                    currentTargetSpeeds.vxMetersPerSecond =
+                            currentTargetSpeeds.vxMetersPerSecond * bot0Deadlock.forwardScale()
+                                    + bot0Jink.getX();
+                    currentTargetSpeeds.vyMetersPerSecond =
+                            currentTargetSpeeds.vyMetersPerSecond * bot0Deadlock.forwardScale()
+                                    + bot0Jink.getY();
+                    currentAIStateDetail = "DEADLOCK_RECOVERY";
                 }
 
                 lastRobotRelativeSpeeds = ChassisSpeeds.fromFieldRelativeSpeeds(currentTargetSpeeds,
@@ -564,7 +607,13 @@ public class AIRobotSim implements Subsystem {
                 }
                 List<Pose2d> botPeers = new ArrayList<>(allRobots);
                 botPeers.remove(bot.getActualPose());
-                bot.update(botPeers, playerIsRed, maxSpeed);
+                if (bot.getArchetype().isDefensive()) {
+                    MarkCandidate mark = resolveDefensiveMark(false, bot.getActualPose());
+                    SmartDashboard.putString("Simulation/Bot" + bot.getBotId() + "/Mark", mark.label());
+                    bot.update(botPeers, playerIsRed, maxSpeed, mark.pose(), mark.velocity());
+                } else {
+                    bot.update(botPeers, playerIsRed, maxSpeed);
+                }
             }
 
             for (int i = opponentCount - 1; i < additionalBots.size(); i++) {
@@ -586,7 +635,14 @@ public class AIRobotSim implements Subsystem {
                 }
                 List<Pose2d> allyPeers = new ArrayList<>(allRobots);
                 allyPeers.remove(ally.getActualPose());
-                ally.update(allyPeers, playerIsRed, allyMaxSpeed);
+                if (ally.getArchetype().isDefensive()) {
+                    MarkCandidate mark = resolveDefensiveMark(true, ally.getActualPose());
+                    SmartDashboard.putString(
+                            "Simulation/Ally" + (ally.getBotId() - 100) + "/Mark", mark.label());
+                    ally.update(allyPeers, playerIsRed, allyMaxSpeed, mark.pose(), mark.velocity());
+                } else {
+                    ally.update(allyPeers, playerIsRed, allyMaxSpeed);
+                }
             }
 
             for (int i = allyCount; i < allyBots.size(); i++) {
@@ -596,6 +652,103 @@ public class AIRobotSim implements Subsystem {
             SmartDashboard.putString("Simulation/Ally1/Archetype", getAlly1Archetype().displayName);
             SmartDashboard.putString("Simulation/Ally2/Archetype", getAlly2Archetype().displayName);
         }
+    }
+
+    // ── Defensive mark selection ─────────────────────────────────────────
+    // Defense bots used to always mark the player. Now each defensive bot marks
+    // the most threatening enemy ball-carrier/scorer every tick, so allies can
+    // pick up opponent bots and opponent defenders can switch to a hot ally.
+
+    /** One markable enemy robot for defensive assignment. */
+    public record MarkCandidate(String label, Pose2d pose, ChassisSpeeds velocity, int heldFuel, int scoredFuel) {}
+
+    /** Threat weights: held fuel (immediate danger) > proven scoring > travel distance. */
+    public static final double MARK_FUEL_WEIGHT = 3.0;
+    public static final double MARK_SCORE_WEIGHT = 1.0;
+    public static final double MARK_DISTANCE_WEIGHT = 0.25;
+
+    /**
+     * Pure threat selection over enemy candidates. Returns the fallback when the
+     * list is empty (never null when fallback is non-null).
+     */
+    public static MarkCandidate selectMark(
+            Pose2d defenderPose, List<MarkCandidate> candidates, MarkCandidate fallback) {
+        MarkCandidate best = null;
+        double bestThreat = Double.NEGATIVE_INFINITY;
+        if (candidates != null && defenderPose != null) {
+            for (MarkCandidate c : candidates) {
+                if (c == null || c.pose() == null) {
+                    continue;
+                }
+                double threat = MARK_FUEL_WEIGHT * c.heldFuel()
+                        + MARK_SCORE_WEIGHT * c.scoredFuel()
+                        - MARK_DISTANCE_WEIGHT
+                                * defenderPose.getTranslation().getDistance(c.pose().getTranslation());
+                if (threat > bestThreat) {
+                    bestThreat = threat;
+                    best = c;
+                }
+            }
+        }
+        return (best != null) ? best : fallback;
+    }
+
+    /**
+     * Resolves which enemy a defensive bot should mark this tick.
+     *
+     * @param defenderIsAlly True for ally bots (enemies = opponent bots), false for
+     *            opponent bots (enemies = player + ally bots)
+     * @param defenderPose Current pose of the defending bot
+     * @return Selected mark (player entry doubles as the fallback default)
+     */
+    public MarkCandidate resolveDefensiveMark(boolean defenderIsAlly, Pose2d defenderPose) {
+        Pose2d playerPose = SwerveBase.getInstance().getPose();
+        MarkCandidate playerEntry = new MarkCandidate("Player",
+                playerPose, SwerveBase.getInstance().getFieldVelocity(),
+                GameSim.getInstance().getHeldBalls(),
+                MatchScoreTracker.getInstance().getPlayerShotsScored());
+        List<MarkCandidate> enemies = new ArrayList<>();
+        enemies.add(playerEntry);
+        try {
+            if (!defenderIsAlly) {
+                for (AIRobotInstance ally : allyBots) {
+                    if (ally == null || ally.getActualPose() == null) {
+                        continue;
+                    }
+                    enemies.add(new MarkCandidate("Ally" + (ally.getBotId() - 100),
+                            ally.getActualPose(), ally.getFieldVelocity(),
+                            ally.getFuelCount(), ally.getScoreCount()));
+                }
+            } else {
+                if (driveSimulation != null
+                        && driveSimulation.getActualPoseInSimulationWorld() != null) {
+                    enemies.add(new MarkCandidate("Bot0",
+                            driveSimulation.getActualPoseInSimulationWorld(),
+                            bot0FieldVelocity(),
+                            intakeSimulation != null ? intakeSimulation.getGamePiecesAmount() : 0,
+                            aiScoreCount));
+                }
+                for (AIRobotInstance bot : additionalBots) {
+                    if (bot == null || bot.getActualPose() == null) {
+                        continue;
+                    }
+                    enemies.add(new MarkCandidate("Bot" + bot.getBotId(),
+                            bot.getActualPose(), bot.getFieldVelocity(),
+                            bot.getFuelCount(), bot.getScoreCount()));
+                }
+            }
+        } catch (Exception ignored) {}
+        return selectMark(defenderPose, enemies, playerEntry);
+    }
+
+    private ChassisSpeeds bot0FieldVelocity() {
+        try {
+            if (driveSimulation != null && driveSimulation.getDriveTrainSimulation() != null) {
+                return driveSimulation.getDriveTrainSimulation()
+                        .getDriveTrainSimulatedChassisSpeedsFieldRelative();
+            }
+        } catch (Exception ignored) {}
+        return new ChassisSpeeds();
     }
 
     public ChassisSpeeds computeDriveToPoseSpeeds(Pose2d currentPose, Pose2d targetPose, double maxSpeed) {
@@ -875,10 +1028,12 @@ public class AIRobotSim implements Subsystem {
                             continue;
                         Translation2d pos = piece.getPoseOnField().getTranslation();
 
-                        // Must be on the field carpet
+                        // Must be on the field carpet (wall-band balls stay eligible:
+                        // the wall standoff below reaches them)
                         if (pos.getX() < 0.05 || pos.getX() > 16.48 || pos.getY() < 0.05 || pos.getY() > 8.00)
                             continue;
-                        if (StaticPathfinder.isPointInObstacle(pos))
+                        if (StaticPathfinder.isPointInHardObstacle(pos)
+                                || StaticPathfinder.isPointNearDynamicObstacle(pos))
                             continue;
 
                         // Focus on opponent's half + center zone

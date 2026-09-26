@@ -258,7 +258,8 @@ public class MatchCoach implements Subsystem {
         try {
             int heldFuelEstimate = intake.hasFuel() ? 6 : 0;
             WorldState world = WorldStateBuilder.buildForPlayerRobot(heldFuelEstimate);
-            AIActionIntent intent = JevDecisionEngine.getInstance().evaluatePolicy(world, Archetype.CO_PILOT);
+            AIActionIntent intent = JevDecisionEngine.getInstance().evaluatePolicy(
+                    world, frc.robot.Sim.MatchKnowledge.unknown(), Archetype.CO_PILOT);
 
             switch (intent.objective()) {
                 case RUSH_CLIMB:

@@ -19,6 +19,7 @@ $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 - `--offline` avoids slow/failing network fetches against `C:\Users\Public\wpilib\2026\maven`.
 - GradleRIO `2026.2.1`, Java 17 (`build.gradle`). `settings.gradle` resolves plugins from the local WPILib maven, not Maven Central.
 - Single test: `.\gradlew test --tests "frc.robot.Sim.JevDecisionEngineTest"` (`test { forkEvery = 1 }`, so full suite is slow — prefer `--tests`).
+- Stale `java` processes lock `build/jni` DLLs and `build/test-results` binaries: if `extractReleaseNative` fails or the build complains about undeletable dirs, kill stray java processes (note: that also kills a running SimGUI) and re-run. Daemon-locked runs can also produce a phantom one-off test failure — clean re-run (`--rerun-tasks`) is the tiebreaker before chasing a regression.
 
 ## Generated code — do not hand-edit
 

@@ -14,6 +14,7 @@ import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import frc.robot.Auto.DynamicRouter;
 import frc.robot.Sim.AIRobotSim.AIMode;
 import frc.robot.Sim.AIRobotSim.CyclerPhase;
+import frc.robot.Sim.AIRobotSim.MarkCandidate;
 import frc.robot.Subsystems.Dashboard;
 import swervelib.simulation.ironmaple.simulation.SimulatedArena;
 import swervelib.simulation.ironmaple.simulation.seasonspecific.rebuilt2026.Arena2026Rebuilt;
@@ -29,6 +30,12 @@ public class AIRobotSimTest {
         aiSim = AIRobotSim.getInstance();
         aiSim.reset();
         DynamicRouter.clearObstacles();
+        // Static sim-clock/hub state leaks between tests sharing this JVM: one test
+        // parking GameSim time inside a SHIFT window (or a HubSchedule update from it)
+        // would leave a hub inactive for later hub-dependent tests such as
+        // testCanShootNowEvaluation. Reset to a known pre-match clock every test.
+        GameSim.getInstance().setSimTimeRemainingSec(150.0);
+        HubSchedule.reset();
         if (SimulatedArena.getInstance() instanceof Arena2026Rebuilt arena) {
             arena.setShouldRunClock(false);
         }
@@ -690,5 +697,41 @@ public class AIRobotSimTest {
         assertTrue(aiSim.getAdditionalBots().get(1).getActualPose().getY() > 0.0);
         assertTrue(aiSim.getAllyBots().get(0).getActualPose().getY() > 0.0);
         assertTrue(aiSim.getAllyBots().get(1).getActualPose().getY() > 0.0);
+    }
+
+    @Test
+    public void testDefensiveMarkSelectsHottestCarrier() {
+        Pose2d defender = new Pose2d(8.0, 4.0, new Rotation2d());
+        MarkCandidate cold = new MarkCandidate("Cold",
+                new Pose2d(8.5, 4.0, new Rotation2d()), new ChassisSpeeds(), 0, 1);
+        MarkCandidate hot = new MarkCandidate("Hot",
+                new Pose2d(6.0, 4.0, new Rotation2d()), new ChassisSpeeds(), 8, 2);
+        // hot threat (3*8 + 2 - 0.25*2 = 25.5) beats cold (0 + 1 - 0.25*0.5)
+        // despite the longer travel: loaded carriers outrank nearby empty robots.
+        assertEquals("Hot",
+                AIRobotSim.selectMark(defender, java.util.List.of(cold, hot), cold).label(),
+                "Defense must mark the loaded scorer, not the nearest empty robot");
+    }
+
+    @Test
+    public void testDefensiveMarkTieBreaksNearestAndFallsBack() {
+        Pose2d defender = new Pose2d(8.0, 4.0, new Rotation2d());
+        MarkCandidate far = new MarkCandidate("Far",
+                new Pose2d(4.0, 4.0, new Rotation2d()), new ChassisSpeeds(), 4, 0);
+        MarkCandidate near = new MarkCandidate("Near",
+                new Pose2d(7.0, 4.0, new Rotation2d()), new ChassisSpeeds(), 4, 0);
+        // equal fuel: nearer mark wins on travel (12 - 1.0 vs 12 - 0.25).
+        assertEquals("Near",
+                AIRobotSim.selectMark(defender, java.util.List.of(far, near), far).label(),
+                "Equal loads must break toward the nearer mark");
+
+        MarkCandidate fallback = new MarkCandidate("Fallback",
+                new Pose2d(0, 0, new Rotation2d()), new ChassisSpeeds(), 0, 0);
+        assertSame(fallback,
+                AIRobotSim.selectMark(defender, java.util.List.of(), fallback),
+                "Empty candidate list must return the fallback (player default)");
+        assertSame(fallback,
+                AIRobotSim.selectMark(defender, java.util.Arrays.asList(null, fallback), fallback),
+                "Null candidates must be skipped");
     }
 }

@@ -63,6 +63,9 @@ public class AIRobotInstance {
     private boolean lastStallResult = false;
     private double lastStallEvalTimestamp = -1.0;
 
+    // Deadlock recovery (head-on trench meetings, same-target scrums)
+    private final DeadlockResolver deadlockResolver = new DeadlockResolver();
+
     public AIRobotInstance(int botId, Pose2d queuingPose, Archetype defaultArchetype) {
         this(botId, queuingPose, defaultArchetype, false);
     }
@@ -144,6 +147,19 @@ public class AIRobotInstance {
         return driveSimulation.getActualPoseInSimulationWorld();
     }
 
+    /**
+     * Current field-relative chassis velocity (for lead-pursuit mark tracking).
+     */
+    public ChassisSpeeds getFieldVelocity() {
+        try {
+            if (driveSimulation.getDriveTrainSimulation() != null) {
+                return driveSimulation.getDriveTrainSimulation()
+                        .getDriveTrainSimulatedChassisSpeedsFieldRelative();
+            }
+        } catch (Exception ignored) {}
+        return new ChassisSpeeds();
+    }
+
     public void setRobotPose(Pose2d pose) {
         driveSimulation.setSimulationWorldPose(pose);
         try {
@@ -162,6 +178,7 @@ public class AIRobotInstance {
         stallDuration = 0.0;
         lastShotTimestamp = 0.0;
         pinWatchdog.reset();
+        deadlockResolver.reset();
         trajectoryController.reset();
         try {
             String botName = isAlly ? ("AllyBot" + (botId - 100)) : ("OpponentBot" + botId);
@@ -179,6 +196,19 @@ public class AIRobotInstance {
      * @param maxSpeed Maximum chassis speed in m/s
      */
     public void update(List<Pose2d> peerRobotPoses, boolean playerIsRed, double maxSpeed) {
+        update(peerRobotPoses, playerIsRed, maxSpeed, null, null);
+    }
+
+    /**
+     * Same as {@link #update(List, boolean, double)}, but defensive archetypes
+     * track the given mark as their opponent instead of defaulting to the player.
+     * A null mark falls back to the player pose/velocity.
+     *
+     * @param markPose Opponent mark pose (null = player)
+     * @param markVelocity Opponent mark field-relative velocity (null = player velocity)
+     */
+    public void update(List<Pose2d> peerRobotPoses, boolean playerIsRed, double maxSpeed,
+            Pose2d markPose, ChassisSpeeds markVelocity) {
         try {
             driveSimulation.periodic();
         } catch (Exception ignored) {}
@@ -224,12 +254,28 @@ public class AIRobotInstance {
             }
         }
 
-        // 1. Build immutable WorldState snapshot
-        WorldState worldState = WorldStateBuilder.buildForSimBot(
-                currentPose, currentVel, heldPieces, botAllianceIsRed, hubActive);
+        // 1. Build immutable WorldState snapshot. Defensive bots track their
+        // assigned mark as the opponent; everyone else defaults to the player.
+        WorldState worldState;
+        Pose2d opponentPose;
+        ChassisSpeeds opponentVel;
+        if (markPose != null && archetype.isDefensive()) {
+            opponentPose = markPose;
+            opponentVel = (markVelocity != null) ? markVelocity : new ChassisSpeeds();
+            worldState = WorldStateBuilder.buildForSimBot(
+                    currentPose, currentVel, heldPieces, botAllianceIsRed, hubActive,
+                    opponentPose, opponentVel);
+        } else {
+            opponentPose = SwerveBase.getInstance().getPose();
+            opponentVel = SwerveBase.getInstance().getFieldVelocity();
+            worldState = WorldStateBuilder.buildForSimBot(
+                    currentPose, currentVel, heldPieces, botAllianceIsRed, hubActive);
+        }
+        MatchKnowledge knowledge = WorldStateBuilder.buildMatchKnowledgeForSimBot(botAllianceIsRed);
 
         // 2. Evaluate unified Jev policy (stateless System 2 + System 1)
-        AIActionIntent intent = JevDecisionEngine.getInstance().evaluatePolicy(worldState, archetype);
+        AIActionIntent intent = JevDecisionEngine.getInstance().evaluatePolicy(
+                worldState, knowledge, archetype);
 
         // 3. Compute drive trajectory speeds
         currentTargetPose = intent.navigationTarget();
@@ -238,17 +284,21 @@ public class AIRobotInstance {
         currentTargetSpeeds = trajectoryController.calculate(
                 currentPose, currentTargetSpeeds, currentTargetPose, maxSpeed, stalled, true);
 
-        // Track pinning against the player (peer index 0) - only for opponent bots
+        // Track pinning against the assigned mark (or the player by default) -
+        // only for opponent bots. RefereeSim scores the actual foul; this drives
+        // the backoff maneuver.
         if (!isAlly) {
-            Pose2d playerPose = (peerRobotPoses != null && !peerRobotPoses.isEmpty()) ? peerRobotPoses.get(0) : null;
-            if (playerPose != null) {
-                double distToPlayer = currentPose.getTranslation().getDistance(playerPose.getTranslation());
+            Pose2d pinReference = (markPose != null && archetype.isDefensive())
+                    ? markPose
+                    : ((peerRobotPoses != null && !peerRobotPoses.isEmpty()) ? peerRobotPoses.get(0) : null);
+            if (pinReference != null) {
+                double distToPlayer = currentPose.getTranslation().getDistance(pinReference.getTranslation());
                 boolean isContacting = (distToPlayer < 1.05) && (isStalled() || (distToPlayer < 0.95 && Math.hypot(currentTargetSpeeds.vxMetersPerSecond, currentTargetSpeeds.vyMetersPerSecond) > 0.5));
-                pinWatchdog.update(isContacting, currentPose, playerPose, 0.02);
+                pinWatchdog.update(isContacting, currentPose, pinReference, 0.02);
             }
 
-            if (pinWatchdog.isForcedBackoffActive() && archetype.isDefensive()) {
-                Pose2d backoff = pinWatchdog.getBackOffTarget(currentPose, playerPose);
+            if (pinWatchdog.isForcedBackoffActive() && archetype.isDefensive() && pinReference != null) {
+                Pose2d backoff = pinWatchdog.getBackOffTarget(currentPose, pinReference);
                 currentTargetPose = backoff;
                 currentTargetSpeeds = trajectoryController.calculate(
                         currentPose, currentTargetSpeeds, currentTargetPose, maxSpeed, false, false);
@@ -269,6 +319,28 @@ public class AIRobotInstance {
                     currentTargetSpeeds.vyMetersPerSecond += nudge.getY();
                 }
             }
+        }
+
+        // Deadlock recovery: sustained stall pressed against a peer means the
+        // symmetric separation nudges above have stalemated (trench head-on or
+        // shared target). Yield forward drive and jink laterally to break it.
+        double nearestPeerDist = Double.MAX_VALUE;
+        if (peerRobotPoses != null) {
+            for (Pose2d peerPose : peerRobotPoses) {
+                if (peerPose == null) continue;
+                double d = currentPose.getTranslation().getDistance(peerPose.getTranslation());
+                if (d > 0.05 && d < nearestPeerDist) nearestPeerDist = d;
+            }
+        }
+        DeadlockResolver.Resolution deadlock = deadlockResolver.update(stalled, nearestPeerDist, 0.02);
+        if (deadlock.recovering()) {
+            Translation2d jinkField = new Translation2d(0, deadlock.lateralJink())
+                    .rotateBy(currentPose.getRotation());
+            currentTargetSpeeds.vxMetersPerSecond =
+                    currentTargetSpeeds.vxMetersPerSecond * deadlock.forwardScale() + jinkField.getX();
+            currentTargetSpeeds.vyMetersPerSecond =
+                    currentTargetSpeeds.vyMetersPerSecond * deadlock.forwardScale() + jinkField.getY();
+            currentAIStateDetail = "DEADLOCK_RECOVERY";
         }
 
         // Heading aim override (e.g. during shooting or tracking target)

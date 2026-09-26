@@ -10,6 +10,7 @@ import frc.robot.Interfaces.Actions;
 import frc.robot.Sim.AIActionIntent;
 import frc.robot.Sim.Archetype;
 import frc.robot.Sim.JevDecisionEngine;
+import frc.robot.Sim.MatchKnowledge;
 import frc.robot.Sim.StrategicObjective;
 import frc.robot.Sim.WorldState;
 import frc.robot.Sim.WorldStateBuilder;
@@ -83,7 +84,8 @@ public class AutonomousTeleopAgent {
             heldCount = Math.max(1, heldCount);
         }
         WorldState world = WorldStateBuilder.buildForPlayerRobot(heldCount);
-        latestIntent = JevDecisionEngine.getInstance().evaluatePolicy(world, Archetype.CO_PILOT);
+        latestIntent = JevDecisionEngine.getInstance().evaluatePolicy(
+                world, MatchKnowledge.unknown(), Archetype.CO_PILOT);
         StrategicObjective objective = latestIntent.objective();
 
         Logger.recordOutput("CoPilot/ActiveObjective", objective.name());

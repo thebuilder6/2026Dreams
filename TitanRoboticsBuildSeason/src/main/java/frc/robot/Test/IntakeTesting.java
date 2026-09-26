@@ -2,8 +2,8 @@ package frc.robot.Test;
 
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import frc.robot.Data.Constants;
-import frc.robot.Data.TunableNumber;
-import frc.robot.Devices.Controller;
+import frc.robot.Telemetry.TunableNumber;
+import frc.robot.Hardware.Controller;
 import frc.robot.Subsystems.Intake;
 
 /**

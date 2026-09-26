@@ -10,13 +10,15 @@ import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.wpilibj.simulation.DriverStationSim;
-import frc.robot.Subsystems.Dashboard;
+import frc.robot.Telemetry.Dashboard;
 import frc.robot.Subsystems.Intake;
 import frc.robot.Subsystems.Shooter;
 import frc.robot.Subsystems.SubsystemManager;
 import frc.robot.Subsystems.SwerveBase;
 import swervelib.simulation.ironmaple.simulation.SimulatedArena;
 import swervelib.simulation.ironmaple.simulation.seasonspecific.rebuilt2026.RebuiltFuelOnField;
+import frc.robot.Intelligence.Archetype;
+import frc.robot.Intelligence.JevDecisionEngine;
 
 /**
  * Fuel tight to the perimeter walls must be targetable and collectable.

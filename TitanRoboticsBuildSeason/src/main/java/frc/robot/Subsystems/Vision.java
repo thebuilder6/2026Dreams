@@ -44,7 +44,7 @@ public class Vision implements Subsystem {
     private double filteredPrimaryTagDist = 0.0;
     private double filteredSecondaryTagDist = 0.0;
 
-    public static Vision getInstance() {
+    public static synchronized Vision getInstance() {
         if (instance == null) {
             VisionIO primary = RobotBase.isSimulation()
                     ? new VisionIOSim(VisionIOSim.CameraType.LIMELIGHT)
@@ -249,7 +249,7 @@ public class Vision implements Subsystem {
         edu.wpi.first.math.geometry.Translation2d robotRel = new edu.wpi.first.math.geometry.Translation2d(relX, relY);
         edu.wpi.first.math.geometry.Translation2d fieldPos = robotPose.getTranslation().plus(robotRel.rotateBy(robotPose.getRotation()));
 
-        frc.robot.Auto.DynamicRouter.registerObstacle(fieldPos, new edu.wpi.first.math.geometry.Translation2d(), radius, 0.40);
+        frc.robot.Navigation.DynamicRouter.registerObstacle(fieldPos, new edu.wpi.first.math.geometry.Translation2d(), radius, 0.40);
         return fieldPos;
     }
 

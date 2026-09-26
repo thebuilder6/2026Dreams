@@ -11,17 +11,20 @@ import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
-import frc.robot.Auto.Actions.DriveToPoseAction;
 import frc.robot.Data.Constants;
-import frc.robot.Data.GlideConstants;
-import frc.robot.Sim.AIActionIntent;
-import frc.robot.Sim.Archetype;
-import frc.robot.Sim.JevDecisionEngine;
-import frc.robot.Sim.StrategicObjective;
-import frc.robot.Sim.WorldState;
-import frc.robot.Subsystems.Dashboard;
+import frc.robot.Navigation.ContactWatchdog;
+import frc.robot.Navigation.GlidePoints;
+import frc.robot.Navigation.StaticPathfinder;
+import frc.robot.Navigation.TrajectoryController;
+import frc.robot.Intelligence.AIActionIntent;
+import frc.robot.Intelligence.Archetype;
+import frc.robot.Intelligence.JevDecisionEngine;
+import frc.robot.Intelligence.StrategicObjective;
+import frc.robot.Intelligence.WorldState;
+import frc.robot.Telemetry.Dashboard;
 import frc.robot.Teleop;
 import frc.robot.Utils.AllianceFlipUtil;
+import frc.robot.Intelligence.AutonomousTeleopAgent;
 
 public class DriverAssistTest {
 
@@ -48,46 +51,45 @@ public class DriverAssistTest {
 
     @Test
     public void testDriveToPoseSharedAuthorityDeadband() {
-        Pose2d target = new Pose2d(5.0, 4.0, new Rotation2d());
-        DriveToPoseAction action = new DriveToPoseAction(target);
-        action.start();
+        AutonomousTeleopAgent agent = AutonomousTeleopAgent.getInstance();
+        agent.stopAssist();
+        agent.startSmartAssist();
 
-        // Very small driver stick input (< 0.10)
-        action.setDriverInput(0.1, 0.1, 0.0);
-        action.update();
+        // Very small driver stick input (< 0.10 normalized): no breakout, assist continues
+        boolean running = agent.updateSmartAssist(0.1, 0.1, 0.0);
+        assertTrue(running, "Small input should not trigger breakout");
+        assertTrue(agent.isAssistActive(), "Assist should stay active on small stick input");
 
-        assertFalse(action.isBreakoutRequested(), "Small input should not trigger breakout");
-        assertFalse(action.isFinished(), "Action should not finish immediately from small stick input");
+        agent.stopAssist();
     }
 
     @Test
     public void testDriveToPoseSharedAuthorityBreakout() {
-        Pose2d target = new Pose2d(5.0, 4.0, new Rotation2d());
-        DriveToPoseAction action = new DriveToPoseAction(target);
-        action.start();
+        AutonomousTeleopAgent agent = AutonomousTeleopAgent.getInstance();
+        agent.stopAssist();
+        agent.startSmartAssist();
 
         // Hard driver stick deflection (> 0.65 * MAX_SPEED)
         double hardThrottle = Constants.MAX_SPEED * 0.85;
-        action.setDriverInput(hardThrottle, 0.0, 0.0);
-        action.update();
+        boolean running = agent.updateSmartAssist(hardThrottle, 0.0, 0.0);
 
-        assertTrue(action.isBreakoutRequested(), "Hard driver input must trigger breakout");
-        assertTrue(action.isFinished(), "DriveToPoseAction must finish immediately upon breakout");
+        assertFalse(running, "Hard driver input must end assist");
+        assertFalse(agent.isAssistActive(), "Assist must deactivate upon breakout");
+        assertTrue(agent.checkAndClearBreakout(), "Hard driver input must trigger breakout");
     }
 
     @Test
     public void testDriveToPoseSharedAuthorityRotationBreakout() {
-        Pose2d target = new Pose2d(5.0, 4.0, new Rotation2d());
-        DriveToPoseAction action = new DriveToPoseAction(target);
-        action.start();
+        AutonomousTeleopAgent agent = AutonomousTeleopAgent.getInstance();
+        agent.stopAssist();
+        agent.startSmartAssist();
 
         // Hard rotation deflection (> 0.60 * MAX_ROTATION_SPEED)
         double hardRotation = Constants.MAX_ROTATION_SPEED * 0.75;
-        action.setDriverInput(0.0, 0.0, hardRotation);
-        action.update();
+        boolean running = agent.updateSmartAssist(0.0, 0.0, hardRotation);
 
-        assertTrue(action.isBreakoutRequested(), "Hard rotation input must trigger breakout");
-        assertTrue(action.isFinished(), "DriveToPoseAction must finish immediately upon rotation breakout");
+        assertFalse(running, "Hard rotation input must end assist");
+        assertTrue(agent.checkAndClearBreakout(), "Hard rotation input must trigger breakout");
     }
 
     @Test
@@ -231,6 +233,12 @@ public class DriverAssistTest {
                 "In final 15s, RUSH_CLIMB must override CYCLE_SCORE_HUB even when holding full 14 fuel pieces");
     }
 
+    private static TrajectoryController newTestController() {
+        edu.wpi.first.math.controller.PIDController heading =
+                new edu.wpi.first.math.controller.PIDController(1.0, 0.0, 0.0);
+        return new TrajectoryController(heading);
+    }
+
     @Test
     public void testSmartAssistDynamicPathfindingAroundObstacles() {
         frc.robot.Subsystems.SwerveBase swerve = frc.robot.Subsystems.SwerveBase.getInstance();
@@ -240,13 +248,13 @@ public class DriverAssistTest {
         swerve.resetOdometry(new Pose2d(2.0, 4.035, new Rotation2d()));
 
         // Target East side of Blue Hub (straight line is blocked by Blue Hub / Ramp)
+        Pose2d start = new Pose2d(2.0, 4.035, new Rotation2d());
         Pose2d goalAcrossHub = new Pose2d(6.20, 4.035, Rotation2d.fromDegrees(180));
-        DriveToPoseAction action = new DriveToPoseAction(goalAcrossHub);
-        action.start();
-        action.update();
+        TrajectoryController controller = newTestController();
+        controller.calculate(start, new ChassisSpeeds(), goalAcrossHub, 3.0, false, true);
 
         // Must dynamically generate collision-free roadmap waypoints routing around the Hub
-        java.util.List<Pose2d> waypoints = action.getWaypoints();
+        java.util.List<Pose2d> waypoints = controller.getWaypoints();
         assertNotNull(waypoints);
         assertTrue(waypoints.size() > 1,
                 "Smart Assist must use StaticPathfinder to route around obstacles instead of drawing a straight line through Hub, got waypoints: " + waypoints.size());
@@ -254,13 +262,22 @@ public class DriverAssistTest {
 
     @Test
     public void testSmartAssistDynamicTargetTracking() {
+        Pose2d start = new Pose2d(2.0, 4.035, new Rotation2d());
         Pose2d targetA = new Pose2d(3.0, 3.0, new Rotation2d());
-        Pose2d targetB = new Pose2d(4.0, 5.0, Rotation2d.fromDegrees(90));
-        DriveToPoseAction action = new DriveToPoseAction(targetA);
-        assertEquals(targetA, action.getTargetPose());
+        Pose2d targetB = new Pose2d(6.5, 2.5, Rotation2d.fromDegrees(90));
+        TrajectoryController controller = newTestController();
+        controller.calculate(start, new ChassisSpeeds(), targetA, 3.0, false, true);
+        assertFalse(controller.getWaypoints().isEmpty());
 
-        action.setTargetPose(targetB);
-        assertEquals(targetB, action.getTargetPose(), "Action target pose must dynamically update when shifted");
+        // Retarget mid-transit: planner must track the new goal
+        controller.calculate(start, new ChassisSpeeds(), targetB, 3.0, false, true);
+        java.util.List<Pose2d> waypoints = controller.getWaypoints();
+        assertFalse(waypoints.isEmpty());
+        Pose2d last = waypoints.get(waypoints.size() - 1);
+        assertEquals(targetB.getTranslation().getX(), last.getTranslation().getX(), 1e-6,
+                "Planner must track the shifted target");
+        assertEquals(targetB.getTranslation().getY(), last.getTranslation().getY(), 1e-6,
+                "Planner must track the shifted target");
     }
 
     @Test
@@ -271,23 +288,30 @@ public class DriverAssistTest {
         Pose2d target = new Pose2d(3.0, 3.0, new Rotation2d());
         swerve.resetOdometry(target); // Robot is already at target
 
-        DriveToPoseAction action = new DriveToPoseAction(target);
-        action.setHoldPosition(true);
-        action.start();
-        action.update();
+        TrajectoryController controller = newTestController();
+        assertTrue(controller.isFinished(target, target, 0.12, 4.0),
+                "Controller at target must report finished within tolerance");
 
-        // Must not finish prematurely because holdPosition is true
-        assertFalse(action.isFinished(), "Action with holdPosition must hold position without finishing");
+        // Far from goal must not report finished
+        Pose2d far = new Pose2d(6.0, 6.0, new Rotation2d());
+        assertFalse(controller.isFinished(far, target, 0.12, 4.0),
+                "Controller far from goal must not report finished");
 
-        // Driver breakout must still immediately disengage
-        action.setDriverInput(Constants.MAX_SPEED * 0.8, 0, 0);
-        action.update();
-        assertTrue(action.isFinished(), "Driver breakout must override holdPosition");
+        // Forced pin backoff must override the hold via ContactWatchdog arbitration
+        ContactWatchdog watchdog = new ContactWatchdog(new java.util.Random(1));
+        for (int i = 0; i < 125; i++) {
+            watchdog.update(target, new ChassisSpeeds(), new ChassisSpeeds(2.0, 0.0, 0.0),
+                    0.0, 0.0, 30.0, 0.5, new Pose2d(3.5, 3.0, new Rotation2d()), 0.02);
+        }
+        assertTrue(watchdog.isForcedBackoffActive(), "Sustained pin must force backoff");
+        ChassisSpeeds escape = watchdog.arbitrate(new ChassisSpeeds(), target,
+                new Pose2d(3.5, 3.0, new Rotation2d()));
+        assertTrue(Math.hypot(escape.vxMetersPerSecond, escape.vyMetersPerSecond) > 0.5,
+                "Backoff arbitration must override the hold position");
     }
 
     @Test
-    public void testSmartAssistStandoffHoldPositionWithoutRestartStutter() {
-        AutonomousTeleopAgent agent = AutonomousTeleopAgent.getInstance();
+    public void testSmartAssistStandoffHoldPositionWithoutRestartStutter() {        AutonomousTeleopAgent agent = AutonomousTeleopAgent.getInstance();
         agent.stopAssist();
         agent.resetBallCount();
 
@@ -298,18 +322,30 @@ public class DriverAssistTest {
 
         assertEquals(StrategicObjective.CYCLE_SCORE_HUB, agent.getActiveObjective(),
                 "With fuel held and active hub, Smart Assist must enter CYCLE_SCORE_HUB");
-        assertNotNull(agent.getCurrentAction(), "Current action must be instantiated");
+        assertNotNull(agent.getLatestIntent(), "Latest intent must be evaluated");
+        assertNotNull(agent.getLatestIntent().navigationTarget(), "Intent must carry a navigation target");
 
-        // Simulate reaching goal
-        frc.robot.Interfaces.Actions action = agent.getCurrentAction();
-        assertTrue(action instanceof DriveToPoseAction);
-        assertTrue(((DriveToPoseAction) action).isHoldingPosition(), "Action must be in hold position mode");
-
-        // Update when near target should NOT destroy the action and cause stop-start stutter
+        // Update when near target should NOT end assist or cause stop-start stutter
         agent.updateSmartAssist(0.0, 0.0, 0.0);
-        assertNotNull(agent.getCurrentAction(), "Current action must NOT be destroyed when holding standoff");
+        assertEquals(StrategicObjective.CYCLE_SCORE_HUB, agent.getActiveObjective(),
+                "Objective must remain stable across updates while holding standoff");
         assertTrue(agent.isAssistActive(), "Smart Assist must remain active while driver holds button");
 
         agent.stopAssist();
+    }
+
+    @Test
+    public void testGetCoPilotIntentIsPureCoordinator() {
+        AutonomousTeleopAgent agent = AutonomousTeleopAgent.getInstance();
+        agent.stopAssist();
+        agent.resetBallCount();
+        agent.incrementBallCount();
+
+        AIActionIntent intent = agent.getCoPilotIntent(agent.resolveHeldBalls());
+        assertNotNull(intent, "getCoPilotIntent must return an evaluated intent");
+        assertNotNull(intent.navigationTarget(), "Intent must carry a navigation target");
+        assertEquals(intent.objective(), agent.getActiveObjective(),
+                "Active objective must track the latest intent");
+        assertEquals(intent, agent.getLatestIntent(), "Latest intent must be cached");
     }
 }

@@ -1,3 +1,11 @@
+---
+title: Operator Map
+audience: [human, drive-team]
+owner: drive-team
+last_verified: 2026-09-26
+status: authoritative
+---
+
 # 🤖 2026 Robot Operator's Guide
 
 Welcome to the **Titan Robotics 2026 Driver and Operator Manual**. This guide documents the unified dual-controller layout, input shaping dynamics, automated assist features, smart intake mechanics, and diagnostic telemetry indicators.
@@ -14,14 +22,14 @@ The robot supports **Dual Xbox Controllers** (Driver on Port 0, Operator on Port
 
 | Control | Function | Description |
 | :--- | :--- | :--- |
-| **Left Stick (X/Y)** | **Field-Oriented Translation** | Non-linear cubic response ($0.7x^3 + 0.3x$) with $4.5\text{ m/s}^2$ slew rate acceleration smoothing (tunable via `Operator/TranslationSlewRate`). |
-| **Right Stick (X)** | **Manual Rotation** | Precision cubic angular response ($7.0\text{ rad/s}^2$ slew limited, tunable via `Operator/RotationSlewRate`). |
+| **Left Stick (X/Y)** | **Field-Oriented Translation** | Non-linear cubic response ($0.7x^3 + 0.3x$) with slew rate acceleration smoothing (tunable via `Operator/TranslationSlewRate`, default 16, `Constants.java:131`). |
+| **Right Stick (X)** | **Manual Rotation** | Precision cubic angular response (slew limited, tunable via `Operator/RotationSlewRate`, default 10, `Constants.java:132`). |
 | **Left Stick Click** | **Slow Mode (Toggle)** | Caps linear speed to 35% and angular speed to 50% for precision alignment. |
-| **D-Pad (POV)** | **Cardinal Snap-to-Heading** | **Up**: Face $0^\circ$ (Forward)<br>**Right**: Face $-90^\circ$ / $270^\circ$ (Right)<br>**Down**: Face $180^\circ$ (Backward)<br>**Left**: Face $+90^\circ$ (Left) |
-| **A Button** | **Zero Gyro** | Re-calibrates field orientation zero relative to current alliance. |
-| **Right Trigger (Hold > 30%)** | **Auto-Aim & Shoot** | Locks swerve heading onto the Hub, spools dual flywheels to distance-interpolated RPM, triggers haptic confirmation buzz, and automatically fires when lined up ($<3^\circ$ error) and at target speed. **Rule Constraint**: Firing is permitted *only within your Alliance Zone* ($X \le 4.60\text{m}$ for Blue, $X \ge 11.94\text{m}$ for Red); shooting is automatically inhibited when in Midfield. |
+| **D-Pad (POV)** | **Cardinal Snap-to-Heading** | **Up**: Face $0^\circ$ (Forward)<br>**Right**: Face $-90^\circ$ / $270^\circ$ (Right)<br>**Down**: Face $180^\circ$ (Backward)<br>**Left**: Face $+90^\circ$ (Left)<br>Headings are driver-relative via `AllianceFlipUtil` (+180° on Red). Gated by Dashboard Snap-Turn toggle; any rotation input clears snap. |
+| **A Button** | **Zero Gyro** | **Double-tap within 0.4s** re-calibrates field orientation (`zeroGyroTrigger.multiPress(2, 0.4)`, `Teleop.java:116-119`). Single press does nothing. |
+| **Right Trigger (Hold > 30%)** | **Auto-Aim & Shoot** | Locks swerve heading onto the Hub, spools dual flywheels to distance-interpolated RPM, triggers haptic confirmation buzz, and automatically fires when lined up ($<3^\circ$ error) and at target speed. **Rule Constraint**: Firing is permitted *only within your Alliance Zone* (Blue $X \le 4.5974\text{m}$, Red $X \ge 11.938\text{m}$, `Navigation/FieldMap.java:130-132`); shooter solution covers 1.2–6.5 m (`Shooter.java:194,247`). |
 | **Left Trigger (Hold > 30%)** | **Ground Intake (Hold-to-Run)** | Deploys arm to ground ($250^\circ$), runs intake rollers and hopper. Retracts to standby ($347^\circ$) upon release. |
-| **Right Bumper (Hold)** | **Smart Glide Mode** | Autonomously navigates to the optimal waypoint arbitrated dynamically by the Jev AI Decision Engine (Hub when loaded & active, Midfield hunt when empty, Depot when inactive). Features **Smart Tunnel Navigation** with automatic corridor diversion if an opponent blocks a trench. Manual stick deflection ($>30\%$) cancels cleanly. |
+| **Right Bumper (Hold)** | **Smart Glide Mode** | Autonomously navigates to the optimal waypoint arbitrated dynamically by the Jev AI Decision Engine. Manual stick deflection (drive > 0.65 or rotation > 0.60) cancels cleanly (`AutonomousTeleopAgent.java:120`). |
 | **Left Bumper (Hold)** | **Auto Ball Pick Up** | Activates vision object tracking and autonomous intake alignment. Features **Shared Driver Authority** (driver stick nudges search area without cancelling) and **350ms Blindspot Memory** for seamless bumper-level ingestion. |
 | **X Button (Press)** | **Arm Toggle** | Manually toggles intake arm between Standby ($347^\circ$) and Deployed ($250^\circ$). |
 | **B Button (Hold)** | **Eject / Unjam** | Reverses rollers and hopper to clear obstructions. |
@@ -51,10 +59,10 @@ Both controllers feature non-blocking rumble patterns to communicate real-time r
 
 1. **Target Locked (Crisp Double Pulse)**: Fires on right rumble motor when flywheels reach target RPM and robot heading aligns within $3^\circ$ with an active Hub.
 2. **Ball Acquired (Solid Medium Buzz)**: Fires when a fuel piece is ingested into the intake / hopper.
-3. **Pin Warning (Rapid Double Buzz)**: Alerts the driver when bumper contact against an opponent robot approaches the $2.0\text{s}$ FRC G-rule pin limit.
-4. **Hub Phase Shift (Rhythmic Double Pulse)**: Warns the driver $\le 3.0\text{s}$ before the Hub active/inactive scoring cycle switches.
+3. **Pin Warning (Rapid Double Buzz, aspirational — `PIN_WARNING` currently has no callers)**: Intended alert when bumper contact approaches the pin limit (code warns at 1.8 s, max 2.4 s, `LegalPinningWatchdog.java:17`).
+4. **Hub Phase Shift (Rhythmic Double Pulse, aspirational — currently unwired)**: Intended warning before Hub active/inactive switches.
 5. **Collision Impact (Directional Opposing Deceleration Pulse)**: Instantaneous full-intensity pulse ($160\text{ms}$) triggered by opposing deceleration ($a_{\text{opposing}} = -(\vec{a}_{\text{filt}} \cdot \hat{u}_v) > 10.0\text{ m/s}^2$ and $J_{\text{opposing}} > 120.0\text{ m/s}^3$) filtered with a 1st-order low-pass filter ($\alpha = 0.35$). Normal driving/acceleration produces negative opposing deceleration, mathematically preventing false positives. Gated by dashboard switch (`Operator/HapticCollisionEnabled`, default disabled in simulation, enabled on real hardware).
-6. **Directional Flank Alert (Left / Right Grip Vibration)**: Vibrates the corresponding controller grip when an opponent robot approaches within $2.2\text{m}$ in a driver blindspot.
+6. **Directional Flank Alert (aspirational — `triggerDirectionalFlankAlert()` currently has no callers)**: Intended left/right grip vibration on blindspot approach.
 7. **Endgame Reminders (Long Deep Rumble)**: Alerts the drive team at **30 seconds** and **15 seconds** remaining in the match for climbing.
 8. **Hardware / Vision Warning (Rapid Triple Buzz)**: Alerts the driver if AprilTag vision drops into pure odometry mode or an active subsystem fault occurs.
 
@@ -75,7 +83,7 @@ Holding **Right Bumper** calculates a smooth, obstacle-aware trajectory:
 
 ## 📊 Elastic Dashboard Telemetry & Controls
 
-The Elastic Dashboard (`elastic-layout.json`) provides real-time situational awareness across 6 specialized tabs. The layout can be loaded directly from the robot or simulation via **`Ctrl + D`** (Remote Layout Downloading over HTTP port 5800) or by opening `elastic-layout.json`:
+The Elastic Dashboard (`elastic-layout.json`) provides real-time situational awareness across 7 tabs (Driver Dashboard, AI Coach & Practice, Pre-Flight Diagnostics, SysID & Characterization, Simulation & Match Info, Match Scoreboard, Tuning & PID). The layout can be loaded directly from the robot or simulation via **`Ctrl + D`** (Remote Layout Downloading over HTTP port 5800) or by opening `elastic-layout.json`:
 
 ### 1. Driver Dashboard HUD
 - **Match Time Countdown**: Dedicated large-format clock widget with automatic color transitions (Blue > 60s, Green < 60s, Yellow <= 30s, Red <= 15s).
@@ -105,13 +113,16 @@ The Elastic Dashboard (`elastic-layout.json`) provides real-time situational awa
 ### 5. Simulation & Multi-Bot Match Telemetry
 - **Embedded Arena Field View**: 2D holonomic field tracking the player robot alongside up to 3 AI opponent bots (`OpponentBot0`, `OpponentBot1`, `OpponentBot2`) with target waypoints and heading vectors.
 - **Opponent Count Dropdown Chooser**: Select between 1, 2, or 3 simultaneous opponent bots.
-- **Independent Bot Archetype Dropdowns**: Dropdown menus for Bot 0, Bot 1, and Bot 2 strategy assignments (Cycler, Bully, Adaptive Competitor, Defender, Interceptor) with live status rationale.
+- **Independent Bot Archetype Dropdowns**: Dropdown menus for Bot 0, Bot 1, and Bot 2 strategy assignments (Autonomous Fuel Cycler, Aggressive Defense Bully, Adaptive Match Competitor, Tactical Defender, Lead Pursuit Interceptor — `Archetype.java:7-12`) with live status rationale.
 - **Speed Slider**: Interactive `Number Slider` for opponent velocity scaling (20% to 100%).
 - **Interactive Action Triggers**: `Toggle Button` controls to Reset Simulation and Respawn Fuel Balls.
 - **Multi-Bot Scoring & Ball Count**: Live tally of individual bot scores and total opponent points scored against the driver.
 - **Pit Mode**: Interactive `Toggle Switch` to lock swerve wheels in X-brake configuration.
 
-### 6. Tuning & PID (Live Tuning Hub)
+### 6. Match Scoreboard
+- Live red/blue totals, Leader, auto/teleop fuel splits, foul points, and climb status (`Scoreboard/*`, `MatchScoreTracker.java`). Added after the original 6-tab layout — see `SIMULATION_GUIDE.md` §8.
+
+### 7. Tuning & PID (Live Tuning Hub)
 - **Shooter Dual Flywheels**: Real-time RPM telemetry & live PID ($kP, kI, kD$) + Feedforward ($kS, kV, kA$) text inputs with submit buttons.
 - **Intake Arm Pivot**: Real-time angle telemetry bars vs goal & live Profiled PID ($kP, kI, kD$) + Gravity Feedforward ($kS, kG, kV, kA$).
 - **Autonomous Holonomic Pathfinding**: Live Choreo/Pure Pursuit Drive ($kP, kI, kD$) and Heading Turn ($kP, kI, kD$) controllers.
@@ -128,8 +139,8 @@ The robot codebase integrates an automated driver training system (`MatchCoach.j
 2. **Rapid Cycling Sprint (`RAPID_CYCLING`)**: Defense disabled with automatic ball respawning for solo cycle time-trials.
 3. **Trench Defense & Pirouette Drill (`TRENCH_DEFENSE`)**: Defense sparring partner patrolling trenches at 80% speed to practice trench funneling and contact-breaking pirouettes.
 4. **Anti-Defense SOTF Drill (`ANTI_DEFENSE_SHOOTING`)**: 85% speed lead-pursuit defender to train moving shots under heavy pursuit.
-5. **Triple Threat Scrum (`3-Bot Cycling`)**: Set Opponent Count to 3 with all bots on `AUTONOMOUS_CYCLER`. Trains fast visual identification and contested ground pick-up reaction time when 3 opponents are actively harvesting midfield fuel clusters.
-6. **2-on-1 Gauntlet Defense**: Set Opponent Count to 2 with Bot 0 as `DEFENSE_BULLY` and Bot 1 as `LEAD_PURSUIT_INTERCEPTOR`. Practice escape spins, legal pin evasion (<2.0s), and finding narrow shooting windows while under coordinated double-team pressure.
+5. **Triple Threat Scrum**: Manual dashboard config — set Opponent Count to 3 with all bots on `AUTONOMOUS_CYCLER`. Trains fast visual identification and contested ground pick-up reaction time when 3 opponents are actively harvesting midfield fuel clusters.
+6. **2-on-1 Gauntlet Defense**: Manual dashboard config — set Opponent Count to 2 with Bot 0 as `DEFENSE_BULLY` and Bot 1 as `LEAD_PURSUIT_INTERCEPTOR`. Practice escape spins, legal pin evasion (<2.4 s max, warn 1.8 s), and finding narrow shooting windows while under coordinated double-team pressure.
 
 ### External AI Coach Tool (`tools/coaching/jev_coach.py`)
 Run the standalone coaching tool during practice sessions:
@@ -140,5 +151,5 @@ python tools/coaching/jev_coach.py --live
 # Generate post-match markdown debrief report
 python tools/coaching/jev_coach.py --report
 ```
-When configured with a `TYPESAFE_API_KEY`, the tool integrates with TypeSafe Jev API (`https://docs.typesafe.ai`) to generate automated tactical debriefs.
+Flags `--ip`/`--port` default to `127.0.0.1:5810` (`jev_coach.py:268-269`). When configured with a `TYPESAFE_API_KEY` (or `OPENROUTER_API_KEY` fallback), the tool queries the TypeSafe Jev API (`https://api.typesafe.ai/v1/systemone`).
 

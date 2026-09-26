@@ -2,8 +2,8 @@ package frc.robot.Test;
 
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import frc.robot.Data.Constants;
-import frc.robot.Data.PortMap;
-import frc.robot.Devices.Controller;
+import frc.robot.Hardware.PortMap;
+import frc.robot.Hardware.Controller;
 import frc.robot.Subsystems.Intake;
 import frc.robot.Subsystems.LEDs;
 import frc.robot.Subsystems.Shooter;
@@ -60,7 +60,7 @@ public class TestMode {
         setupDashboard();
     }
     
-    public static TestMode getInstance() {
+    public static synchronized TestMode getInstance() {
         if (instance == null) {
             instance = new TestMode();
         }

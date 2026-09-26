@@ -1,5 +1,7 @@
 # Known Issues & Desired Features
 
+> Baseline Sep 26 2026: 25 test files, ~190 `@Test` on disk. Historical counts below (154/154, 186/186, 24 classes) are checkpoints, not current totals — re-baseline before citing.
+
 Add entries as `- [ ] description`. Include repro or file refs so future sessions can verify.
 Status tags: `[OPEN]`, `[EXPLAINED]` (working as designed, UX problem), `[STALE]` (no repro since), `[PARTIAL]` (partly implemented).
 
@@ -46,9 +48,9 @@ Status tags: `[OPEN]`, `[EXPLAINED]` (working as designed, UX problem), `[STALE]
 
 ## E. Desired features (annotated with what already exists)
 
-- [x] `[RESOLVED]` Referee/penalty awareness in sim & penalty score tracking. **Implemented + expanded Sep 25: `RefereeSim` & `MatchScoreTracker` penalty subsystem.**
-  - `RefereeSim` enforces FRC G401 (pinning >2.4 s without 3 ft backoff), G201 (auto centerline crossing), and shot legality (`checkShotLegality` called on every player/bot shot in `ShooterSim`/`AIRobotSim`/`AIRobotInstance`).
-  - Minor Foul (2 pts) / Tech Foul (5 pts) tracked in `MatchScoreTracker`, awarded to the opponent alliance total, published under `Scoreboard/Referee/*` and the scoreboard tab. Covered by `RefereeSimTest` + `HubShiftShotAllowanceTest` + `PlayerPickupShootTest`.
+- [x] `[RESOLVED]` Referee/penalty awareness in sim & penalty score tracking. **Implemented + expanded: `RefereeSim` & `MatchScoreTracker` penalty subsystem.**
+  - `RefereeSim` enforces AUTO centerline contact (MAJOR), G407 alliance-zone shooting (MAJOR, `checkShotLegality` called on every player/bot shot in `ShooterSim`/`AIRobotSim`/`AIRobotInstance`), G418 pinning (MINOR at 3 s, MAJOR per extra uncorrected 3 s), and G420 tower protection in the last 30 s (MAJOR).
+  - MINOR FOUL (5 pts) / MAJOR FOUL (15 pts) tracked in `MatchScoreTracker`, awarded to the opponent alliance total, published under `Scoreboard/Referee/*` and the scoreboard tab. Covered by `RefereeSimTest` + `HubShiftShotAllowanceTest` + `PlayerPickupShootTest`.
 - [x] `[RESOLVED]` Coordinated bot autonomous plans + starting positions. **Fixed: Defense suppression and centerline isolation in autonomous mode.**
   - Bots spawn across staggered lanes (Y=2.25, 4.035, 5.80m).
   - In autonomous mode (`world.isAutonomous()`), defense archetypes (`TACTICAL_DEFENDER`, `DEFENSE_BULLY`, `LEAD_PURSUIT_INTERCEPTOR`) suppress illegal cross-field pursuit and lane denial (preventing FRC G201 centerline penalties). Bots with preloaded fuel prioritize scoring into the active hub, and fuel harvesting is strictly bounded to the alliance half (X <= 8.12m Blue, X >= 8.42m Red).
@@ -61,19 +63,25 @@ Status tags: `[OPEN]`, `[EXPLAINED]` (working as designed, UX problem), `[STALE]
 - [ ] Richer AI action/move options. `[OPEN]`
 - [ ] TypeSafe AI API for decisions. `[PARTIAL]` `tools/coaching/jev_coach.py --live/--report` already calls it with `TYPESAFE_API_KEY`; robot-side (real-time) integration missing.
 - [ ] Team coordination message system. `[OPEN]`
-  - First step landed (parallel workstream, staged): `Sim/MatchKnowledge.java` — shared match picture tier (score differential, both sides' poses/velocities, held/scored estimates) built per bot via `WorldStateBuilder.buildMatchKnowledgeForSimBot`, with a 3-arg `evaluatePolicy(world, knowledge, archetype)` overload now used by `AutonomousTeleopAgent` and `MatchCoach`. Covered by `TierKnowledgeTest`. Not yet consumed for decisions (mark exclusion, zone agreements) — that's the actual coordination work.
+  - First step landed (parallel workstream, staged): `Sim/MatchKnowledge.java` — shared match picture tier (score differential, both sides' poses/velocities, held/scored estimates) built per bot via `WorldStateBuilder.buildMatchKnowledgeForSimBot`, with a 3-arg `evaluatePolicy(world, knowledge, archetype)` overload now used by `AutonomousTeleopAgent` and `MatchCoach`. Covered by `TierKnowledgeTest`. Score differential is consumed (+0.03 chase bias when behind); mark exclusion and zone agreements remain future work.
 - [ ] Post-match LLM log review per bot (actions → suggested changes). `[PARTIAL]` `jev_coach.py --report` writes `reports/match_coach_report_*.md`; per-bot analysis + suggestions missing.
+- [ ] Opportunistic subsumption behaviors ("2 things at once"). `[OPEN] [LOW PRIORITY — after AI integration]` Do not build before the package restructure + green test suite.
+  - Cowcatcher intake: when the objective is defensive/transit (`LEAD_INTERCEPT`, trench choke, return-to-zone) and not low-clearance and held < 30, keep intake deployed + spinning (`intakeCmd = INTAKING`) so the bot vacuums stray fuel mid-defense. Chassis (`navigationTarget`) and mechanisms (`intakeCommand`) are already decoupled in `AIActionIntent` — ~1 line in `JevDecisionEngine`.
+  - Directional harvest bias: add a dot-product bonus toward the next zone into the cluster-scent score so midfield sweeps drift homeward instead of stranding the bot at the far wall.
+- [ ] 2-step horizon task planning (`StrategicPlan(current, next, timeToTransitionSec)`). `[OPEN] [LOW PRIORITY — after AI integration]` Do not build before the package restructure + green test suite.
+  - Shift time budget: `timeLeftToHarvest = hubShiftTimeRemaining − transitTime` (transit ≈ 2.5–3.5 s); if ≤ 0, cut harvest and transit now so the volley lands while the Hub is active.
+  - Alliance intent broadcast: each bot publishes `Alliance/BotN/NextCorridor` + `NextIntent` to NT; peers yield contested corridors (e.g. TOP vs BOTTOM trench) — broadcast-and-yield, no negotiation protocol.
 - [ ] Practice/coaching mode UX (start/stop, driver-station/coach/bot loading). `[OPEN]`
 - [ ] Coaching mode that makes sense. `[OPEN]`
 - [ ] Robot-with-missing-parts mode (no intake/climb/vision). `[PARTIAL]` Intake encoder fallback + vision-degraded odometry exist; no general "missing subsystem" config.
 - [ ] Driver-assist transparency (what it is doing). `[PARTIAL]` `CoPilot/Objective` published; needs UI/explanation pass.
-- [ ] Sim info parity (robot sees only sensor/API data; bots may keep perfect knowledge). `[OPEN]` Real audit, no partial credit claimed.
+- [ ] Sim info parity (robot sees only sensor/API data; bots may keep perfect knowledge). `[PARTIAL]` Two-tier model landed: co-pilot/coach evaluate with `MatchKnowledge.unknown()` (opponent unobserved, lane left to driver), sim bots get populated player-visible context. Covered by `TierKnowledgeTest`. Still open: vision-tracked opponent estimates for the real robot.
 - [ ] Scale simulated game pieces without lag. `[OPEN]` (`Arena2026Rebuilt` efficiency mode + 54-ball cap is the current mitigation.)
 - [ ] Sim→real→sim iteration workflow. `[OPEN]`
 - [ ] AI-assisted robot/path/auto design. `[OPEN]`
 - [ ] Streamlined AdvantageScope setup. `[OPEN]`
 - [ ] Elastic UI cleanup across tabs; consider bespoke dashboard replacement. `[OPEN]`
-- [ ] Git details + robot name on Elastic. `[PARTIAL]` Already published (`Dashboard.java:86-91` → `Build/*` keys from generated `BuildConstants`); likely just needs layout wiring.
+- [ ] Git details + robot name on Elastic. `[PARTIAL]` Already published (`Telemetry/Dashboard.java:91-97` → `Build/*` keys from generated `BuildConstants`); likely just needs layout wiring.
 - [ ] YAGSL feature review. `[OPEN]`
 - [ ] Next-year readiness (new game, Systemcore, hardware). `[OPEN]` (`ARCHITECTURE.md` §4 roadmap: Elastic primary, AdvantageScope 3D, Telemetry/Tunables APIs, Commands v3 coroutines.)
 - [ ] Competitor codebase survey for ideas. `[OPEN]`

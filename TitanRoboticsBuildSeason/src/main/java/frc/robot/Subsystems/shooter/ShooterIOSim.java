@@ -35,6 +35,13 @@ public class ShooterIOSim implements ShooterIO {
         inputs.kickerCurrentAmps = Math.abs(kickerAppliedVolts) > 0.1 ? 2.5 : 0.0;
         inputs.leftBusVolts = 12.0;
         inputs.rightBusVolts = 12.0;
+
+        // Sole owner of ball flight simulation (previously double-updated by
+        // Shooter.simulationUpdate + setKickerVoltage launch).
+        double avgFlywheelRPM = (inputs.leftVelocityRPM + inputs.rightVelocityRPM) / 2.0;
+        double avgVolts = (leftAppliedVolts + rightAppliedVolts) / 2.0;
+        shooterSim.updateBallSimulation(
+                kickerAppliedVolts / 12.0, avgFlywheelRPM, avgFlywheelRPM, avgVolts);
     }
 
     @Override
@@ -46,9 +53,8 @@ public class ShooterIOSim implements ShooterIO {
     @Override
     public void setKickerVoltage(double kickerVolts) {
         this.kickerAppliedVolts = kickerVolts;
-        if (Math.abs(kickerVolts) > 1.0) {
-            shooterSim.launchSimulatedFuel(shooterSim.getLeftVelocityRPM(), shooterSim.getRightVelocityRPM());
-        }
+        // Ball spawning happens in updateInputs via updateBallSimulation;
+        // no immediate launch here (that double-fired with the per-loop update).
     }
 
     @Override

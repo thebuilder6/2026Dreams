@@ -23,7 +23,7 @@ import edu.wpi.first.wpilibj.RobotBase;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import frc.robot.Data.Constants;
-import frc.robot.Data.FieldMap;
+import frc.robot.Navigation.FieldMap;
 import frc.robot.Interfaces.Subsystem;
 import frc.robot.Subsystems.Intake;
 import frc.robot.Subsystems.Shooter;
@@ -450,7 +450,7 @@ public class GameSim implements Subsystem {
 
             // Default shift order until the AUTO result seeds it at teleopInit.
             HubSchedule.reset();
-            frc.robot.Subsystems.Dashboard.getInstance().setGameData(Config.DEFAULT_GAME_MESSAGE);
+            frc.robot.Telemetry.Dashboard.getInstance().setGameData(Config.DEFAULT_GAME_MESSAGE);
 
             // Reset dashboard commands
             SmartDashboard.putBoolean("Simulation/Reset", false);

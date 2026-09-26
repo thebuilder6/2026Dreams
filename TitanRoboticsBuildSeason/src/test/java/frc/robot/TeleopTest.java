@@ -9,8 +9,8 @@ import edu.wpi.first.hal.HAL;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.wpilibj.simulation.XboxControllerSim;
 import edu.wpi.first.wpilibj2.command.CommandScheduler;
-import frc.robot.Data.PortMap;
-import frc.robot.Subsystems.Dashboard;
+import frc.robot.Hardware.PortMap;
+import frc.robot.Telemetry.Dashboard;
 
 public class TeleopTest {
 

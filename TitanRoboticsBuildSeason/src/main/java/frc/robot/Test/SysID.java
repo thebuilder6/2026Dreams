@@ -1,7 +1,7 @@
 package frc.robot.Test;
 
 import edu.wpi.first.wpilibj.XboxController;
-import frc.robot.Devices.Controller;
+import frc.robot.Hardware.Controller;
 import frc.robot.Subsystems.Intake;
 import frc.robot.Subsystems.Shooter;
 import frc.robot.Subsystems.SwerveBase;

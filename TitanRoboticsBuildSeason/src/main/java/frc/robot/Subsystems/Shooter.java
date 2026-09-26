@@ -88,8 +88,7 @@ public class Shooter implements Subsystem {
     public double rightShooterVoltageCalc = 0;
     private ShootingSolution latestShootingSolution = new ShootingSolution(new Rotation2d(), 0, 0, false);
 
-    // Simulation
-    private frc.robot.Sim.ShooterSim flywheelSim;
+    // Simulation state lives in ShooterIOSim (sole owner of ShooterSim).
 
     /**
      * Shooting Solution record containing targeting calculations.
@@ -108,7 +107,7 @@ public class Shooter implements Subsystem {
     /**
      * Gets the singleton instance of Shooter, instantiating the appropriate IO layer.
      */
-    public static Shooter getInstance() {
+    public static synchronized Shooter getInstance() {
         if (instance == null) {
             ShooterIO io = RobotBase.isSimulation() ? new ShooterIOSim() : new ShooterIOSparkMax();
             instance = new Shooter(io);
@@ -153,10 +152,6 @@ public class Shooter implements Subsystem {
         rightRpmTable.put(4.18, 3800.0);
         rightRpmTable.put(5.00, 4150.0);
         rightRpmTable.put(6.00, 4550.0);
-
-        if (RobotBase.isSimulation() && io instanceof ShooterIOSim simIO) {
-            flywheelSim = simIO.getShooterSim();
-        }
 
         initialize();
         SubsystemManager.registerSubsystem(this);
@@ -579,17 +574,7 @@ public class Shooter implements Subsystem {
 
     @Override
     public void simulationUpdate() {
-        if (flywheelSim != null) {
-            double avgVoltage = (leftShooterVoltageCalc + rightShooterVoltageCalc) / 2.0;
-            if (targetRpmLeft == 0 && targetRpmRight == 0) avgVoltage = 0;
-
-            flywheelSim.updateBallSimulation(
-                    inputs.kickerAppliedVolts / 12.0,
-                    inputs.leftVelocityRPM,
-                    (targetRpmLeft + targetRpmRight) / 2.0,
-                    avgVoltage
-            );
-        }
+        // No-op: ShooterIOSim owns ShooterSim ball simulation (updated in updateInputs).
     }
 
     @Override
@@ -660,16 +645,25 @@ public class Shooter implements Subsystem {
     }
 
     public long getSimShotCount() {
-        return flywheelSim != null ? flywheelSim.getSimShotCount() : 0;
+        if (io instanceof ShooterIOSim simIO) {
+            return simIO.getShooterSim().getSimShotCount();
+        }
+        return 0;
     }
 
     public long getSimScoreCount() {
-        return flywheelSim != null ? flywheelSim.getSimScoreCount() : 0;
+        if (io instanceof ShooterIOSim simIO) {
+            return simIO.getShooterSim().getSimScoreCount();
+        }
+        return 0;
     }
 
     @Override
     public double getSimulationCurrentDraw() {
-        return flywheelSim != null ? flywheelSim.getTotalCurrentDraw(inputs.kickerAppliedVolts / 12.0) : 0.0;
+        if (io instanceof ShooterIOSim simIO) {
+            return simIO.getShooterSim().getTotalCurrentDraw(inputs.kickerAppliedVolts / 12.0);
+        }
+        return 0.0;
     }
 
     @Override

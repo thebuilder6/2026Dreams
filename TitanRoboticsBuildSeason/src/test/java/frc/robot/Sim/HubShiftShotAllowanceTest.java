@@ -10,13 +10,14 @@ import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.wpilibj.simulation.DriverStationSim;
-import frc.robot.Data.FieldMap;
-import frc.robot.Subsystems.Dashboard;
+import frc.robot.Navigation.FieldMap;
+import frc.robot.Telemetry.Dashboard;
 import frc.robot.Subsystems.Intake;
 import frc.robot.Subsystems.Shooter;
 import frc.robot.Subsystems.SubsystemManager;
 import frc.robot.Subsystems.SwerveBase;
 import swervelib.simulation.ironmaple.simulation.SimulatedArena;
+import frc.robot.Intelligence.Archetype;
 
 /**
  * Proves shot allowance follows the official 6.4 hub schedule for every

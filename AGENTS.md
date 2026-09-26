@@ -10,7 +10,7 @@ Must use the WPILib 2026 JDK or builds fail (`Unsupported class file major versi
 $env:JAVA_HOME = "C:\Users\Public\wpilib\2026\jdk"
 $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 .\gradlew compileJava --offline   # fast compile
-.\gradlew test --offline          # JUnit 5 suite (~19 test classes)
+.\gradlew test --offline          # JUnit 5 suite (25 test files, ~190 tests)
 .\gradlew simulateJava            # desktop SimGUI + IronMaple arena
 .\gradlew deploy                  # deploy to RoboRIO (same JAVA_HOME)
 ```
@@ -30,7 +30,7 @@ $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 ## Architecture (`src/main/java/frc/robot/`)
 
 - Entrypoints: `Main.java` → `Robot.java` (extends AdvantageKit `LoggedRobot`, not `TimedRobot`). `Teleop.java` holds driver/operator bindings; `Auto/AutoMissionExecutor.java` + `Auto/Missions/` hold autonomous.
-- Subsystems are singletons behind `SubsystemManager` (`Subsystems/`): `SwerveBase`, `Shooter`, `Intake`, `Vision`, `Dashboard`, `LEDs`, `MatchCoach`. Custom `Interfaces/Subsystem` interface — do not convert to WPILib `Subsystem`/`Command` patterns.
+- Subsystems are singletons behind `SubsystemManager` (`Subsystems/` + `Telemetry/Dashboard`): `SwerveBase`, `Shooter`, `Intake`, `Vision`, `Dashboard`, `LEDs`, `MatchCoach`. Custom `Interfaces/Subsystem` interface — do not convert to WPILib `Subsystem`/`Command` patterns.
 - Mode handling: `Data/Constants.getMode()` returns `REAL`/`SIM`/`REPLAY` (`RobotBase.isReal()`). `GameSim` + `AIRobotSim` only init in sim (`Robot.java:85-88`). Logger writes `.wpilog` on REAL, NT-only on SIM, replay via `LogFileUtil`.
 - IO abstraction: each subsystem has Spark hardware vs Sim IO (AdvantageKit pattern). Keep hardware/sim branches paired.
 - Vendor libs pinned in `vendordeps/`: YAGSL swerve, Phoenix 6, REVLib, Choreo, PhotonVision, AdvantageKit. Don't bump versions without checking Sim compat.
@@ -38,15 +38,23 @@ $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 ## Conventions that differ from defaults
 
 - **Coordinates are Blue-origin only.** All field points defined for Blue (`X=0` at Blue wall); mirror with `Utils/AllianceFlipUtil.java` (`X_red = 16.535 - X_blue`). Never hardcode Red coordinates.
-- **No console prints for driver alerts.** Use `Utils/Alert.java` + `AlertManager` (Elastic banner/tables) and `Subsystems/LEDs.java` patterns. `Robot` silences joystick warnings and disables LiveWindow intentionally — don't re-enable.
-- **Tunables go through `Data/TunableNumber.java` + `Subsystems/Dashboard.java`** (backs the 6-tab `elastic-layout.json`). Don't add raw SmartDashboard numbers for PID/constants; `Constants.TUNING_MODE = true` gates tuning.
+- **No console prints for driver alerts.** Use `Telemetry/Alert.java` + `AlertManager` (Elastic banner/tables) and `Subsystems/LEDs.java` patterns. `Robot` silences joystick warnings and disables LiveWindow intentionally — don't re-enable.
+- **Tunables go through `Telemetry/TunableNumber.java` + `Telemetry/Dashboard.java`** (backs the 7-tab `elastic-layout.json`). Don't add raw SmartDashboard numbers for PID/constants; `Constants.TUNING_MODE = true` gates tuning.
 - **Timing quirks in `Robot.java` are intentional:** 100 Hz odometry subloop (`addPeriodic(..., 0.010, 0.005)`), `System.gc()` in `disabledInit()`, coprocessor `PortForwarder` 5801–5805, Elastic layout `WebServer` on port 5800. Don't "clean these up."
 - Key runtime rules encoded in code: shooter fires only inside Alliance Zone (Blue `X ≤ 4.60 m`, Red `X ≥ 11.94 m`), intake arm Standby `347°` / Ground `250°`, kicker fires after flywheels within ±150 RPM.
 
 ## Testing / sim notes
 
-- Tests live in `src/test/java/frc/robot/` mirroring package names (`Sim/`, `Auto/`, `Subsystems/`, `Utils/`, `Test/`, `Devices/`, `Data/`).
+- Tests live in `src/test/java/frc/robot/` mirroring package names (`Sim/`, `Auto/`, `Subsystems/`, `Telemetry/`, `Test/`, `Hardware/`, `Navigation/`, `Utils/`, `Data/`).
 - Simulation stack: IronMaple swerve physics + `GameSim` (54 Fuel pieces) + `ShooterSim` + `AIRobotSim` (1–3 Jev AI opponents) + PhotonVision sim. Reset via Elastic `Simulation & Match Info` tab, not code changes.
 - `bind() to port 1181 failed` warning in sim is non-fatal — ignore it.
 - MapleSim `SimulatedBattery` is one static battery shared by all sim robots; `Robot.simulationInit()` disables it via `disableBatterySim()` (its own escape hatch). Do not remove — without it, multi-bot sim browns out and spams the console every sub-tick. `Robot.simulationPeriodic()`'s `BatterySim` model stays authoritative for RoboRIO voltage.
 - Docs: `ARCHITECTURE.md` (subsystem contracts), `SIMULATION_GUIDE.md` (SimGUI/Elastic/AdvantageScope setup), `OPERATORS_GUIDE.md` (controller map), `src/main/java/frc/robot/Test/README.md` (TestMode/SysId). Trust `build.gradle`/code over prose when they conflict.
+- Docs index: `TitanRoboticsBuildSeason/docs/INDEX.md` is the authoritative map. `docs/RESOURCES.md` supersedes `Resources.txt` + `docs_context/useful_documentation.txt` for new links. `docs/CHANGELOG.md` is agent-maintained. `.agents/teamwork/ARCHIVE.md` marks orchestration chatter as scratch.
+
+## Docs Contract (strict — all agents)
+
+1. **Reference before acting:** read `docs/INDEX.md` + the one topic guide for the task + root `KNOWN_ISSUES.md` before any code change. Check `docs/RESOURCES.md` before web search. Never cite `.agents/teamwork` scratch, `reports/`, or `build/` as spec.
+2. **Update in the same change:** any behavior-affecting edit (runtime rules, NT keys, controls, scoring, sim physics, build commands, test counts) must also touch docs in the same commit: bump `last_verified` frontmatter, add a `docs/CHANGELOG.md` bullet with test evidence, and update `KNOWN_ISSUES.md` status tags (`[OPEN]`/`[PARTIAL]`/`[RESOLVED]`).
+3. **No duplication:** link to the single owning guide; don't paste the same paragraph into two files. New guides copy `docs/_TEMPLATE.md` (frontmatter: title, audience, owner, last_verified, status).
+4. **Verify stamp:** `last_verified` = date code + docs were confirmed together (green build/test). Docs older than 30 days are `status: needs-review`.

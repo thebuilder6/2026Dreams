@@ -201,10 +201,10 @@ public class HardwareIOTest {
     @Test
     public void testNeoSparkMaxMotorCanOptimization() {
         com.revrobotics.spark.config.SparkMaxConfig config = new com.revrobotics.spark.config.SparkMaxConfig();
-        assertDoesNotThrow(() -> frc.robot.Devices.NeoSparkMaxMotor.optimizeCanBusUtilization(config, true, true));
+        assertDoesNotThrow(() -> frc.robot.Hardware.NeoSparkMaxMotor.optimizeCanBusUtilization(config, true, true));
 
         com.revrobotics.spark.config.SparkMaxConfig flywheelConfig = new com.revrobotics.spark.config.SparkMaxConfig();
-        assertDoesNotThrow(() -> frc.robot.Devices.NeoSparkMaxMotor.optimizeCanBusUtilization(flywheelConfig, false, true));
+        assertDoesNotThrow(() -> frc.robot.Hardware.NeoSparkMaxMotor.optimizeCanBusUtilization(flywheelConfig, false, true));
     }
 
     @Test

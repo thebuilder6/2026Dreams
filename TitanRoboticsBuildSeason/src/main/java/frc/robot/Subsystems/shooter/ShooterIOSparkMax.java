@@ -2,8 +2,8 @@ package frc.robot.Subsystems.shooter;
 
 import com.revrobotics.spark.config.SparkMaxConfig;
 import frc.robot.Data.Constants.ShooterConstants;
-import frc.robot.Data.PortMap;
-import frc.robot.Devices.NeoSparkMaxMotor;
+import frc.robot.Hardware.PortMap;
+import frc.robot.Hardware.NeoSparkMaxMotor;
 
 /**
  * Real physical hardware implementation of ShooterIO using REV SparkMax motor controllers.

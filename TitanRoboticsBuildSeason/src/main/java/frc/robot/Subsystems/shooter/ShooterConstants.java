@@ -1,8 +1,8 @@
 package frc.robot.Subsystems.shooter;
 
 import edu.wpi.first.math.util.Units;
-import frc.robot.Data.FieldMap;
-import frc.robot.Data.TunableNumber;
+import frc.robot.Navigation.FieldMap;
+import frc.robot.Telemetry.TunableNumber;
 
 /**
  * Physical geometry, tuning parameters, and simulation metrics for the Dual-Flywheel Shooter mechanism.

@@ -1,6 +1,6 @@
 package frc.robot.Subsystems.intake;
 
-import frc.robot.Data.TunableNumber;
+import frc.robot.Telemetry.TunableNumber;
 
 /**
  * Physical geometry, tuning parameters, and motion limits for the Articulated Ground Intake.

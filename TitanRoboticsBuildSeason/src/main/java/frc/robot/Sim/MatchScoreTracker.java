@@ -9,7 +9,7 @@ import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.RobotBase;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
-import frc.robot.Data.FieldMap;
+import frc.robot.Navigation.FieldMap;
 import frc.robot.Interfaces.Subsystem;
 import frc.robot.Subsystems.SubsystemManager;
 import frc.robot.Subsystems.SwerveBase;
@@ -240,10 +240,20 @@ public class MatchScoreTracker implements Subsystem {
         return blueFoulCount;
     }
 
+    /**
+     * @deprecated Renamed: the rulebook calls these MAJOR fouls.
+     *             Use {@link #getRedMajorFoulCount()} instead.
+     */
+    @Deprecated
     public synchronized int getRedTechFoulCount() {
         return redMajorFoulCount;
     }
 
+    /**
+     * @deprecated Renamed: the rulebook calls these MAJOR fouls.
+     *             Use {@link #getBlueMajorFoulCount()} instead.
+     */
+    @Deprecated
     public synchronized int getBlueTechFoulCount() {
         return blueMajorFoulCount;
     }

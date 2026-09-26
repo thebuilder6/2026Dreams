@@ -6,7 +6,7 @@ import edu.wpi.first.wpilibj.motorcontrol.Spark;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import frc.robot.Data.Constants.LEDConstants;
 import frc.robot.Interfaces.Subsystem;
-import frc.robot.Utils.AlertManager;
+import frc.robot.Telemetry.AlertManager;
 import frc.robot.Utils.AllianceFlipUtil;
 import java.util.Optional;
 
@@ -16,7 +16,7 @@ public class LEDs implements Subsystem {
     private final Spark blinkin;
     private double currentPattern;
 
-    public static LEDs getInstance() {
+    public static synchronized LEDs getInstance() {
         if (instance == null) {
             instance = new LEDs();
         }

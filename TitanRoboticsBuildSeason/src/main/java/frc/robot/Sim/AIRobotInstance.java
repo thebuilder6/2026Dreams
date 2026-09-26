@@ -14,12 +14,18 @@ import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.math.geometry.Translation3d;
 import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import edu.wpi.first.wpilibj.Timer;
-import frc.robot.Auto.DynamicRouter;
-import frc.robot.Auto.TrajectoryController;
+import frc.robot.Navigation.ContactWatchdog;
+import frc.robot.Navigation.DynamicRouter;
+import frc.robot.Navigation.TrajectoryController;
 import frc.robot.Data.Constants;
-import frc.robot.Data.FieldMap;
+import frc.robot.Intelligence.AIActionIntent;
+import frc.robot.Intelligence.Archetype;
+import frc.robot.Intelligence.JevDecisionEngine;
+import frc.robot.Intelligence.MatchKnowledge;
+import frc.robot.Intelligence.WorldState;
+import frc.robot.Intelligence.WorldStateBuilder;
+import frc.robot.Navigation.FieldMap;
 import frc.robot.Subsystems.Intake.IntakeState;
-import frc.robot.Subsystems.Shooter.ShooterState;
 import frc.robot.Subsystems.SwerveBase;
 import org.littletonrobotics.junction.Logger;
 import swervelib.simulation.ironmaple.simulation.IntakeSimulation;
@@ -55,16 +61,13 @@ public class AIRobotInstance {
     private String currentAIStateDetail = "IDLE";
     private int scoreCount = 0;
     private double lastShotTimestamp = 0.0;
-    private final frc.robot.Auto.LegalPinningWatchdog pinWatchdog = new frc.robot.Auto.LegalPinningWatchdog();
+    private final ContactWatchdog contactWatchdog = new ContactWatchdog();
 
     // Stall watchdog
     private Pose2d lastActualPose = new Pose2d();
     private double stallDuration = 0.0;
     private boolean lastStallResult = false;
     private double lastStallEvalTimestamp = -1.0;
-
-    // Deadlock recovery (head-on trench meetings, same-target scrums)
-    private final DeadlockResolver deadlockResolver = new DeadlockResolver();
 
     public AIRobotInstance(int botId, Pose2d queuingPose, Archetype defaultArchetype) {
         this(botId, queuingPose, defaultArchetype, false);
@@ -76,9 +79,10 @@ public class AIRobotInstance {
         this.archetype = defaultArchetype != null ? defaultArchetype : Archetype.AUTONOMOUS_CYCLER;
         this.isAlly = isAlly;
 
-        String prefix = isAlly ? ("Simulation/Ally" + (botId - 100)) : ("Simulation/Bot" + botId);
+        String prefix = isAlly ? SimDashboardKeys.allyPrefix(botId - 100)
+                : SimDashboardKeys.botPrefix(botId);
         edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.setDefaultString(
-                prefix + "/Archetype", this.archetype.name());
+                prefix + SimDashboardKeys.SUFFIX_ARCHETYPE, this.archetype.name());
 
         this.driveSimulation = new SelfControlledSwerveDriveSimulation(
                 new SwerveDriveSimulation(DriveTrainSimulationConfig.Default(), queuingPose));
@@ -177,8 +181,7 @@ public class AIRobotInstance {
         scoreCount = 0;
         stallDuration = 0.0;
         lastShotTimestamp = 0.0;
-        pinWatchdog.reset();
-        deadlockResolver.reset();
+        contactWatchdog.reset();
         trajectoryController.reset();
         try {
             String botName = isAlly ? ("AllyBot" + (botId - 100)) : ("OpponentBot" + botId);
@@ -233,7 +236,8 @@ public class AIRobotInstance {
                 this.archetype = AIRobotSim.getInstance().getAlly2Archetype();
             } else {
                 String archStr = edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.getString(
-                        "Simulation/Ally" + allyIndex + "/Archetype", archetype.name());
+                        SimDashboardKeys.allyPrefix(allyIndex) + SimDashboardKeys.SUFFIX_ARCHETYPE,
+                        archetype.name());
                 Archetype selectedArch = Archetype.fromString(archStr);
                 if (selectedArch != null) {
                     this.archetype = selectedArch;
@@ -246,7 +250,8 @@ public class AIRobotInstance {
                 this.archetype = AIRobotSim.getInstance().getBot2Archetype();
             } else {
                 String archStr = edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.getString(
-                        "Simulation/Bot" + botId + "/Archetype", archetype.name());
+                        SimDashboardKeys.botPrefix(botId) + SimDashboardKeys.SUFFIX_ARCHETYPE,
+                        archetype.name());
                 Archetype selectedArch = Archetype.fromString(archStr);
                 if (selectedArch != null) {
                     this.archetype = selectedArch;
@@ -286,23 +291,31 @@ public class AIRobotInstance {
 
         // Track pinning against the assigned mark (or the player by default) -
         // only for opponent bots. RefereeSim scores the actual foul; this drives
-        // the backoff maneuver.
+        // the backoff maneuver. Unified through ContactWatchdog.
         if (!isAlly) {
             Pose2d pinReference = (markPose != null && archetype.isDefensive())
                     ? markPose
                     : ((peerRobotPoses != null && !peerRobotPoses.isEmpty()) ? peerRobotPoses.get(0) : null);
-            if (pinReference != null) {
-                double distToPlayer = currentPose.getTranslation().getDistance(pinReference.getTranslation());
-                boolean isContacting = (distToPlayer < 1.05) && (isStalled() || (distToPlayer < 0.95 && Math.hypot(currentTargetSpeeds.vxMetersPerSecond, currentTargetSpeeds.vyMetersPerSecond) > 0.5));
-                pinWatchdog.update(isContacting, currentPose, pinReference, 0.02);
-            }
+            double nearestForPin = pinReference != null
+                    ? currentPose.getTranslation().getDistance(pinReference.getTranslation())
+                    : Double.MAX_VALUE;
+            contactWatchdog.update(
+                    currentPose,
+                    currentVel,
+                    currentTargetSpeeds,
+                    0.0,
+                    0.0,
+                    stalled ? 30.0 : 0.0,
+                    nearestForPin,
+                    pinReference,
+                    0.02);
 
-            if (pinWatchdog.isForcedBackoffActive() && archetype.isDefensive() && pinReference != null) {
-                Pose2d backoff = pinWatchdog.getBackOffTarget(currentPose, pinReference);
+            if (contactWatchdog.isForcedBackoffActive() && archetype.isDefensive() && pinReference != null) {
+                Pose2d backoff = contactWatchdog.getBackOffTarget(currentPose, pinReference);
                 currentTargetPose = backoff;
                 currentTargetSpeeds = trajectoryController.calculate(
                         currentPose, currentTargetSpeeds, currentTargetPose, maxSpeed, false, false);
-                currentAIStateDetail = String.format("PIN_RULE_BACKOFF (%.1fs)", pinWatchdog.getBackoffRemainingSec());
+                currentAIStateDetail = String.format("PIN_RULE_BACKOFF (%.1fs)", contactWatchdog.getBackoffRemainingSec());
             }
         }
 
@@ -321,7 +334,7 @@ public class AIRobotInstance {
             }
         }
 
-        // Deadlock recovery: sustained stall pressed against a peer means the
+        // Deadlock recovery via ContactWatchdog: sustained stall pressed against a peer means the
         // symmetric separation nudges above have stalemated (trench head-on or
         // shared target). Yield forward drive and jink laterally to break it.
         double nearestPeerDist = Double.MAX_VALUE;
@@ -332,7 +345,7 @@ public class AIRobotInstance {
                 if (d > 0.05 && d < nearestPeerDist) nearestPeerDist = d;
             }
         }
-        DeadlockResolver.Resolution deadlock = deadlockResolver.update(stalled, nearestPeerDist, 0.02);
+        ContactWatchdog.Resolution deadlock = contactWatchdog.updateDeadlockOnly(stalled, nearestPeerDist, 0.02);
         if (deadlock.recovering()) {
             Translation2d jinkField = new Translation2d(0, deadlock.lateralJink())
                     .rotateBy(currentPose.getRotation());
@@ -395,7 +408,8 @@ public class AIRobotInstance {
         Logger.recordOutput(prefix + "Confidence", intent.confidence());
         Logger.recordOutput(prefix + "Archetype", archetype.name());
 
-        String dashPrefix = (isAlly ? "Simulation/Ally" + (botId - 100) : "Simulation/Bot" + botId) + "/";
+        String dashPrefix = (isAlly ? SimDashboardKeys.allyPrefix(botId - 100)
+                : SimDashboardKeys.botPrefix(botId)) + "/";
         edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putNumberArray(dashPrefix + "Pose", new double[] { currentPose.getX(), currentPose.getY(), currentPose.getRotation().getDegrees() });
         edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putNumberArray(dashPrefix + "TargetPose", new double[] { currentTargetPose.getX(), currentTargetPose.getY(), currentTargetPose.getRotation().getDegrees() });
         edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putString(dashPrefix + "Objective", intent.objective().name());

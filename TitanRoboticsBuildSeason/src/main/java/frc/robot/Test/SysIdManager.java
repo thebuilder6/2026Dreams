@@ -14,7 +14,7 @@ import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.CommandScheduler;
 import edu.wpi.first.wpilibj2.command.sysid.SysIdRoutine;
 import edu.wpi.first.wpilibj2.command.sysid.SysIdRoutine.Direction;
-import frc.robot.Devices.Controller;
+import frc.robot.Hardware.Controller;
 import frc.robot.Subsystems.Intake;
 import frc.robot.Subsystems.Shooter;
 import frc.robot.Subsystems.SwerveBase;
@@ -64,7 +64,7 @@ public class SysIdManager {
     private Command activeCommand = null;
     private String routineState = "IDLE";
 
-    public static SysIdManager getInstance() {
+    public static synchronized SysIdManager getInstance() {
         if (instance == null) {
             instance = new SysIdManager(Shooter.getInstance(), Intake.getInstance(), SwerveBase.getInstance());
         }

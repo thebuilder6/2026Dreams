@@ -24,14 +24,14 @@ import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.Commands;
 import frc.robot.Data.Constants;
 import frc.robot.Data.Constants.IntakeConstants;
-import frc.robot.Data.FieldMap;
+import frc.robot.Navigation.FieldMap;
 import frc.robot.Interfaces.Subsystem;
 import frc.robot.Subsystems.intake.IntakeIO;
 import frc.robot.Subsystems.intake.IntakeIOInputsAutoLogged;
 import frc.robot.Subsystems.intake.IntakeIOSim;
 import frc.robot.Subsystems.intake.IntakeIOSparkMax;
-import frc.robot.Utils.Alert;
-import frc.robot.Utils.Alert.AlertType;
+import frc.robot.Telemetry.Alert;
+import frc.robot.Telemetry.Alert.AlertType;
 
 /**
  * Ground intake mechanism featuring an articulated pivot arm with feedforward
@@ -109,14 +109,13 @@ public class Intake implements Subsystem {
     private double lastValidPosition = Constants.INTAKE_UP_POSITION;
     private double lastMotorRotations = 0.0;
 
-    // Simulation
-    private frc.robot.Sim.ArmSim armSim;
+    // Simulation state lives in IntakeIOSim (sole owner of ArmSim + MapleSim intake).
 
     /**
      * Gets the singleton instance of Intake, instantiating the appropriate IO
      * layer.
      */
-    public static Intake getInstance() {
+    public static synchronized Intake getInstance() {
         if (instance == null) {
             IntakeIO io = RobotBase.isSimulation() ? new IntakeIOSim() : new IntakeIOSparkMax();
             instance = new Intake(io);
@@ -146,12 +145,6 @@ public class Intake implements Subsystem {
 
         // Tell the PID controller that 0 and 360 are continuous
         pivotProfiledPIDController.enableContinuousInput(0, 360);
-
-        if (RobotBase.isSimulation() && io instanceof IntakeIOSim simIO) {
-            armSim = simIO.getArmSim();
-        } else if (RobotBase.isSimulation()) {
-            armSim = new frc.robot.Sim.ArmSim();
-        }
 
         SubsystemManager.registerSubsystem(this);
     }

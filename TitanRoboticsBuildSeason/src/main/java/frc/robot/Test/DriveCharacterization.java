@@ -8,9 +8,9 @@ import edu.wpi.first.units.measure.Voltage;
 import static edu.wpi.first.units.Units.Volts;
 import static edu.wpi.first.units.Units.Meters;
 import static edu.wpi.first.units.Units.MetersPerSecond;
-import frc.robot.Devices.Controller;
+import frc.robot.Hardware.Controller;
 import frc.robot.Subsystems.SwerveBase;
-import frc.robot.Data.TunableNumber;
+import frc.robot.Telemetry.TunableNumber;
 
 /**
  * Swerve drive characterization and testing system.

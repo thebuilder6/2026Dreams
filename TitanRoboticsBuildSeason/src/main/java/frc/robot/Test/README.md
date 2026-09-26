@@ -1,3 +1,11 @@
+---
+title: Test Mode
+audience: [human, ai]
+owner: test-owner
+last_verified: 2026-09-26
+status: authoritative
+---
+
 # Titan Robotics Test Mode System
 
 ## Overview
@@ -12,13 +20,17 @@ The Test Mode system provides a comprehensive framework for testing, tuning, and
 - **ShooterTuning**: Comprehensive shooter testing and PID tuning
 - **IntakeTesting**: Intake arm, roller, and hopper testing
 - **DriveCharacterization**: Swerve drive testing and SysID integration
-- **SystemDiagnostics**: Hardware verification and motor testing
+- **Diagnostics**: Hardware verification and motor testing (`Test/Diagnostics.java`, not `SystemDiagnostics`)
 - **VisionTesting**: Camera and vision system testing
-- **SysIDIntegration**: Enhanced SysID wrapper for system identification
+- **SysIdManager**: Unified 5-mechanism system identification (`Test/SysIdManager.java`); legacy `SysID.java` wrapper delegates to it
 
 ### Test Categories
 
-1. **Shooter Tuning**
+Default category is `SYSID_CHARACTERIZATION` (`TestMode.java:20-29`).
+
+1. **SysId Characterization** (default)
+   - 5-mechanism `SysIdManager` selection via dashboard
+2. **Shooter Tuning**
    - Manual velocity control
    - Auto-aim testing at different distances
    - PID gain tuning via NetworkTables
@@ -59,12 +71,12 @@ Test mode can be enabled via:
 ### Controller Layout
 
 #### Driver Controller (Primary)
-- **D-pad**: Switch between test categories
-  - Up: Shooter Tuning
-  - Right: Intake Testing  
-  - Down: Drive Characterization
-  - Left: System Diagnostics
-  - Both Bumpers: Vision Testing
+- **Left Bumper + D-pad**: Switch between test categories (`TestMode.java:163-175`)
+  - LB + Up (POV 0): SysId Characterization
+  - LB + Right (POV 90): System Diagnostics
+  - LB + Down (POV 180): Shooter Tuning
+  - LB + Left (POV 270): Intake Testing
+  - Drive Characterization and Vision Testing are dashboard-only via `TestMode/SelectCategory` (`TestMode.java:154-161`)
 
 - **Face Buttons (A, B, X, Y)**: Switch between test modes within category
 - **Triggers**: Activate tests
@@ -83,21 +95,22 @@ All test parameters and results are available on SmartDashboard under the `Test/
 #### Test Mode Controls
 - `TestMode/Enabled`: Master toggle
 - `TestMode/Category`: Current active category
-- `TestMode/Running`: Test status indicator
+- `TestMode/SelectCategory`: Dashboard category selector (required for Drive/Vision, which have no controller binding)
 
 #### Category-Specific Parameters
 - `Test/Shooter/*`: Shooter tuning parameters
 - `Test/Intake/*`: Intake test parameters
 - `Test/Drive/*`: Drive test parameters
-- `Test/Diagnostics/*`: Diagnostic test parameters
+- `Diagnostics/*`: Diagnostic test parameters (`Diagnostics/Running`, `PreFlight/*`, `Scorecard/*` — not under `Test/` prefix)
 - `Test/Vision/*`: Vision test parameters
+- `Test/SysId/*`: SysId manager (`ActiveMechanism`, `State`, `IsRunning`, `QuasistaticForward/Reverse`, `DynamicForward/Reverse`, `Abort`, `SelectMechanism`, `LiveVelocity`, `LiveVoltage`)
 
 ## LED Feedback
 
 The LED system provides visual feedback for test status:
 - **Solid Red**: Shooter testing (strobe when active)
-- **Solid Blue**: Intake/Drive testing (strobe when active)
-- **Breath Blue**: System diagnostics (heartbeat red if errors)
+- **Solid Blue**: Intake/Drive/SysId testing (strobe when active)
+- **Breath Blue**: System diagnostics (heartbeat red if errors, strobe gold while pre-flight is running)
 - **Strobe Gold**: Vision testing (solid yellow if no target)
 
 ## Tuning Workflow
@@ -141,14 +154,15 @@ The LED system provides visual feedback for test status:
 
 ### Robot Class Integration
 ```java
-// In Robot constructor
+// In Robot constructor (Robot.java:92)
 testMode = TestMode.getInstance();
 
-// In robotPeriodic()
-if (testMode != null) {
+// In robotPeriodic() — gated, not unconditional (Robot.java:177-180)
+if (testMode != null && (DriverStation.isTest() || testMode.isEnabled())) {
     testMode.update();
 }
 ```
+// Also required: `testInit()` enables (`Robot.java:275-280`), `disabledInit()` cleans up (`Robot.java:261-263`).
 
 ### Subsystem Integration
 - All subsystems continue normal operation when test mode is disabled
@@ -168,7 +182,7 @@ Data can be exported for analysis and comparison.
 ## Troubleshooting
 
 ### Common Issues
-1. **Test mode not responding**: Check `TUNING_MODE` flag in Constants
+1. **Test mode not responding**: Check dashboard `TestMode/Enabled` or DriverStation Test mode (`Robot.java:177-180`). Note: `TUNING_MODE` in Constants gates `TunableNumber` only, not TestMode.
 2. **Dashboard values not updating**: Verify NetworkTables connection
 3. **Motors not responding**: Check CAN connection and motor controllers
 4. **LED feedback not working**: Verify LED controller connection

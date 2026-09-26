@@ -13,8 +13,9 @@ import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import edu.wpi.first.wpilibj.simulation.DriverStationSim;
-import frc.robot.Auto.Actions.DriveToPoseAction;
-import frc.robot.Data.GlideConstants;
+import frc.robot.Navigation.DynamicRouter;
+import frc.robot.Navigation.GlidePoints;
+import frc.robot.Navigation.StaticPathfinder;
 import frc.robot.Subsystems.Intake;
 import frc.robot.Subsystems.Shooter;
 import frc.robot.Subsystems.Shooter.ShootingSolution;
@@ -63,30 +64,30 @@ public class TunnelAndAssistanceTest {
     @Test
     public void testGlideConstantsMatchingTunnelEntrance() {
         // Match Blue Top Trench entrance
-        Pose2d blueTopEntrancePose = new Pose2d(3.50, GlideConstants.Y_TOP_LANE, Rotation2d.fromDegrees(0));
-        GlideConstants.GlidePoint blueTopMatch = GlideConstants.getMatchingTunnelEntrance(blueTopEntrancePose);
+        Pose2d blueTopEntrancePose = new Pose2d(3.50, GlidePoints.Y_TOP_LANE, Rotation2d.fromDegrees(0));
+        GlidePoints.GlidePoint blueTopMatch = GlidePoints.getMatchingTunnelEntrance(blueTopEntrancePose);
         assertNotNull(blueTopMatch, "Should find matching GlidePoint for Blue Top Trench");
         assertTrue(blueTopMatch.isTunnelEntrance, "Matched point should be marked as tunnel entrance");
         assertNotNull(blueTopMatch.tunnelExitPose, "Tunnel exit pose should be defined");
         assertEquals(5.75, blueTopMatch.tunnelExitPose.getX(), 0.05);
 
         // Match with small positional perturbation (within tolerance)
-        Pose2d perturbedPose = new Pose2d(3.60, GlideConstants.Y_TOP_LANE + 0.05, Rotation2d.fromDegrees(0));
-        assertNotNull(GlideConstants.getMatchingTunnelEntrance(perturbedPose, 0.40));
+        Pose2d perturbedPose = new Pose2d(3.60, GlidePoints.Y_TOP_LANE + 0.05, Rotation2d.fromDegrees(0));
+        assertNotNull(GlidePoints.getMatchingTunnelEntrance(perturbedPose, 0.40));
 
         // Poses far from tunnels should return null
         Pose2d hubFront = new Pose2d(5.60, 4.035, Rotation2d.fromDegrees(180));
-        assertNull(GlideConstants.getMatchingTunnelEntrance(hubFront));
-        assertNull(GlideConstants.getMatchingTunnelEntrance(null));
+        assertNull(GlidePoints.getMatchingTunnelEntrance(hubFront));
+        assertNull(GlidePoints.getMatchingTunnelEntrance(null));
     }
 
     @Test
     public void testMidfieldGlidePointsNotCorruptedByRedMirroring() {
-        assertTrue(GlideConstants.GLIDE_POINTS.containsKey("Midfield Top"));
-        assertTrue(GlideConstants.GLIDE_POINTS.containsKey("Midfield Bottom"));
+        assertTrue(GlidePoints.GLIDE_POINTS.containsKey("Midfield Top"));
+        assertTrue(GlidePoints.GLIDE_POINTS.containsKey("Midfield Bottom"));
 
-        Pose2d midTop = GlideConstants.GLIDE_POINTS.get("Midfield Top").pose();
-        Pose2d midBot = GlideConstants.GLIDE_POINTS.get("Midfield Bottom").pose();
+        Pose2d midTop = GlidePoints.GLIDE_POINTS.get("Midfield Top").pose();
+        Pose2d midBot = GlidePoints.GLIDE_POINTS.get("Midfield Bottom").pose();
 
         // Midfield Top must stay at high Y (6.10m), Midfield Bottom at low Y (2.00m)
         assertEquals(6.10, midTop.getY(), 0.05, "Midfield Top must be at Y=6.10m and not inverted to bottom");
@@ -95,24 +96,27 @@ public class TunnelAndAssistanceTest {
 
     @Test
     public void testDriveToPoseActionTunnelSequencing() {
-        SwerveBase.getInstance().resetOdometry(new Pose2d(2.0, GlideConstants.Y_BOT_LANE, Rotation2d.fromDegrees(0)));
-        Pose2d blueBottomEntrance = new Pose2d(3.50, GlideConstants.Y_BOT_LANE, Rotation2d.fromDegrees(0));
-        DriveToPoseAction tunnelAction = new DriveToPoseAction(blueBottomEntrance);
+        SwerveBase.getInstance().resetOdometry(new Pose2d(2.0, GlidePoints.Y_BOT_LANE, Rotation2d.fromDegrees(0)));
+        Pose2d blueBottomEntrance = new Pose2d(3.50, GlidePoints.Y_BOT_LANE, Rotation2d.fromDegrees(0));
 
-        assertTrue(tunnelAction.isTunnelTransit(), "Targeting a tunnel entrance should trigger tunnel transit mode");
-        assertEquals(0.0, tunnelAction.getTunnelHeading().getDegrees(), 1e-4, "Tunnel heading should be locked to 0 deg");
+        // Unified pathfinder: tunnel entrances resolve via GlidePoints + StaticPathfinder routing
+        assertTrue(StaticPathfinder.isTunnelTarget(blueBottomEntrance),
+                "Targeting a tunnel entrance should be recognized as tunnel transit");
+        StaticPathfinder.TunnelRoute route =
+                StaticPathfinder.planTunnelRoute(SwerveBase.getInstance().getPose(), false);
+        assertEquals(0.0, route.corridorHeading.getDegrees(), 1e-4, "Tunnel heading should be locked to 0 deg");
 
-        List<Pose2d> waypoints = tunnelAction.getWaypoints();
+        List<Pose2d> waypoints = route.getWaypoints();
         assertFalse(waypoints.isEmpty(), "Waypoints should not be empty");
-        // SmartTunnelRouter generates [preEntrance, entrance, exit, postExit]
-        assertEquals(4, waypoints.size(), "SmartTunnelRouter should generate 4 corridor waypoints");
+        // StaticPathfinder generates [preEntrance, entrance, exit, postExit]
+        assertEquals(4, waypoints.size(), "StaticPathfinder should generate 4 corridor waypoints");
         assertEquals(5.75, waypoints.get(2).getX(), 0.10, "Third waypoint must be the tunnel exit point");
         assertEquals(6.35, waypoints.get(3).getX(), 0.10, "Final waypoint must be the post-exit point");
 
-        // Non-tunnel destination should NOT activate tunnel transit
+        // Non-tunnel destination should NOT be a tunnel target
         Pose2d midfieldPoint = new Pose2d(8.27, 6.10, Rotation2d.fromDegrees(-90));
-        DriveToPoseAction normalAction = new DriveToPoseAction(midfieldPoint);
-        assertFalse(normalAction.isTunnelTransit(), "Normal target should not activate tunnel transit mode");
+        assertFalse(StaticPathfinder.isTunnelTarget(midfieldPoint),
+                "Normal target should not activate tunnel transit mode");
     }
 
     @Test
@@ -160,21 +164,21 @@ public class TunnelAndAssistanceTest {
     @Test
     public void testSmartTunnelRouterBiDirectional() {
         // 1. Approaching from Alliance Zone (X = 2.0m) -> West to East
-        Pose2d alliancePose = new Pose2d(2.0, GlideConstants.Y_TOP_LANE, Rotation2d.fromDegrees(0));
-        SmartTunnelRouter.TunnelRoute westToEast = SmartTunnelRouter.planTunnelRoute(alliancePose, true);
+        Pose2d alliancePose = new Pose2d(2.0, GlidePoints.Y_TOP_LANE, Rotation2d.fromDegrees(0));
+        StaticPathfinder.TunnelRoute westToEast = StaticPathfinder.planTunnelRoute(alliancePose, true);
 
         assertTrue(westToEast.isWestToEast(), "Should be West to East when starting in Alliance Zone");
-        assertEquals(SmartTunnelRouter.TrenchCorridor.TOP_TRENCH, westToEast.corridor);
+        assertEquals(StaticPathfinder.TrenchCorridor.TOP_TRENCH, westToEast.corridor);
         assertEquals(0.0, westToEast.corridorHeading.getDegrees(), 1e-4);
         assertEquals(3.50, westToEast.entrancePose.getX(), 0.05);
         assertEquals(5.75, westToEast.exitPose.getX(), 0.05);
 
         // 2. Approaching from Midfield (X = 7.0m) -> East to West
-        Pose2d midfieldPose = new Pose2d(7.0, GlideConstants.Y_TOP_LANE, Rotation2d.fromDegrees(180));
-        SmartTunnelRouter.TunnelRoute eastToWest = SmartTunnelRouter.planTunnelRoute(midfieldPose, true);
+        Pose2d midfieldPose = new Pose2d(7.0, GlidePoints.Y_TOP_LANE, Rotation2d.fromDegrees(180));
+        StaticPathfinder.TunnelRoute eastToWest = StaticPathfinder.planTunnelRoute(midfieldPose, true);
 
         assertFalse(eastToWest.isWestToEast(), "Should be East to West when starting in Midfield");
-        assertEquals(SmartTunnelRouter.TrenchCorridor.TOP_TRENCH, eastToWest.corridor);
+        assertEquals(StaticPathfinder.TrenchCorridor.TOP_TRENCH, eastToWest.corridor);
         assertEquals(180.0, Math.abs(eastToWest.corridorHeading.getDegrees()), 1e-4);
         assertEquals(5.75, eastToWest.entrancePose.getX(), 0.05);
         assertEquals(3.50, eastToWest.exitPose.getX(), 0.05);
@@ -186,33 +190,43 @@ public class TunnelAndAssistanceTest {
         DynamicRouter.clearObstacles();
         DynamicRouter.registerObstacle(new edu.wpi.first.math.geometry.Translation2d(4.5, 7.2), new edu.wpi.first.math.geometry.Translation2d(), 0.50, 2.0);
 
-        Pose2d robotPose = new Pose2d(2.0, GlideConstants.Y_TOP_LANE, Rotation2d.fromDegrees(0));
+        Pose2d robotPose = new Pose2d(2.0, GlidePoints.Y_TOP_LANE, Rotation2d.fromDegrees(0));
         // Prefer top trench, but it's blocked by the opponent!
-        SmartTunnelRouter.TunnelRoute route = SmartTunnelRouter.planTunnelRoute(robotPose, true);
+        StaticPathfinder.TunnelRoute route = StaticPathfinder.planTunnelRoute(robotPose, true);
 
         assertTrue(route.isDiverted(), "Route should be automatically diverted when preferred trench is blocked");
-        assertEquals(SmartTunnelRouter.TrenchCorridor.BOTTOM_TRENCH, route.corridor,
+        assertEquals(StaticPathfinder.TrenchCorridor.BOTTOM_TRENCH, route.corridor,
                 "Should divert from Top Trench to Bottom Trench");
-        assertEquals(GlideConstants.Y_BOT_LANE, route.entrancePose.getY(), 0.05);
+        assertEquals(GlidePoints.Y_BOT_LANE, route.entrancePose.getY(), 0.05);
 
         DynamicRouter.clearObstacles();
     }
 
     @Test
     public void testBallHuntActionSharedAuthorityAndMemory() {
-        frc.robot.Auto.Actions.BallHuntAction hunt = new frc.robot.Auto.Actions.BallHuntAction();
-        assertNotNull(hunt);
+        // Phase 7: pursuit lives in Teleop via Vision; the unified stack exposes
+        // trench masking + diversion here instead of the deleted action wrapper.
+        DynamicRouter.clearObstacles();
+        assertFalse(StaticPathfinder.isTrenchBlocked(true, true),
+                "Top trench should read clear with no obstacles");
+        assertFalse(StaticPathfinder.isTrenchBlocked(false, true),
+                "Bottom trench should read clear with no obstacles");
 
-        hunt.start();
-        hunt.setDriverInput(1.5, 0.5);
+        DynamicRouter.registerObstacle(new Translation2d(4.5, 7.2), new Translation2d(), 0.50, 2.0);
+        assertTrue(StaticPathfinder.isTrenchBlocked(true, true),
+                "Obstacle in the top corridor must mask the top trench");
+        assertFalse(StaticPathfinder.isTrenchBlocked(false, true),
+                "Bottom trench must stay clear");
 
-        // Verify ball acquired flag starts false
-        assertFalse(hunt.checkAndClearBallAcquired());
+        // Masked planning must still return a valid route to the goal.
+        Pose2d start = new Pose2d(2.0, 4.035, new Rotation2d());
+        Pose2d goal = new Pose2d(6.20, 4.035, Rotation2d.fromDegrees(180));
+        List<Pose2d> path = StaticPathfinder.findPath(start, goal);
+        assertFalse(path.isEmpty(), "Masked planning must still produce a route");
+        Pose2d last = path.get(path.size() - 1);
+        assertEquals(goal.getTranslation().getX(), last.getTranslation().getX(), 1e-6);
+        assertEquals(goal.getTranslation().getY(), last.getTranslation().getY(), 1e-6);
 
-        // Update loop should execute cleanly without throwing
-        assertDoesNotThrow(hunt::update);
-
-        hunt.done();
-        assertFalse(hunt.isFinished());
+        DynamicRouter.clearObstacles();
     }
 }

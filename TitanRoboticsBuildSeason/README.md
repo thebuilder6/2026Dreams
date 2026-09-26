@@ -1,3 +1,11 @@
+---
+title: Platform README
+audience: [human, ai]
+owner: programming-leads
+last_verified: 2026-09-26
+status: authoritative
+---
+
 # 🚀 Titan Robotics 2026/2027 Robot Platform (Mentor Fork)
 
 Welcome to the **Team 8334 Titan Robotics** advanced exploration repository. This codebase pairs full competition-proven hardware calibrations with modern software innovations: high-fidelity physics simulation, AdvantageKit IO abstraction, dual-camera AprilTag fusion, an automated pre-flight diagnostics suite, and the Jev AI tactical decision engine.
@@ -6,39 +14,7 @@ Welcome to the **Team 8334 Titan Robotics** advanced exploration repository. Thi
 
 ## 🏛️ System Architecture Overview
 
-```
-┌──────────────────────────────────────────────────────────────────────────┐
-│                   DECISION & TACTICAL STRATEGY LAYER                     │
-│  - Jev AI Decision Engine (TypeSafe System One: <20ms structured choices)│
-│  - Choreo Trajectory Tracking & Dynamic Obstacle Avoidance               │
-│  - Autonomous Mission Chooser & Teleop State Machine                     │
-└────────────────────────────────────┬─────────────────────────────────────┘
-                                     ▼
-┌──────────────────────────────────────────────────────────────────────────┐
-│                         SUBSYSTEM LOGIC LAYER                            │
-│  - SwerveBase (Kinematics, Glide Points, Field-Oriented Drive)           │
-│  - Shooter (Distance-to-RPM Dual Flywheel Tables, Kicker Control)        │
-│  - Intake (Continuous ProfiledPID [0,360], Gravity Feedforward)          │
-│  - Vision (Multi-Tag AprilTag Fusion: Limelight MT2 + PhotonVision)      │
-│  - Diagnostics (15-Second Pre-Flight Self-Test Sequencer)                │
-└────────────────────────────────────┬─────────────────────────────────────┘
-                                     ▼
-┌──────────────────────────────────────────────────────────────────────────┐
-│                   HARDWARE IO ABSTRACTION (AdvantageKit)                 │
-│         DriveIO         ShooterIO         IntakeIO         VisionIO      │
-│        /      \         /       \         /      \         /      \      │
-│    [Spark]  [Sim]   [Spark]   [Sim]   [Spark]  [Sim]   [LL/PV]  [PVSim]  │
-└────────────────────────────────────┬─────────────────────────────────────┘
-                                     ▼
-┌──────────────────────────────────────────────────────────────────────────┐
-│                     TELEMETRY & VISUALIZATION LAYER                      │
-│  - Elastic Dashboard (Driver UI, Feature Switches, Pre-Flight Scorecard) │
-│  - AdvantageScope (3D Field, Robot Poses, Mechanism Visualizer)          │
-│  - Deterministic Replay (.wpilog Byte-for-Byte Match Simulation)         │
-└──────────────────────────────────────────────────────────────────────────┘
-```
-
-For detailed specifications of each layer, see the [Architecture Guide](ARCHITECTURE.md).
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the authoritative 4-layer diagram and subsystem contracts (not duplicated here).
 
 ---
 

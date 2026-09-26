@@ -17,8 +17,8 @@ import frc.robot.Subsystems.Shooter;
 import frc.robot.Subsystems.SubsystemManager;
 import frc.robot.Subsystems.SwerveBase;
 import frc.robot.Subsystems.Vision;
-import frc.robot.Utils.Alert;
-import frc.robot.Utils.Alert.AlertType;
+import frc.robot.Telemetry.Alert;
+import frc.robot.Telemetry.Alert.AlertType;
 
 /**
  * Diagnostics subsystem for safe hardware verification and automated Pre-Flight pit checks.
@@ -38,7 +38,7 @@ public class Diagnostics implements Subsystem {
 
     private static Diagnostics instance = null;
 
-    public static Diagnostics getInstance() {
+    public static synchronized Diagnostics getInstance() {
         if (instance == null) {
             instance = new Diagnostics();
         }

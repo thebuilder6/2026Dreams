@@ -11,7 +11,7 @@ import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.wpilibj.simulation.DriverStationSim;
 import frc.robot.Interfaces.Subsystem;
-import frc.robot.Subsystems.Dashboard;
+import frc.robot.Telemetry.Dashboard;
 import frc.robot.Subsystems.Intake;
 import frc.robot.Subsystems.Shooter;
 import frc.robot.Subsystems.SubsystemManager;
@@ -115,7 +115,7 @@ public class PlayerPickupShootTest {
 
         try {
             MatchScoreTracker tracker = MatchScoreTracker.getInstance();
-            Translation2d hub = frc.robot.Data.FieldMap.Hubs.getHubLocation2d(false);
+            Translation2d hub = frc.robot.Navigation.FieldMap.Hubs.getHubLocation2d(false);
             Translation2d stand = new Translation2d(hub.getX() - 1.75, hub.getY() + 1.75);
             Pose2d pose = new Pose2d(stand, hub.minus(stand).getAngle());
             SwerveBase.getInstance().resetOdometry(pose);

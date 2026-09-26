@@ -6,12 +6,13 @@ import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.RobotBase;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
-import frc.robot.Data.FieldMap;
+import frc.robot.Navigation.ContactWatchdog;
+import frc.robot.Navigation.FieldMap;
 import frc.robot.Interfaces.Subsystem;
 import frc.robot.Subsystems.SubsystemManager;
 import frc.robot.Subsystems.SwerveBase;
-import frc.robot.Utils.Alert;
-import frc.robot.Utils.Alert.AlertType;
+import frc.robot.Telemetry.Alert;
+import frc.robot.Telemetry.Alert.AlertType;
 import frc.robot.Utils.AllianceFlipUtil;
 import org.littletonrobotics.junction.Logger;
 
@@ -358,7 +359,8 @@ public class RefereeSim implements Subsystem {
     }
 
     public synchronized double getPinTimer() {
-        return playerOpponentPinTime;
+        // Referee scoring timer, with unified watchdog as floor for warning parity.
+        return Math.max(playerOpponentPinTime, ContactWatchdog.getInstance().getPinDuration());
     }
 
     public synchronized void setSimPinTimer(double seconds) {
@@ -366,9 +368,13 @@ public class RefereeSim implements Subsystem {
     }
 
     private void publishTelemetry() {
+        double watchdogPin = ContactWatchdog.getInstance().getPinDuration();
         SmartDashboard.putNumber("Scoreboard/Referee/ActivePinTimerSec", playerOpponentPinTime);
+        SmartDashboard.putNumber("Scoreboard/Referee/WatchdogPinSec", watchdogPin);
         SmartDashboard.putBoolean("Scoreboard/Referee/PinWarningActive", playerOpponentPinTime >= 1.8);
+        SmartDashboard.putBoolean("Scoreboard/Referee/WatchdogWarning", ContactWatchdog.getInstance().isWarningActive());
         Logger.recordOutput("Scoreboard/Referee/ActivePinTimerSec", playerOpponentPinTime);
+        Logger.recordOutput("Scoreboard/Referee/WatchdogPinSec", watchdogPin);
     }
 
     @Override

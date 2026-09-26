@@ -7,7 +7,7 @@ import edu.wpi.first.math.geometry.Translation3d;
 import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.DriverStation.Alliance;
 import frc.robot.Data.Constants;
-import frc.robot.Data.FieldMap;
+import frc.robot.Navigation.FieldMap;
 
 /**
  * Standardizes coordinate geometry to Blue-origin coordinates across the entire codebase.

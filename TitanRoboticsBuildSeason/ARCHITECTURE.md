@@ -1,3 +1,11 @@
+---
+title: Architecture Contracts
+audience: [human, ai]
+owner: programming-leads
+last_verified: 2026-09-26
+status: authoritative
+---
+
 # 📐 2026–2027 Robot Software Architecture & System Design
 
 Welcome to the technical architecture guide for Team 8334's 2026/2027 robot platform. This document outlines the system hierarchy, hardware abstraction layers, dual-vision platform, pre-flight diagnostics, and the Jev AI decision engine.
@@ -86,34 +94,34 @@ flowchart TD
 - **Navigation**: Integrated with `GlideConstants` for automated transit to strategic field zones (Hub, Feeders, Trenches).
 
 ### B. Dual-Flywheel Shooter (`Shooter.java`)
-- **Velocity Control**: Independent PID + `SimpleMotorFeedforward` controllers for Left (CAN 12) and Right (CAN 11) flywheels with anti-windup voltage clamping (`[-1.5V, +1.5V]`).
-- **Empirical Tuning Curves**: Interpolating distance lookup tables (`leftRpmTable` & `rightRpmTable`) providing tailored RPM curves and differential spin.
-- **Kicker Feeder**: 12V pulse actuation sequenced strictly after flywheels reach stable speed within ±150 RPM tolerance.
+- **Velocity Control**: Independent PID + `SimpleMotorFeedforward` controllers for Left (CAN 12) and Right (CAN 11) flywheels with integrator anti-windup range (`-1.5 to +1.5`, `Shooter.java:135-136` — integrator only, not output clamp).
+- **Empirical Tuning Curves**: Interpolating distance lookup tables (`leftRpmTable` & `rightRpmTable`, 1.2 m→2400/2450 … 6.0 m→4500/4550, `Shooter.java:139-155`) providing tailored RPM curves and differential spin.
+- **Kicker Feeder**: 12V pulse actuation (`ShooterConstants KICKER_VOLTAGE=12.0`) sequenced strictly after flywheels acquire speed (error < 150 RPM, release hysteresis > 750 RPM, `Shooter.java:362-364`; canonical `RPM_TOLERANCE=50.0`). Alliance-zone gate + 1.2–6.5 m solution window (`Shooter.java:193-194`); predictive lookahead 0.13 s for shoot-on-the-fly.
 - **3D Visualization**: Real-time 3D pose broadcast to `Subsystems/Shooter/ShooterPose3d` for AdvantageScope mechanism view.
 
-### C. Articulated Ground Intake (`Intake.java` / `IntakeMechanism.java`)
+### C. Articulated Ground Intake (`Intake.java`)
 - **Pivot Arm Control**: Trapezoidal motion profiling (`ProfiledPIDController`) with continuous `[0, 360]` angle wrapping.
 - **Gravity Compensation**: `ArmFeedforward` calculation relative to horizontal mechanical position (`250°`).
-- **States**: `Standby` (Up: 347°), `Intaking` (Down: 250°), `Down`, `Reversed`, `Manual`, and `Disabled`.
-- **Jam Detection**: Integrated current monitoring with automatic reversal pulse if high-torque stalling occurs.
+- **States**: `Standby` (347°), `Intaking`/`Down` (250°), plus `STANDBY_INTAKING`, `STANDBY_REVERSED`, `IDLE`, `FEEDING`, `EJECTING`, `CHARACTERIZATION`, `Manual`, `Disabled` (`Intake.java:53-65`).
+- **Jam Detection**: Roller stall > 30A for > 0.5 s triggers 1.0 s auto-eject (`IntakeConstants.java:25-27`, `Intake.java:463-474`).
 
-### D. Dual-Vision Platform (`Vision.java` / `LimelightHelpers.java`)
+### D. Dual-Vision Platform (`Vision.java` / `ThirdParty/LimelightHelpers.java`)
 - **Front Camera**: Limelight 3/3G running MegaTag2 feeding raw gyro yaw rates (`DegreesPerSecond`) directly into pose estimation.
 - **Side/Back Coprocessor**: Orange Pi 5 running PhotonVision with `PhotonPoseEstimator` (`MULTI_TAG_PNP_ON_COPROCESSOR`).
-- **Desktop Simulation**: `PhotonCameraSim` and `VisionSystemSim` generating simulated AprilTag detections in SimGUI without physical cameras.
-- **Object Detection**: YOLOv8 neural network pipeline running on the coprocessor NPU for automated game piece targeting ("Ball Hunt").
+- **Desktop Simulation**: `Sim/LimelightSim` + `Sim/VisionSim` wrapped by `Subsystems/vision/VisionIOSim.java` generating simulated AprilTag detections in SimGUI without physical cameras.
+- **Object Detection**: `hasGamePiece` boolean telemetry feeds "Ball Hunt" (`Vision.java:136-155`); no YOLOv8 NPU pipeline code in repo.
 
 ### E. Pre-Flight Diagnostics (`Test/Diagnostics.java` / `TestMode.java`)
-- **15-Second Automated Pit Check**:
+- **15-Second Automated Pit Check** (`Diagnostics.java:177-320`, progress `/15.0`):
   1. *CAN Bus Audit*: Verifies all CAN devices acknowledge heartbeat.
   2. *Swerve Motor Pulse*: Spins each drive wheel at +1.5V to verify encoder velocity sign.
-  3. *Steer Alignment Check*: Sweeps modules 90° to confirm absolute encoder correlation.
+  3. *Steer Alignment Check*: Applies +1.5V steer voltage (no angle assertion, `Diagnostics.java:232`).
   4. *Intake Profile Check*: Verifies arm travel time and flags current draw > 25A (mechanical binding).
-  5. *Shooter Ramping*: Ramps flywheels to 1500 RPM and checks steady-state error < ±30 RPM.
-  6. *Vision Link Check*: Verifies stream FPS > 25 and network latency < 40ms.
+  5. *Shooter Ramping*: Ramps flywheels to 1500 RPM and checks error < ±50 RPM (`Diagnostics.java:302`).
+  6. *Vision Link Check*: Pass if `hasTarget() || getIO() != null`, else WARN (`Diagnostics.java:314`) — no FPS/latency assertion.
 - **Scorecard**: Displays a color-coded status grid on Elastic Dashboard before matches.
 
-### F. Driver Haptic Feedback (`Devices/Controller.java` & `Teleop.java`)
+### F. Driver Haptic Feedback (`Hardware/Controller.java` & `Teleop.java`)
 - **Non-Blocking Sequenced Rumbles**: Tactile notification engine operating independently of robot control loops.
 - **Rumble Patterns**:
   - `TARGET_LOCKED`: Double crisp pulse (100ms on, 80ms off, 100ms on) notifying driver and operator when the robot is aligned with the hub and flywheels are up to speed.
@@ -121,7 +129,7 @@ flowchart TD
   - `HARDWARE_WARNING`: Rapid triple pulse alerting drivers when vision or sensor degradation occurs mid-match.
   - `MATCH_TIME_WARNING`: Sustained deep rumble warning drivers at T-30s and T-15s before match conclusion.
 
-### G. Non-CLI Driver Alert Infrastructure (`Utils/Alert.java`, `Utils/AlertManager.java`, `Subsystems/LEDs.java`)
+### G. Non-CLI Driver Alert Infrastructure (`Telemetry/Alert.java`, `Telemetry/AlertManager.java`, `Subsystems/LEDs.java`)
 - **No Console Clutter**: Replaces spammy driver station console printouts with persistent visual indicators.
 - **Elastic Dashboard Banner**: Color-coded single-line top banner (`Driver/AlertBanner`) and active tables (`Alerts/Errors`, `Alerts/Warnings`).
 - **Addressable LEDs Integration**:
@@ -132,9 +140,9 @@ flowchart TD
   - `SOLID_BLUE` / `SOLID_RED`: Default Alliance color.
 
 ### H. Sensor Redundancy & Graceful Degradation
-- **Vision Watchdog (`SwerveBase.java`)**: Continuously monitors Limelight MegaTag2 latency and frame timestamps. Rejects stale packets (>150ms) and telemetry jumps (>1.25m). Automatically transitions to pure odometry dead-reckoning with driver alert pulse if camera feed degrades.
-- **Intake Absolute Encoder Fallback (`Intake.java`)**: Monitors `DutyCycleEncoder.isConnected()`. If the absolute encoder fails or is unplugged, the intake seamlessly falls back to NEO internal relative encoder delta tracking (`3.6°` per motor rotation), preventing mechanical damage or mechanism lockup.
-- **Current Stall Jam Clearning**: Monitors roller motor current (>30A for >0.5s) to detect mechanical jams, automatically reversing rollers to eject the obstruction without requiring driver intervention.
+- **Vision Watchdog (`Vision.java:91-93,115-117`)**: Rejects stale packets (>150 ms), excess yaw rate (360°/s), and distant tags (4.0 m, single-tag penalty, `Constants.java:95-108`). Falls back to pure odometry with driver alert on degradation.
+- **Intake Absolute Encoder Fallback (`Intake.java:450-457`)**: On invalid `armPositionDeg`, falls back to NEO relative-encoder delta tracking (`3.6°` per motor rotation), preventing lockup.
+- **Current Stall Jam Clearing**: Monitors roller motor current (>30A for >0.5s) to detect mechanical jams, automatically reversing rollers to eject the obstruction without requiring driver intervention.
 
 ### I. Standardized Blue-Origin Coordinate Geometry (`Utils/AllianceFlipUtil.java`)
 - **Single Source of Truth**: All field coordinates, waypoints, and target structures are defined once in Blue Alliance coordinates ($X=0$ at Blue wall).
@@ -148,7 +156,7 @@ The decision-making across simulation sparring, teleoperated co-pilot assist, an
 │                      SYSTEM 2: EXECUTIVE STRATEGY                           │
 │  - Evaluates macro-utility matrix over candidate StrategicObjectives        │
 │  - Weighted by Archetype (Cycler, Bully, Competitor, Defender, Co-Pilot)   │
-│  - Sub-millisecond execution (<0.5ms) with zero garbage-collection jitter   │
+│  - Sub-millisecond execution with latency logging (`JevDecisionEngine.java:167,493,665`); no hard GC-free guarantee in code.   │
 └──────────────────────────────────────┬──────────────────────────────────────┘
                                        │ Active Objective
                                        ▼
@@ -170,13 +178,13 @@ The decision-making across simulation sparring, teleoperated co-pilot assist, an
 
 1. **Game-Agnostic Abstraction Layer**:
    - [`StrategicObjective`](file:///c:/Users/jumpi/Documents/Github/2026Dreams/TitanRoboticsBuildSeason/src/main/java/frc/robot/Sim/StrategicObjective.java): Universal FRC macro objectives (`STOCKPILE_DEPOT`, `VACUUM_MIDFIELD`, `CYCLE_SCORE_HUB`, `STAGE_STANDOFF`, `DENY_SHOOTING_LANE`, `SHADOW_MIDLINE`, `LEAD_INTERCEPT`, `RUSH_CLIMB`, `IDLE`) with game-agnostic static aliases (`SCORE_GOAL`, `HARVEST_FEEDER`, `HARVEST_FIELD_PIECES`).
-   - [`WorldState`](file:///c:/Users/jumpi/Documents/Github/2026Dreams/TitanRoboticsBuildSeason/src/main/java/frc/robot/Sim/WorldState.java): Immutable snapshot representing the world state, providing game-agnostic accessors (`heldGamePieces()`, `isPrimaryGoalActive()`) alongside 2026 convenience delegates (`heldFuelCount()`, `isAllianceHubActive()`).
+   - [`WorldState`](file:///c:/Users/jumpi/Documents/Github/2026Dreams/TitanRoboticsBuildSeason/src/main/java/frc/robot/Sim/WorldState.java): Immutable snapshot with `heldGamePieceCount()`, `isAllianceGoalActive()`, `isOpponentGoalActive()`, `timeUntilGoalShift()` plus 2026 record components `heldFuelCount()`, `isAllianceHubActive()`.
    - [`MatchKnowledge`](file:///c:/Users/jumpi/Documents/Github/2026Dreams/TitanRoboticsBuildSeason/src/main/java/frc/robot/Sim/MatchKnowledge.java): Two-tier information model. Driver-assist tier (`unknown()`): only self-perceivable state, opponents unobserved. Sim-sparring tier: robot knowledge plus player-visible match context (score differential, both sides' poses/velocities, held/scored balls).
    - [`AIActionIntent`](file:///c:/Users/jumpi/Documents/Github/2026Dreams/TitanRoboticsBuildSeason/src/main/java/frc/robot/Sim/AIActionIntent.java): Concrete subsystem output record linking directly to `IntakeState` and `ShooterState`.
 
 2. **Multi-Robot Simultaneous Execution (`AIRobotSim` & `AIRobotInstance`)**:
    - `AIRobotInstance`: Encapsulates an independent simulated swerve drive chassis, intake mechanism, PID controllers, and behavior archetype.
-   - `AIRobotSim`: Multi-robot manager that dynamically scales the sparring pool based on `Simulation/OpponentCount` (1 to 3 bots) and `Simulation/AllyCount` (0 to 2 bots), with independent opponent/ally speed scales. Every sim robot opens with 8 fuel.
+   - `AIRobotSim`: Multi-robot manager for max 5 AI (3 opponents + 2 allies) + player = 6 on field, scaling via `Simulation/OpponentCount` (1 to 3 bots) and `Simulation/AllyCount` (0 to 2 bots), with independent opponent/ally speed scales. Every sim robot opens with 8 fuel.
    - Opponents skate against the player, allies skate with the player; per-bot archetype choosers on the Simulation Elastic tab.
    - **Soft Peer Separation**: Applies inverse-distance repulsive forces ($r < 1.10\text{m}$) across peer robots, preventing clustering or jamming during contested pickups.
    - **Staggered Spawning**: Staggers initial positions across non-overlapping corridor coordinates ($Y = 4.035\text{m}, 5.80\text{m}, 2.25\text{m}$).
@@ -194,7 +202,7 @@ The decision-making across simulation sparring, teleoperated co-pilot assist, an
 
 Practice matches run a complete rulebook-aware scoring loop in `Sim/`:
 
-- **Official hub schedule (`Sim/HubSchedule.java`, rules 6.4/6.4.1)**: AUTO/TRANSITION/END GAME both-active; SHIFT 1–4 alternate a single active hub, seeded by AUTO fuel totals (most AUTO fuel sits out first; tie → random). The sim acts as FMS at `teleopInit`, mirroring the seed to game data. The MapleSim arena's own 25 s clock is frozen with both hubs physically capturable so the schedule alone decides legality — hub lights stay lit, Elastic shows the official states.
+- **Official hub schedule (`Sim/HubSchedule.java`, rules 6.4/6.4.1)**: AUTO/TRANSITION/END GAME both-active; SHIFT 1–4 alternate a single active hub, seeded by AUTO fuel totals (most AUTO fuel sits out first; tie → random). The sim acts as FMS at `teleopInit`, mirroring the seed to game data. 25 s shift boundaries + 3 s grace live in `HubSchedule.java`; Elastic shows the official states.
 - **3-second processing grace (rule 6.5)**: balls already scored keep counting up to 3 s after deactivation; new launches into an inactive hub stay illegal (G407).
 - **Reliable score capture (`Sim/ShotTracker.java`)**: the hub physically swallows balls before the projectile's analytic hit-time, which used to silently drop most scores. Every launch is tracked; disappearance near the funnel resolves exactly once as scored (active hub, full per-robot attribution), wasted (inactive hub), or clean miss.
 - **Scoreboard (`Sim/MatchScoreTracker.java`)**: 1 pt per fuel (active hub only, split AUTO/TELEOP), 10 pts per climb, MINOR 5 / MAJOR 15 foul points to the opponent, plus win/fuel/climb ranking points. Live red/blue totals, per-robot balls (Player, Bot 0–2, Ally 1–2), and penalty breakdowns publish under `Scoreboard/*` to the dedicated Elastic Match Scoreboard tab.
@@ -207,4 +215,4 @@ As WPILib transitions to the **Systemcore** platform (quad-core ARM controller) 
 1. **Elastic Dashboard**: Our primary driver display with custom layout in `elastic-layout.json`.
 2. **AdvantageScope**: Standard 3D visualizer for robot field poses, arm articulation, and shooting vectors.
 3. **Telemetry Encapsulation**: All dashboard variables are routed through `Dashboard.java` and `TunableNumber.java` for painless migration to 2027 Telemetry/Tunables APIs.
-4. **Commands v3**: Core actions designed for clean conversion to coroutines in WPILib 2027.
+4. **Commands (v2, roadmap to v3)**: Core code uses Commands v2 (`Commands.run`); actions designed for clean conversion to coroutines in WPILib 2027.

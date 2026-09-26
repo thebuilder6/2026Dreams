@@ -130,22 +130,41 @@ public class WPILibTricksEnhancementsTest {
     @Test
     public void testTrajectoryAntiStallDeterministicEscapes() {
         edu.wpi.first.math.controller.PIDController headingController = new edu.wpi.first.math.controller.PIDController(1.0, 0, 0);
-        frc.robot.Auto.TrajectoryController tc1 = new frc.robot.Auto.TrajectoryController(headingController);
-        frc.robot.Auto.TrajectoryController tc2 = new frc.robot.Auto.TrajectoryController(headingController);
+        frc.robot.Navigation.TrajectoryController tc1 = new frc.robot.Navigation.TrajectoryController(headingController);
+        frc.robot.Navigation.TrajectoryController tc2 = new frc.robot.Navigation.TrajectoryController(headingController);
 
         Pose2d botPose = new Pose2d(5.0, 5.0, new Rotation2d(0.0));
         Pose2d goalPose = new Pose2d(10.0, 5.0, new Rotation2d(0.0));
         ChassisSpeeds stalledSpeeds = new ChassisSpeeds(0.02, 0.0, 0.0);
 
-        // When stalled, calculate anti-stall unstick vector
-        ChassisSpeeds escape1 = tc1.calculate(botPose, stalledSpeeds, goalPose, 3.0, true, false);
-        ChassisSpeeds escape2 = tc2.calculate(botPose, stalledSpeeds, goalPose, 3.0, true, false);
+        // Phase 2: TrajectoryController stays pure path tracking; the isStalled flag is
+        // retained for API compatibility but no longer triggers an internal pirouette.
+        ChassisSpeeds path1 = tc1.calculate(botPose, stalledSpeeds, goalPose, 3.0, true, false);
+        ChassisSpeeds path2 = tc2.calculate(botPose, stalledSpeeds, goalPose, 3.0, true, false);
 
-        // Determinism assertion: two controllers given identical inputs must produce the EXACT same unstick speeds
+        // Determinism assertion: two controllers given identical inputs must produce the EXACT same speeds
+        assertEquals(path1.vxMetersPerSecond, path2.vxMetersPerSecond, 1e-4, "Path vx must be deterministic");
+        assertEquals(path1.vyMetersPerSecond, path2.vyMetersPerSecond, 1e-4, "Path vy must be deterministic");
+        assertEquals(path1.omegaRadiansPerSecond, path2.omegaRadiansPerSecond, 1e-4, "Path omega must be deterministic");
+
+        // Stall escape now lives in ContactWatchdog and stays deterministic with a seeded RNG.
+        frc.robot.Navigation.ContactWatchdog w1 =
+                new frc.robot.Navigation.ContactWatchdog(new java.util.Random(7));
+        frc.robot.Navigation.ContactWatchdog w2 =
+                new frc.robot.Navigation.ContactWatchdog(new java.util.Random(7));
+        for (int i = 0; i < 60; i++) {
+            w1.update(botPose, new ChassisSpeeds(), new ChassisSpeeds(2.0, 0.0, 0.0),
+                    0.0, 0.0, 30.0, 0.5, new Pose2d(5.5, 5.0, new Rotation2d()), 0.02);
+            w2.update(botPose, new ChassisSpeeds(), new ChassisSpeeds(2.0, 0.0, 0.0),
+                    0.0, 0.0, 30.0, 0.5, new Pose2d(5.5, 5.0, new Rotation2d()), 0.02);
+        }
+        ChassisSpeeds escape1 = w1.arbitrate(new ChassisSpeeds(2.0, 0.0, 0.0), botPose,
+                new Pose2d(5.5, 5.0, new Rotation2d()));
+        ChassisSpeeds escape2 = w2.arbitrate(new ChassisSpeeds(2.0, 0.0, 0.0), botPose,
+                new Pose2d(5.5, 5.0, new Rotation2d()));
         assertEquals(escape1.vxMetersPerSecond, escape2.vxMetersPerSecond, 1e-4, "Escape vx must be deterministic");
         assertEquals(escape1.vyMetersPerSecond, escape2.vyMetersPerSecond, 1e-4, "Escape vy must be deterministic");
         assertEquals(escape1.omegaRadiansPerSecond, escape2.omegaRadiansPerSecond, 1e-4, "Escape omega must be deterministic");
-        assertTrue(tc1.isStalledActive(), "Unstick reflex should be active");
     }
 
     @Test
@@ -240,7 +259,7 @@ public class WPILibTricksEnhancementsTest {
 
     @Test
     public void testControllerRumbleCaching() {
-        frc.robot.Devices.Controller controller = new frc.robot.Devices.Controller(0);
+        frc.robot.Hardware.Controller controller = new frc.robot.Hardware.Controller(0);
         assertDoesNotThrow(() -> {
             controller.setRumble(edu.wpi.first.wpilibj.GenericHID.RumbleType.kLeftRumble, 0.5);
             controller.setRumble(edu.wpi.first.wpilibj.GenericHID.RumbleType.kLeftRumble, 0.5); // Should hit cache
@@ -251,17 +270,19 @@ public class WPILibTricksEnhancementsTest {
 
     @Test
     public void testDriveToPoseActionBreakoutSmoothness() {
-        Pose2d target = new Pose2d(5.0, 5.0, new Rotation2d(0.0));
-        frc.robot.Auto.Actions.DriveToPoseAction action = new frc.robot.Auto.Actions.DriveToPoseAction(target);
-        action.start();
+        // Phase 7: breakout lives in the co-pilot lifecycle; hard stick ends assist cleanly.
+        frc.robot.Intelligence.AutonomousTeleopAgent agent =
+                frc.robot.Intelligence.AutonomousTeleopAgent.getInstance();
+        agent.stopAssist();
+        agent.startSmartAssist();
 
         // Feed strong stick input exceeding breakout threshold
-        action.setDriverInput(Constants.MAX_SPEED * 0.8, 0.0, 0.0);
-        assertTrue(action.isBreakoutRequested(), "High driver input must trigger breakout");
-        assertTrue(action.isFinished(), "Action must finish upon breakout");
+        boolean running = agent.updateSmartAssist(Constants.MAX_SPEED * 0.8, 0.0, 0.0);
+        assertFalse(running, "High driver input must end assist");
+        assertTrue(agent.checkAndClearBreakout(), "High driver input must trigger breakout");
 
-        // Calling done() on breakout must execute safely
-        assertDoesNotThrow(() -> action.done());
+        // Stopping on breakout must execute safely
+        assertDoesNotThrow(agent::stopAssist);
     }
 
     @Test

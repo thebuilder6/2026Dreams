@@ -11,14 +11,15 @@ import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
-import frc.robot.Auto.DynamicRouter;
+import frc.robot.Navigation.DynamicRouter;
 import frc.robot.Sim.AIRobotSim.AIMode;
 import frc.robot.Sim.AIRobotSim.CyclerPhase;
 import frc.robot.Sim.AIRobotSim.MarkCandidate;
-import frc.robot.Subsystems.Dashboard;
+import frc.robot.Telemetry.Dashboard;
 import swervelib.simulation.ironmaple.simulation.SimulatedArena;
 import swervelib.simulation.ironmaple.simulation.seasonspecific.rebuilt2026.Arena2026Rebuilt;
 import swervelib.simulation.ironmaple.simulation.seasonspecific.rebuilt2026.RebuiltFuelOnField;
+import frc.robot.Intelligence.Archetype;
 
 public class AIRobotSimTest {
 
@@ -123,17 +124,17 @@ public class AIRobotSimTest {
         // Line across the Blue ramp should be completely blocked
         Translation2d blueAllianceSide = new Translation2d(3.0, 5.75);
         Translation2d blueMidfieldSide = new Translation2d(6.2, 5.75);
-        assertFalse(frc.robot.Auto.StaticPathfinder.isLineOfSightClear(blueAllianceSide, blueMidfieldSide),
+        assertFalse(frc.robot.Navigation.StaticPathfinder.isLineOfSightClear(blueAllianceSide, blueMidfieldSide),
                 "Line of sight crossing the Blue Ramp must be blocked");
 
         // Line across the Red ramp should be completely blocked
         Translation2d redAllianceSide = new Translation2d(13.5, 5.75);
         Translation2d redMidfieldSide = new Translation2d(10.34, 5.75);
-        assertFalse(frc.robot.Auto.StaticPathfinder.isLineOfSightClear(redAllianceSide, redMidfieldSide),
+        assertFalse(frc.robot.Navigation.StaticPathfinder.isLineOfSightClear(redAllianceSide, redMidfieldSide),
                 "Line of sight crossing the Red Ramp must be blocked");
 
         // Full path from Blue Alliance Center to Midfield Center
-        var path = frc.robot.Auto.StaticPathfinder.findPath(
+        var path = frc.robot.Navigation.StaticPathfinder.findPath(
                 new Pose2d(2.40, 4.035, new Rotation2d()),
                 new Pose2d(8.27, 4.035, new Rotation2d())
         );
@@ -658,7 +659,7 @@ public class AIRobotSimTest {
         assertEquals(2, allies.size());
 
         // Move Ally 1 to the Blue Tower Pole (player alliance is Blue)
-        Translation2d bluePole = frc.robot.Data.FieldMap.ClimbingTowers.BLUE_TOWER_POLE;
+        Translation2d bluePole = frc.robot.Navigation.FieldMap.ClimbingTowers.BLUE_TOWER_POLE;
         allies.get(0).setRobotPose(new Pose2d(bluePole.getX() + 0.1, bluePole.getY() + 0.1, new Rotation2d()));
 
         // Keep Ally 2 away from pole

@@ -3,8 +3,8 @@ package frc.robot.Subsystems.intake;
 import edu.wpi.first.math.MathUtil;
 import edu.wpi.first.wpilibj.DutyCycleEncoder;
 import frc.robot.Data.Constants;
-import frc.robot.Data.PortMap;
-import frc.robot.Devices.NeoSparkMaxMotor;
+import frc.robot.Hardware.PortMap;
+import frc.robot.Hardware.NeoSparkMaxMotor;
 
 /**
  * Real physical hardware implementation of IntakeIO using REV SparkMax controllers

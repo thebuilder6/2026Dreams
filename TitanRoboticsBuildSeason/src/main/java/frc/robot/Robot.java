@@ -21,16 +21,16 @@ import frc.robot.Auto.AutoMissionExecutor;
 import frc.robot.Auto.Missions.MissionBase;
 import frc.robot.Sim.AIRobotSim;
 import frc.robot.Sim.GameSim;
-import frc.robot.Subsystems.Dashboard;
+import frc.robot.Telemetry.Dashboard;
 import frc.robot.Subsystems.Intake;
 import frc.robot.Subsystems.LEDs;
-import frc.robot.Subsystems.MatchCoach;
+import frc.robot.Intelligence.MatchCoach;
 import frc.robot.Subsystems.Shooter;
 import frc.robot.Subsystems.SubsystemManager;
 import frc.robot.Subsystems.SwerveBase;
 import frc.robot.Subsystems.Vision;
 import frc.robot.Test.TestMode;
-import frc.robot.Utils.AlertManager;
+import frc.robot.Telemetry.AlertManager;
 
 /**
  * The methods in this class are called automatically corresponding to each

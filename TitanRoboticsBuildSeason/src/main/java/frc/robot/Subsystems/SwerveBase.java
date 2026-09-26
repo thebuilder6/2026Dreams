@@ -35,10 +35,10 @@ import edu.wpi.first.wpilibj.RobotController;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.smartdashboard.Field2d;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
-import frc.robot.Auto.CollisionDetector;
-import frc.robot.Auto.DynamicRouter;
+import frc.robot.Navigation.ContactWatchdog;
+import frc.robot.Navigation.DynamicRouter;
 import frc.robot.Data.Constants;
-import frc.robot.Data.GlideConstants;
+import frc.robot.Navigation.GlidePoints;
 import frc.robot.Interfaces.Subsystem;
 import frc.robot.Sim.LimelightSim;
 import frc.robot.Sim.VisionSim;
@@ -46,8 +46,8 @@ import frc.robot.Subsystems.drive.DriveIO;
 import frc.robot.Subsystems.drive.DriveIOInputsAutoLogged;
 import frc.robot.Subsystems.drive.DriveIOSparkMax;
 import frc.robot.Subsystems.drive.DriveIOSim;
-import frc.robot.Utils.Alert;
-import frc.robot.Utils.Alert.AlertType;
+import frc.robot.Telemetry.Alert;
+import frc.robot.Telemetry.Alert.AlertType;
 import frc.robot.Utils.AllianceFlipUtil;
 import swervelib.SwerveController;
 import swervelib.SwerveDrive;
@@ -69,7 +69,7 @@ public class SwerveBase implements Subsystem {
 
     private final ArrayList<String> lastGlideFieldObjectNames = new ArrayList<>();
     private Boolean lastRedAllianceDrawn = null;
-    private GlideConstants.GlidePoint lastHighlightedGlidePoint = null;
+    private GlidePoints.GlidePoint lastHighlightedGlidePoint = null;
 
     /**
      * Swerve drive object.
@@ -93,7 +93,7 @@ public class SwerveBase implements Subsystem {
 
     private boolean isPitMode = false;
 
-    private final CollisionDetector collisionDetector = new CollisionDetector();
+    private final ContactWatchdog contactWatchdog = ContactWatchdog.getInstance();
 
     // Power Distribution & Brownout Sag Protection
     private PowerDistribution powerDistribution;
@@ -108,7 +108,7 @@ public class SwerveBase implements Subsystem {
      * 
      * @return The instance of SwerveBase.
      */
-    public static SwerveBase getInstance() {
+    public static synchronized SwerveBase getInstance() {
         if (instance == null) {
             instance = new SwerveBase();
         }
@@ -331,26 +331,26 @@ public class SwerveBase implements Subsystem {
         }
     }
 
-    private GlideConstants.GlidePoint lastNearest = null;
+    private GlidePoints.GlidePoint lastNearest = null;
 
-    public GlideConstants.GlidePoint getNearestGlidePoint() {
-        List<GlideConstants.GlidePoint> glidePoints = isRedAlliance()
-                ? GlideConstants.RED_GLIDE_POINTS
-                : GlideConstants.BLUE_GLIDE_POINTS;
+    public GlidePoints.GlidePoint getNearestGlidePoint() {
+        List<GlidePoints.GlidePoint> glidePoints = isRedAlliance()
+                ? GlidePoints.RED_GLIDE_POINTS
+                : GlidePoints.BLUE_GLIDE_POINTS;
 
         if (glidePoints == null || glidePoints.isEmpty()) {
             return null;
         }
 
         Pose2d currentPose = getPose();
-        GlideConstants.GlidePoint nearest = null;
+        GlidePoints.GlidePoint nearest = null;
         double nearestDistance = Double.POSITIVE_INFINITY;
 
         // Selection Hysteresis: Give a "bonus" to the last selected point to prevent
         // flickering
         double HYSTERESIS_BONUS = 0.8; // Meters
 
-        for (GlideConstants.GlidePoint p : glidePoints) {
+        for (GlidePoints.GlidePoint p : glidePoints) {
             if (p == null || p.pose == null) {
                 continue;
             }
@@ -383,7 +383,7 @@ public class SwerveBase implements Subsystem {
                             p.pose.getTranslation(),
                             p.pose.getRotation().plus(Rotation2d.fromDegrees(180)));
 
-                    nearest = new GlideConstants.GlidePoint(
+                    nearest = new GlidePoints.GlidePoint(
                             p.name + " (Exit)",
                             reverseStartPose,
                             true,
@@ -397,15 +397,15 @@ public class SwerveBase implements Subsystem {
     }
 
     public void drawGlidePointsOnField() {
-        List<GlideConstants.GlidePoint> glidePoints = isRedAlliance()
-                ? GlideConstants.RED_GLIDE_POINTS
-                : GlideConstants.BLUE_GLIDE_POINTS;
+        List<GlidePoints.GlidePoint> glidePoints = isRedAlliance()
+                ? GlidePoints.RED_GLIDE_POINTS
+                : GlidePoints.BLUE_GLIDE_POINTS;
 
         field.getObject("GlidePoints").setPoses(new ArrayList<>());
 
         HashSet<String> currentNames = new HashSet<>();
         if (glidePoints != null) {
-            for (GlideConstants.GlidePoint p : glidePoints) {
+            for (GlidePoints.GlidePoint p : glidePoints) {
                 if (p == null || p.pose == null) {
                     continue;
                 }
@@ -432,7 +432,7 @@ public class SwerveBase implements Subsystem {
         lastGlideFieldObjectNames.addAll(currentNames);
     }
 
-    private void highlightNearestGlidePointOnField(GlideConstants.GlidePoint nearest) {
+    private void highlightNearestGlidePointOnField(GlidePoints.GlidePoint nearest) {
         if (nearest == lastHighlightedGlidePoint) {
             return;
         }
@@ -769,21 +769,28 @@ public class SwerveBase implements Subsystem {
         // Explicitly update the field object with the current pose
         field.setRobotPose(truthPose);
 
-        collisionDetector.update(
+        contactWatchdog.update(
                 truthPose,
                 getRobotVelocity(),
                 getFieldVelocity(),
                 inputs.accelXG,
                 inputs.accelYG,
-                getAverageDriveCurrent());
+                getAverageDriveCurrent(),
+                Double.MAX_VALUE,
+                null,
+                0.02);
     }
 
-    public CollisionDetector getCollisionDetector() {
-        return collisionDetector;
+    public ContactWatchdog getCollisionDetector() {
+        return contactWatchdog;
+    }
+
+    public ContactWatchdog getContactWatchdog() {
+        return contactWatchdog;
     }
 
     public boolean isCollisionDetected() {
-        return collisionDetector.isImpactDetected();
+        return contactWatchdog.isImpactDetected();
     }
 
     @Override
@@ -1110,7 +1117,7 @@ public class SwerveBase implements Subsystem {
     }
 
     public double getCollisionJerkMagnitude() {
-        return collisionDetector.getLastJerkMagnitude();
+        return contactWatchdog.getLastJerkMagnitude();
     }
 
     /**

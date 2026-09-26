@@ -1,27 +1,29 @@
 package frc.robot;
 
+import edu.wpi.first.math.controller.PIDController;
 import edu.wpi.first.math.filter.SlewRateLimiter;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
+import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.Joystick;
-import frc.robot.Auto.AutonomousTeleopAgent;
-import frc.robot.Auto.Actions.BallHuntAction;
-import frc.robot.Auto.Actions.DriveToPoseAction;
+import edu.wpi.first.wpilibj.Timer;
+import frc.robot.Intelligence.AIActionIntent;
+import frc.robot.Intelligence.AutonomousTeleopAgent;
 import frc.robot.Data.Constants;
-import frc.robot.Data.GlideConstants;
-import frc.robot.Data.PortMap;
-import frc.robot.Devices.Controller;
-import frc.robot.Devices.Controller.RumblePattern;
-import frc.robot.Sim.JevDecisionEngine;
-import frc.robot.Sim.StrategicObjective;
-import frc.robot.Subsystems.Dashboard;
+import frc.robot.Navigation.ContactWatchdog;
+import frc.robot.Navigation.TrajectoryController;
+import frc.robot.Hardware.PortMap;
+import frc.robot.Hardware.Controller;
+import frc.robot.Hardware.Controller.RumblePattern;
+import frc.robot.Intelligence.StrategicObjective;
+import frc.robot.Telemetry.Dashboard;
 import frc.robot.Subsystems.Intake;
 import frc.robot.Subsystems.Shooter;
 import frc.robot.Subsystems.Shooter.ShootingSolution;
 import frc.robot.Subsystems.SwerveBase;
-import frc.robot.Utils.AlertManager;
+import frc.robot.Telemetry.AlertManager;
 import frc.robot.Utils.AllianceFlipUtil;
 
 /*
@@ -81,10 +83,23 @@ public class Teleop {
     private double driverStrafe;
     private double driverRotation;
 
-    // Advanced Actions (Glide / Ball Hunt)
+    // Co-Pilot intent execution (Phase 4: TrajectoryController directly, no action wrappers)
     private final AutonomousTeleopAgent coPilot = AutonomousTeleopAgent.getInstance();
-    private frc.robot.Interfaces.Actions activeAction = null;
+    private final TrajectoryController assistController;
     private boolean wasGlideHeld = false;
+
+    // Ball Hunt visual pursuit state (ported from BallHuntAction)
+    private final PIDController huntTurnController = new PIDController(0.08, 0, 0.005);
+    private double huntLastSeenTimestamp = -1.0;
+    private Translation2d huntLastKnownDir = new Translation2d(1.0, 0.0);
+    private double huntLastKnownDistance = 0.0;
+    private boolean huntBallAcquiredPulse = false;
+    private boolean huntWasTargetLocked = false;
+    private boolean huntWasHoldingFuel = false;
+    private double huntSweepPhase = 0.0;
+    private static final double HUNT_MAX_PURSUIT_SPEED = 2.8;
+    private static final double HUNT_MIN_INGESTION_SPEED = 1.2;
+    private static final double HUNT_MEMORY_WINDOW_SEC = 0.35;
 
     // Haptic Feedback Tracking
     private boolean wasTargetLocked = false;
@@ -105,6 +120,12 @@ public class Teleop {
         intake = Intake.getInstance();
         shooter = Shooter.getInstance();
         swerveBase = SwerveBase.getInstance();
+
+        var headingCfg = swerveBase.getSwerveController().config.headingPIDF;
+        assistController = new TrajectoryController(
+                new PIDController(headingCfg.p, headingCfg.i, headingCfg.d));
+        huntTurnController.setSetpoint(0);
+        huntTurnController.setTolerance(1.5);
 
         if (!joystickEnabled) {
             driverController = new Controller(PortMap.DRIVER_CONTROLLER);
@@ -128,10 +149,8 @@ public class Teleop {
         intake.setState("Disabled");
         shooter.stop();
         coPilot.stopAssist();
-        if (activeAction != null) {
-            activeAction.done();
-            activeAction = null;
-        }
+        assistController.reset();
+        resetHuntState();
         wasGlideHeld = false;
         wasTargetLocked = false;
         warned30s = false;
@@ -182,11 +201,9 @@ public class Teleop {
             shooter.stop();
             swerveBase.stop();
             coPilot.stopAssist();
+            assistController.reset();
+            resetHuntState();
             wasGlideHeld = false;
-            if (activeAction != null) {
-                activeAction.done();
-                activeAction = null;
-            }
             snapTargetHeading = null;
             return;
         }
@@ -344,63 +361,162 @@ public class Teleop {
         double driverFieldStrafe  = (isRed ? -shapedX : shapedX) * Constants.MAX_SPEED * transScale;
         double driverFieldRot     = shapedRot * Constants.MAX_ROTATION_SPEED * rotScale;
 
-        // ── 1. Smart Assist (Right Bumper: Jev-Powered Co-Pilot) ─────────────
+        // ── 1. Smart Assist (Right Bumper: Jev intent → TrajectoryController) ──
         if (isGlideHeld) {
             if (!wasGlideHeld) {
                 coPilot.startSmartAssist();
+                assistController.reset();
                 triggerRumble(RumblePattern.MODE_ENGAGED);
             }
             wasGlideHeld = true;
 
-            boolean running = coPilot.updateSmartAssist(driverFieldForward, driverFieldStrafe, driverFieldRot);
-            if (!running) {
-                if (coPilot.checkAndClearBreakout()) {
-                    triggerRumble(RumblePattern.OVERRIDE_DISENGAGED);
-                }
+            AIActionIntent intent = coPilot.getCoPilotIntent(coPilot.resolveHeldBalls());
+            Pose2d currentPose = swerveBase.getPose();
+            ChassisSpeeds currentSpeeds = swerveBase.getFieldVelocity();
+            Pose2d target = intent != null ? intent.navigationTarget() : null;
+            if (target == null) {
+                target = AutonomousTeleopAgent.getParkingFallback(isRed, currentPose);
+            }
+
+            if (intent != null && intent.aimOverride() != null) {
+                final Rotation2d aim = intent.aimOverride();
+                assistController.setRotationOverride(() -> aim);
+            } else {
+                assistController.setRotationOverride(null);
+            }
+
+            // Breakout detection (shared authority thresholds)
+            double drvSpeed = Math.hypot(driverFieldForward, driverFieldStrafe);
+            double normDriverMag = drvSpeed / Math.max(0.1, Constants.MAX_SPEED);
+            double normRotMag = Math.abs(driverFieldRot) / Math.max(0.1, Constants.MAX_ROTATION_SPEED);
+            if (normDriverMag > 0.65 || normRotMag > 0.60) {
+                coPilot.stopAssist();
+                wasGlideHeld = false;
+                triggerRumble(RumblePattern.OVERRIDE_DISENGAGED);
                 return false;
             }
+
+            boolean stalled = swerveBase.getContactWatchdog().isStalled();
+            ChassisSpeeds speeds = assistController.calculate(
+                    currentPose, currentSpeeds, target, Constants.MAX_SPEED, stalled, true);
+
+            // Shared authority nudge blending (0.10 <= norm <= 0.65)
+            if (normDriverMag >= 0.10) {
+                double alpha = Math.min(1.0, Math.max(0.0, (normDriverMag - 0.10) / (0.65 - 0.10)));
+                double blendedVx = (1.0 - 0.5 * alpha) * speeds.vxMetersPerSecond + alpha * driverFieldForward;
+                double blendedVy = (1.0 - 0.5 * alpha) * speeds.vyMetersPerSecond + alpha * driverFieldStrafe;
+                speeds = new ChassisSpeeds(blendedVx, blendedVy, speeds.omegaRadiansPerSecond);
+            }
+            if (normRotMag >= 0.10) {
+                double alphaRot = Math.min(1.0, Math.max(0.0, (normRotMag - 0.10) / (0.60 - 0.10)));
+                double blendedOmega = (1.0 - alphaRot) * speeds.omegaRadiansPerSecond + alphaRot * driverFieldRot;
+                speeds = new ChassisSpeeds(speeds.vxMetersPerSecond, speeds.vyMetersPerSecond, blendedOmega);
+            }
+
+            speeds = ContactWatchdog.getInstance().arbitrate(speeds, currentPose, null);
+            swerveBase.setPathVisualization(assistController.getWaypoints());
+            swerveBase.driveFieldOriented(speeds);
             return true;
         } else if (wasGlideHeld) {
             coPilot.stopAssist();
+            assistController.reset();
             wasGlideHeld = false;
         }
 
-        // ── 2. Ball Hunt Assist (Left Bumper: Vision Target Pursuit) ─────────
-        if (isBallHuntHeld && activeAction == null) {
-            activeAction = new BallHuntAction();
-            activeAction.start();
-            triggerRumble(RumblePattern.MODE_ENGAGED);
-        }
-
-        if (activeAction instanceof BallHuntAction ballHunt) {
-            ballHunt.setDriverInput(driverFieldForward, driverFieldStrafe);
-
-            if (ballHunt.checkAndClearBallAcquired()) {
+        // ── 2. Ball Hunt Assist (Left Bumper: direct visual pursuit) ─────────
+        if (isBallHuntHeld) {
+            if (!huntWasTargetLocked && huntLastSeenTimestamp < 0) {
+                intake.setState(Intake.IntakeState.INTAKING);
+                huntWasHoldingFuel = intake.hasFuel();
+                triggerRumble(RumblePattern.MODE_ENGAGED);
+            }
+            updateBallHunt(driverFieldForward, driverFieldStrafe);
+            if (huntBallAcquiredPulse) {
+                huntBallAcquiredPulse = false;
                 triggerRumble(RumblePattern.BALL_ACQUIRED);
                 coPilot.incrementBallCount();
             }
-
-            if (!isBallHuntHeld || ballHunt.isFinished()) {
-                ballHunt.done();
-                activeAction = null;
-                return false;
-            }
-
-            ballHunt.update();
             return true;
-        }
-
-        if (activeAction != null) {
-            if (activeAction.isFinished()) {
-                activeAction.done();
-                activeAction = null;
-                return false;
-            }
-            activeAction.update();
-            return true;
+        } else if (huntWasTargetLocked || huntLastSeenTimestamp >= 0) {
+            resetHuntState();
+            intake.setState(Intake.IntakeState.STANDBY);
         }
 
         return false;
+    }
+
+    private void resetHuntState() {
+        huntLastSeenTimestamp = -1.0;
+        huntLastKnownDir = new Translation2d(1.0, 0.0);
+        huntLastKnownDistance = 0.0;
+        huntBallAcquiredPulse = false;
+        huntWasTargetLocked = false;
+        huntSweepPhase = 0.0;
+    }
+
+    private void updateBallHunt(double driverForwardField, double driverStrafeField) {
+        var vision = frc.robot.Subsystems.Vision.getInstance();
+        intake.setState(Intake.IntakeState.INTAKING);
+
+        boolean currentlyHoldingFuel = intake.hasFuel();
+        if (!huntWasHoldingFuel && currentlyHoldingFuel) {
+            huntBallAcquiredPulse = true;
+        }
+        huntWasHoldingFuel = currentlyHoldingFuel;
+
+        double now = Timer.getTimestamp();
+        boolean hasBall = vision.hasGamePiece();
+        double driverSpeedCmd = Math.hypot(driverForwardField, driverStrafeField);
+
+        if (hasBall) {
+            double yaw = vision.getGamePieceYaw();
+            double distance = vision.getGamePieceDistanceMeters();
+            Translation2d robotRel = vision.getGamePieceRobotRelativeTranslation();
+
+            huntLastSeenTimestamp = now;
+            huntLastKnownDistance = distance;
+            huntWasTargetLocked = true;
+
+            double rotationOutput = -huntTurnController.calculate(yaw, 0);
+
+            Translation2d normDir = (robotRel.getNorm() > 1e-4)
+                    ? robotRel.div(robotRel.getNorm())
+                    : new Translation2d(1.0, 0.0);
+            huntLastKnownDir = normDir;
+
+            double pursuitSpeed = Math.min(HUNT_MAX_PURSUIT_SPEED,
+                    Math.max(HUNT_MIN_INGESTION_SPEED, distance * 1.8));
+
+            Translation2d driverField = new Translation2d(driverForwardField, driverStrafeField);
+            Translation2d driverRobot = driverField.rotateBy(swerveBase.getPose().getRotation().unaryMinus());
+            double driverAlongBall = (normDir.getX() * driverRobot.getX()) + (normDir.getY() * driverRobot.getY());
+
+            if (driverAlongBall > 0.15) {
+                pursuitSpeed = Math.min(Constants.MAX_SPEED * 0.85, pursuitSpeed + driverAlongBall * 1.5);
+            }
+
+            swerveBase.drive(
+                    new Translation2d(normDir.getX() * pursuitSpeed, normDir.getY() * pursuitSpeed),
+                    rotationOutput, false);
+            org.littletonrobotics.junction.Logger.recordOutput("Vision/BallHunt/State", "LOCKED_PURSUIT");
+        } else if (huntWasTargetLocked && (now - huntLastSeenTimestamp < HUNT_MEMORY_WINDOW_SEC)) {
+            swerveBase.drive(huntLastKnownDir.times(HUNT_MIN_INGESTION_SPEED), 0.0, false);
+            org.littletonrobotics.junction.Logger.recordOutput("Vision/BallHunt/State", "BLINDSPOT_INGESTION");
+        } else {
+            if (huntWasTargetLocked && huntLastKnownDistance < 0.65) {
+                huntBallAcquiredPulse = true;
+            }
+            huntWasTargetLocked = false;
+            if (driverSpeedCmd > 0.08) {
+                swerveBase.drive(new Translation2d(driverForwardField, driverStrafeField), 0.0, true);
+                org.littletonrobotics.junction.Logger.recordOutput("Vision/BallHunt/State", "DRIVER_GUIDED_SEARCH");
+            } else {
+                huntSweepPhase += 0.02 * 3.0;
+                double sweepRot = Math.sin(huntSweepPhase) * 0.75;
+                swerveBase.drive(new Translation2d(0.0, 0.0), sweepRot, false);
+                org.littletonrobotics.junction.Logger.recordOutput("Vision/BallHunt/State", "AUTO_SWEEP");
+            }
+        }
     }
 
     public void driveBaseControl() {

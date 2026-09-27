@@ -397,11 +397,22 @@ public class StaticPathfinder {
     }
 
     /**
-     * Checks if a 2D point is inside a hard footprint (hub ramps, tower poles)
-     * <i>excluding</i> the perimeter wall safety band. Fuel near walls is
-     * reachable with a wall-normal approach, so fuel-targeting filters must
-     * use this (plus {@link #isPointNearDynamicObstacle}) instead of
+     * Checks if a 2D point is inside a hard footprint, <i>excluding</i> the
+     * perimeter wall safety band. Fuel near walls is reachable with a
+     * wall-normal approach, so fuel-targeting filters must use this (plus
+     * {@link #isPointNearDynamicObstacle}) instead of
      * {@link #isPointInObstacle}, which treats the whole wall band as blocked.
+     *
+     * <p><b>Ramp slopes are deliberately part of the hard set</b> (decided
+     * 2026-09-26). The Sep 26 obstacle split made every physical piece blocking,
+     * and excluding ramps was explicitly considered and rejected. The accepted
+     * consequence is that fuel resting on a ramp slope is <i>not</i> a valid
+     * Jev fuel target — the bot will route around the ramp instead of climbing it
+     * to collect. Do not "fix" this by carving ramps back out of the hard set
+     * without re-validating the ramp slope model; see ARCHITECTURE.md and
+     * KNOWN_ISSUES.md.
+     *
+     * <p>Hard set contents: hub cores, ramps, trench divider walls, tower posts.
      */
     public static boolean isPointInHardObstacle(Translation2d p) {
         if (p == null) {
@@ -1000,7 +1011,7 @@ public class StaticPathfinder {
         Rotation2d corridorHeading;
 
         if (isBlue) {
-            if (robotX < 4.60) {
+            if (robotX < FieldMap.AllianceZones.BLUE_ZONE_MAX_X) {
                 isWestToEast = true;
                 preEntranceX = 2.90;
                 entranceX = 3.50;
@@ -1016,7 +1027,7 @@ public class StaticPathfinder {
                 corridorHeading = Rotation2d.fromDegrees(180);
             }
         } else {
-            if (robotX > 11.94) {
+            if (robotX > FieldMap.AllianceZones.RED_ZONE_MIN_X) {
                 isWestToEast = false;
                 preEntranceX = 13.64;
                 entranceX = 13.04;

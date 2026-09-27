@@ -29,16 +29,28 @@ public class GlidePoints {
         public final Pose2d pose;
         public final boolean isTunnelEntrance;
         public final Pose2d tunnelExitPose;
+        /**
+         * True for midfield features that belong to no alliance. Neutral points are
+         * already field-symmetric, so callers must NOT mirror them for Red. This is an
+         * explicit flag rather than a name-prefix sniff so that mirroring decisions are
+         * visible at the declaration site.
+         */
+        public final boolean neutral;
 
         public GlidePoint(String name, Pose2d pose) {
-            this(name, pose, false, null);
+            this(name, pose, false, null, false);
         }
 
         public GlidePoint(String name, Pose2d pose, boolean isTunnel, Pose2d exit) {
+            this(name, pose, isTunnel, exit, false);
+        }
+
+        public GlidePoint(String name, Pose2d pose, boolean isTunnel, Pose2d exit, boolean neutral) {
             this.name = name;
             this.pose = pose;
             this.isTunnelEntrance = isTunnel;
             this.tunnelExitPose = exit;
+            this.neutral = neutral;
         }
 
         public Pose2d pose() {
@@ -56,7 +68,11 @@ public class GlidePoints {
     public static final List<GlidePoint> BLUE_GLIDE_POINTS = List.of(
             new GlidePoint("Blue Feeder Top", new Pose2d(1.50, 6.00, Rotation2d.fromDegrees(-35))),
             new GlidePoint("Blue Feeder Bottom", new Pose2d(1.50, 2.20, Rotation2d.fromDegrees(35))),
-            new GlidePoint("Blue Right Side Climb", new Pose2d(1.05, 2.88, Rotation2d.fromDegrees(180))),
+            // Y=2.80 (not 2.88): the Blue Tower South Post is at Y=3.315, and
+            // StaticPathfinder inflates every obstacle by BUMPER_MARGIN (0.45 m), so
+            // the inflated post reaches Y=2.845. At 2.88 the robot CENTER sat inside
+            // the inflated post and the pathfinder refused the waypoint.
+            new GlidePoint("Blue Right Side Climb", new Pose2d(1.05, 2.80, Rotation2d.fromDegrees(180))),
             new GlidePoint("Blue Hub Front", new Pose2d(5.75, 4.035, Rotation2d.fromDegrees(180))),
             new GlidePoint("Blue Hub Back", new Pose2d(2.60, 4.035, Rotation2d.fromDegrees(0))),
             new GlidePoint("Blue Top Trench",
@@ -65,8 +81,8 @@ public class GlidePoints {
             new GlidePoint("Blue Bottom Trench",
                     new Pose2d(3.50, Y_BOT_LANE, Rotation2d.fromDegrees(0)), true,
                     new Pose2d(5.75, Y_BOT_LANE, Rotation2d.fromDegrees(0))),
-            new GlidePoint("Midfield Top", new Pose2d(8.27, 6.10, Rotation2d.fromDegrees(-90))),
-            new GlidePoint("Midfield Bottom", new Pose2d(8.27, 2.00, Rotation2d.fromDegrees(90))));
+            new GlidePoint("Midfield Top", new Pose2d(8.27, 6.10, Rotation2d.fromDegrees(-90)), false, null, true),
+            new GlidePoint("Midfield Bottom", new Pose2d(8.27, 2.00, Rotation2d.fromDegrees(90)), false, null, true));
 
     // ----------------------------------------------------------------
     // RED ALLIANCE WAYPOINTS (Dynamically Mirrored via AllianceFlipUtil)
@@ -76,7 +92,7 @@ public class GlidePoints {
     static {
         List<GlidePoint> redPoints = new ArrayList<>();
         for (GlidePoint p : BLUE_GLIDE_POINTS) {
-            if (p.name.startsWith("Blue ")) {
+            if (!p.neutral) {
                 String redName = p.name.replace("Blue ", "Red ");
                 Pose2d redPose = AllianceFlipUtil.apply(p.pose, true);
                 Pose2d redExit = p.isTunnelEntrance && p.tunnelExitPose != null
@@ -84,8 +100,9 @@ public class GlidePoints {
                         : null;
                 redPoints.add(new GlidePoint(redName, redPose, p.isTunnelEntrance, redExit));
             } else {
-                // Neutral field features (e.g. Midfield Top/Bottom) retain canonical
-                // coordinates
+                // Neutral field features (e.g. Midfield Top/Bottom) are already
+                // field-symmetric, so they retain canonical coordinates for both
+                // alliances.
                 redPoints.add(p);
             }
         }

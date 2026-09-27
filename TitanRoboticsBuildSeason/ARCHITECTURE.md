@@ -3,7 +3,7 @@ title: Architecture Contracts
 audience: [human, ai]
 owner: programming-leads
 last_verified: 2026-09-26
-status: needs-review
+status: authoritative
 ---
 
 # 📐 2026–2027 Robot Software Architecture & System Design
@@ -93,7 +93,7 @@ flowchart TD
 - **Simulation**: Backed by `IronMaple` rigid-body 2D simulation for true carpet friction, wheel slip, and simulated bumper collision physics.
 - **Navigation**: Integrated with `GlideConstants` for automated transit to strategic field zones (Hub, Feeders, Trenches).
 - **Contact Watchdog**: `SwerveBase` supplies measured and requested field-relative chassis speeds; robot-frame IMU acceleration is rotated into field coordinates before collision and stall checks. Escape commands therefore share the field-relative frame used by Glide drive output.
-- **Field obstacle map**: `Navigation/FieldMap.java` stores Hub cores, trench divider walls, and each ramp as separate AABBs. `ObstacleHandling` defaults to `IMPASSABLE`; every split piece blocks pathfinding in every mode. The legacy `PHYSICS` and `ABSTRACT` labels remain accepted for dashboard/API compatibility but no longer make ramps traversable. `StaticPathfinder` applies the 0.45 m bumper half-width once, validates roadmap edges and endpoint connectors, and adds an outward escape waypoint when the measured start is inside an inflated obstacle. It stops safely if no valid route exists; hard fuel-target checks exclude ramps. `TrajectoryController` holds that escape waypoint until clear and only advances past a waypoint plane when cross-track error is within 0.45 m, preventing missed tunnel turns from being skipped.
+- **Field obstacle map**: `Navigation/FieldMap.java` stores Hub cores, trench divider walls, and each ramp as separate AABBs. Every feature is defined once for Blue and mirrored for Red (`X_red = FIELD_LENGTH - X_blue`, `Y_red = FIELD_WIDTH - Y_blue`); the sole exception is `FieldMap.Depots`, whose two loading bays are genuinely asymmetric on the real field and are documented as measured insets. `ObstacleHandling` defaults to `IMPASSABLE`; every split piece blocks pathfinding in every mode. The legacy `PHYSICS` and `ABSTRACT` labels remain accepted for dashboard/API compatibility but no longer make ramps traversable. `StaticPathfinder` applies the 0.45 m bumper half-width once, validates roadmap edges and endpoint connectors, and adds an outward escape waypoint when the measured start is inside an inflated obstacle. It stops safely if no valid route exists. Hard fuel-target checks **include** ramps — deliberately, so fuel resting on a ramp slope is not a Jev target and bots route around rather than climb to collect. `TrajectoryController` holds that escape waypoint until clear and only advances past a waypoint plane when cross-track error is within 0.45 m, preventing missed tunnel turns from being skipped.
 
 ### B. Dual-Flywheel Shooter (`Shooter.java`)
 - **Velocity Control**: Independent PID + `SimpleMotorFeedforward` controllers for Left (CAN 12) and Right (CAN 11) flywheels with integrator anti-windup range (`-1.5 to +1.5`, `Shooter.java:135-136` — integrator only, not output clamp).
@@ -192,7 +192,7 @@ Simulation sparring and the default co-pilot path use a deterministic, re-entran
    - Opponents skate against the player, allies skate with the player; per-bot archetype choosers on the Simulation Elastic tab.
    - **Soft Peer Separation**: Applies inverse-distance repulsive forces ($r < 1.10\text{m}$) across peer robots, preventing clustering or jamming during contested pickups.
    - **Staggered Spawning**: Staggers initial positions across non-overlapping corridor coordinates ($Y = 4.035\text{m}, 5.80\text{m}, 2.25\text{m}$).
-   - **Wall-Band Fuel Targeting**: Fuel filters skip only hard footprints (hub ramps, tower poles) plus live dynamic obstacles — never the 0.45 m perimeter band — and hunt approaches use wall-normal standoffs, so balls tight to walls stay collectable.
+   - **Wall-Band Fuel Targeting**: Fuel filters skip the perimeter band - never the 0.45 m wall safety margin - and hunt approaches use wall-normal standoffs, so balls tight to walls stay collectable. The hard-footprint set they *do* skip is every physical piece: hub cores, ramps, trench divider walls, and tower posts, plus live dynamic obstacles. Ramps are in that set intentionally; the accepted trade-off is that fuel on a ramp slope is not a valid target.
 
 3. **Dual-Use Engine (Simulation Sparring + Real-Robot Co-Pilot)**:
    - The identical `evaluatePolicy` pipeline drives:

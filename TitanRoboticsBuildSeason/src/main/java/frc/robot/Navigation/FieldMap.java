@@ -29,6 +29,14 @@ import frc.robot.Navigation.FieldMap.Obstacles;
  * 7. Tower Climbing Poles
  * 8. Static Obstacles (AABB bounding boxes for pathfinding and collision
  * avoidance)
+ *
+ * <p><b>Blue-origin convention:</b> every feature is defined once for Blue and
+ * mirrored for Red ({@code X_red = FIELD_LENGTH - X_blue},
+ * {@code Y_red = FIELD_WIDTH - Y_blue}). Do not add a parallel hardcoded Red
+ * constant next to a Blue one — derive it, so a geometry retune cannot leave the
+ * two silently out of sync. The single deliberate exception is
+ * {@link Depots}, whose two loading bays are genuinely not mirror images on the
+ * real field; that class documents why.
  */
 public final class FieldMap {
 
@@ -204,11 +212,13 @@ public final class FieldMap {
     // 4. Trench Corridors & Low-Clearance Truss Zones
     // =========================================================================
     public static final class Trenches {
-        // Horizontal spans for the Trench low-overhead steel frame
+        // Horizontal spans for the Trench low-overhead steel frame.
+        // Defined once for Blue and mirrored across the field; never maintain a
+        // parallel hardcoded Red pair (see the class-level Blue-origin note).
         public static final double BLUE_TRENCH_MIN_X = 3.20;
         public static final double BLUE_TRENCH_MAX_X = 6.10;
-        public static final double RED_TRENCH_MIN_X = 10.44;
-        public static final double RED_TRENCH_MAX_X = 13.34;
+        public static final double RED_TRENCH_MIN_X = FIELD_LENGTH - BLUE_TRENCH_MAX_X;
+        public static final double RED_TRENCH_MAX_X = FIELD_LENGTH - BLUE_TRENCH_MIN_X;
 
         // Trench corridor Y lanes (centerlines where robot drives)
         public static final double TOP_CORRIDOR_Y = 7.42;
@@ -286,6 +296,22 @@ public final class FieldMap {
     // 6. Human Player Depots & Ball Loading Bays
     // =========================================================================
     public static final class Depots {
+        /*
+         * The two depots are NOT mirror images, so these are the one place in FieldMap
+         * that legitimately keeps independent Blue and Red constants.
+         *
+         * MapleSim's own field definition places the depot bottom-right corners at
+         * (0.02, 5.53) on the Blue-side wall and (16.0274, 1.646936) on the Red-side
+         * wall. Mirroring the Blue corner would put the Red corner at (16.521, 2.539),
+         * which is 0.49 m off in X and 0.89 m off in Y from the real geometry. The Red
+         * values below are therefore measured insets from the true Red-side corner, not
+         * drifted copies of the Blue values.
+         *
+         * Do not "simplify" these into a Blue + mirror pair without re-measuring the
+         * field. See docs/CHANGELOG.md and KNOWN_ISSUES.md for the audit that
+         * established this.
+         */
+
         // Blue Depot (Top-Left inside Blue driver station wall X ~ 0m, Y ~ 5.53m -
         // 6.44m)
         public static final Translation2d BLUE_DEPOT_LOAD_POINT = new Translation2d(0.09, 5.72);
@@ -315,9 +341,13 @@ public final class FieldMap {
     // 7. Climbing Towers & Poles
     // =========================================================================
     public static final class ClimbingTowers {
+        // Defined once for Blue and mirrored. The pole sits on the field centerline
+        // in Y, so the mirror only flips X.
         public static final Translation2d BLUE_TOWER_POLE = new Translation2d(1.07, 4.04);
-        public static final Translation2d RED_TOWER_POLE = new Translation2d(15.47, 4.04);
         public static final double POLE_RADIUS = 0.40;
+
+        public static Translation2d RED_TOWER_POLE = new Translation2d(
+                FIELD_LENGTH - BLUE_TOWER_POLE.getX(), FIELD_WIDTH - BLUE_TOWER_POLE.getY());
 
         public static Translation2d getTowerPole(boolean isRed) {
             return isRed ? RED_TOWER_POLE : BLUE_TOWER_POLE;
@@ -447,16 +477,34 @@ public final class FieldMap {
 
         // MATCH MAPLESIM: 2 discrete upright posts per tower (3.5" x 1.5" each)
         // Blue Posts: X=1.062, Y=3.315 and Y=4.172
-        public static final AABB BLUE_TOWER_POST_SOUTH = new AABB("Blue Tower South Post",
-                1.062 - 0.045, 1.062 + 0.045, 3.315 - 0.02, 3.315 + 0.02);
-        public static final AABB BLUE_TOWER_POST_NORTH = new AABB("Blue Tower North Post",
-                1.062 - 0.045, 1.062 + 0.045, 4.172 - 0.02, 4.172 + 0.02);
+        private static final double TOWER_POST_X = 1.062;
+        private static final double TOWER_POST_HALF_X = 0.045;
+        private static final double TOWER_POST_HALF_Y = 0.02;
+        private static final double TOWER_POST_SOUTH_Y = 3.315;
+        private static final double TOWER_POST_NORTH_Y = 4.172;
 
-        // Red Posts: X=15.479, Y=3.897 and Y=4.754
+        public static final AABB BLUE_TOWER_POST_SOUTH = new AABB("Blue Tower South Post",
+                TOWER_POST_X - TOWER_POST_HALF_X, TOWER_POST_X + TOWER_POST_HALF_X,
+                TOWER_POST_SOUTH_Y - TOWER_POST_HALF_Y, TOWER_POST_SOUTH_Y + TOWER_POST_HALF_Y);
+        public static final AABB BLUE_TOWER_POST_NORTH = new AABB("Blue Tower North Post",
+                TOWER_POST_X - TOWER_POST_HALF_X, TOWER_POST_X + TOWER_POST_HALF_X,
+                TOWER_POST_NORTH_Y - TOWER_POST_HALF_Y, TOWER_POST_NORTH_Y + TOWER_POST_HALF_Y);
+
+        /*
+         * Red posts are the Blue posts mirrored about the field center. Note that the
+         * mirror SWAPS the north/south labels: the Red SOUTH post is the mirror of the
+         * Blue NORTH post (Y = 8.069 - 4.172 = 3.897), and the Red NORTH post is the
+         * mirror of the Blue SOUTH post (Y = 8.069 - 3.315 = 4.754).
+         *
+         * Deriving these (rather than hardcoding X=15.479 / Y=3.897 / Y=4.754) removes
+         * the chance of that swap being silently inverted during a geometry retune.
+         */
         public static final AABB RED_TOWER_POST_SOUTH = new AABB("Red Tower South Post",
-                15.479 - 0.045, 15.479 + 0.045, 3.897 - 0.02, 3.897 + 0.02);
+                FIELD_LENGTH - BLUE_TOWER_POST_NORTH.maxX, FIELD_LENGTH - BLUE_TOWER_POST_NORTH.minX,
+                FIELD_WIDTH - BLUE_TOWER_POST_NORTH.maxY, FIELD_WIDTH - BLUE_TOWER_POST_NORTH.minY);
         public static final AABB RED_TOWER_POST_NORTH = new AABB("Red Tower North Post",
-                15.479 - 0.045, 15.479 + 0.045, 4.754 - 0.02, 4.754 + 0.02);
+                FIELD_LENGTH - BLUE_TOWER_POST_SOUTH.maxX, FIELD_LENGTH - BLUE_TOWER_POST_SOUTH.minX,
+                FIELD_WIDTH - BLUE_TOWER_POST_SOUTH.maxY, FIELD_WIDTH - BLUE_TOWER_POST_SOUTH.minY);
 
         public static final List<AABB> ALL_OBSTACLES = List.of(
                 BLUE_HUB_CORE, RED_HUB_CORE,

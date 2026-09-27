@@ -94,8 +94,11 @@ public class FieldMapTest {
         assertTrue(FieldMap.TrenchWalls.BLUE_NORTH_WALL.contains(
                 FieldMap.TrenchWalls.BLUE_CENTER_X, FieldMap.TrenchWalls.NORTH_CENTER_Y));
         assertTrue(FieldMap.Ramps.isPoseOnRamp(new Translation2d(4.62, 5.5)));
-        assertFalse(StaticPathfinder.isPointInHardObstacle(new Translation2d(4.62, 5.5)),
-                "Ramp slope must not be treated as a hard footprint");
+        // Ramps are a deliberate part of the hard-footprint set (decided 2026-09-26).
+        // The accepted consequence is that fuel resting on a ramp slope is not a valid
+        // Jev fuel target. See StaticPathfinder.isPointInHardObstacle.
+        assertTrue(StaticPathfinder.isPointInHardObstacle(new Translation2d(4.62, 5.5)),
+                "Ramp slope is intentionally a hard footprint");
 
         FieldMap.setObstacleHandling(FieldMap.ObstacleHandling.PHYSICS);
         assertTrue(StaticPathfinder.isLineOfSightClear(
@@ -205,5 +208,65 @@ public class FieldMapTest {
             assertFalse(StaticPathfinder.isPointInStaticObstacle(gp.pose.getTranslation()),
                     "GlidePoint '" + gp.name + "' is inside an inflated obstacle!");
         }
+    }
+
+    /**
+     * Pins the Blue-origin rule: every symmetric feature is defined once for Blue and
+     * mirrored, so a geometry retune can never leave a stale parallel Red literal
+     * behind. The {@link FieldMap.Depots} asymmetry is asserted separately below.
+     */
+    @Test
+    public void testRedFeaturesAreDerivedMirrorsOfBlue() {
+        double L = FieldMap.FIELD_LENGTH;
+        double W = FieldMap.FIELD_WIDTH;
+
+        // Trenches: X span mirrors and reverses order.
+        assertEquals(L - FieldMap.Trenches.BLUE_TRENCH_MAX_X, FieldMap.Trenches.RED_TRENCH_MIN_X, 1e-9);
+        assertEquals(L - FieldMap.Trenches.BLUE_TRENCH_MIN_X, FieldMap.Trenches.RED_TRENCH_MAX_X, 1e-9);
+
+        // Hub, trench-wall centerline and ramps already derive; assert the invariant.
+        assertEquals(L - FieldMap.Hubs.BLUE_HUB_X, FieldMap.Hubs.RED_HUB_X, 1e-9);
+        assertEquals(L - FieldMap.TrenchWalls.BLUE_CENTER_X, FieldMap.TrenchWalls.RED_CENTER_X, 1e-9);
+
+        // Climbing tower pole mirrors in both axes.
+        assertEquals(L - FieldMap.ClimbingTowers.BLUE_TOWER_POLE.getX(),
+                FieldMap.ClimbingTowers.RED_TOWER_POLE.getX(), 1e-9);
+        assertEquals(W - FieldMap.ClimbingTowers.BLUE_TOWER_POLE.getY(),
+                FieldMap.ClimbingTowers.RED_TOWER_POLE.getY(), 1e-9);
+
+        // Tower posts mirror AND swap the north/south labels: the Red SOUTH post is the
+        // mirror of the Blue NORTH post. Asserting the pairing explicitly is the whole
+        // point -- a naive same-label mirror would silently invert the tower geometry.
+        assertObstacleMirrors(FieldMap.Obstacles.RED_TOWER_POST_SOUTH,
+                FieldMap.Obstacles.BLUE_TOWER_POST_NORTH);
+        assertObstacleMirrors(FieldMap.Obstacles.RED_TOWER_POST_NORTH,
+                FieldMap.Obstacles.BLUE_TOWER_POST_SOUTH);
+    }
+
+    /**
+     * The two depots are the one documented exception to the mirror rule: the real field
+     * places them asymmetrically. These assertions exist so nobody "simplifies" them into
+     * a Blue + mirror pair without re-measuring. If they ever legitimately change, update
+     * the {@link FieldMap.Depots} comment at the same time.
+     */
+    @Test
+    public void testDepotsAreIntentionallyNotMirrored() {
+        Translation2d blue = FieldMap.Depots.BLUE_DEPOT_LOAD_POINT;
+        Translation2d red = FieldMap.Depots.RED_DEPOT_LOAD_POINT;
+
+        double mirroredX = FieldMap.FIELD_LENGTH - blue.getX();
+        double mirroredY = FieldMap.FIELD_WIDTH - blue.getY();
+
+        // Sanity-check the documented asymmetry is still present and still significant.
+        assertTrue(Math.hypot(mirroredX - red.getX(), mirroredY - red.getY()) > 0.5,
+                "Red depot load point drifted toward a pure mirror of Blue; if the field "
+                        + "geometry was re-measured, update the FieldMap.Depots comment too");
+    }
+
+    private static void assertObstacleMirrors(FieldMap.AABB red, FieldMap.AABB blue) {
+        assertEquals(FieldMap.FIELD_LENGTH - blue.maxX, red.minX, 1e-9, red.name + " minX mirror");
+        assertEquals(FieldMap.FIELD_LENGTH - blue.minX, red.maxX, 1e-9, red.name + " maxX mirror");
+        assertEquals(FieldMap.FIELD_WIDTH - blue.maxY, red.minY, 1e-9, red.name + " minY mirror");
+        assertEquals(FieldMap.FIELD_WIDTH - blue.minY, red.maxY, 1e-9, red.name + " maxY mirror");
     }
 }

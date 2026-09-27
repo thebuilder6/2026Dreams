@@ -689,14 +689,11 @@ public class JevDecisionEngine {
                     rationale = "No climber fitted. Holding position instead of climbing.";
                     break;
                 }
-                String parkKey = world.isRedAlliance() ? "Red Right Side Climb" : "Blue Right Side Climb";
-                if (GlidePoints.GLIDE_POINTS.containsKey(parkKey)) {
-                    navTarget = GlidePoints.GLIDE_POINTS.get(parkKey).pose();
-                } else {
-                    Translation2d pole = FieldMap.ClimbingTowers.getTowerPole(world.isRedAlliance());
-                    navTarget = new Pose2d(pole.plus(new Translation2d(world.isRedAlliance() ? -0.8 : 0.8, 0.0)),
-                            Rotation2d.fromDegrees(world.isRedAlliance() ? 0 : 180));
-                }
+                Translation2d pole = FieldMap.ClimbingTowers.getTowerPole(world.isRedAlliance());
+                Pose2d poleStandoff = new Pose2d(
+                        pole.plus(new Translation2d(world.isRedAlliance() ? -0.8 : 0.8, 0.0)),
+                        Rotation2d.fromDegrees(world.isRedAlliance() ? 0 : 180));
+                navTarget = glidePose("Blue Right Side Climb", world.isRedAlliance(), poleStandoff);
                 intakeCmd = IntakeState.STANDBY;
                 shooterCmd = ShooterState.STOPPED;
                 rationale = String.format("Endgame (%.1fs remaining). Navigating to Alliance Parking.",
@@ -1283,6 +1280,28 @@ public class JevDecisionEngine {
         return new StrategicAdvice(strategy, utility, advice, waypoint);
     }
 
+    /**
+     * Resolves a GlidePoint by its canonical Blue name and mirrors it for Red.
+     *
+     * <p>Blue-origin only: there is deliberately no parallel hardcoded Red fallback pose
+     * here. The old {@code isRedAlliance ? 15.48 : 1.05} style literals were a second,
+     * hand-maintained copy of data that already lives in {@link GlidePoints}, and they
+     * had already drifted (the park literal still said Y=2.88 after the waypoint moved).
+     *
+     * <p>Neutral waypoints ({@link GlidePoints.GlidePoint#neutral}) are returned
+     * unmirrored because they are already field-symmetric.
+     *
+     * @return the resolved pose, or {@code fallback} if the waypoint is missing from the
+     *         map
+     */
+    private static Pose2d glidePose(String blueName, boolean isRedAlliance, Pose2d fallback) {
+        GlidePoint point = GlidePoints.GLIDE_POINTS.get(blueName);
+        if (point == null) {
+            return fallback;
+        }
+        return point.neutral ? point.pose() : AllianceFlipUtil.apply(point.pose(), isRedAlliance);
+    }
+
     public Pose2d getSmartGlideTarget(
             Pose2d robotPose,
             boolean hasFuel,
@@ -1294,21 +1313,12 @@ public class JevDecisionEngine {
 
         double matchTime = Timer.getMatchTime();
         if (matchTime > 0.0 && matchTime <= 20.0) {
-            String parkKey = isRedAlliance ? "Red Right Side Climb" : "Blue Right Side Climb";
-            targetPose = GlidePoints.GLIDE_POINTS.containsKey(parkKey)
-                    ? GlidePoints.GLIDE_POINTS.get(parkKey).pose()
-                    : new Pose2d(isRedAlliance ? 15.48 : 1.05, 2.88, Rotation2d.fromDegrees(isRedAlliance ? 0 : 180));
+            // No route to a missing waypoint: hold position rather than invent a pose.
+            targetPose = glidePose("Blue Right Side Climb", isRedAlliance, robotPose);
             mode = "ENDGAME_PARK (" + (isRedAlliance ? "Red" : "Blue") + ")";
         } else if (hasFuel && isHubActive) {
-            String frontKey = isRedAlliance ? "Red Hub Front" : "Blue Hub Front";
-            String backKey = isRedAlliance ? "Red Hub Back" : "Blue Hub Back";
-
-            Pose2d frontPose = GlidePoints.GLIDE_POINTS.containsKey(frontKey)
-                    ? GlidePoints.GLIDE_POINTS.get(frontKey).pose()
-                    : new Pose2d(isRedAlliance ? 11.0 : 5.6, 4.10, Rotation2d.fromDegrees(isRedAlliance ? 0 : 180));
-            Pose2d backPose = GlidePoints.GLIDE_POINTS.containsKey(backKey)
-                    ? GlidePoints.GLIDE_POINTS.get(backKey).pose()
-                    : new Pose2d(isRedAlliance ? 13.9 : 2.6, 4.10, Rotation2d.fromDegrees(isRedAlliance ? 180 : 0));
+            Pose2d frontPose = glidePose("Blue Hub Front", isRedAlliance, robotPose);
+            Pose2d backPose = glidePose("Blue Hub Back", isRedAlliance, robotPose);
 
             double distFront = robotPose.getTranslation().getDistance(frontPose.getTranslation());
             double distBack = robotPose.getTranslation().getDistance(backPose.getTranslation());
@@ -1316,12 +1326,8 @@ public class JevDecisionEngine {
             targetPose = (distFront <= distBack) ? frontPose : backPose;
             mode = "SCORE_HUB (" + (distFront <= distBack ? "Front" : "Back") + ")";
         } else if (!hasFuel && isHubActive) {
-            Pose2d topMid = GlidePoints.GLIDE_POINTS.containsKey("Midfield Top")
-                    ? GlidePoints.GLIDE_POINTS.get("Midfield Top").pose()
-                    : new Pose2d(CENTERLINE_X, 6.10, Rotation2d.fromDegrees(-90));
-            Pose2d botMid = GlidePoints.GLIDE_POINTS.containsKey("Midfield Bottom")
-                    ? GlidePoints.GLIDE_POINTS.get("Midfield Bottom").pose()
-                    : new Pose2d(CENTERLINE_X, 2.00, Rotation2d.fromDegrees(90));
+            Pose2d topMid = glidePose("Midfield Top", isRedAlliance, robotPose);
+            Pose2d botMid = glidePose("Midfield Bottom", isRedAlliance, robotPose);
 
             double distTop = Math.abs(robotPose.getY() - topMid.getY());
             double distBot = Math.abs(robotPose.getY() - botMid.getY());
@@ -1329,15 +1335,8 @@ public class JevDecisionEngine {
             targetPose = (distTop <= distBot) ? topMid : botMid;
             mode = "BALL_HUNT_MIDFIELD (" + (distTop <= distBot ? "Top" : "Bottom") + ")";
         } else {
-            String topFeederKey = isRedAlliance ? "Red Feeder Top" : "Blue Feeder Top";
-            String botFeederKey = isRedAlliance ? "Red Feeder Bottom" : "Blue Feeder Bottom";
-
-            Pose2d topFeeder = GlidePoints.GLIDE_POINTS.containsKey(topFeederKey)
-                    ? GlidePoints.GLIDE_POINTS.get(topFeederKey).pose()
-                    : new Pose2d(isRedAlliance ? 15.0 : 1.5, 6.0, Rotation2d.fromDegrees(isRedAlliance ? -145 : -35));
-            Pose2d botFeeder = GlidePoints.GLIDE_POINTS.containsKey(botFeederKey)
-                    ? GlidePoints.GLIDE_POINTS.get(botFeederKey).pose()
-                    : new Pose2d(isRedAlliance ? 15.0 : 1.5, 2.2, Rotation2d.fromDegrees(isRedAlliance ? 145 : 35));
+            Pose2d topFeeder = glidePose("Blue Feeder Top", isRedAlliance, robotPose);
+            Pose2d botFeeder = glidePose("Blue Feeder Bottom", isRedAlliance, robotPose);
 
             double distTop = robotPose.getTranslation().getDistance(topFeeder.getTranslation());
             double distBot = robotPose.getTranslation().getDistance(botFeeder.getTranslation());

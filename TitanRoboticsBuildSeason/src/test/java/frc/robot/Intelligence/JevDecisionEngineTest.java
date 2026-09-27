@@ -10,6 +10,7 @@ import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
 import frc.robot.Data.Constants;
 import frc.robot.Navigation.FieldMap;
+import frc.robot.Navigation.GlidePoints;
 import frc.robot.Intelligence.JevDecisionEngine;
 import frc.robot.Sim.AIRobotInstance;
 import frc.robot.Sim.AIRobotSim;
@@ -130,11 +131,15 @@ public class JevDecisionEngineTest {
     public void testSmartGlideArbitration() {
         Pose2d robotPose = new Pose2d(5.0, 4.0, new Rotation2d());
 
-        // 1. Holding fuel + Active Hub -> Hub shooting pose
+        // 1. Holding fuel + Active Hub -> Hub shooting pose.
+        // Assert against the GlidePoints entry rather than a bare literal: the old
+        // literal (5.60, 4.10) was the pre-GlidePoints hardcoded fallback and drifted
+        // out of sync with the waypoint map.
         Pose2d hubTarget = engine.getSmartGlideTarget(robotPose, true, true, false);
         assertNotNull(hubTarget);
-        assertEquals(5.60, hubTarget.getX(), 0.1);
-        assertEquals(4.10, hubTarget.getY(), 0.1);
+        Pose2d expectedHub = GlidePoints.GLIDE_POINTS.get("Blue Hub Front").pose();
+        assertEquals(expectedHub.getX(), hubTarget.getX(), 1e-6);
+        assertEquals(expectedHub.getY(), hubTarget.getY(), 1e-6);
 
         // 2. Empty + Active Hub -> Neutral Midfield ball hunt
         Pose2d huntTarget = engine.getSmartGlideTarget(robotPose, false, true, false);

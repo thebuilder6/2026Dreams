@@ -10,7 +10,7 @@ Must use the WPILib 2026 JDK or builds fail (`Unsupported class file major versi
 $env:JAVA_HOME = "C:\Users\Public\wpilib\2026\jdk"
 $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 .\gradlew compileJava --offline   # fast compile
-.\gradlew test --offline          # JUnit 5 suite (27 test files, 211 tests as of 2026-09-26)
+.\gradlew test --offline          # JUnit 5 suite (27 test files, 217 tests as of 2026-09-26)
 .\gradlew simulateJava            # desktop SimGUI + IronMaple arena
 .\gradlew deploy                  # deploy to RoboRIO (same JAVA_HOME)
 ```
@@ -37,11 +37,11 @@ $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 
 ## Conventions that differ from defaults
 
-- **Coordinates are Blue-origin only.** All field points defined for Blue (`X=0` at Blue wall); mirror with `Utils/AllianceFlipUtil.java` (`X_red = 16.535 - X_blue`). Never hardcode Red coordinates.
+- **Coordinates are Blue-origin only.** All field points defined for Blue (`X=0` at Blue wall); mirror with `Utils/AllianceFlipUtil.java` (`X_red = FIELD_LENGTH - X_blue`, `Y_red = FIELD_WIDTH - Y_blue`; `FIELD_LENGTH`/`FIELD_WIDTH` come from `Navigation/FieldMap.java`). Never hardcode Red coordinates or maintain a parallel Blue/Red constant pair — derive the Red value. The one documented exception is `FieldMap.Depots`, whose two loading bays are genuinely asymmetric on the real field; that class explains why.
 - **No console prints for driver alerts.** Use `Telemetry/Alert.java` + `AlertManager` (Elastic banner/tables) and `Subsystems/LEDs.java` patterns. `Robot` silences joystick warnings and disables LiveWindow intentionally — don't re-enable.
 - **Tunables go through `Telemetry/TunableNumber.java` + `Telemetry/Dashboard.java`** (backs the 7-tab `elastic-layout.json`). Don't add raw SmartDashboard numbers for PID/constants; `Constants.TUNING_MODE = true` gates tuning.
 - **Timing quirks in `Robot.java` are intentional:** 100 Hz odometry subloop (`addPeriodic(..., 0.010, 0.005)`), `System.gc()` in `disabledInit()`, coprocessor `PortForwarder` 5801–5805, Elastic layout `WebServer` on port 5800. Don't "clean these up."
-- Key runtime rules encoded in code: shooter fires only inside Alliance Zone (Blue `X ≤ 4.60 m`, Red `X ≥ 11.94 m`), intake arm Standby `347°` / Ground `250°`, kicker fires after flywheels within ±150 RPM.
+- Key runtime rules encoded in code: shooter fires only inside the Alliance Zone, which is owned solely by `FieldMap.AllianceZones` (`BLUE_ZONE_MAX_X` = `BLUE_HUB_X` = 4.6256 m, `RED_ZONE_MIN_X` = 11.9154 m) — read it from there, never hardcode a zone edge. Intake arm Standby `347°` / Ground `250°`; kicker fires after flywheels within ±150 RPM.
 
 ## Testing / sim notes
 

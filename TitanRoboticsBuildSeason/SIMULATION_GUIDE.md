@@ -1,8 +1,8 @@
----
+﻿---
 title: Simulation Setup
 audience: [human, ai]
 owner: sim-owner
-last_verified: 2026-09-28
+last_verified: 2026-09-29
 status: authoritative
 ---
 
@@ -105,7 +105,7 @@ Our robot code serves the official layout directly over HTTP port 5800 (`edu.wpi
 2. Open `TitanRoboticsBuildSeason/elastic-layout.json` (or `src/main/deploy/elastic-layout.json`).
 
 ### Widget Features Across Tabs
-- **Tab 1: Driver Dashboard**: Dedicated `Match Time` countdown clock (auto-transitions Blue -> Green -> Yellow at 30s -> Red at 15s), 3D Field2d view, live Hub active indicator, `Graph` widget displaying live Flywheel RPM response, held fuel `Number Bar`, and clickable `Toggle Switch` controls for Snap Turn, Auto Aim, Ball Hunt, Glide Points, and Slow Mode.
+- **Tab 1: Driver Dashboard**: Dedicated `Match Time` countdown clock (red at 15 s, yellow at 30 s per `elastic-layout.json:42-43`), 2D `Field` widget (`/SmartDashboard/Field`), live Hub active indicator, `Graph` widget displaying live Flywheel RPM response, held fuel `Number Bar`, and clickable `Toggle Switch` controls for Snap Turn, Auto Aim, Ball Hunt, Glide Points, and Slow Mode.
 - **Tab 2: AI Coach & Practice**: Real-time driver grading ($A+$ to $D$), cycle timing bars, shooting accuracy bar, drill mode chooser, `Toggle Button` for 1-click arena reset, `Toggle Switch` for haptic collision rumble, and Jev AI coaching directives.
 - **Tab 3: Pre-Flight Diagnostics**: Automated 15-second scorecard with progress bar and individual `Toggle Button` widgets to pulse each swerve steer/drive motor, intake arm, intake rollers, and flywheels.
 - **Tab 4: SysID & Characterization**: `Toggle Button` for Quasistatic / Dynamic Forward / Reverse and ABORT / E-STOP, with real-time `Graph` widgets for live applied voltage and velocity response waves.
@@ -126,7 +126,7 @@ AdvantageScope gives you a live 3D rendering of the arena, robot, articulated me
    - Open a **3D Field** tab.
    - Select the field model: **2026 Rebuilt** (or 2024 Crescendo as fallback).
    - Under **Robot Poses**, add `/SmartDashboard/Field` or `/RealOutputs/Pose`.
-   - Under **Game Pieces**, add `Simulation/GamePieces` (`SimDashboardKeys.java:120`; Logger `FieldSimulation/Fuel` at `GameSim.java:309`) to see Fuel balls (54 standard; up to ~384 with `Simulation/FullMatchBallDensity`).
+   - Under **Game Pieces**, add `Simulation/GamePieces` (`SimDashboardKeys.java:120`; Logger `FieldSimulation/Fuel` at `GameSim.java:316`) to see Fuel balls (54 standard lightweight layout; higher `fieldFuelCount` draws a seeded subset up to `TrainingMatchScenario.MAX_FIELD_FUEL_COUNT` 384 of the full-density preplaced positions).
 5. **Configure Mechanism 3D**:
    - Add `/Subsystems/Intake/ArmPose3d` to observe the intake arm rotating between standby ($347^\circ$) and ground ($250^\circ$).
    - Add `/Subsystems/Shooter/ShooterPose3d` to visualize the shooter flywheel angle and position.
@@ -141,7 +141,7 @@ The current training scenario API applies a match duration, a seeded subset of t
 
 ### 3v3 AI-vs-AI training matches
 
-One-click start from the Elastic Simulation tab: set `Simulation/Training/Seed` (default 2026), then toggle `Simulation/Training/Start3v3`. This applies `TrainingMatchScenario.default3v3` (3 Blue + 3 Red on staggered lanes, 8-fuel preloads, 150 s, 54 fuel) and parks the player `SwerveBase`. `Simulation/Training/Stop` clears back to interactive defaults. Training bots only drive while the DriverStation is enabled (clean start/stop); run Autonomous 15 s then Teleoperated as usual and the scenario clock, Hub schedule seeding, scoring, and referee all follow. When the clock expires the scoreboard latches to `Training/Result/*` (Winner, Blue/RedScore, Margin, AUTO/TELEOP splits, climb).
+Set the seed via the `Simulation/Training/Seed` NT key (default 2026, `GameSim.java:233`) and start/stop via `Simulation/Training/Start3v3|Stop` (`SimDashboardKeys.java:109-111`). Note: the shipped `elastic-layout.json` has no widget bound to these keys — set them from code, NT, or the coaching script until a layout widget lands. This applies `TrainingMatchScenario.default3v3` (3 Blue + 3 Red on staggered lanes, 8-fuel preloads, 150 s, 54 fuel) and parks the player `SwerveBase`. `Simulation/Training/Stop` clears back to interactive defaults. Training bots only drive while the DriverStation is enabled (clean start/stop); run Autonomous 15 s then Teleoperated as usual and the scenario clock, Hub schedule seeding, scoring, and referee all follow. When the clock expires the scoreboard latches to `Training/Result/*` (Winner, Blue/RedScore, Margin, AUTO/TELEOP splits, climb).
 
 ### Headless 3v3 matches (no GUI, replayable)
 
@@ -167,7 +167,7 @@ For "did this change help?" questions, run a grid instead of one match. Never pa
 $env:JAVA_HOME = "C:\Users\Public\wpilib\2026\jdk"
 $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 
-# 8 seeds x 2 replicas, 12-way parallel, resumable
+# 8 seeds x 2 replicas = 16 matches, 4-wide parallel by default, resumable
 powershell -File tools\score\sweep.ps1 -Seeds 7,11,42,101,500,1337,2026,9999 `
     -Variants baseline -Replicas 2 -OutFile results\baseline.jsonl -Fresh
 
@@ -185,6 +185,29 @@ python tools\score\compare.py --results results\grid.jsonl
 - Rows already present for a `(variant, seed, replica)` are skipped, so an interrupted sweep is re-run rather than restarted.
 - `compare.py` exits non-zero when a variant regresses or trips a guardrail, so it works as a gate. Guardrails are **role-aware**: a defender is designed not to score (`JevDecisionEngine` zeroes `scoreUtility` for `TACTICAL_DEFENDER` / `DEFENSE_BULLY`), so defenders are gated on distance travelled, not fuel share. The role comes from the sim's reported archetype, never inferred from scoring.
 - **There is nothing to sweep yet.** Every Jev utility weight is a hardcoded literal in `JevDecisionEngine.evaluatePolicy`; see `KNOWN_ISSUES.md` §E for the `PolicyWeights` seam that unblocks it.
+- **Parallel workers still contend for NT3 1735 / NT4 5810 / CameraServer 1181-1182.** `Robot` no longer starts the WebServer (5800) or coprocessor `PortForwarder` (5801-5805) when `frc.headless` is set, but the rest is WPILib-internal. Under load you will see `NT3/NT4 server socket error: address already in use` and `Loop time of 0.02s overrun` in `logs/sweep/*.err.log`. **Width is measured, not guessed (corrected Sep 28):** at 60 s matches, **2-wide and 4-wide are clean (0 overruns, 4-11 ms max), 6-wide is not (2-13 overruns, 37-126 ms)**, and the archived 12-wide batch had 27-53 overrun warnings per match. `-MaxWorkers` therefore defaults to **4**. Use `-MaxWorkers 1` only when 4 is also dirty on your machine — the old advice to "always use `-MaxWorkers 1`" predated the loop-health measurement and is both slower and less accurate about the actual limit. The rig now **fails the sweep** on a degraded row rather than letting you judge by eye, so a too-wide run is loud, not silent. Measured evidence and the two separate variance causes: `docs/SCORE_RIG_RESULTS.md` §4.
+
+### Jev decision cards (no match required)
+
+The score rig above needs a 150 s match per sample, and the headless 3v3 is currently too noisy to resolve a policy change (see `docs/SCORE_RIG_RESULTS.md`). The **decision layer** has no such problem: `JevDecisionEngine.evaluatePolicy` is a pure function of `(WorldState, MatchKnowledge, Archetype)`, so it can be exercised in milliseconds with no physics, no seeds, and no variance.
+
+```powershell
+.\gradlew jar --offline
+powershell -File tools\score\run-cards.ps1        # -> results\decision_cards.md
+```
+
+- **39 cards ship** (re-run 2026-09-28; the "45" previously quoted here, in `KNOWN_ISSUES.md` §E and in `docs/CHANGELOG.md` was wrong) covering the batch threshold ladder, both documented priority inversions, inventory-full, lane-blocked, endgame climb, poach/shuttle/screen, defender behaviour, next-shift awareness, and a full timeline walk (TRANSITION → SHIFT1-4 → ENDGAME).
+- **Every card is evaluated three times**: as Blue clairvoyant, as mirrored Red clairvoyant, and under the **observed** tier. The verdict is judged against the Blue pass. CO_PILOT cards are single-pass (it is the player-facing archetype, not a sparring bot).
+- **Alliance symmetry holds** — every card's Blue and Red passes agree, i.e. the utility matrix is alliance-symmetric. Cards whose two passes disagree are flagged **ALLIANCE ASYMMETRY**.
+- **6 of the 39 cards pick a different objective under the observed tier**, and five of those are defender cards where the clairvoyant answer is a defensive objective and the observed answer is `VACUUM_MIDFIELD`/`STAGE_STANDOFF`. That is the honest tier doing what it should *and* the defensive policy disappearing as a result — see `docs/KNOWLEDGE_MODEL.md` and `KNOWN_ISSUES.md` §A. Read the `TIER DIFFERS` rows before tuning anything defender-related.
+- **`0 PASS / 0 MISMATCH / 39 UNREVIEWED`** — the `expected` column is blank for every card, so the tool is currently a report, not a gate. One card (`Z99`) is `INVALID STATE` **on purpose** (it is the canary for the schedule cross-check — do not fix it).
+  - The subtlety: flipping the alliance in a *fixed* phase is **not** a mirror. The seed decides which alliance sits out, so with the default seed `'R'`, Blue is live in SHIFT1 and Red in SHIFT2. Swapping only the hub flags compares SHIFT1 against SHIFT2 and reports 18 false asymmetries — which is exactly what the first version of this tool did before it was caught.
+- Each card prints the chosen objective for both passes, the rationale, the full `AIActionIntent` side by side, and a **held-fuel sweep** with a two-column Blue/Red comparison. Thresholds and inversions show up as visible steps, so you do not need to already suspect a bug to see it.
+- **Every card is validated against the hub schedule.** `hubActive` / `oppHubActive` / `timeToShift` are treated as **cross-checks, not inputs** — hub state is derived from `(matchTime, phase, seed)` at evaluation time, and any card whose authored values contradict the schedule is flagged **INVALID STATE**. This caught 7 unreachable cards in the first pass. Note `matchTime` is **time remaining** (150 = match start, 0 = buzzer).
+- **To review them:** edit the `expected` column in `tools\score\decision_cards.tsv` (tab-separated) and re-run. Verdicts are judged against the Blue pass.
+- All cards are evaluated as the **Blue** alliance with Blue-origin coordinates, per the repo-wide Blue-only rule, and with zero chassis velocity — so they test *objective choice*, not the shoot gate.
+- The report also prints a geometry table showing where `inShootingRange` (<= 4.0 m from the hub) actually holds. Read it before tuning anything: that radius covers the whole home zone *and* the whole home half out to the centerline.
+- Development tool only. Not robot code, not on the roboRIO path.
 
 Run the focused JUnit tests from `TitanRoboticsBuildSeason/` to check scenario setup:
 
@@ -196,7 +219,7 @@ $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 
 This validates scenario inputs; it does not run a training match.
 
-### 1. Enabling the Robot
+## 1. Enabling the Robot
 In the WPILib SimGUI:
 - Click **`Teleoperated`** and then **`Enabled`** in the DriverStation control panel to start manual driving.
 - Click **`Autonomous`** and then **`Enabled`** to test the auto routine selected in the Elastic Dashboard dropdown.
@@ -213,7 +236,7 @@ In the WPILib SimGUI:
   - **Right**: Face Right ($-90^\circ$)
   - **Down**: Face Backward ($180^\circ$)
   - **Left**: Face Left ($+90^\circ$)
-- **A Button**: Zero Gyro field heading relative to current alliance.
+- **A Button (double-tap within 0.4 s)**: Zero Gyro field heading relative to current alliance (`Teleop.java:138-140,530-531`; single press does nothing).
 
 ### 3. Intaking Fuel Balls
 - Drive towards any Fuel ball on the carpet.
@@ -222,7 +245,7 @@ In the WPILib SimGUI:
 - **Release Left Trigger**: The arm automatically retracts to the standby upright position ($347^\circ$).
 
 ### 4. Auto-Aiming & Scoring in the Hub
-- Drive to any shooting position inside your Alliance Zone (Blue $X \le 4.6256\text{m}$, Red $X \ge 11.9154\text{m}$, owned by `Navigation/FieldMap.java` `AllianceZones` `:265-268`). Shooter solutions cover 1.2–6.5 m (`Shooter.java:189,242`); bots use the shared 1.40–4.20 m valid zone (`FieldMap.Hubs.SHOOTING_MAX_DISTANCE`, read by both the snipe utility and `AIRobotSim`). Shots from Midfield are automatically inhibited.
+- Drive to any shooting position inside your Alliance Zone (Blue $X \le 4.6256\text{m}$, Red $X \ge 11.9154\text{m}$, owned by `Navigation/FieldMap.java` `AllianceZones` `:265-268`). Shooter solutions cover 1.2–6.5 m (`Shooter.java:189,242`); bots use the shared 4.20 m upper bound (`FieldMap.Hubs.SHOOTING_MAX_DISTANCE`, read by both the snipe utility and `AIRobotSim`). The lower bound is not single-owned (snipe gates at 3.6 m, `AIRobotSim` hardcodes 1.40 m, `FieldMap` says 1.60 m). Shots from Midfield are automatically inhibited.
 - **Hold Right Trigger (>30%)**:
   - The robot locks heading onto the Hub center.
   - Dual flywheels spool up to the interpolated target RPM based on distance.
@@ -232,7 +255,7 @@ In the WPILib SimGUI:
 
 ### 5. Glide Points & Tactical Waypoints
 - **Hold Right Bumper**: The robot autonomously plans a path and navigates to the nearest tactical waypoint (Alliance Feeder, Hub perimeter, Trench auto-tunnel, or Midfield crossing).
-- Deflecting any manual joystick (>15%) instantly cancels Glide mode and restores full driver control.
+- Stick input between 0.10 and 0.65 **blends** with the assist; exceeding 0.65 translation / 0.60 rotation (`BREAKOUT_TRANSLATION/ROTATION`, `AutonomousTeleopAgent.java:46-47`, consumed at `Teleop.java:392-393`) cancels Glide and restores full driver control.
 
 ### 6. Sparring Against Multiple Opponent AI Robots (1 to 3 Autonomous Agents)
 
@@ -240,7 +263,7 @@ The simulation engine supports scaling from a single sparring opponent up to **3
 
 - **Activating Multi-Bot Simulation**:
   - In Elastic Dashboard (`Simulation & Match Info` tab), toggle **`Opponent AI Active`** (`Features/Opponent Robot`).
-  - Set the number of active opponent bots via the **`Opponent Count (1-3)`** bar (`Simulation/OpponentCount`). Select `1`, `2`, or `3`.
+  - Set the number of active opponent bots via the **`Opponent Count`** chooser (`/SmartDashboard/Simulation/OpponentCountChooser`), backed by the `Simulation/OpponentCount` number. Select `1`, `2`, or `3`.
   - Adjust sparring speed with **`Opponent Speed %`** (`Simulation/OpponentSpeedPercent`, 20% to 100%, defaults to 75%).
   - Bots spawn at staggered, non-overlapping starting coordinates on their alliance wall (Blue X=2.00 m, Red X=14.541 m = `FIELD_LENGTH − 2.00`). When the player is Blue, opponents spawn Red and allies spawn Blue (`AIRobotSim.java:1376-1423`). Interactive spawns use X=2.00/14.541; training `default3v3` uses X=2.00/14.50 with 8-fuel preloads (`TrainingMatchScenario.java:71-90`):
     - **Bot 0**: Centerline spawn ($Y=4.035\text{m}$)
@@ -256,7 +279,7 @@ The simulation engine supports scaling from a single sparring opponent up to **3
   | Archetype | Macro Strategy | Tactical Behaviors |
   | :--- | :--- | :--- |
   | **`AUTONOMOUS_CYCLER`** | High-Throughput Fuel Scoring | Evaluates Gaussian cluster density scent to target rich fuel patches. Adheres to Alliance Zone firing geofencing, standoff arcs ($2.40\text{m}$), and shoot-on-the-fly ballistics. |
-  | **`DEFENSE_BULLY`** | Aggressive Physical Harassment | Pursues player bumpers, pins against walls (warn 1.8 s, max 2.4 s, `Navigation/ContactWatchdog.java:43-44`), and disrupts player intake lanes. |
+  | **`DEFENSE_BULLY`** | Aggressive Physical Harassment | Pursues player bumpers, pins against walls (warn 1.8 s, max 2.4 s, `Navigation/ContactWatchdog.java:47-48`), and disrupts player intake lanes. |
   | **`ADAPTIVE_COMPETITOR`** | Hybrid Two-Way Play | Scavenges loose balls when the Hub is active; transitions to lane denial and player harassment when its Hub is inactive. |
   | **`TACTICAL_DEFENDER`** | Positional Lane & Depot Denial | Shadows player along the midfield boundary ($X = 8.27\text{m}$), blocks direct shooting corridors to the Hub, and contests neutral depots. |
   | **`LEAD_PURSUIT_INTERCEPTOR`** | Predictive Path Interception | Projects the player's instantaneous velocity vector and executes quadratic lead intercept to cut off travel routes. |
@@ -267,19 +290,19 @@ The simulation engine supports scaling from a single sparring opponent up to **3
   - **Obstacle Registration**: Each active bot registers its pose and velocity in [`DynamicRouter`](file:///c:/Users/jumpi/Documents/Github/2026Dreams/TitanRoboticsBuildSeason/src/main/java/frc/robot/Navigation/DynamicRouter.java), enabling player trajectory pathfinding to cleanly circumnavigate moving opponents.
 
 - **Elastic Dashboard Multi-Bot Controls (`Simulation & Match Info` Tab)**:
-  - **Arena Field View**: Embedded 2D field widget displaying the player robot alongside `OpponentBot0`, `OpponentBot1`, and `OpponentBot2` with live heading orientations and lookahead target markers.
+  - **Arena view**: the two 2D `Field` widgets live on Tab 1 (Driver) and Tab 2 (AI Coach), not on the `Simulation & Match Info` tab — open those tabs to see the player alongside the bots with live headings and lookahead markers.
   - **Per-Bot Status Cards**:
     - **Mode & Objective**: Live displays for Bot 0, Bot 1, and Bot 2 active states (e.g. `CYCLE_SCORE_HUB`, `DENY_SHOOTING_LANE`, `STAGE_STANDOFF`).
     - **Held Fuel & Scores**: Dedicated counters tracking individual fuel counts and points scored per bot.
-  - **Aggregate Telemetry**: Live indicators for `Total Opponent Score`, `Total Opponent Fuel`, and `Active Opponents Count`.
+  - **Aggregate Telemetry**: Live indicators for `Total Opponent Score` and `Total Opponent Fuel`. (There is no layout widget bound to `MultiBotActiveCount`/`AllyActiveCount` — read those NT keys directly if needed.)
 
 - **AdvantageScope 3D Multi-Robot Scrimmage Setup**:
   - Load the pre-configured layout: Open AdvantageScope -> **File -> Open Layout** -> select [`advantagescope-layout.json`](file:///c:/Users/jumpi/Documents/Github/2026Dreams/TitanRoboticsBuildSeason/advantagescope-layout.json).
   - Pre-configured views include:
-    - **3D Arena Scrimmage**: Complete 3D field rendering with player (Blue) and up to 3 opponents (Orange, Coral, Crimson) driving with 3D projectile arcs and dynamic fuel balls.
-    - **2D Tactical Field Map**: Simultaneous tracking of all robot poses, navigation waypoints, glide points, and pathfinder detours.
-    - **Multi-Bot Scrimmage Scoring**: Real-time line graphs comparing player scoring throughput against individual and aggregate AI bot scores.
-    - **Fuel Inventory & Drive Dynamics**: Multi-bot hopper tracking and flywheel RPM response.
+    - **3D Arena Scrimmage**: Complete 3D field rendering with player (Blue) and up to 3 opponents (models per `advantagescope-layout.json:85-139`: `OpponentBot0`/`Bot1` "Crab Bot", `OpponentBot2` "Duck Bot"; no per-bot colors configured) driving with 3D projectile arcs and dynamic fuel balls.
+    - **2D Tactical Field Map**: Simultaneous tracking of all robot poses, navigation waypoints, glide points, and pathfinder detours. (Ships with empty `sources` — populate manually, or use the Elastic `Field` widgets.)
+    - **Multi-Bot Scrimmage Scoring**: Real-time line graphs comparing player scoring throughput against individual and aggregate AI bot scores. (The Line Graph tab ships with empty sources — add traces manually.)
+    - **Fuel Inventory & Drive Dynamics**: Multi-bot hopper tracking and flywheel RPM response. (No such view ships in the layout — add traces manually.)
 
 - **NetworkTables Telemetry Reference**:
   - *Bot 0*: `/AI_Telemetry/Bot0/ActualPose`, `/Simulation/Bot0/StateDetail`, `/Simulation/Bot0/Score`, `/Simulation/Bot0/Fuel`, `/Simulation/Bot0/Archetype`
@@ -374,8 +397,9 @@ Switch to the **`AI Coach & Practice`** tab in Elastic Dashboard for focused dri
 ## 🛠️ Troubleshooting & FAQs
 
 ### Q: `bind() to port 1181 failed: Only one usage of each socket address is normally permitted`
-- **Cause**: WPILib CameraServer attempts to bind to default RTSP/HTTP ports that may already be in use by another local process.
-- **Solution**: This is a non-fatal warning during simulation startup and can be safely ignored. PhotonVision and Limelight simulations operate independently over NetworkTables.
+- **Cause**: WPILib CameraServer attempts to bind to default RTSP/HTTP ports that may already be in use by another local process. In a headless match the binder is `PhotonCameraSim`'s constructor (via `Sim/VisionSim`), which calls `CameraServer.putVideo` twice and so takes 1181 and 1182. `CameraServer.kBasePort` is a `public static final int` with no system property, so it cannot be offset.
+- **Solution**: Harmless to a score. cscore logs the failure and continues, and the `photonvision` NT table that `VisionIOSim` reads is written regardless, so AprilTag results are unaffected. A single sim instance can ignore it. **In a parallel `tools/score/sweep.ps1` run it is expected** - the rig counts these and reports them, but does not fail the sweep. See `ARCHITECTURE.md` for the full port-isolation contract.
+- **Not the same as the NT port problem.** A bind failure on **1735/5810** (NT3/NT4) is a different class: it means a worker could have entered ntcore client mode and attached to a sibling worker. The rig eliminates that (`Robot.robotInit` stops the NT server and drops `NT4Publisher` when headless) and fails the sweep if the marker line is missing or a client connects.
 
 ### Q: The robot does not respond to controller inputs
 - Check the **`Joysticks`** panel in the WPILib SimGUI. Ensure your controller is placed in **`Joystick 0`**.
@@ -399,3 +423,4 @@ Switch to the **`AI Coach & Practice`** tab in Elastic Dashboard for focused dri
 - 📖 [System Architecture Specification](ARCHITECTURE.md): Deep-dive into subsystem layers and IO abstraction.
 - 🎮 [Operator's Guide](OPERATORS_GUIDE.md): Complete driver and operator control mappings.
 - 🧪 [Testing & Diagnostics Guide](src/main/java/frc/robot/Test/README.md): Pre-flight routines and SysId characterization.
+

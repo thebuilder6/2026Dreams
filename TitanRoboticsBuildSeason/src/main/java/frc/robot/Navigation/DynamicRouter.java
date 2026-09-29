@@ -36,11 +36,16 @@ public class DynamicRouter {
     private static final double ROBOT_RADIUS_METERS = 0.45; // Half of chassis width with bumpers
 
     /**
-     * When repulsion exceeds the nominal command, this fraction of the nominal speed
-     * is still commanded forward. Guarantees the robot keeps making progress instead
-     * of cancelling to a crawl inside the stall watchdogs' blind band.
+     * Asymptotic fraction of the nominal speed still commanded forward when repulsion
+     * opposes the drive completely. Replaces the previous hard
+     * {@code MIN_FORWARD_FRACTION} clamp, whose threshold put a kink in the command
+     * as a peer crossed it. The retained forward term is now
+     * {@code nominal - saturation * (1 - exp(-backPressure / saturation))}, so it
+     * approaches this value smoothly and monotonically instead of hitting it at a
+     * cliff. Guarantees the robot keeps making progress rather than cancelling into
+     * the stall watchdogs' blind band.
      */
-    public static final double MIN_FORWARD_FRACTION = 0.35;
+    public static final double MAX_BACKPRESSURE_FRACTION = 0.65;
 
     /**
      * The tangential slide is a fraction of the repulsion magnitude, not a flat
@@ -295,44 +300,73 @@ public class DynamicRouter {
 
         double vx;
         double vy;
-        if (nominalSpeed > 1e-4 && repulsionMagnitude > nominalSpeed) {
-            // Repulsion outweighs the nominal command. A pure sum either reverses
-            // the drive (robot commanded away from its target) or cancels to a slow
-            // crawl that lands in the stall watchdogs' blind band. Decompose instead:
-            // project out the component fighting the drive, keep whatever forward
-            // progress survives, and route the rest into a tangential slide so the
-            // robot goes around the peer instead of into it.
+        double forwardRetained;
+        if (nominalSpeed > 1e-4) {
+            // Decompose rather than sum. A pure sum either reverses the drive (robot
+            // commanded away from its target) or cancels to a slow crawl that lands in
+            // the stall watchdogs' blind band. Instead: project out the component
+            // fighting the drive, saturate that back-pressure instead of flooring it,
+            // and route the surplus into a tangential slide so the robot goes around the
+            // peer rather than into it.
             Translation2d unitNominal = new Translation2d(
                     nominalSpeeds.vxMetersPerSecond, nominalSpeeds.vyMetersPerSecond)
                     .div(nominalSpeed);
             double along = repulsiveVector.dot(unitNominal);
             Translation2d lateral = new Translation2d(-unitNominal.getY(), unitNominal.getX());
 
-            // Perpendicular sign of the repulsion picks which way to slide. Both
-            // robots flanking the path produce two symmetric lateral terms that
-            // cancel, so fall back to the robot's own heading parity to break the tie
-            // deterministically and desynchronise mirrored pairs.
-            double lateralSign = Math.signum(lateral.dot(repulsiveVector));
-            if (lateralSign == 0.0) {
-                lateralSign = (Math.floor(Math.abs(robotPos.getY()) / 2.0) % 2 == 0) ? 1.0 : -1.0;
+            // Perpendicular part of the repulsion. This must be carried through
+            // explicitly: a peer abeam the robot produces almost no component along the
+            // drive, so treating only the opposing component would leave a robot with a
+            // peer to its side driving straight past it. The plain sum handled that
+            // case implicitly, and dropping it was a regression caught by
+            // RepulsionBoundsTest.farPeerStillProducesAvoidance.
+            Translation2d perpRepulsion = repulsiveVector.minus(unitNominal.times(along));
+            double perpMagnitude = perpRepulsion.getNorm();
+
+            // Direction of the slide: follow the perpendicular repulsion when there is
+            // any, so a peer to the side steers around rather than being ignored. When
+            // the peer is dead ahead the perpendicular part nearly vanishes and two
+            // symmetric terms can cancel, so fall back to heading parity to break the
+            // tie deterministically and desynchronise mirrored pairs.
+            Translation2d slideDir;
+            if (perpMagnitude > 1e-4) {
+                slideDir = perpRepulsion.div(perpMagnitude);
+            } else {
+                double sign = (Math.floor(Math.abs(robotPos.getY()) / 2.0) % 2 == 0) ? 1.0 : -1.0;
+                slideDir = lateral.times(sign);
             }
 
-            // Keep at least MIN_FORWARD_FRACTION of the nominal command so the robot
-            // never stalls in place, and cap the lateral slide so it stays a
-            // correction rather than a detour.
-            double forward = Math.max(MIN_FORWARD_FRACTION * nominalSpeed, nominalSpeed + along);
-            double sideways = Math.min(repulsionMagnitude * LATERAL_FRACTION_OF_REPULSION, MAX_LATERAL_MPS);
+            // Continuous relaxation instead of a hard forward floor. The old form was
+            // max(0.35*nominal, nominal + along): a clamp, so the command had a kink at
+            // the threshold and behaviour switched discontinuously as a peer crossed it.
+            // Saturating the opposing component reaches the same floor as its asymptote
+            // while staying smooth and monotone for every input -- the relaxed-decay
+            // form from the CLF/CBF literature (arXiv:2211.11348, 2507.14700), where
+            // the progress constraint degrades continuously as the safety constraint
+            // tightens instead of hitting a cliff.
+            double backPressure = -Math.min(0.0, along); // >= 0, grows as repulsion opposes
+            double saturation = MAX_BACKPRESSURE_FRACTION * nominalSpeed;
+            double forward = nominalSpeed
+                    - saturation * (1.0 - Math.exp(-backPressure / saturation));
+            forwardRetained = forward;
 
-            vx = unitNominal.getX() * forward + lateral.getX() * sideways * lateralSign;
-            vy = unitNominal.getY() * forward + lateral.getY() * sideways * lateralSign;
+            // Sideways correction: the perpendicular repulsion itself, plus a slide
+            // proportional to how hard the peer is fighting the drive, capped so it
+            // stays a local correction rather than a detour.
+            double sideways = Math.min(
+                    perpMagnitude + backPressure * LATERAL_FRACTION_OF_REPULSION,
+                    MAX_LATERAL_MPS);
 
-            Logger.recordOutput("DynamicAvoidance/RepulsionOverrodeNominal", true);
-            Logger.recordOutput("DynamicAvoidance/ForwardRetained", forward);
+            vx = unitNominal.getX() * forward + slideDir.getX() * sideways;
+            vy = unitNominal.getY() * forward + slideDir.getY() * sideways;
         } else {
             vx = nominalSpeeds.vxMetersPerSecond + repulsiveVector.getX();
             vy = nominalSpeeds.vyMetersPerSecond + repulsiveVector.getY();
-            Logger.recordOutput("DynamicAvoidance/RepulsionOverrodeNominal", false);
+            forwardRetained = 0.0;
         }
+
+        Logger.recordOutput("DynamicAvoidance/ForwardRetained", forwardRetained);
+        Logger.recordOutput("DynamicAvoidance/RepulsionMagnitude", repulsionMagnitude);
 
         // Speed clamping
         double speed = Math.hypot(vx, vy);

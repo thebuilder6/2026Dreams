@@ -31,6 +31,7 @@ import edu.wpi.first.math.kinematics.ChassisSpeeds;
  */
 class RepulsionBoundsTest {
 
+    private static final Translation2d TARGET = new Translation2d(6.0, 4.0);
     private static final double OLD_PEER_FLOOR = 0.05;
     private static final double OLD_WALL_FLOOR = 0.04;
     private static final double OLD_PEER_GUARD = 0.05;
@@ -192,6 +193,80 @@ class RepulsionBoundsTest {
                 "A 1 cm gap change must not swing the command by " + jump
                         + " m/s; that discontinuity is the bug the bound removes");
     }
+
+    /**
+     * The motivation for replacing the hard floor: the retained forward command must
+     * be continuous and monotone in the opposing force, with no kink where a peer
+     * crosses the old threshold.
+     */
+    @Test
+    void retainedForwardIsContinuousAndMonotoneInBackPressure() {
+        // Same shape as the production expression, checked independently here.
+        double nominal = 1.5;
+        double saturation = DynamicRouter.MAX_BACKPRESSURE_FRACTION * nominal;
+        double floor = nominal - saturation;
+
+        double prev = Double.MAX_VALUE;
+        double prevStep = Double.POSITIVE_INFINITY;
+        for (double backPressure = 0.0; backPressure <= 40.0; backPressure += 0.05) {
+            double forward = nominal - saturation * (1.0 - Math.exp(-backPressure / saturation));
+
+            assertTrue(forward >= floor - 1e-9,
+                    "Forward must never dip below its asymptote, got " + forward
+                            + " at backPressure=" + backPressure);
+            assertTrue(forward <= prev + 1e-9,
+                    "Forward must decrease monotonically as back-pressure rises, at "
+                            + backPressure);
+            if (backPressure > 0.0) {
+                // A clamp produced a zero first derivative then a jump; the
+                // exponential must shrink the step size every increment.
+                double step = Math.abs(prev - forward);
+                assertTrue(step <= prevStep + 1e-9,
+                        "Step size must not increase -- that would reintroduce a kink, at "
+                                + backPressure);
+                prevStep = step;
+            }
+            prev = forward;
+        }
+        // At zero back-pressure the command is exactly the nominal, unmodified.
+        assertEquals(nominal, nominal - saturation * (1.0 - Math.exp(0.0)), 1e-12);
+    }
+
+    /**
+     * End-to-end counterpart: sweeping a peer in from far to near must produce a
+     * monotone forward command with no discontinuity larger than a smooth ramp.
+     */
+    @Test
+    void commandedForwardIsSmoothAsAPeerApproaches() {
+        Pose2d robot = new Pose2d(8.0, 4.0, new Rotation2d());
+        double nominal = Math.hypot(WEST.vxMetersPerSecond, WEST.vyMetersPerSecond);
+
+        double prev = 0.0;
+        double prevGap = Double.MAX_VALUE;
+        for (double gap = 1.35; gap >= 0.60; gap -= 0.05) {
+            DynamicRouter.clearObstacles();
+            DynamicRouter.registerObstacle(
+                    new Translation2d(robot.getX() - gap, robot.getY()),
+                    new Translation2d(), 0.55, 5.0, false);
+            ChassisSpeeds out = DynamicRouter.computeAvoidanceSpeeds(robot, WEST, TARGET);
+
+            // Forward speed along the drive direction: negative is west, toward target.
+            double forward = out.vxMetersPerSecond;
+            assertTrue(forward < 0.0,
+                    "Must keep driving toward the target at gap=" + gap + ", got " + forward);
+            assertTrue(forward >= -nominal - 1e-6,
+                    "Retained forward must not exceed the nominal command, gap=" + gap);
+
+            double perMetre = (prev - forward) / Math.max(1e-6, prevGap - gap);
+            assertTrue(perMetre < 12.0,
+                    "Command changed by " + perMetre + " m/s per metre at gap=" + gap
+                            + " -- too steep to be smooth");
+            prev = forward;
+            prevGap = gap;
+        }
+    }
+
+    private static final ChassisSpeeds WEST = new ChassisSpeeds(-1.5, 0.0, 0.0);
 
     /** Clear-field behaviour must be completely untouched. */
     @Test

@@ -7,13 +7,21 @@ import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.Timer;
-import frc.robot.Telemetry.Dashboard;
+import edu.wpi.first.math.geometry.Translation2d;
+import frc.robot.Navigation.FieldMap;
+import frc.robot.Navigation.StaticPathfinder;
 import frc.robot.Sim.AIRobotInstance;
 import frc.robot.Sim.AIRobotSim;
 import frc.robot.Sim.GameSim;
+import frc.robot.Sim.HubSchedule;
 import frc.robot.Sim.MatchScoreTracker;
 import frc.robot.Subsystems.SwerveBase;
+import frc.robot.Telemetry.Alert;
+import frc.robot.Telemetry.Alert.AlertType;
+import frc.robot.Telemetry.Dashboard;
 import frc.robot.Utils.AllianceFlipUtil;
+import swervelib.simulation.ironmaple.simulation.SimulatedArena;
+
 
 /**
  * Factory utilities for building immutable WorldState snapshots from
@@ -23,13 +31,57 @@ public final class WorldStateBuilder {
 
     private WorldStateBuilder() {}
 
+    /** Seconds between repeat reports, mirroring {@code GameSim.logRateLimitedError}. */
+    private static final double ERROR_LOG_INTERVAL_SEC = 2.0;
+
+    private static double lastErrorLogTimestamp = Double.NEGATIVE_INFINITY;
+
+    /**
+     * Raised when the sim roster cannot be read, so match knowledge degrades to
+     * "no field picture". Previously a bare {@code catch (Exception ignored)}
+     * made that silent. The Alert carries the persistent state; this carries
+     * the one-off detail, rate limited because this runs once per bot per tick.
+     */
+    private static final Alert ROSTER_UNAVAILABLE =
+            new Alert("Intelligence", "Jev match knowledge: ally/opponent roster unavailable",
+                    AlertType.WARNING);
+
+    private static void reportDegraded(String context, Throwable t) {
+        ROSTER_UNAVAILABLE.set(true);
+        double now = Timer.getFPGATimestamp();
+        if (now - lastErrorLogTimestamp > ERROR_LOG_INTERVAL_SEC) {
+            lastErrorLogTimestamp = now;
+            DriverStation.reportError("WorldStateBuilder [" + context + "]: " + t.getMessage(), false);
+        }
+    }
+
+    /** Cleared by any successful build, so a transient blip does not latch forever. */
+    private static void reportHealthy() {
+        ROSTER_UNAVAILABLE.set(false);
+    }
+
+    /**
+     * Whether a bot is actually on the playing field, as opposed to parked in
+     * the queuing lane. The queuing poses are hardcoded at
+     * {@code Y = OFF_FIELD_QUEUING_Y}, and the field spans {@code Y} 0 to
+     * {@code FieldMap.FIELD_WIDTH}, so the sign of {@code Y} is the only
+     * discriminator.
+     *
+     * <p>This was an inline {@code pose.getY() > 0.0} in three places. It works,
+     * but it reads as a field-space test rather than the queuing test it
+     * actually is, and nothing tied it to the queuing Y it depends on.
+     */
+    private static boolean isOnField(Pose2d pose) {
+        return pose != null && pose.getY() > 0.0;
+    }
+
     /**
      * Builds a WorldState snapshot for the primary player robot (e.g., AutonomousTeleopAgent or MatchCoach).
      *
      * <p>Driver-assist tier: the robot knows only what it could theoretically
      * perceive itself. Opponent robots are <i>not</i> known (no vision tracker
      * feeds them today), so the mark is a neutral placeholder and consumers
-     * must evaluate with {@link MatchKnowledge#unknown()}.
+     * must evaluate with {@link ObservedKnowledge#selfOnly()}.
      *
      * @param heldFuelCount Estimated or sensor-confirmed fuel/game pieces held in hopper
      * @return Immutable WorldState snapshot
@@ -48,8 +100,26 @@ public final class WorldStateBuilder {
 
         boolean isPlayerRed = AllianceFlipUtil.isRedAlliance();
         boolean playerHubActive = Dashboard.getInstance().isHubActive();
-        boolean oppHubActive = !playerHubActive;
         double timeUntilShift = Dashboard.getInstance().getTimeUntilSwitch();
+
+        // Do NOT infer the opponent hub by inverting our own. The two hubs are
+        // complementary only during SHIFT 1-4; during AUTO, TRANSITION and
+        // ENDGAME both are live, so inverting told the real robot the opponent
+        // hub was dead for all of autonomous and the whole 30 s endgame. That
+        // suppressed DENY_SHOOTING_LANE (JevDecisionEngine gates
+        // laneDenialUtility on this flag) exactly when denying a live hub is
+        // worth the most. See HubSchedule.isOpponentHubActiveGivenMineIs.
+        boolean oppHubActive = HubSchedule.isOpponentHubActiveGivenMineIs(
+                playerHubActive, HubSchedule.phaseFor(matchTime, DriverStation.isAutonomous()));
+
+        // Where can this robot score AFTER the next flip. Without this the engine
+        // cannot tell a shuttle (which lobs at the opponent's end) from a trip to
+        // its own hub, so both fire at the wrong time.
+        HubSchedule.Phase phase = HubSchedule.phaseFor(matchTime, DriverStation.isAutonomous());
+        boolean mineAfter = HubSchedule.isHubActive(isPlayerRed, HubSchedule.nextPhase(phase),
+                HubSchedule.getShiftSeed());
+        boolean theirsAfter = HubSchedule.isHubActive(!isPlayerRed,
+                HubSchedule.nextPhase(phase), HubSchedule.getShiftSeed());
 
         return new WorldState(
                 playerPose,
@@ -62,7 +132,9 @@ public final class WorldStateBuilder {
                 oppHubActive,
                 timeUntilShift,
                 isPlayerRed,
-                DriverStation.isAutonomous()
+                DriverStation.isAutonomous(),
+                mineAfter,
+                theirsAfter
         );
     }
 
@@ -72,7 +144,10 @@ public final class WorldStateBuilder {
      * @param selfPose Current pose of the AI robot in simulation world
      * @param selfVelocity Current field-relative velocity of the AI robot
      * @param heldFuelCount Current fuel pieces in AI robot's intake simulation
-     * @param isOpponentRedAlliance True if this AI robot is on the Red Alliance
+     * @param isBotRed True if THIS AI robot is on the Red Alliance. Renamed from
+     *                 {@code isOpponentRedAlliance}, which was wrong: the value
+     *                 populates {@link WorldState#isRedAlliance()}, i.e. the
+     *                 bot's own alliance, not an opponent's.
      * @param isSelfHubActive Whether this AI robot's scoring hub is currently active
      * @return Immutable WorldState snapshot from the perspective of this AI robot
      */
@@ -80,9 +155,9 @@ public final class WorldStateBuilder {
             Pose2d selfPose,
             ChassisSpeeds selfVelocity,
             int heldFuelCount,
-            boolean isOpponentRedAlliance,
+            boolean isBotRed,
             boolean isSelfHubActive) {
-        return buildForSimBot(selfPose, selfVelocity, heldFuelCount, isOpponentRedAlliance,
+        return buildForSimBot(selfPose, selfVelocity, heldFuelCount, isBotRed,
                 isSelfHubActive, SwerveBase.getInstance().getPose(),
                 SwerveBase.getInstance().getFieldVelocity());
     }
@@ -95,35 +170,46 @@ public final class WorldStateBuilder {
             Pose2d selfPose,
             ChassisSpeeds selfVelocity,
             int heldFuelCount,
-            boolean isOpponentRedAlliance,
+            boolean isBotRed,
             boolean isSelfHubActive,
             Pose2d markPose,
             ChassisSpeeds markVelocity) {
 
         // Shift-aware decisions read the schedule's own clock. The DS clock is
-        // -1 under simulation, so Dashboard.getTimeUntilSwitch() used to stay
-        // pinned at 0.0 -- which made every bot believe its shift was ALWAYS
-        // ending, and drove a permanent 8-ball dump-and-refill cycle.
+        // -1 under simulation, so Dashboard.getTimeUntilSwitch() stays pinned at
+        // 0.0 and every bot believes its shift is ALWAYS ending. The opt-in real
+        // clock is off by default because it was last measured to starve Blue's
+        // teleop scoring, and that measurement predates the archetype-override,
+        // fuel-attribution and Common Random Numbers fixes -- it has not been
+        // re-run. The gate is the flag alone: refreshFromMatchState() already
+        // fails open (unknown clock reads as 150.0 remaining, both hubs live, no
+        // shift anticipation), so no extra validity test is needed.
         //
-        // That frozen-clock behaviour is kept as the default, because
-        // correcting the clock alone changes which objective wins (a real
-        // timeUntilHubShift lets STAGE_STANDOFF beat VACUUM_MIDFIELD, and the
-        // measured result was Blue scoring ZERO in teleop). Set the system
-        // property frc.jev.realShiftClock=true to opt in once the staging
-        // priority is fixed in the same change.
-        boolean useRealShiftClock =
-                Boolean.getBoolean("frc.jev.realShiftClock")
-                        && frc.robot.Sim.MatchDeterminism.isSeeded();
-        frc.robot.Sim.HubSchedule.refreshFromMatchState();
-        double matchTime = useRealShiftClock
-                ? frc.robot.Sim.HubSchedule.lastMatchTimeRemaining()
-                : 135.0;
+        // Full reasoning, and why the flag is still off, live in
+        // KNOWN_ISSUES.md section A. Do not re-document it here.
+        HubSchedule.refreshFromMatchState();
+        boolean useRealShiftClock = Boolean.getBoolean("frc.jev.realShiftClock");
+        double matchTime = useRealShiftClock ? HubSchedule.lastMatchTimeRemaining() : 135.0;
         if (matchTime < 0.0) matchTime = 135.0;
 
-        boolean playerHubActive = Dashboard.getInstance().isHubActive();
+        // The opponent hub is the OTHER alliance's hub, so it must be derived
+        // from this bot's own hub state -- not from the human player's. The
+        // previous code passed Dashboard's player hub into the opponent slot,
+        // which told a Blue sparring bot the Red hub was live exactly when Blue
+        // was live: inverted for half the match, for every bot.
+        boolean oppHubActive = HubSchedule.isOpponentHubActiveGivenMineIs(
+                isSelfHubActive, HubSchedule.phaseFor(matchTime, DriverStation.isAutonomous()));
         double timeUntilShift = useRealShiftClock
-                ? frc.robot.Sim.HubSchedule.timeUntilShiftEnd()
+                ? HubSchedule.timeUntilShiftEnd()
                 : Dashboard.getInstance().getTimeUntilSwitch();
+
+        // Next-shift state, same derivation as the player builder. Uses this bot's
+        // own alliance, not the human player's.
+        HubSchedule.Phase botPhase = HubSchedule.phaseFor(matchTime, DriverStation.isAutonomous());
+        boolean mineAfter = HubSchedule.isHubActive(isBotRed, HubSchedule.nextPhase(botPhase),
+                HubSchedule.getShiftSeed());
+        boolean theirsAfter = HubSchedule.isHubActive(!isBotRed,
+                HubSchedule.nextPhase(botPhase), HubSchedule.getShiftSeed());
 
         return new WorldState(
                 selfPose,
@@ -133,10 +219,12 @@ public final class WorldStateBuilder {
                 markVelocity,
                 matchTime,
                 isSelfHubActive,
-                playerHubActive,
+                oppHubActive,
                 timeUntilShift,
-                isOpponentRedAlliance,
-                DriverStation.isAutonomous()
+                isBotRed,
+                DriverStation.isAutonomous(),
+                mineAfter,
+                theirsAfter
         );
     }
 
@@ -154,7 +242,12 @@ public final class WorldStateBuilder {
         try {
             tracker = MatchScoreTracker.getInstance();
         } catch (Exception e) {
-            return MatchKnowledge.unknown();
+            // No tracker means no score and no per-bot attribution. Fall back to
+            // ObservedKnowledge rather than fabricating a clairvoyant record with
+            // zeros: zero zone counts under ClairvoyantKnowledge would read as
+            // "the field really is empty", which is a claim the policy would act on.
+            reportDegraded("scoreTracker", e);
+            return ObservedKnowledge.selfOnly();
         }
 
         int redTotal;
@@ -167,6 +260,9 @@ public final class WorldStateBuilder {
             playerHeld = GameSim.getInstance().getHeldBalls();
             playerScored = tracker.getPlayerShotsScored();
         } catch (Exception e) {
+            // A 0-0 fallback is not the same as "tied" -- it is "unknown", and
+            // the policy reads it as a real differential.
+            reportDegraded("scoreRead", e);
             redTotal = 0;
             blueTotal = 0;
         }
@@ -190,9 +286,25 @@ public final class WorldStateBuilder {
                 playerVel = SwerveBase.getInstance().getFieldVelocity();
             }
         } catch (Exception e) {
-            playerIsRed = !botIsRed;
+            // The previous fallback assumed the player was an OPPONENT, which
+            // silently inverted this bot's entire team membership: every ally
+            // read as an opponent and vice versa, with no signal. An honest
+            // assumption is that the player is a non-opponent (it is the robot
+            // this code is running alongside), and the failure is reported.
+            reportDegraded("playerPose", e);
+            playerIsRed = botIsRed;
         }
+        // Resolve team membership ONCE. The previous code carried two booleans
+        // whose names differed only in word order and whose values were exact
+        // negations:
+        //     poolIsAlly     = (!playerIsRed == botIsRed)   // opponents + Bot 0
+        //     allyPoolIsAlly = (playerIsRed == botIsRed)    // ally bots
+        // Both were correct, but a swap between them is invisible at the call
+        // site and would invert every bot's team awareness. One relation, used
+        // three times, cannot drift that way.
         boolean playerIsAlly = (playerIsRed == botIsRed);
+        boolean opponentPoolIsAlly = !playerIsAlly;   // Bot 0 + additional bots
+        boolean allyPoolIsAlly = playerIsAlly;         // dedicated ally bots
 
         List<Pose2d> allyPoses = new ArrayList<>();
         List<Pose2d> opponentPoses = new ArrayList<>();
@@ -219,11 +331,10 @@ public final class WorldStateBuilder {
             AIRobotSim sim = AIRobotSim.getInstance();
             if (sim != null) {
                 // Bot 0 and the additional pool always skate against the player.
-                boolean poolIsAlly = (!playerIsRed == botIsRed);
                 if (sim.getDriveSimulation() != null) {
                     Pose2d bot0 = sim.getDriveSimulation().getActualPoseInSimulationWorld();
-                    if (bot0 != null && bot0.getY() > 0.0) {
-                        if (poolIsAlly) {
+                    if (isOnField(bot0)) {
+                        if (opponentPoolIsAlly) {
                             allyPoses.add(bot0);
                             allyVels.add(new ChassisSpeeds());
                             alliesHeld += sim.getFuelCount();
@@ -239,10 +350,10 @@ public final class WorldStateBuilder {
                 for (AIRobotInstance bot : sim.getAdditionalBots()) {
                     if (bot == null) continue;
                     Pose2d p = bot.getActualPose();
-                    if (p == null || p.getY() <= 0.0) continue;
+                    if (!isOnField(p)) continue;
                     int scored = bot.getBotId() == 1 ? tracker.getBot1FuelScored()
                             : bot.getBotId() == 2 ? tracker.getBot2FuelScored() : 0;
-                    if (poolIsAlly) {
+                    if (opponentPoolIsAlly) {
                         allyPoses.add(p);
                         allyVels.add(bot.getFieldVelocity());
                         alliesHeld += bot.getFuelCount();
@@ -255,11 +366,10 @@ public final class WorldStateBuilder {
                     }
                 }
                 // Ally bots always skate with the player.
-                boolean allyPoolIsAlly = (playerIsRed == botIsRed);
                 for (AIRobotInstance ally : sim.getAllyBots()) {
                     if (ally == null) continue;
                     Pose2d p = ally.getActualPose();
-                    if (p == null || p.getY() <= 0.0) continue;
+                    if (!isOnField(p)) continue;
                     int allyIndex = ally.getBotId() - 100;
                     int scored = allyIndex == 1 ? tracker.getAlly1FuelScored()
                             : allyIndex == 2 ? tracker.getAlly2FuelScored() : 0;
@@ -276,12 +386,75 @@ public final class WorldStateBuilder {
                     }
                 }
             }
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            // Swallowing this used to leave the bot believing it had no match
+            // context at all -- a silent wrong-tier failure that is
+            // indistinguishable from correct behaviour. Alert instead.
+            reportDegraded("roster", e);
         }
+        reportHealthy();
 
-        return new MatchKnowledge(true, scoreDifferential,
+        int[] zoneFuel = countZoneFuel(botIsRed);
+        return new ClairvoyantKnowledge(scoreDifferential,
                 alliesHeld, opponentsHeld, alliesScored, opponentsScored,
                 List.copyOf(allyPoses), List.copyOf(opponentPoses),
-                List.copyOf(allyVels), List.copyOf(opponentVels));
+                List.copyOf(allyVels), List.copyOf(opponentVels),
+                zoneFuel[0], zoneFuel[1], zoneFuel[2]);
+    }
+
+    /**
+     * Fuel on the field, bucketed into the three zones by
+     * {@code FieldMap.AllianceZones} — the same geometry the engine and every
+     * other caller use, so no caller can invent its own zoning.
+     *
+     * <p>These counts used to be recomputed inside
+     * {@code JevDecisionEngine.countFuelInZone} on every objective evaluation,
+     * which meant the knowledge record did not carry them and the "unobserved"
+     * tier read perfect sim data anyway. Computing once here is what makes
+     * {@link ObservedKnowledge}'s zeros meaningful.
+     *
+     * <p>Counted the way the selectors will actually treat it: fuel inside a hard
+     * obstacle, near a dynamic obstacle, or abandoned by the
+     * {@code TargetProgressWatchdog} is excluded. Counting abandoned fuel here
+     * would reinstate the live-lock, where {@code SWEEP_ALLIANCE_ZONE} stayed
+     * viable on pieces the policy was simultaneously forbidden to approach.
+     *
+     * @return {@code {ownAllianceZone, midfield, opponentZone}}
+     */
+    private static int[] countZoneFuel(boolean botIsRed) {
+        try {
+            var arena = SimulatedArena.getInstance();
+            if (arena == null) {
+                // Real hardware: no sensor for field fuel. Zeros are the truth.
+                return new int[] {0, 0, 0};
+            }
+            int own = 0;
+            int midfield = 0;
+            int theirs = 0;
+            // Single-owned by MatchDeterminism, which returns a stable (x,y)-sorted
+            // snapshot rather than iterating a fresh HashSet whose order follows
+            // identity hash codes and differs between JVM runs.
+            for (var piece : frc.robot.Sim.MatchDeterminism.fuelOnFieldSorted()) {
+                if (piece == null || !"Fuel".equals(piece.getType())) {
+                    continue;
+                }
+                Translation2d at = piece.getPoseOnField().getTranslation();
+                if (StaticPathfinder.isPointInHardObstacle(at)
+                        || StaticPathfinder.isPointNearDynamicObstacle(at)) {
+                    continue;
+                }
+                if (FieldMap.AllianceZones.isInMidfield(at)) {
+                    midfield++;
+                } else if (FieldMap.AllianceZones.isInAllianceZone(at, botIsRed)) {
+                    own++;
+                } else {
+                    theirs++;
+                }
+            }
+            return new int[] {own, midfield, theirs};
+        } catch (Exception e) {
+            reportDegraded("zoneFuel", e);
+            return new int[] {0, 0, 0};
+        }
     }
 }

@@ -175,7 +175,7 @@ public final class TypeSafeJevClient {
         long minimumInterval = requestContext.startsWith("Sim/")
                 ? SIM_REQUEST_INTERVAL_NANOS
                 : MIN_REQUEST_INTERVAL_NANOS;
-        MatchKnowledge requestKnowledge = knowledge == null ? MatchKnowledge.unknown() : knowledge;
+        MatchKnowledge requestKnowledge = knowledge == null ? ObservedKnowledge.selfOnly() : knowledge;
         PendingRequest request = new PendingRequest(
                 requestContext, world, requestKnowledge, archetype, requestKey);
 
@@ -361,7 +361,21 @@ public final class TypeSafeJevClient {
         state.put("archetype", archetype.name());
         state.put("score_differential", knowledge.scoreDifferential());
         state.put("allies_held_fuel", knowledge.alliesHeldFuel());
-        state.put("opponents_held_fuel", knowledge.opponentsHeldFuel());
+        // Per-side held fuel and the zone counts are clairvoyant-only facts. They
+        // are reported as absent rather than 0, because 0 under the observed tier
+        // means "no sensor" while 0 under the clairvoyant tier means "field really
+        // is empty" -- the cloud must not conflate those.
+        boolean clairvoyant = knowledge instanceof ClairvoyantKnowledge;
+        state.put("knowledge_tier", clairvoyant ? "clairvoyant" : "observed");
+        if (clairvoyant) {
+            ClairvoyantKnowledge c = (ClairvoyantKnowledge) knowledge;
+            state.put("opponents_held_fuel", c.opponentsHeldFuel());
+            state.put("allies_scored_fuel", c.alliesScoredFuel());
+            state.put("opponents_scored_fuel", c.opponentsScoredFuel());
+            state.put("alliance_zone_fuel", c.allianceZoneFuel());
+            state.put("midfield_fuel", c.midfieldFuel());
+            state.put("opponent_zone_fuel", c.opponentZoneFuel());
+        }
         state.put("opponent_observed", knowledge.opponentObserved());
         state.put("ally_poses", poseListState(knowledge.allyPoses()));
         state.put("opponent_poses", poseListState(knowledge.opponentPoses()));

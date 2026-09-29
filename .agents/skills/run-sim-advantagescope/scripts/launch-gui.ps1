@@ -9,6 +9,35 @@ $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 $GradleRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\..\..\..\TitanRoboticsBuildSeason"))
 Set-Location $GradleRoot
 
+Import-Module (Join-Path $GradleRoot "tools\lock\Lock.psm1") -Force
+
+# A GUI sim owns NT4 5810, WebServer 5800 and CameraServer 1181-1182, all
+# hardcoded WPILib constants. One sim repo-wide. See tools/score/sweep.ps1 for
+# the port analysis and KNOWN_ISSUES.md section E for why a stray NT client is
+# worse than a bind error.
+#
+# The lock is anchored on the sim window's own PID, not on this script. This
+# script returns immediately while the sim keeps running, so anchoring on $PID
+# would free the lock the moment the launcher exited.
+$simHost = $null
+try {
+  $simFlags = ".\gradlew simulateJava --offline"
+  if ($RealDs) { $simFlags += " -PrealDs" }
+  $simHost = Start-Process powershell -PassThru -WindowStyle Normal -ArgumentList `
+      "-NoExit", "-Command", "cd '$GradleRoot'; `$env:JAVA_HOME='$env:JAVA_HOME'; `$env:PATH='$env:JAVA_HOME\bin;' + `$env:PATH; $simFlags"
+  $null = Enter-Lock -Resource sim-gui -AnchorPid $simHost.Id `
+                     -Reason "SimGUI launched by $(Get-OwnerId)" -TimeoutSec 300
+  Write-Output "simulateJava launched in a new window from $GradleRoot (host pid $($simHost.Id))."
+  Write-Output "sim-gui lock held by pid $($simHost.Id). Release it when you close the sim:"
+  Write-Output "  powershell -File tools/lock/release.ps1 -Resource sim-gui"
+} catch {
+  if ($simHost) { try { Stop-Process -Id $simHost.Id -Force -ErrorAction SilentlyContinue } catch { } }
+  Write-Error $_.Exception.Message
+  Write-Output "Sim not started. If a previous run is still holding sim-gui:"
+  Write-Output "  powershell -File tools/lock/status.ps1"
+  exit 3
+}
+
 function Find-App($names, $paths) {
   foreach ($n in $names) {
     $c = Get-Command $n -ErrorAction SilentlyContinue
@@ -39,11 +68,8 @@ $advScope = Find-App @("advantagescope") @(
   "$env:ProgramFiles\AdvantageScope\AdvantageScope.exe")
 if (-not $advScope) { $advScope = Find-StartMenuLnk "AdvantageScope*.lnk" }
 
-# Sim blocks: launch in a new window so dashboards can attach.
-$simCmd = ".\gradlew simulateJava --offline"
-if ($RealDs) { $simCmd += " -PrealDs" }
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$GradleRoot'; `$env:JAVA_HOME='$env:JAVA_HOME'; $simCmd" | Out-Null
-Write-Output "simulateJava launched in a new window from $GradleRoot."
+# Sim blocks: launched above under the sim-gui lock, so dashboards can attach.
+
 
 if ($elastic) { Start-Process $elastic | Out-Null; Write-Output "Elastic launched: $elastic (connect 127.0.0.1:5810, Ctrl+D for layout on port 5800)." }
 else { Write-Output "Elastic not found. Install from https://github.com/Gold872/elastic-dashboard, connect 127.0.0.1:5810, Ctrl+D -> elastic-layout.json." }

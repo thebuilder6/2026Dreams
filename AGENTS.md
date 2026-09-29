@@ -1,3 +1,11 @@
+---
+title: Agent Rules
+audience: [human, ai]
+owner: programming-leads
+last_verified: 2026-09-29
+status: authoritative
+---
+
 # AGENTS.md — 2026Dreams / TitanRoboticsBuildSeason
 
 FRC Team 8334 robot code. The GradleRIO project lives in `TitanRoboticsBuildSeason/` — run all Gradle commands from there, not the repo root.
@@ -10,7 +18,7 @@ Must use the WPILib 2026 JDK or builds fail (`Unsupported class file major versi
 $env:JAVA_HOME = "C:\Users\Public\wpilib\2026\jdk"
 $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 .\gradlew compileJava --offline   # fast compile
-.\gradlew test --offline          # JUnit 5 suite (35 test files, 323 tests as of 2026-09-28)
+.\gradlew test --offline --no-daemon   # JUnit 5 suite (36 test files, 361 tests as of 2026-09-29 — green on clean --rerun-tasks re-run, see KNOWN_ISSUES.md §A)
 .\gradlew simulateJava            # desktop SimGUI + IronMaple arena
 .\gradlew deploy                  # deploy to RoboRIO (same JAVA_HOME)
 ```
@@ -31,13 +39,15 @@ $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 
 - Entrypoints: `Main.java` → `Robot.java` (extends AdvantageKit `LoggedRobot`, not `TimedRobot`). `Teleop.java` holds driver/operator bindings; `Auto/AutoMissionExecutor.java` + `Auto/Missions/` hold autonomous.
 - Subsystems are singletons behind `SubsystemManager` (`Subsystems/` + `Telemetry/Dashboard`): `SwerveBase`, `Shooter`, `Intake`, `Vision`, `Dashboard`, `LEDs`, `MatchCoach`. Custom `Interfaces/Subsystem` interface — do not convert to WPILib `Subsystem`/`Command` patterns.
+- Jev knowledge tiers: `Intelligence/MatchKnowledge` is a **sealed interface**, not one record with a flag — `ClairvoyantKnowledge` (sim operator's full picture, including fuel counts per field zone) vs `ObservedKnowledge` (real-robot sensor truth: zone counts are `0`, no opponent list). Read `docs/KNOWLEDGE_MODEL.md` before touching the decision layer; the reasoning is not obvious from the code.
+- `Sim/LoopHealth` is armed only by a headless match and stamps loop timing into the score-rig JSONL. It is a measurement-validity gate, not robot behaviour — do not arm it on the real robot.
 - Mode handling: `Data/Constants.getMode()` returns `REAL`/`SIM`/`REPLAY` (`RobotBase.isReal()`). `GameSim` + `AIRobotSim` only init in sim (`Robot.java:85-88`). Logger writes `.wpilog` on REAL, NT-only on SIM, replay via `LogFileUtil`.
 - IO abstraction: each subsystem has Spark hardware vs Sim IO (AdvantageKit pattern). Keep hardware/sim branches paired.
 - Vendor libs pinned in `vendordeps/`: YAGSL swerve, Phoenix 6, REVLib, Choreo, PhotonVision, AdvantageKit. Don't bump versions without checking Sim compat.
 
 ## Conventions that differ from defaults
 
-- **Coordinates are Blue-origin only.** All field points defined for Blue (`X=0` at Blue wall); mirror with `Utils/AllianceFlipUtil.java` (`X_red = FIELD_LENGTH - X_blue`, `Y_red = FIELD_WIDTH - Y_blue`; `FIELD_LENGTH`/`FIELD_WIDTH` come from `Navigation/FieldMap.java`). Never hardcode Red coordinates or maintain a parallel Blue/Red constant pair — derive the Red value. The one documented exception is `FieldMap.Depots`, whose two loading bays are genuinely asymmetric on the real field; that class explains why.
+- **Coordinates are Blue-origin only.** All field points defined for Blue (`X=0` at Blue wall); mirror with `Utils/AllianceFlipUtil.java` (`X_red = FIELD_LENGTH - X_blue`, Y unchanged; `FIELD_LENGTH`/`FIELD_WIDTH` come from `Navigation/FieldMap.java`). Never hardcode Red coordinates or maintain a parallel Blue/Red constant pair — derive the Red value. Documented exceptions: `FieldMap.Depots`, whose two loading bays are genuinely asymmetric on the real field, and the tower-post AABBs at `FieldMap.java:506-511`, which mirror both axes deliberately.
 - **No console prints for driver alerts.** Use `Telemetry/Alert.java` + `AlertManager` (Elastic banner/tables) and `Subsystems/LEDs.java` patterns. `Robot` silences joystick warnings and disables LiveWindow intentionally — don't re-enable.
 - **Tunables go through `Telemetry/TunableNumber.java` + `Telemetry/Dashboard.java`** (backs the 7-tab `elastic-layout.json`). Don't add raw SmartDashboard numbers for PID/constants; `Constants.TUNING_MODE = true` gates tuning.
 - **Timing quirks in `Robot.java` are intentional:** 100 Hz odometry subloop (`addPeriodic(..., 0.010, 0.005)`), `System.gc()` in `disabledInit()`, coprocessor `PortForwarder` 5801–5805, Elastic layout `WebServer` on port 5800. Don't "clean these up."
@@ -56,5 +66,6 @@ $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 
 1. **Reference before acting:** read `docs/INDEX.md` + the one topic guide for the task + root `KNOWN_ISSUES.md` before any code change. Check `docs/RESOURCES.md` before web search. Never cite `.agents/teamwork` scratch, `reports/`, or `build/` as spec.
 2. **Update in the same change:** any behavior-affecting edit (runtime rules, NT keys, controls, scoring, sim physics, build commands, test counts) must also touch docs in the same commit: bump `last_verified` frontmatter, add a `docs/CHANGELOG.md` bullet with test evidence, and update `KNOWN_ISSUES.md` status tags (`[OPEN]`/`[PARTIAL]`/`[RESOLVED]`).
-3. **No duplication:** link to the single owning guide; don't paste the same paragraph into two files. New guides copy `docs/_TEMPLATE.md` (frontmatter: title, audience, owner, last_verified, status).
-4. **Verify stamp:** `last_verified` = date code + docs were confirmed together (green build/test). Docs older than 30 days are `status: needs-review`.
+3. **No duplication:** link to the single owning guide; don't paste the same paragraph into two files. New guides copy `docs/_TEMPLATE.md` (frontmatter: title, audience, owner, last_verified, status; body sections: Scope, Content, Verification, Related) **and are not finished until they have a row in the `docs/INDEX.md` durable-guides table** — `docs/KNOWLEDGE_MODEL.md` shipped linked from code and from `KNOWN_ISSUES.md` but missing from that table, so the link dangled until a later review caught it.
+4. **Verify stamp:** `last_verified` = date code + docs were confirmed together (green build/test). Docs older than 30 days are `status: needs-review`. If the test suite is red, say so in the `## Verification` section rather than leaving a stale "N/N green" — a "green" line that predates a regression is worse than a red one, because it is trusted.
+5. **Do not let a test rewrite stand in for a fix.** When a new test fails on arrival, check the *premise* first. Two of the four failures found Sep 28 were cleared by rewriting the test to pass explicit state — which was correct for those tests and silently deleted the only evidence for a real defect. Cite tests as evidence only after re-running them on the current binary.

@@ -92,6 +92,30 @@ public final class HeadlessMatchDriver {
             int[] maxConsecutiveRecoveries,
             int[] recoveryEventCount) {}
 
+    /**
+     * Per-match loop-timing health, as measured by {@link LoopHealth}.
+     *
+     * <p>These are measurement-validity fields, not robot behaviour: a worker
+     * starved by its siblings does not crash, it quietly produces a different
+     * match. Carrying the numbers in the row means a degraded sweep is visible in
+     * the data rather than only in a log, so {@code tools/score/compare.py} can
+     * refuse to compare a run it knows was perturbed.
+     *
+     * <p>{@code loopOverruns} and {@code maxRobotPeriodicMs} are -1 / -1.0 when the
+     * match did not arm {@link LoopHealth} -- the case for any non-headless caller
+     * of {@link #toJsonLine} and for the unit tests.
+     */
+    public record MatchHealth(int loopOverruns, double maxRobotPeriodicMs) {
+        /** Sentinel for "not measured" rather than "measured as zero". */
+        public static final MatchHealth UNKNOWN = new MatchHealth(-1, -1.0);
+
+        /** Snapshot of the live counters, or {@link #UNKNOWN} when not armed. */
+        public static MatchHealth capture() {
+            return LoopHealth.isArmed()
+                    ? new MatchHealth(LoopHealth.overrunCount(), LoopHealth.maxEpochSec() * 1000.0)
+                    : UNKNOWN;
+        }
+    }
     /** Final scoreboard snapshot used for the console summary and markdown report. */
     public record MatchResult(
             long seed,
@@ -134,7 +158,8 @@ public final class HeadlessMatchDriver {
             BotMetrics redBotMetrics,
             BotMetrics blueBotMetrics,
             String logPath,
-            String reportPath) {}
+            String reportPath,
+            MatchHealth health) {}
 
     /** True when the {@code frc.headless} system property is set. */
     public static boolean isHeadless() {
@@ -214,9 +239,35 @@ public final class HeadlessMatchDriver {
                         DEFAULT_LOG_DIR, DEFAULT_REPORT_DIR, null, "baseline", 0);
             }
             String stamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"));
-            cachedLogPath = options.logDir() + "/headless_3v3_seed" + options.seed() + "_" + stamp + ".wpilog";
+            cachedLogPath = options.logDir() + "/headless_3v3" + logTag(options)
+                    + "_seed" + options.seed() + "_" + stamp + ".wpilog";
         }
         return cachedLogPath;
+    }
+
+    /**
+     * Filename discriminator for the replay log and the markdown report.
+     *
+     * <p>Variant and replica must be in the name. A parallel score-rig sweep
+     * ({@code tools/score/sweep.ps1}) starts both replicas of a seed within the
+     * same second, so a seed-plus-second stamp alone made them collide on one
+     * path and silently overwrite each other's replay — a 16-match baseline
+     * wrote only 8 wpilogs, which is how the loss was noticed.
+     *
+     * <p>The report path needs the same treatment and did not have it: two
+     * same-seed workers finished into the same second and produced one file
+     * instead of two. Reusing this tag for both keeps one rule, not two.
+     */
+    static String logTag(Options options) {
+        StringBuilder tag = new StringBuilder();
+        if (options.variant() != null && !options.variant().isBlank()
+                && !options.variant().equals("baseline")) {
+            tag.append('_').append(options.variant().replaceAll("[^A-Za-z0-9_.-]", "_"));
+        }
+        if (options.replica() > 0) {
+            tag.append("_r").append(options.replica());
+        }
+        return tag.toString();
     }
 
     /** Test-only hook to reset the cached log path between cases. */
@@ -229,6 +280,8 @@ public final class HeadlessMatchDriver {
         if (!isHeadless()) {
             return;
         }
+        // Arm before the match starts so the first epoch is already counted.
+        LoopHealth.arm();
         Thread driver = new Thread(HeadlessMatchDriver::runHeadlessMatch, "HeadlessMatchDriver");
         driver.setDaemon(false);
         driver.start();
@@ -412,15 +465,21 @@ public final class HeadlessMatchDriver {
                 tracker.getBlueUnattributedFuel(), tracker.getRedUnattributedFuel(),
                 options.variant(), options.replica(),
                 redMetrics, blueMetrics,
-                resolveLogPath(), reportPath);
+                resolveLogPath(), reportPath,
+                MatchHealth.capture());
     }
 
     /**
      * Bumped whenever the JSONL field set changes shape, so
      * {@code tools/score/compare.py} can refuse a file it does not understand
      * instead of silently reading missing fields as zero.
+     *
+     * <p>v2 adds the {@code health} block ({@code loopOverruns},
+     * {@code maxRobotPeriodicMs}). v1 rows carry no health at all, so they cannot
+     * be distinguished from a clean run -- that is exactly why the v1 baseline
+     * sweep had to be discarded rather than re-read. See KNOWN_ISSUES.md.
      */
-    public static final int JSONL_SCHEMA_VERSION = 1;
+    public static final int JSONL_SCHEMA_VERSION = 2;
 
     private static String esc(String s) {
         if (s == null) return "";
@@ -531,6 +590,14 @@ public final class HeadlessMatchDriver {
         appendBotMetrics(sb, "blueBots", r.blueBotMetrics());
         sb.append(",\"logPath\":\"").append(esc(r.logPath())).append('"');
         sb.append(",\"reportPath\":\"").append(esc(r.reportPath())).append('"');
+        // Measurement-validity block, not robot behaviour. A row with overruns or
+        // a runaway epoch is a match that was perturbed by machine load, and must
+        // not be compared against a clean one as if it were a policy difference.
+        MatchHealth h = r.health() == null ? MatchHealth.UNKNOWN : r.health();
+        sb.append(",\"health\":{")
+                .append("\"loopOverruns\":").append(h.loopOverruns())
+                .append(",\"maxRobotPeriodicMs\":").append(h.maxRobotPeriodicMs())
+                .append("}");
         sb.append('}');
         return sb.toString();
     }
@@ -555,11 +622,21 @@ public final class HeadlessMatchDriver {
         }
     }
 
+    /**
+     * Markdown report filename. Carries the same {@link #logTag} discriminator as
+     * the replay log, for the same reason: two replicas of one seed finish into
+     * the same second under a parallel sweep, and an untagged name made them
+     * overwrite each other's report.
+     */
+    static String reportFileName(Options options, String stamp) {
+        return "headless_match_seed" + options.seed() + logTag(options) + "_" + stamp + ".md";
+    }
+
     private static String writeMatchReport(Options options) throws IOException {
         Path dir = Paths.get(options.reportDir());
         Files.createDirectories(dir);
         String stamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"));
-        Path report = dir.resolve("headless_match_seed" + options.seed() + "_" + stamp + ".md");
+        Path report = dir.resolve(reportFileName(options, stamp));
         MatchResult result = snapshotResult(options, report.toString());
         Files.writeString(report, formatReport(result));
         writeResultJsonl(options, result);
@@ -637,6 +714,21 @@ public final class HeadlessMatchDriver {
         if (r.blueReconciliationResidual() != 0 || r.redReconciliationResidual() != 0) {
             sb.append("\n**RECONCILIATION FAILED** - a scoring path is bypassing attribution.\n");
         }
+
+        // Loop health, so "this match was starved by its sibling workers" is
+        // readable from the report alone and not only from the JSONL.
+        sb.append("\n## Loop health\n\n");
+        MatchHealth h = r.health() == null ? MatchHealth.UNKNOWN : r.health();
+        if (h.loopOverruns() < 0) {
+            sb.append("Not measured (no headless match ran).\n");
+        } else {
+            sb.append("- Main-loop overruns (>").append(Math.round(LoopHealth.PERIOD_SEC * 1000.0))
+                    .append(" ms): **").append(h.loopOverruns()).append("**\n");
+            sb.append("- Slowest `robotPeriodic()`: **")
+                    .append(Math.round(h.maxRobotPeriodicMs())).append(" ms**\n");
+            sb.append("\nA match with a high overrun count was perturbed by machine load, not by\n"
+                    + "robot policy. `tools/score/compare.py` refuses to compare it.\n");
+        }
         sb.append("\n## Replay\n\n");
         sb.append("AdvantageScope -> File -> Open Log -> `").append(r.logPath()).append("`\n");
         sb.append("Logged topics include per-bot `ActualPose`/`TargetPose`/`Objective`,\n");
@@ -672,7 +764,21 @@ public final class HeadlessMatchDriver {
                 + ", fieldFuel " + r.fieldFuelCount()
                 + ", climb " + r.blueClimbCount() + "/" + r.redClimbCount()
                 + ", fouls " + r.blueFouls() + "/" + r.redFouls() + ")"
+                + " " + formatHealth(r.health())
                 + " report=" + r.reportPath();
+    }
+
+    /**
+     * One-line loop-health summary, printed on the console line the rig greps for
+     * and rendered into the report so a human reading a single match can see
+     * whether it was load-perturbed.
+     */
+    private static String formatHealth(MatchHealth h) {
+        if (h == null || h.loopOverruns() < 0) {
+            return "[health unmeasured]";
+        }
+        return "[health overruns=" + h.loopOverruns()
+                + " maxRobotPeriodicMs=" + Math.round(h.maxRobotPeriodicMs()) + "]";
     }
 
     private static int getIntProperty(String key, int defaultValue) {

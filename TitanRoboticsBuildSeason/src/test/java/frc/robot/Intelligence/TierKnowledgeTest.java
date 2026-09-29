@@ -48,9 +48,16 @@ public class TierKnowledgeTest {
                 100.0, true, true, 15.0, false, false);
     }
 
+    /**
+     * Clairvoyant knowledge carrying only a score differential. Used where the
+     * test is about the score bias specifically and the field picture is
+     * irrelevant; zone fuel is 0 so zone-driven objectives stay out of the way.
+     */
     private static MatchKnowledge knowledgeWithDiff(int differential) {
-        return new MatchKnowledge(true, differential, 0, 0, 0, 0,
-                List.of(), List.of(), List.of(), List.of());
+        return new ClairvoyantKnowledge(differential,
+                0, 0, 0, 0,
+                List.of(), List.of(), List.of(), List.of(),
+                0, 0, 0);
     }
 
     @Test
@@ -60,7 +67,7 @@ public class TierKnowledgeTest {
         Pose2d laneBlocker = new Pose2d(3.8, 4.02, new Rotation2d());
         WorldState state = world(self, 5, laneBlocker);
 
-        AIActionIntent intent = engine.evaluatePolicy(state, MatchKnowledge.unknown(), Archetype.CO_PILOT);
+        AIActionIntent intent = engine.evaluatePolicy(state, ObservedKnowledge.selfOnly(), Archetype.CO_PILOT);
 
         assertEquals(StrategicObjective.CYCLE_SCORE_HUB, intent.objective());
         assertTrue(intent.triggerFeedKicker(),
@@ -74,7 +81,7 @@ public class TierKnowledgeTest {
         WorldState state = world(self, 0, oppNearHub);
 
         AIActionIntent intent = engine.evaluatePolicy(
-                state, MatchKnowledge.unknown(), Archetype.DEFENSE_BULLY);
+                state, ObservedKnowledge.selfOnly(), Archetype.DEFENSE_BULLY);
 
         assertNotEquals(StrategicObjective.LEAD_INTERCEPT, intent.objective());
         assertNotEquals(StrategicObjective.DENY_SHOOTING_LANE, intent.objective());
@@ -92,7 +99,7 @@ public class TierKnowledgeTest {
                 Archetype.AUTONOMOUS_CYCLER);
         AIActionIntent ahead = engine.evaluatePolicy(state, knowledgeWithDiff(10),
                 Archetype.AUTONOMOUS_CYCLER);
-        AIActionIntent level = engine.evaluatePolicy(state, MatchKnowledge.legacyObserved(),
+        AIActionIntent level = engine.evaluatePolicy(state, ObservedKnowledge.selfOnly(),
                 Archetype.AUTONOMOUS_CYCLER);
 
         assertEquals(StrategicObjective.CYCLE_SCORE_HUB, behind.objective());
@@ -107,12 +114,17 @@ public class TierKnowledgeTest {
         // Fresh arena: only the (blue) player is on the carpet.
         MatchKnowledge empty = WorldStateBuilder.buildMatchKnowledgeForSimBot(false);
 
-        assertTrue(empty.opponentObserved());
+        assertInstanceOf(ClairvoyantKnowledge.class, empty,
+                "A sim sparring bot runs with the operator's full field picture");
         assertEquals(0, empty.scoreDifferential());
         assertEquals(1, empty.allyPoses().size(), "Player skates with the blue bot");
         assertEquals(1, empty.allyVelocities().size());
         assertTrue(empty.opponentPoses().isEmpty());
         assertEquals(GameSim.getInstance().getHeldBalls(), empty.alliesHeldFuel());
+        // opponentObserved is now derived from the pose list, not passed in, so it
+        // cannot contradict the data it guards.
+        assertFalse(empty.opponentObserved(),
+                "With no opponent robots on the carpet, nothing is observed");
 
         MatchScoreTracker.getInstance().recordFuelScore(false);
         MatchScoreTracker.getInstance().recordFuelScore(false);
@@ -122,5 +134,65 @@ public class TierKnowledgeTest {
         MatchKnowledge redView = WorldStateBuilder.buildMatchKnowledgeForSimBot(true);
         assertEquals(-2, redView.scoreDifferential(), "Red sees the same lead mirrored");
         assertEquals(1, redView.opponentPoses().size(), "Player is Red's opponent here");
+        assertTrue(redView.opponentObserved(), "A non-empty pose list implies observed");
+    }
+
+    /**
+     * The two kinds must be genuinely different, not one record with a flag: only
+     * the clairvoyant kind can report field fuel, and the observed kind cannot.
+     */
+    @Test
+    public void observedKnowledgeReportsNoFieldFuelAndNoOpponents() {
+        MatchKnowledge observed = ObservedKnowledge.selfOnly();
+
+        assertInstanceOf(ObservedKnowledge.class, observed);
+        assertEquals(0, observed.allianceZoneFuel());
+        assertEquals(0, observed.midfieldFuel());
+        assertEquals(0, observed.opponentZoneFuel());
+        assertFalse(observed.opponentObserved());
+        assertTrue(observed.opponentPoses().isEmpty());
+        assertTrue(observed.opponentVelocities().isEmpty());
+    }
+
+    @Test
+    public void observedKnowledgeIsTheSafeDefaultForTheEngine() {
+        // The 2-arg overload used to default to a record claiming
+        // opponentObserved = true with empty lists. It must default to the tier
+        // that claims the least, so a caller that forgets knowledge degrades to
+        // sensor-only instead of acting on nothing.
+        Pose2d self = new Pose2d(8.0, 4.0, new Rotation2d());
+        Pose2d oppNearHub = new Pose2d(13.5, 4.0, new Rotation2d());
+        WorldState state = world(self, 0, oppNearHub);
+
+        AIActionIntent defaulted = engine.evaluatePolicy(state, Archetype.DEFENSE_BULLY);
+        AIActionIntent explicit = engine.evaluatePolicy(state,
+                ObservedKnowledge.selfOnly(), Archetype.DEFENSE_BULLY);
+
+        assertEquals(explicit.objective(), defaulted.objective());
+        assertNotEquals(StrategicObjective.DENY_SHOOTING_LANE, defaulted.objective(),
+                "A defender with no opponent tracker must not pick an opponent objective");
+    }
+
+    /** Zone fuel is a clairvoyant-only capability, so a negative count is rejected. */
+    @Test
+    public void clairvoyantKnowledgeRejectsNegativeZoneCounts() {
+        assertThrows(IllegalArgumentException.class, () -> new ClairvoyantKnowledge(
+                0, 0, 0, 0, 0, List.of(), List.of(), List.of(), List.of(),
+                -1, 0, 0));
+    }
+
+    /** The pose lists are copied, so a caller cannot mutate a published snapshot. */
+    @Test
+    public void clairvoyantKnowledgeCopiesItsLists() {
+        java.util.List<Pose2d> poses = new java.util.ArrayList<>();
+        poses.add(new Pose2d(1.0, 2.0, new Rotation2d()));
+        // Field order after the five scalars is allyPoses, opponentPoses,
+        // allyVelocities, opponentVelocities.
+        ClairvoyantKnowledge k = new ClairvoyantKnowledge(
+                0, 0, 0, 0, 0, List.of(), poses, List.of(), List.of(), 0, 0, 0);
+
+        poses.clear();
+        assertEquals(1, k.opponentPoses().size(), "Snapshot must not alias the caller's list");
+        assertTrue(k.opponentObserved());
     }
 }

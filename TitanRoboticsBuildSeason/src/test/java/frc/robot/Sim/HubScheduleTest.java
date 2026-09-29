@@ -6,6 +6,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import frc.robot.Sim.HubSchedule;
 import frc.robot.Sim.HubSchedule.Phase;
 
 /** Unit coverage for the official 6.4 / 6.4.1 hub schedule (Table 6-2, 6-3). */
@@ -23,6 +24,89 @@ public class HubScheduleTest {
     public void teardown() {
         HubSchedule.setClockForTests(null);
         HubSchedule.reset();
+    }
+
+    // ------------------------------------------------------------------
+    // Next-shift derivation. WorldState carries these so the decision layer can
+    // tell a shuttle (aims at the opponent's end) from a trip to its own hub.
+    // ------------------------------------------------------------------
+
+    @Test
+    public void nextPhaseCyclesThroughTheShifts() {
+        assertEquals(Phase.SHIFT2, HubSchedule.nextPhase(Phase.SHIFT1));
+        assertEquals(Phase.SHIFT3, HubSchedule.nextPhase(Phase.SHIFT2));
+        assertEquals(Phase.SHIFT4, HubSchedule.nextPhase(Phase.SHIFT3));
+        assertEquals(Phase.ENDGAME, HubSchedule.nextPhase(Phase.SHIFT4));
+    }
+
+    @Test
+    public void nextPhaseIsSelfForBothActivePhases() {
+        // Once both hubs are live for a stretch no later phase turns one off, so
+        // there is no meaningful "next".
+        assertEquals(Phase.TRANSITION, HubSchedule.nextPhase(Phase.TRANSITION));
+        assertEquals(Phase.ENDGAME, HubSchedule.nextPhase(Phase.ENDGAME));
+        assertEquals(Phase.AUTO, HubSchedule.nextPhase(Phase.AUTO));
+        assertEquals(Phase.DONE, HubSchedule.nextPhase(Phase.DONE));
+    }
+
+    /**
+     * Pinned against the shift table directly rather than against a hand-written
+     * expectation, because the previous version asserted current-phase semantics
+     * on an after-next-phase function and so contradicted itself.
+     *
+     * <p>With seed 'R', Red sits out first, so Blue is live in SHIFT1 and SHIFT3
+     * and Red in SHIFT2 and SHIFT4. "After the next phase" therefore alternates:
+     * asking what is live after SHIFT1 means asking about SHIFT2, where Red is on.
+     */
+    @Test
+    public void afterNextPhaseAlternatesTheActiveHubAcrossShifts() {
+        // SHIFT4 is included deliberately. It is the only phase whose successor
+        // is NOT the next shift: per Table 6-2 the match runs SHIFT1..SHIFT4 then
+        // END GAME, so nextPhase(SHIFT4) is ENDGAME, not SHIFT1. Omitting it left
+        // the one transition that is not a simple alternation completely
+        // unasserted, which is how nextPhase(SHIFT4) -> SHIFT1 survived -- that
+        // told a bot in SHIFT4 its own hub was about to go dark when Table 6-3
+        // makes it live again for the whole 30 s endgame.
+        for (Phase p : new Phase[] {Phase.SHIFT1, Phase.SHIFT2, Phase.SHIFT3, Phase.SHIFT4}) {
+            Phase successor = HubSchedule.nextPhase(p);
+            assertEquals(HubSchedule.isHubActive(false, successor, 'R'),
+                    HubSchedule.isHubActiveAfterNextPhase(false, p, 'R'),
+                    "Blue after " + p + " must match Blue in " + successor);
+            assertEquals(HubSchedule.isHubActive(true, successor, 'R'),
+                    HubSchedule.isHubActiveAfterNextPhase(true, p, 'R'),
+                    "Red after " + p + " must match Red in " + successor);
+        }
+        // The alternation itself: the successor is the opposite alliance's turn.
+        assertFalse(HubSchedule.isHubActiveAfterNextPhase(false, Phase.SHIFT1, 'R'),
+                "Red is live in SHIFT2, so Blue must be out after SHIFT1");
+        assertTrue(HubSchedule.isHubActiveAfterNextPhase(true, Phase.SHIFT1, 'R'),
+                "Red is live in SHIFT2, so Red must be in after SHIFT1");
+        assertTrue(HubSchedule.isHubActiveAfterNextPhase(false, Phase.SHIFT2, 'R'),
+                "Blue is live in SHIFT3, so Blue must be in after SHIFT2");
+        assertTrue(HubSchedule.isHubActiveAfterNextPhase(true, Phase.SHIFT3, 'R'),
+                "Red is live in SHIFT4, so Red must be in after SHIFT3");
+    }
+
+    @Test
+    public void afterShift4IsEndGameWhereBothHubsAreLiveAgain() {
+        // Split out so the load-bearing case is readable on its own: the shift
+        // cycle does not wrap, it ends. Both alliances are ACTIVE after SHIFT4,
+        // which is what stops a bot in SHIFT4 abandoning its own hub on a stale
+        // "my hub is about to go dark" reading.
+        assertEquals(Phase.ENDGAME, HubSchedule.nextPhase(Phase.SHIFT4),
+                "Table 6-2 puts END GAME after SHIFT4; the shift cycle does not wrap");
+        assertTrue(HubSchedule.isHubActiveAfterNextPhase(false, Phase.SHIFT4, 'R'),
+                "Blue is live in END GAME (Table 6-3)");
+        assertTrue(HubSchedule.isHubActiveAfterNextPhase(true, Phase.SHIFT4, 'R'),
+                "Red is live in END GAME too (Table 6-3) -- both hubs return to active");
+    }
+
+    @Test
+    public void afterNextPhaseIsBothLiveOutsideTheShifts() {
+        for (Phase p : new Phase[] {Phase.AUTO, Phase.TRANSITION, Phase.ENDGAME}) {
+            assertTrue(HubSchedule.isHubActiveAfterNextPhase(false, p, 'R'), "Blue live in " + p);
+            assertTrue(HubSchedule.isHubActiveAfterNextPhase(true, p, 'R'), "Red live in " + p);
+        }
     }
 
     @Test

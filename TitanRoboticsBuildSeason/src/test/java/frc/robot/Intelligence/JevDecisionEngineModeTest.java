@@ -42,8 +42,8 @@ class JevDecisionEngineModeTest {
         cloudClient.setApiKey("test-key-must-not-trigger-network");
         WorldState world = world(false);
 
-        AIActionIntent first = engine.evaluatePolicy(world, MatchKnowledge.unknown(), Archetype.CO_PILOT);
-        AIActionIntent second = engine.evaluatePolicy(world, MatchKnowledge.unknown(), Archetype.CO_PILOT);
+        AIActionIntent first = engine.evaluatePolicy(world, ObservedKnowledge.selfOnly(), Archetype.CO_PILOT);
+        AIActionIntent second = engine.evaluatePolicy(world, ObservedKnowledge.selfOnly(), Archetype.CO_PILOT);
 
         assertEquals(StrategicObjective.CYCLE_SCORE_HUB, first.objective());
         assertEquals(first.objective(), second.objective());
@@ -56,7 +56,7 @@ class JevDecisionEngineModeTest {
         engine.setDecisionMode(JevDecisionEngine.DecisionMode.AUTO_FALLBACK);
         SmartDashboard.putBoolean("Features/Use TypeSafe Jev AI", true);
 
-        AIActionIntent intent = engine.evaluatePolicy(world(false), MatchKnowledge.unknown(), Archetype.CO_PILOT);
+        AIActionIntent intent = engine.evaluatePolicy(world(false), ObservedKnowledge.selfOnly(), Archetype.CO_PILOT);
 
         assertNotNull(intent);
         assertEquals(StrategicObjective.CYCLE_SCORE_HUB, intent.objective());
@@ -73,10 +73,10 @@ class JevDecisionEngineModeTest {
 
         assertFalse(JevDecisionEngine.isCloudObjectiveAdmissible(
                 StrategicObjective.LEAD_INTERCEPT, localUtilities, autonomous,
-                MatchKnowledge.legacyObserved(), StrategicObjective.CYCLE_SCORE_HUB, 0.5));
+                ObservedKnowledge.selfOnly(), StrategicObjective.CYCLE_SCORE_HUB, 0.5));
         assertTrue(JevDecisionEngine.isCloudObjectiveAdmissible(
                 StrategicObjective.CYCLE_SCORE_HUB, localUtilities, autonomous,
-                MatchKnowledge.legacyObserved(), StrategicObjective.CYCLE_SCORE_HUB, 0.5),
+                ObservedKnowledge.selfOnly(), StrategicObjective.CYCLE_SCORE_HUB, 0.5),
                 "Own-half scoring remains an eligible autonomous choice.");
     }
 
@@ -89,10 +89,10 @@ class JevDecisionEngineModeTest {
 
         assertFalse(JevDecisionEngine.isCloudObjectiveAdmissible(
                 StrategicObjective.SWEEP_ALLIANCE_ZONE, localUtilities, teleop,
-                MatchKnowledge.unknown(), StrategicObjective.CYCLE_SCORE_HUB, 0.98));
+                ObservedKnowledge.selfOnly(), StrategicObjective.CYCLE_SCORE_HUB, 0.98));
         assertTrue(JevDecisionEngine.isCloudObjectiveAdmissible(
                 StrategicObjective.CYCLE_SCORE_HUB, localUtilities, teleop,
-                MatchKnowledge.unknown(), StrategicObjective.CYCLE_SCORE_HUB, 0.98));
+                ObservedKnowledge.selfOnly(), StrategicObjective.CYCLE_SCORE_HUB, 0.98));
     }
 
     @Test

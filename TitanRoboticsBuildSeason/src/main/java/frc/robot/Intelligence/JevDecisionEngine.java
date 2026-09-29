@@ -268,18 +268,20 @@ public class JevDecisionEngine {
      * and sub-millisecond latency.
      *
      * <p>
-     * Legacy tier: the opponent mark is trusted as observed
-     * ({@link MatchKnowledge#legacyObserved()}). Driver-assist callers must use
-     * {@link #evaluatePolicy(WorldState, MatchKnowledge, Archetype)} with
-     * {@link MatchKnowledge#unknown()} instead, so unobserved opponents degrade
-     * gracefully rather than leaking sim ground truth.
+     * Defaults to {@link ObservedKnowledge#selfOnly()} — the honest answer for a
+     * robot with no opponent tracker and no field-fuel sensor. This overload
+     * previously defaulted to {@code MatchKnowledge.legacyObserved()}, which
+     * claimed {@code opponentObserved = true} with four empty lists, so the
+     * *default* path asserted an observation it did not have. Pass an explicit
+     * {@link ClairvoyantKnowledge} for a sim sparring bot; pass
+     * {@link ObservedKnowledge} for the real robot.
      *
      * @param world     State snapshot of the match and robots
      * @param archetype AI persona / behavior profile
      * @return Fully specified AIActionIntent
      */
     public AIActionIntent evaluatePolicy(WorldState world, Archetype archetype) {
-        return evaluatePolicy(world, MatchKnowledge.legacyObserved(), archetype);
+        return evaluatePolicy(world, ObservedKnowledge.selfOnly(), archetype);
     }
 
     /**
@@ -335,7 +337,10 @@ public class JevDecisionEngine {
             WorldState world, MatchKnowledge knowledge, Archetype archetype, String cloudContext,
             Set<Translation2d> blockedFuel, ObjectiveCommitment commitmentIn) {
         if (knowledge == null) {
-            knowledge = MatchKnowledge.legacyObserved();
+            // Null used to become legacyObserved(), i.e. "opponents seen". Default to
+            // the tier that claims the least, so a caller that forgets to pass
+            // knowledge degrades to sensor-only rather than acting on nothing.
+            knowledge = ObservedKnowledge.selfOnly();
         }
         boolean opponentObserved = knowledge.opponentObserved();
         long startNanos = System.nanoTime();
@@ -433,7 +438,7 @@ public class JevDecisionEngine {
         }
         utilities.put(StrategicObjective.STOCKPILE_DEPOT, stockpileUtility);
 
-        int homeFuelCount = countFuelInZone(world.isRedAlliance(), false, blockedFuel);
+        int homeFuelCount = countFuelInZone(world.isRedAlliance(), false, blockedFuel, knowledge);
         double sweepUtility = 0.0;
         if (homeFuelCount > 0 && !world.isInventoryFull()) {
             sweepUtility = world.isAllianceHubActive()
@@ -442,17 +447,45 @@ public class JevDecisionEngine {
         }
         utilities.put(StrategicObjective.SWEEP_ALLIANCE_ZONE, sweepUtility);
 
+        // Poach only while a shift flip is genuinely approaching.
+        //
+        // The `> 0.0` floor is load-bearing and was missing. `HubSchedule
+        // .timeUntilShiftEnd()` returns 0.0 by design during AUTO, TRANSITION,
+        // ENDGAME and DONE, where no flip is coming - so a bare `<= 6.0` test
+        // stayed true for the entire endgame. It was masked while the sim ran on
+        // the frozen shift clock, because that clock is pinned at exactly 0.0
+        // and the guard was therefore true everywhere; fixing the clock without
+        // this bound would have shifted poach behaviour during shift phases and
+        // read as "fixed" while the endgame case stayed wrong.
         double opponentZoneUtility = 0.0;
-        if (!world.isAutonomous() && !world.isInventoryFull() && world.timeUntilHubShift() <= 6.0
+        double timeUntilShiftForPoach = world.timeUntilHubShift();
+        if (!world.isAutonomous() && !world.isInventoryFull()
+                && timeUntilShiftForPoach > 0.0 && timeUntilShiftForPoach <= 6.0
+                // Only poach when the OPPONENT's hub is the one coming back on. In
+                // SHIFT2/SHIFT4 our own hub is about to open and theirs is about to
+                // close; sprinting across for their loose fuel then abandons our own
+                // scoring window. This is a behaviour change on a strategy judgement,
+                // not a proven defect -- same class as the STAGE_STANDOFF question.
+                && world.isOpponentHubActiveAfterShift()
                 && world.heldFuelCount() < 20
-                && countFuelInZone(!world.isRedAlliance(), true, blockedFuel) > 0) {
+                && countFuelInZone(!world.isRedAlliance(), true, blockedFuel, knowledge) > 0) {
             opponentZoneUtility = 0.78;
         }
         utilities.put(StrategicObjective.POACH_OPPONENT_ZONE, opponentZoneUtility);
 
         // G407 and the robot's shooter safety policy allow launches only from our
         // alliance zone. Do not turn a midfield pass into an illegal launch.
+        //
+        // NOTE: the explicit opponent-hub check below is a NO-OP today, and is kept
+        // deliberately rather than as a claimed fix. Both hubs are never dark at the
+        // same time -- SHIFT1-4 have exactly one live, and AUTO/TRANSITION/ENDGAME
+        // have both -- so `!isAllianceHubActive()` already implies the opponent's hub
+        // is scoring. An earlier version of this comment claimed it prevented
+        // "lobbing into a dead hub"; that scenario is unreachable. It becomes
+        // load-bearing only if the schedule ever allows two dark hubs (DONE), so it
+        // documents the invariant at the point where the aim target is chosen.
         double shuttleUtility = !world.isAutonomous() && !world.isAllianceHubActive()
+                && (world.isOpponentHubActive() || world.isOpponentHubActiveAfterShift())
                 && FieldMap.AllianceZones.isInAllianceZone(world.selfPose(), world.isRedAlliance())
                 && !FieldMap.Trenches.isLowClearance(world.selfPose()) && distToSelfHub > 6.0
                 && world.heldFuelCount() >= 16 ? 0.87 : 0.0;
@@ -602,12 +635,14 @@ public class JevDecisionEngine {
         StrategicObjective bestObjective = evaluateLocalUtilityMatrix(utilities);
 
         // Diagnostic pin: frc.jev.freezeObjective=<NAME> forces every agent onto one
-        // objective and bypasses the commitment latch entirely. Exists to isolate
-        // whether headless non-reproducibility comes from the AI or from the
-        // unseeded physics underneath it (see KNOWN_ISSUES.md §A). If a frozen-AI
-        // match is still non-reproducible, the AI is exonerated and the cause is
-        // physics. Off unless the property is set; never enable alongside
-        // frc.jev.realShiftClock.
+        // objective and bypasses the commitment latch entirely. Built to isolate
+        // whether headless non-reproducibility came from the AI or from the physics
+        // below it (see KNOWN_ISSUES.md §A). The test exonerated the AI: a
+        // frozen-AI seed still varied run to run. Superseded as a reproducibility
+        // fix by the Common Random Numbers work in Sim/MatchDeterminism, which cut
+        // residual variance substantially; the pin is retained because it isolates
+        // decision-layer behaviour specifically. Off unless the property is set;
+        // never enable alongside frc.jev.realShiftClock.
         StrategicObjective frozen = frozenObjective();
         if (frozen != null) {
             bestObjective = frozen;
@@ -1233,38 +1268,91 @@ public class JevDecisionEngine {
                 new Pose2d(fallback, new Rotation2d()), robotPose.getTranslation());
     }
 
+    /**
+     * Fuel available in a zone, as reported by the knowledge type rather than by
+     * reaching into the simulation.
+     *
+     * <p>This used to iterate {@code SimulatedArena} directly behind a
+     * {@code catch (Exception) { return 0; }}, which broke the knowledge contract
+     * three ways: the old "unobserved" tier still read perfect sim data behind a
+     * record claiming ignorance; the real robot always took the {@code return 0}
+     * fallback with no way to distinguish "no fuel there" from "I cannot see any";
+     * and a silent 0 is a real number the policy will act on. Zone counts are now
+     * computed once per tick by {@code WorldStateBuilder} and carried on
+     * {@link MatchKnowledge}, so {@link ObservedKnowledge} reports 0 because that
+     * is genuinely what a real robot can know.
+     *
+     * <p>Zone selection is by <b>role relative to this bot</b>, not by alliance:
+     * {@code knowledge} is already the bot's own field picture, so
+     * {@code allianceZoneFuel()} is our own zone whichever alliance we skate for.
+     * An earlier version keyed this on {@code isRedZone}, which is correct for
+     * {@code isInAllianceZone(translation, isRedZone)} but wrong here &mdash; it
+     * sent a Blue bot's home-zone count to the midfield bucket. The parameter is
+     * retained only because {@link #countBlockedInZone} still needs it to place an
+     * abandoned piece in the same zone the raw count covers.
+     *
+     * @param isRedZone         which alliance the bot skates for, for blocked-piece
+     *                          zone placement only
+     * @param strictOpponentZone count the opponent's zone rather than our own
+     * @param blockedFuel       fuel the watchdog abandoned, excluded from the count
+     */
     private int countFuelInZone(boolean isRedZone, boolean strictOpponentZone,
-            Set<Translation2d> blockedFuel) {
-        SimulatedArena arena = SimulatedArena.getInstance();
-        if (arena == null)
+            Set<Translation2d> blockedFuel, MatchKnowledge knowledge) {
+        int available = strictOpponentZone
+                ? knowledge.opponentZoneFuel()
+                : knowledge.allianceZoneFuel();
+        if (available <= 0) {
             return 0;
+        }
+        // Abandoned fuel must not keep an objective viable: the watchdog blacklists
+        // a point it can no longer make progress toward, and the selectors skip it
+        // via isBlocked. Counting it here would leave SWEEP_ALLIANCE_ZONE at
+        // 0.90-0.98 on pieces the policy is simultaneously forbidden to approach,
+        // so sweepUtility never collapses, ObjectiveCommitment's release rule
+        // (incumbentUtility <= 0) never fires, and the latch holds all match. That
+        // was the root cause of the seed-dependent teleop collapse.
+        return Math.max(0, available - countBlockedInZone(isRedZone, strictOpponentZone, blockedFuel));
+    }
+
+    /**
+     * How many pieces the watchdog has abandoned in the zone being counted.
+     *
+     * <p>Still reads the arena, deliberately: the blocked set is a list of points
+     * and the total is a count, but the only place that knows a piece's zone is the
+     * piece list itself. Returns 0 when no arena is available (real hardware), which
+     * is correct &mdash; an {@link ObservedKnowledge} reports 0 total fuel anyway, so
+     * the subtraction is never reached there.
+     */
+    private int countBlockedInZone(boolean isRedZone, boolean strictOpponentZone,
+            Set<Translation2d> blockedFuel) {
+        if (blockedFuel == null || blockedFuel.isEmpty()) {
+            return 0;
+        }
+        SimulatedArena arena = SimulatedArena.getInstance();
+        if (arena == null) {
+            return 0;
+        }
         try {
-            int count = 0;
+            int blocked = 0;
             for (GamePieceOnFieldSimulation piece :
                     frc.robot.Sim.MatchDeterminism.fuelOnFieldSorted()) {
-                if (piece != null && "Fuel".equals(piece.getType())
-                        && FieldMap.AllianceZones.isInAllianceZone(
-                                piece.getPoseOnField().getTranslation(), isRedZone)
-                        && (!strictOpponentZone || (isRedZone
-                                ? piece.getPoseOnField().getTranslation().getX() >= 12.0
-                                : piece.getPoseOnField().getTranslation().getX() <= 4.5))
-                        && !StaticPathfinder.isPointInHardObstacle(piece.getPoseOnField().getTranslation())
-                        && !StaticPathfinder.isPointNearDynamicObstacle(piece.getPoseOnField().getTranslation())
-                        // Fuel the TargetProgressWatchdog already abandoned must not
-                        // keep an objective viable. Without this, SWEEP_ALLIANCE_ZONE
-                        // stayed at 0.90-0.98 on pieces that are simultaneously
-                        // skipped as targets (isBlocked below), so the bot hunted fuel
-                        // it was forbidden to approach: sweepUtility never collapsed,
-                        // ObjectiveCommitment's release rule (incumbentUtility <= 0)
-                        // could never fire, and the latch held for the whole match.
-                        // This is what made 2 of 6 headless seeds collapse to ~0
-                        // teleop fuel.
-                        && !isBlocked(blockedFuel, piece.getPoseOnField().getTranslation())) {
-                    count++;
+                if (piece == null || blockedFuel.isEmpty() || !"Fuel".equals(piece.getType())) {
+                    continue;
+                }
+                var at = piece.getPoseOnField().getTranslation();
+                // Same zone the raw count covered: our own alliance zone normally,
+                // the deep opponent band when counting for POACH.
+                boolean inZone = strictOpponentZone
+                        ? (isRedZone ? at.getX() >= 12.0 : at.getX() <= 4.5)
+                        : FieldMap.AllianceZones.isInAllianceZone(at, isRedZone);
+                if (inZone && isBlocked(blockedFuel, at)) {
+                    blocked++;
                 }
             }
-            return count;
-        } catch (Exception ignored) {
+            return blocked;
+        } catch (Exception e) {
+            // Over-reporting blocked fuel would suppress a viable objective, so on
+            // failure subtract nothing and keep the raw count.
             return 0;
         }
     }

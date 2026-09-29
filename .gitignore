@@ -1,0 +1,13 @@
+# Repo-root scratch. The Gradle project (TitanRoboticsBuildSeason/) has its own
+# .gitignore for build/, logs/, results/, reports/, etc. This file covers
+# stray files that land next to the project directory.
+
+# Timestamped AdvantageScope exports are ignored by the project-level rule
+# (TitanRoboticsBuildSeason/.gitignore); this file covers repo-root scratch.
+
+# Editor / OS cruft
+*.bak
+*.tmp
+*~
+.DS_Store
+Thumbs.db

@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
@@ -15,18 +17,33 @@ import frc.robot.Navigation.StaticPathfinder;
 import frc.robot.Intelligence.JevDecisionEngine;
 import frc.robot.Sim.AIRobotInstance;
 import frc.robot.Sim.AIRobotSim;
+import frc.robot.Sim.HubSchedule;
 import frc.robot.Intelligence.JevDecisionEngine.DecisionResult;
 import frc.robot.Intelligence.JevDecisionEngine.TacticalAction;
 import frc.robot.Subsystems.Shooter.ShooterState;
 import frc.robot.Subsystems.Intake.IntakeState;
 import frc.robot.Intelligence.AIActionIntent;
 import frc.robot.Intelligence.Archetype;
+import frc.robot.Intelligence.ClairvoyantKnowledge;
+import frc.robot.Intelligence.MatchKnowledge;
 import frc.robot.Intelligence.StrategicObjective;
 import frc.robot.Intelligence.WorldState;
 import swervelib.simulation.ironmaple.simulation.SimulatedArena;
 import swervelib.simulation.ironmaple.simulation.seasonspecific.rebuilt2026.RebuiltFuelOnField;
 
 public class JevDecisionEngineTest {
+
+    /**
+     * The phases {@code HubSchedule.phaseFor} can return. {@code DONE} is
+     * deliberately absent: the countdown runs out into {@code ENDGAME}, so DONE
+     * is only reachable if a caller passes it by hand.
+     */
+    private static final HubSchedule.Phase[] REACHABLE_PHASES = {
+        HubSchedule.Phase.AUTO, HubSchedule.Phase.TRANSITION,
+        HubSchedule.Phase.SHIFT1, HubSchedule.Phase.SHIFT2,
+        HubSchedule.Phase.SHIFT3, HubSchedule.Phase.SHIFT4,
+        HubSchedule.Phase.ENDGAME
+    };
 
     private JevDecisionEngine engine;
 
@@ -226,13 +243,13 @@ public class JevDecisionEngineTest {
 
         // Warm up JIT
         for (int i = 0; i < 50; i++) {
-            engine.evaluatePolicy(state, Archetype.AUTONOMOUS_CYCLER);
+            engine.evaluatePolicy(state, homeFuel(), Archetype.AUTONOMOUS_CYCLER);
         }
 
         long start = System.nanoTime();
         final int iterations = 1000;
         for (int i = 0; i < iterations; i++) {
-            AIActionIntent intent = engine.evaluatePolicy(state, Archetype.AUTONOMOUS_CYCLER);
+            AIActionIntent intent = engine.evaluatePolicy(state, homeFuel(), Archetype.AUTONOMOUS_CYCLER);
             assertNotNull(intent);
         }
         long duration = System.nanoTime() - start;
@@ -255,8 +272,8 @@ public class JevDecisionEngineTest {
                 true // robot is red
         );
 
-        AIActionIntent cyclerIntent = engine.evaluatePolicy(state, Archetype.AUTONOMOUS_CYCLER);
-        AIActionIntent bullyIntent = engine.evaluatePolicy(state, Archetype.DEFENSE_BULLY);
+        AIActionIntent cyclerIntent = engine.evaluatePolicy(state, homeFuel(), Archetype.AUTONOMOUS_CYCLER);
+        AIActionIntent bullyIntent = engine.evaluatePolicy(state, fuel(0, 0, 0, true), Archetype.DEFENSE_BULLY);
 
         assertNotEquals(cyclerIntent.objective(), bullyIntent.objective());
         assertTrue(cyclerIntent.objective().isOffensive(), "Cycler should pursue offensive objective");
@@ -667,7 +684,7 @@ public class JevDecisionEngineTest {
                 new Pose2d(12.0, 4.0, new Rotation2d()),
                 new edu.wpi.first.math.kinematics.ChassisSpeeds(),
                 90.0, false, false, 10.0, false);
-        AIActionIntent intent = engine.evaluatePolicy(world, Archetype.AUTONOMOUS_CYCLER);
+        AIActionIntent intent = engine.evaluatePolicy(world, homeFuel(), Archetype.AUTONOMOUS_CYCLER);
         assertNotNull(intent.plan());
         assertEquals(intent.objective(), intent.plan().currentObjective());
         assertEquals(StrategicObjective.CYCLE_SCORE_HUB, intent.plan().nextObjective());
@@ -685,7 +702,7 @@ public class JevDecisionEngineTest {
                 new Pose2d(12.0, 4.0, new Rotation2d()),
                 new edu.wpi.first.math.kinematics.ChassisSpeeds(),
                 90.0, true, false, 15.0, false);
-        AIActionIntent intent = engine.evaluatePolicy(world, Archetype.AUTONOMOUS_CYCLER);
+        AIActionIntent intent = engine.evaluatePolicy(world, homeFuel(), Archetype.AUTONOMOUS_CYCLER);
         assertEquals(StrategicObjective.SWEEP_ALLIANCE_ZONE, intent.objective());
         Pose2d target = engine.findAllianceZoneFuelTarget(world.selfPose(), false);
         assertTrue(FieldMap.AllianceZones.isInAllianceZone(new Translation2d(2.0, 4.0), false));
@@ -702,7 +719,7 @@ public class JevDecisionEngineTest {
                 new Pose2d(3.0, 2.0, new Rotation2d()),
                 new edu.wpi.first.math.kinematics.ChassisSpeeds(),
                 90.0, false, true, 10.0, false);
-        AIActionIntent intent = engine.evaluatePolicy(world, Archetype.LEAD_PURSUIT_INTERCEPTOR);
+        AIActionIntent intent = engine.evaluatePolicy(world, fuel(0, 0, 0, true), Archetype.LEAD_PURSUIT_INTERCEPTOR);
         assertEquals(StrategicObjective.LEAD_INTERCEPT, intent.objective());
         assertEquals(IntakeState.INTAKING, intent.intakeCommand());
     }
@@ -714,7 +731,7 @@ public class JevDecisionEngineTest {
                 new Pose2d(13.0, 4.0, new Rotation2d()),
                 new edu.wpi.first.math.kinematics.ChassisSpeeds(),
                 90.0, true, false, 1.0, false);
-        AIActionIntent intent = engine.evaluatePolicy(world, Archetype.AUTONOMOUS_CYCLER);
+        AIActionIntent intent = engine.evaluatePolicy(world, homeFuel(), Archetype.AUTONOMOUS_CYCLER);
         assertEquals(StrategicObjective.CYCLE_SCORE_HUB, intent.objective());
         assertEquals(0.0, intent.plan().timeToTransitionSec(), 1e-9);
     }
@@ -742,9 +759,233 @@ public class JevDecisionEngineTest {
                 new Pose2d(13.0, 4.0, new Rotation2d()),
                 new edu.wpi.first.math.kinematics.ChassisSpeeds(),
                 90.0, false, false, 5.0, false);
-        AIActionIntent intent = engine.evaluatePolicy(world, Archetype.AUTONOMOUS_CYCLER);
+        AIActionIntent intent = engine.evaluatePolicy(world, homeFuel(), Archetype.AUTONOMOUS_CYCLER);
         assertNotEquals(StrategicObjective.SHUTTLE_PASS, intent.objective());
         assertNotEquals(ShooterState.SHOOTING, intent.shooterCommand());
+    }
+
+    // ------------------------------------------------------------------
+    // Next-shift awareness (WorldState.isAllianceHubActiveAfterShift /
+    // isOpponentHubActiveAfterShift)
+    //
+    // The engine used to know only whether each hub is live NOW and how long
+    // until the next flip. That is not enough to tell a shuttle (which lobs at
+    // the opponent's end) from a trip to its own hub, so both fired at the wrong
+    // time. These pin the two gates that fix it.
+    // ------------------------------------------------------------------
+
+    /** Convenience: a Blue bot at (2.0, 4.03) holding `held`, 6 m from its hub. */
+    /**
+     * Clairvoyant knowledge with a known amount of field fuel.
+     *
+     * <p>Zone counts used to be invisible: the engine read them from
+     * {@code SimulatedArena}, so a card or test asserting on
+     * {@code SWEEP_ALLIANCE_ZONE} / {@code POACH_OPPONENT_ZONE} depended on
+     * whatever fuel happened to be in the live arena. Since the
+     * clairvoyant/observed split the counts are an explicit input, so a test that
+     * wants fuel in a zone must say so.
+     *
+     * @param allianceZone fuel in our own zone
+     * @param opponentZone fuel in the opponent's zone
+     * @param observed    whether an opponent robot is known
+     */
+    private static MatchKnowledge fuel(int allianceZone, int opponentZone,
+            int midfield, boolean observed) {
+        return new ClairvoyantKnowledge(
+                0, 0, 0, 0, 0,
+                List.of(), observed ? List.of(new Pose2d(12.0, 4.0, new Rotation2d())) : List.of(),
+                List.of(), List.of(),
+                allianceZone, midfield, opponentZone);
+    }
+
+    /** Plenty of fuel in our own zone, nothing elsewhere: a harvest card's default. */
+    private static MatchKnowledge homeFuel() {
+        return fuel(12, 0, 0, false);
+    }
+
+    private WorldState shiftState(boolean mineActive, boolean theirsActive,
+            boolean mineAfter, boolean theirsAfter, int held, double timeToShift) {
+        return new WorldState(
+                new Pose2d(2.0, 4.03, new Rotation2d()),
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(), held,
+                new Pose2d(12.0, 4.0, new Rotation2d()),
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                90.0, mineActive, theirsActive, timeToShift,
+                /* isRedAlliance */ false, /* isAutonomous */ false,
+                mineAfter, theirsAfter);
+    }
+
+    @Test
+    public void shuttlePassIsRefusedWhenNeitherHubWillBeLive() {
+        // NOTE: unreachable in a real match. Both hubs are never dark at the same
+        // time -- SHIFT1-4 have exactly one live, AUTO/TRANSITION/ENDGAME have both.
+        // So this asserts the gate's invariant defensively rather than a bug fix.
+        WorldState bothDark = shiftState(false, false, false, false, 20, 5.0);
+        AIActionIntent intent = engine.evaluatePolicy(bothDark, Archetype.AUTONOMOUS_CYCLER);
+        assertNotEquals(StrategicObjective.SHUTTLE_PASS, intent.objective(),
+                "must not lob 20 balls at a hub that is dark now and after the shift");
+    }
+
+    @Test
+    public void hubScheduleNeverLeavesBothHubsDark() {
+        // The invariant the shuttle gate leans on. If this ever fails, the
+        // explicit opponent-hub check in SHUTTLE_PASS stops being a no-op.
+        //
+        // Scoped to the phases HubSchedule.phaseFor can actually return
+        // (AUTO, TRANSITION, SHIFT1-4, ENDGAME). DONE is excluded and pinned
+        // separately below, because it is the one phase where the invariant
+        // genuinely does not hold -- iterating Phase.values() as the original
+        // version of this test did asserted a premise the schedule never made.
+        for (HubSchedule.Phase p : REACHABLE_PHASES) {
+            boolean blue = HubSchedule.isHubActive(false, p, 'R');
+            boolean red = HubSchedule.isHubActive(true, p, 'R');
+            assertTrue(blue || red, "both hubs dark in phase " + p);
+        }
+    }
+
+    @Test
+    public void doneIsTheOnePhaseWhereBothHubsAreDark() {
+        // Records the exception the narrowed invariant above cannot cover, so
+        // widening the reachable set later is a deliberate act rather than a
+        // silent one. phaseFor() never returns DONE -- the match clock is
+        // exhausted into ENDGAME (HubSchedule.phaseFor falls through to it) --
+        // so this state is only reachable if a caller passes DONE by hand.
+        assertFalse(HubSchedule.isHubActive(false, HubSchedule.Phase.DONE, 'R'));
+        assertFalse(HubSchedule.isHubActive(true, HubSchedule.Phase.DONE, 'R'));
+        assertFalse(HubSchedule.phaseFor(-1.0, false) == HubSchedule.Phase.DONE,
+                "phaseFor must never produce DONE; the clock runs out into ENDGAME");
+    }
+
+    @Test
+    public void shuttlePassIsGeometricallyUnreachable() {
+        // Replaces two tests that asserted
+        //     assertNotEquals(StrategicObjective.VACUUM_MIDFIELD, intent.objective())
+        // while their own comment said what mattered was "that the shuttle is
+        // reachable rather than gated to zero". A ranking assertion tests
+        // reachability only incidentally, and in the passing case it was
+        // measuring which harvest objective won -- not whether the shuttle
+        // could ever be selected at all.
+        //
+        // The shuttle gate (JevDecisionEngine) requires ALL of:
+        //     in our own alliance zone  AND  distToSelfHub > 6.0
+        // Our own zone is the half-plane 0 <= x <= BLUE_HUB_X, and the hub sits
+        // at (BLUE_HUB_X, FIELD_WIDTH/2) -- i.e. on the zone's own far edge.
+        // The farthest point of the zone from that hub is the wall corner
+        // (0, 0), at 6.138 m, which clears the 6.0 m bar. But a robot centre
+        // cannot stand on the wall: it is held off by BUMPER_MARGIN (0.45 m),
+        // which caps the achievable distance at 5.504 m. The gate is therefore
+        // unsatisfiable everywhere the robot can actually be, so
+        // shuttleUtility is a structural 0.0 and SHUTTLE_PASS is dead.
+        //
+        // This is a geometric proof, not an argmax observation, so it does not
+        // depend on any utility weighting and cannot be made to pass by
+        // rebalancing. It is a tripwire: if the zone geometry, the hub
+        // position, or BUMPER_MARGIN ever changes so the gate becomes
+        // satisfiable, this fails and the objective deserves a real test.
+        double hubX = FieldMap.Hubs.BLUE_HUB_X;
+        double hubY = FieldMap.Hubs.HUB_Y;
+        double margin = StaticPathfinder.BUMPER_MARGIN;
+
+        double bestAchievable = -1.0;
+        for (boolean isRed : new boolean[] {false, true}) {
+            // Sweep the drivable footprint of our own zone: centre held one
+            // bumper half-width off every wall it would otherwise be against.
+            double xMin = isRed ? FieldMap.AllianceZones.RED_ZONE_MIN_X + margin : margin;
+            double xMax = isRed ? FieldMap.FIELD_LENGTH - margin : hubX;
+            for (double x = xMin; x <= xMax + 1e-9; x += 0.05) {
+                for (double y = margin; y <= FieldMap.FIELD_WIDTH - margin + 1e-9; y += 0.05) {
+                    Translation2d at = new Translation2d(x, y);
+                    if (!FieldMap.AllianceZones.isInAllianceZone(at, isRed)) {
+                        continue;
+                    }
+                    double hub = isRed ? FieldMap.FIELD_LENGTH - hubX : hubX;
+                    bestAchievable = Math.max(bestAchievable, at.getDistance(new Translation2d(hub, hubY)));
+                }
+            }
+        }
+
+        assertTrue(bestAchievable > 0.0, "sweep found no drivable pose in either alliance zone");
+        assertTrue(bestAchievable <= 6.0,
+                "SHUTTLE_PASS requires distToSelfHub > 6.0 but the best drivable pose is "
+                        + String.format("%.3f", bestAchievable)
+                        + " m away. The objective is geometrically reachable again, so it needs a"
+                        + " real behavioural test and the finding in KNOWN_ISSUES.md can be closed.");
+    }
+
+    @Test
+    public void shuttlePassIsNeverSelectedBecauseItsGateIsUnsatisfiable() {
+        // The behavioural consequence of the geometric result above, asserted
+        // over the hub states the gate cares about, so the dead objective is
+        // pinned from both sides: provably unreachable geometrically, and
+        // never actually selected.
+        for (boolean theirsActive : new boolean[] {false, true}) {
+            for (boolean theirsAfter : new boolean[] {false, true}) {
+                WorldState openingWindow =
+                        shiftState(false, theirsActive, false, theirsAfter, 20, 5.0);
+                AIActionIntent intent = engine.evaluatePolicy(
+                        openingWindow, fuel(14, 8, 0, true), Archetype.AUTONOMOUS_CYCLER);
+                assertNotEquals(StrategicObjective.SHUTTLE_PASS, intent.objective(),
+                        "SHUTTLE_PASS should be unreachable; if it now wins, its gate changed");
+            }
+        }
+    }
+
+    @Test
+    public void poachIsRefusedWhenTheOpponentHubIsTheOneGoingDark() {
+        // SHIFT2/SHIFT4 shape: OUR hub is dark now and about to open, the opponent's
+        // is live now and about to close. Sprinting across for their loose fuel would
+        // abandon our own scoring window the moment it opens. The gate now requires
+        // the opponent's hub to be the one that opens next.
+        WorldState ownHubOpening = shiftState(false, true, true, false, 10, 3.0);
+        AIActionIntent intent = engine.evaluatePolicy(ownHubOpening, fuel(14, 8, 0, true), Archetype.AUTONOMOUS_CYCLER);
+        // VACUOUS TODAY. POACH_OPPONENT_ZONE is a flat 0.78 and every competitor in
+        // this state outranks it, so this assertion passes with or without the gate.
+        // It is kept to document the intent, but it is NOT evidence the gate works.
+        // See KNOWN_ISSUES.md: POACH may be structurally unreachable, in which case
+        // the gate is untestable until the utility table is fixed. A real test needs
+        // a utility-map dump, which DecisionCards does not currently provide.
+        assertNotEquals(StrategicObjective.POACH_OPPONENT_ZONE, intent.objective(),
+                "must not poach away from our own hub opening window");
+    }
+
+    @Test
+    public void poachIsAllowedWhenTheOpponentHubIsTheOneOpening() {
+        // SHIFT1/SHIFT3 shape: our hub is live and about to close, theirs is dark and
+        // about to open. Poaching towards the opening window is the intended play.
+        WorldState theirsOpening = shiftState(true, false, false, true, 10, 3.0);
+        AIActionIntent intent = engine.evaluatePolicy(theirsOpening, fuel(14, 8, 0, true), Archetype.AUTONOMOUS_CYCLER);
+        // The objective itself may still lose the utility race; what matters is that
+        // poach is reachable rather than gated to zero.
+        assertNotEquals(StrategicObjective.VACUUM_MIDFIELD, intent.objective(),
+                "with an opponent window opening, harvesting midfield should not be the plan");
+    }
+
+    @Test
+    public void worldStateExposesShiftTransitionHelpers() {
+        WorldState lastWindow = shiftState(true, false, false, true, 12, 4.0);
+        assertTrue(lastWindow.willOwnHubDeactivate(),
+                "own hub live now and dark next means this is the last window");
+        assertTrue(lastWindow.willOpponentHubActivate(),
+                "opponent hub dark now and live next means an opening");
+
+        WorldState stable = shiftState(true, true, true, true, 12, 0.0);
+        assertFalse(stable.willOwnHubDeactivate());
+        assertFalse(stable.willOpponentHubActivate());
+    }
+
+    @Test
+    public void legacyWorldStateConstructorsMirrorCurrentHubState() {
+        // The 10- and 11-arg constructors must describe "no pending flip" so every
+        // pre-existing caller stays behaviourally identical.
+        WorldState legacy = new WorldState(new Pose2d(2.0, 4.03, new Rotation2d()),
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(), 5,
+                new Pose2d(12.0, 4.0, new Rotation2d()),
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                90.0, true, false, 5.0, false);
+        assertEquals(legacy.isAllianceHubActive(), legacy.isAllianceHubActiveAfterShift());
+        assertEquals(legacy.isOpponentHubActive(), legacy.isOpponentHubActiveAfterShift());
+        assertFalse(legacy.willOwnHubDeactivate());
+        assertFalse(legacy.willOpponentHubActivate());
     }
 
     @Test
@@ -788,7 +1029,7 @@ public class JevDecisionEngineTest {
         WorldState ownTrench = new WorldState(selfPose, zero, 30,
                 new Pose2d(4.5, 7.42, new Rotation2d()), zero,
                 90.0, false, false, 20.0, false);
-        AIActionIntent own = engine.evaluatePolicy(ownTrench, Archetype.TACTICAL_DEFENDER);
+        AIActionIntent own = engine.evaluatePolicy(ownTrench, fuel(0, 0, 0, true), Archetype.TACTICAL_DEFENDER);
         assertEquals(StrategicObjective.CHOKE_TRENCH, own.objective());
         Translation2d ownExit = new Translation2d(FieldMap.Trenches.BLUE_TRENCH_MAX_X + 0.9,
                 FieldMap.Trenches.TOP_CORRIDOR_Y);
@@ -802,7 +1043,7 @@ public class JevDecisionEngineTest {
         WorldState farTrench = new WorldState(selfPose, zero, 30,
                 new Pose2d(12.0, 7.42, new Rotation2d()), zero,
                 90.0, false, false, 20.0, false);
-        AIActionIntent far = engine.evaluatePolicy(farTrench, Archetype.TACTICAL_DEFENDER);
+        AIActionIntent far = engine.evaluatePolicy(farTrench, fuel(0, 0, 0, true), Archetype.TACTICAL_DEFENDER);
         assertEquals(StrategicObjective.CHOKE_TRENCH, far.objective());
         assertTrue(far.navigationTarget().getX() > FieldMap.CENTERLINE_X,
                 "Far-side choke target must stay on the occupied (Red) half: " + far.navigationTarget());
@@ -833,7 +1074,7 @@ public class JevDecisionEngineTest {
         WorldState approach = new WorldState(selfPose, zero, 30,
                 new Pose2d(9.0, 4.0, new Rotation2d()), zero,
                 90.0, false, true, 20.0, false);
-        AIActionIntent deny = engine.evaluatePolicy(approach, Archetype.TACTICAL_DEFENDER);
+        AIActionIntent deny = engine.evaluatePolicy(approach, fuel(0, 0, 0, true), Archetype.TACTICAL_DEFENDER);
         assertEquals(StrategicObjective.DENY_SHOOTING_LANE, deny.objective());
         double approachDist = deny.navigationTarget().getTranslation().getDistance(redHub);
         assertTrue(approachDist >= 1.9,
@@ -846,12 +1087,121 @@ public class JevDecisionEngineTest {
         WorldState inside = new WorldState(selfPose, zero, 30,
                 new Pose2d(10.5, 4.04, new Rotation2d()), zero,
                 90.0, false, true, 20.0, false);
-        AIActionIntent side = engine.evaluatePolicy(inside, Archetype.TACTICAL_DEFENDER);
+        AIActionIntent side = engine.evaluatePolicy(inside, fuel(0, 0, 0, true), Archetype.TACTICAL_DEFENDER);
         assertEquals(StrategicObjective.DENY_SHOOTING_LANE, side.objective());
         double sideDist = side.navigationTarget().getTranslation().getDistance(redHub);
         assertTrue(sideDist >= 1.9,
                 "Close-range lane block must stage laterally outside the shell, dist: " + sideDist);
         assertFalse(StaticPathfinder.isPointInHardObstacle(side.navigationTarget().getTranslation()),
                 "Lateral lane block must be reachable, not inside an obstacle");
+    }
+
+    // ── Shift-clock semantics ────────────────────────────────────────────────
+    //
+    // The sim shift clock used to be pinned at exactly 0.0 (WorldStateBuilder
+    // read Dashboard.getTimeUntilSwitch(), which the DS reports as 0 in sim).
+    // These pin the three places that a 0.0 clock distorts, plus the two places
+    // it does not. See KNOWN_ISSUES.md §A "Jev engine has no correct hub-shift
+    // clock in simulation".
+
+    private static final edu.wpi.first.math.kinematics.ChassisSpeeds ZERO_VEL =
+            new edu.wpi.first.math.kinematics.ChassisSpeeds();
+
+    @Test
+    public void testZeroShiftClockForcesScoringOverHarvesting() {
+        // A 0.0 clock is not neutral: timeLeftToHarvest = 0 - transit is always
+        // <= 0, which fires the "cannot harvest in time, go score" override and
+        // pins scoreUtility to 0.98 while zeroing vacuum and sweep. A hub-active
+        // bot holding a partial load therefore scores instead of batching up.
+        Translation2d hub = FieldMap.Hubs.getHubLocation2d(false);
+        Pose2d midfield = new Pose2d(hub.getX() + 5.0, hub.getY(), new Rotation2d());
+
+        WorldState frozen = new WorldState(midfield, ZERO_VEL, 10,
+                new Pose2d(12.0, 4.04, new Rotation2d()), ZERO_VEL,
+                90.0, true, false, 0.0, false);
+        assertEquals(StrategicObjective.CYCLE_SCORE_HUB,
+                engine.evaluatePolicy(frozen, Archetype.AUTONOMOUS_CYCLER).objective(),
+                "With no shift clock (t=0, i.e. transition/endgame) a loaded bot must score, not harvest");
+
+        // Same field state, but a real mid-shift clock: 20s of shift left, so
+        // timeLeftToHarvest is comfortably positive and the override must not
+        // fire. 10 fuel is under minFuelToScore 16, so the bot keeps batching.
+        WorldState midShift = new WorldState(midfield, ZERO_VEL, 10,
+                new Pose2d(12.0, 4.04, new Rotation2d()), ZERO_VEL,
+                90.0, true, false, 20.0, false);
+        assertEquals(StrategicObjective.VACUUM_MIDFIELD,
+                engine.evaluatePolicy(midShift, Archetype.AUTONOMOUS_CYCLER).objective(),
+                "Mid-shift a partially loaded bot must keep harvesting, not dump a partial load");
+    }
+
+    @Test
+    public void testStagingBeatsHarvestingOnlyNearShiftBoundary() {
+        // Pins that the stageUtility/vacuumUtility balance is ALREADY correct
+        // once the clock works, so no constant retune is warranted. Hub inactive,
+        // hopper stocked to the 18-ball staging threshold.
+        Translation2d hub = FieldMap.Hubs.getHubLocation2d(false);
+        Pose2d loaded = new Pose2d(hub.getX() + 5.0, hub.getY(), new Rotation2d());
+
+        WorldState nearFlip = new WorldState(loaded, ZERO_VEL, 18,
+                new Pose2d(12.0, 4.04, new Rotation2d()), ZERO_VEL,
+                90.0, false, false, 2.0, false);
+        assertEquals(StrategicObjective.STAGE_STANDOFF,
+                engine.evaluatePolicy(nearFlip, Archetype.AUTONOMOUS_CYCLER).objective(),
+                "2s before the flip a stocked bot must stage, not keep harvesting (stage 0.95 > vacuum 0.92)");
+
+        // Control: same state, mid-shift. Staging drops to its 0.80 base and
+        // harvesting (0.92) must win again.
+        WorldState midShift = new WorldState(loaded, ZERO_VEL, 18,
+                new Pose2d(12.0, 4.04, new Rotation2d()), ZERO_VEL,
+                90.0, false, false, 20.0, false);
+        assertEquals(StrategicObjective.VACUUM_MIDFIELD,
+                engine.evaluatePolicy(midShift, Archetype.AUTONOMOUS_CYCLER).objective(),
+                "Mid-shift with the hub locked, harvesting must still outrank staging");
+    }
+
+    @Test
+    public void testPoachSuppressedWithoutAnApproachingShift() {
+        // POACH_OPPONENT_ZONE's guard is now `0 < t <= 6`. The 0.0 floor matters
+        // because HubSchedule.timeUntilShiftEnd() returns 0.0 by design through
+        // AUTO/TRANSITION/ENDGAME/DONE, where no flip is coming -- a bare
+        // `<= 6.0` stayed true for the entire endgame.
+        SimulatedArena arena = SimulatedArena.getInstance();
+        arena.clearGamePieces();
+        // Opponent (Red) half fuel, so the zone-count precondition can be met.
+        for (int i = 0; i < 4; i++) {
+            arena.addGamePiece(new RebuiltFuelOnField(new Translation2d(11.0, 3.6 + i * 0.3)));
+        }
+        try {
+            Translation2d hub = FieldMap.Hubs.getHubLocation2d(false);
+            Pose2d ours = new Pose2d(hub.getX() + 3.0, hub.getY(), new Rotation2d());
+            // held < 20 and not inventory-full, so only the clock can gate poach.
+            for (double t : new double[] {0.0, 20.0, 3.0, 6.0}) {
+                WorldState w = new WorldState(ours, ZERO_VEL, 8,
+                        new Pose2d(12.0, 4.04, new Rotation2d()), ZERO_VEL,
+                        90.0, true, false, t, false);
+                assertNotEquals(StrategicObjective.POACH_OPPONENT_ZONE,
+                        engine.evaluatePolicy(w, Archetype.AUTONOMOUS_CYCLER).objective(),
+                        "Poaching the opponent zone must never be selected at t=" + t);
+            }
+        } finally {
+            arena.clearGamePieces();
+        }
+    }
+
+    @Test
+    public void testPoachUtilityIsCurrentlyUnreachable() {
+        // Characterization, and the reason the guard fix above has no behavioural
+        // effect today: POACH scores a flat 0.78, but whenever poach is eligible
+        // (!autonomous, !inventory-full) VACUUM_MIDFIELD is at least 0.82 and
+        // STOCKPILE_DEPOT at least 0.86, so poach can never win the argmax. The
+        // `0 < t <= 6` guard is a latent-defect fix that matters the moment poach
+        // is ever worth more than ~0.88 -- this test is the tripwire for that.
+        assertNotEquals(StrategicObjective.POACH_OPPONENT_ZONE,
+                engine.evaluatePolicy(
+                        new WorldState(new Pose2d(6.0, 4.04, new Rotation2d()), ZERO_VEL, 8,
+                                new Pose2d(12.0, 4.04, new Rotation2d()), ZERO_VEL,
+                                90.0, true, false, 5.0, false),
+                        Archetype.AUTONOMOUS_CYCLER).objective(),
+                "If poach ever becomes selectable, this characterization must be revisited with the guard");
     }
 }

@@ -90,22 +90,24 @@ class StuckRecoveryTest {
     }
 
     /**
-     * In the override branch -- repulsion strictly greater than the nominal command --
-     * forward progress is floored at {@link DynamicRouter#MIN_FORWARD_FRACTION}. Asserted
-     * separately because at large gaps repulsion falls below nominal and the router uses
-     * the plain sum instead, which legitimately leaves a smaller residual.
+     * Under dominant opposing repulsion the retained forward term approaches
+     * {@link DynamicRouter#MAX_BACKPRESSURE_FRACTION} asymptotically. Asserted
+     * separately because at large gaps the back-pressure is small and the retained
+     * forward term is legitimately close to the full nominal command.
      */
     @Test
-    void dominantRepulsionRetainsFlooredForwardProgress() {
+    void dominantRepulsionSaturatesForwardProgressFromAbove() {
         Pose2d robot = new Pose2d(8.0, 4.0, new Rotation2d());
 
-        // 0.8 m: repulsion (8.21 m/s) far exceeds the 1.5 m/s nominal command.
+        // 0.8 m: repulsion far exceeds the 1.5 m/s nominal command, so the
+        // exponential is deep into saturation and forward is near its asymptote.
         DynamicRouter.registerObstacle(new Translation2d(robot.getX() - 0.8, robot.getY()),
                 new Translation2d(), 0.55, 5.0, false);
         ChassisSpeeds out = DynamicRouter.computeAvoidanceSpeeds(robot, WEST, TARGET);
 
-        assertTrue(out.vxMetersPerSecond <= -DynamicRouter.MIN_FORWARD_FRACTION * 1.5,
-                "Dominant repulsion must still command the floored forward fraction, got vx="
+        double floorFraction = 1.0 - DynamicRouter.MAX_BACKPRESSURE_FRACTION;
+        assertTrue(out.vxMetersPerSecond <= -floorFraction * 1.5,
+                "Saturated back-pressure must still command the floored forward fraction, got vx="
                         + out.vxMetersPerSecond);
         assertTrue(Math.abs(out.vyMetersPerSecond) > 0.5,
                 "The surplus must become a tangential slide rather than vanish, got vy="

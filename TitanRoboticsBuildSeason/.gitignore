@@ -173,6 +173,11 @@ networktables.json
 simgui.json
 *-window.json
 
+# AdvantageScope layout exports (dated filenames, e.g. "AdvantageScope 9-28-2026.json").
+# *.json above would not catch these: the export is written at the project root with a
+# human-readable dated name, not a fixed one.
+AdvantageScope *.json
+
 # Simulation data log directory
 logs/
 
@@ -190,6 +195,13 @@ reports/
 
 # Folder that has CTRE Phoenix Sim device config storage
 ctre_sim/
+
+# Inter-agent resource locks (tools/lock). Runtime state only: PID, owner, age.
+# In-repo so a human can inspect a stuck run, and gitignored so it never shows up
+# as a diff. `git clean -xdf` wipes it, which is harmless -- an absent lock reads
+# as "nothing held" and everything re-acquires cleanly. See AGENTS.md "Resource
+# coordination" and docs/COORDINATION.md.
+.locks/
 
 # clangd
 /.cache

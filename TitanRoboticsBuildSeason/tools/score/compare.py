@@ -37,6 +37,16 @@ from scoring.
 counters. A non-zero value means a scoring path is bypassing per-slot
 attribution, which would silently corrupt every share computed here.
 
+**Loop health.** Every row carries a ``health`` block (schemaVersion 2):
+``loopOverruns`` and ``maxRobotPeriodicMs``, measured in-process by
+``Sim/LoopHealth``. A worker starved by its siblings does not crash -- it quietly
+produces a *different* match. The archived 12-wide baseline had 27-53 WPILib
+overrun warnings per 150 s match including one ``robotPeriodic()`` epoch of
+0.81 s, and every one of those rows was recorded as a success. A load-perturbed
+row must not be differenced against a clean one, because the delta would be
+measuring the machine rather than the policy. ``-1`` means "not measured" and is
+refused, never read as zero.
+
 **FROZEN - never sweep these.** They raise the scoreboard without making the
 robot better. Enforcement lands with the P1 PolicyWeights parser (unknown keys
 are hard errors there); this list is the single place it is written down.
@@ -50,7 +60,12 @@ import statistics
 import sys
 from collections import defaultdict
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+
+# Loop-health limits, mirrored from tools/score/sweep.ps1 -MaxLoopOverruns /
+# -MaxRobotPeriodicMs. Keep the two in step; sweep.ps1 produces the rows.
+GATE_MAX_LOOP_OVERRUNS = 8
+GATE_MAX_ROBOT_PERIODIC_MS = 60.0
 
 # Parameters that must never be swept. Sim-physics or rulebook constants: tuning
 # them inflates the objective without improving the robot. See module docstring.
@@ -92,12 +107,45 @@ def load(path):
             except json.JSONDecodeError as exc:
                 bad.append("line %d: %s" % (lineno, exc))
                 continue
-            if obj.get("schemaVersion") != SCHEMA_VERSION:
+            ver = obj.get("schemaVersion")
+            if ver == 1:
+                # v1 rows carry no health block at all, so a contaminated sweep and
+                # a clean one are indistinguishable. Refuse rather than guess.
+                bad.append("line %d: schemaVersion 1 predates the health block; this row cannot be "
+                           "shown to be uncontaminated. Re-run the sweep." % lineno)
+                continue
+            if ver != SCHEMA_VERSION:
                 bad.append("line %d: schemaVersion %r, expected %d"
-                           % (lineno, obj.get("schemaVersion"), SCHEMA_VERSION))
+                           % (lineno, ver, SCHEMA_VERSION))
                 continue
             rows.append(obj)
     return rows, bad
+
+
+def check_health(row):
+    """Return a list of reasons this row is not a clean sample.
+
+    A negative value means LoopHealth was never armed, which is not evidence of a
+    clean run -- it is absence of evidence, so it is refused too.
+    """
+    h = row.get("health")
+    if not isinstance(h, dict):
+        return ["no health block (worker did not stamp loop timing)"]
+    overruns = h.get("loopOverruns")
+    max_ms = h.get("maxRobotPeriodicMs")
+    if overruns is None or max_ms is None:
+        return ["health block incomplete (loopOverruns/maxRobotPeriodicMs missing)"]
+    if overruns < 0 or max_ms < 0:
+        return ["health unmeasured (loopOverruns=%r) - treated as unknown, not as clean"
+                % (overruns,)]
+    bad = []
+    if overruns > GATE_MAX_LOOP_OVERRUNS:
+        bad.append("%d main-loop overruns > %d (worker was CPU-starved by its siblings)"
+                   % (overruns, GATE_MAX_LOOP_OVERRUNS))
+    if max_ms > GATE_MAX_ROBOT_PERIODIC_MS:
+        bad.append("slowest robotPeriodic %.0fms > %.0fms (load perturbation)"
+                   % (max_ms, GATE_MAX_ROBOT_PERIODIC_MS))
+    return bad
 
 
 def all_bots(row):
@@ -213,9 +261,17 @@ def noise_floor(rows, variant):
                 pairs += 1
     if not deltas:
         return None
-    sd = statistics.stdev(deltas) if len(deltas) > 1 else 0.0
-    se = sd / math.sqrt(len(deltas)) if deltas else 0.0
+    # A single paired difference carries no estimate of spread. Reporting sd=0
+    # there would print "CI +/-0.0" and a confident "sufficient" verdict, which
+    # is the most dangerous possible output from this tool.
+    if len(deltas) < 2:
+        return {"pairs": pairs, "deltas": deltas, "sd": None, "se": None,
+                "seeds": len(by), "median": statistics.median(deltas),
+                "max_abs": max(abs(d) for d in deltas)}
+    sd = statistics.stdev(deltas)
+    se = sd / math.sqrt(len(deltas))
     return {"pairs": pairs, "deltas": deltas, "sd": sd, "se": se,
+            "seeds": len(by), "reps": pairs,
             "median": statistics.median(deltas), "max_abs": max(abs(d) for d in deltas)}
 
 
@@ -268,6 +324,37 @@ def main():
     if canary_fail:
         print("!! %d/%d rows have an attribution leak - shares below are unreliable"
               % (canary_fail, len(rows)))
+
+    # ---- loop health ---------------------------------------------------------
+    # Checked before the noise floor and the comparison, because both turn a row
+    # into a number. A perturbed row has to be excluded, not annotated.
+    degraded = defaultdict(list)
+    for r in rows:
+        problems = check_health(r)
+        if problems:
+            key = "%s/%s" % (r.get("variant", "baseline"), r.get("replica", 0))
+            degraded[(r.get("variant", "baseline"), r.get("seed"))].append((r, problems))
+    if degraded:
+        shown = 0
+        for (variant, seed), items in sorted(degraded.items(), key=lambda kv: str(kv[0])):
+            for r, problems in items:
+                if shown >= 8:
+                    break
+                print("!! degraded seed %s/%s: %s" % (seed, variant, "; ".join(problems)))
+                shown += 1
+        print("!! %d row(s) were load-perturbed or unmeasured and are EXCLUDED below."
+              % sum(len(v) for v in degraded.values()))
+        print("   A delta against these would measure the machine, not the robot.")
+        print("   Re-run tools/score/sweep.ps1 at a lower -MaxWorkers, or investigate")
+        print("   the load, before trusting any variant comparison.")
+        clean = [r for r in rows if not check_health(r)]
+        if not clean:
+            print("VERDICT: no clean rows remain - nothing can be compared.")
+            return 0 if args.no_gate else 1
+        rows = clean
+        by_variant = defaultdict(list)
+        for r in rows:
+            by_variant[r.get("variant", "baseline")].append(r)
     print("-" * 78)
 
     # ---- noise floor ---------------------------------------------------------
@@ -279,17 +366,30 @@ def main():
                 continue
             print("variant %s  (%d paired run-to-run comparisons)" % (v, nf["pairs"]))
             print("  delta(blueTotal) per repeated seed: %s" % nf["deltas"])
+            if nf["se"] is None:
+                print("  only %d repeated seed(s): a single paired difference gives no"
+                      % nf["pairs"])
+                print("  estimate of spread, so no CI can be formed. Re-run with")
+                print("  -Replicas 2 across several seeds (-Seeds 7,11,42,101,...).")
+                print("  Largest |delta| observed so far: %d" % nf["max_abs"])
+                continue
             print("  sd=%.2f  SE=%.2f  median=%+.1f  max|delta|=%.0f"
                   % (nf["sd"], nf["se"], nf["median"], nf["max_abs"]))
-            n = len(rows) // max(1, len(by_variant))
+            n = nf["pairs"]
             print("  -> %d seeds give a 95%% CI of about +/-%.1f points"
                   % (n, 1.96 * nf["se"]))
             if nf["se"] <= 2.0:
                 print("  -> VERDICT: %d seeds is sufficient" % n)
             elif nf["se"] > 5.0:
-                print("  -> VERDICT: too noisy for %d seeds; use 16, or force"
-                      % n)
-                print("     HubSchedule.setShiftSeed('B')/('R') per seed as a controlled block")
+                print("  -> VERDICT: NOT USABLE as an optimization target at this")
+                print("     noise level. A policy change worth <%.0f points is"
+                      % (1.96 * nf["se"]))
+                print("     indistinguishable from a rerun. Fix the variance source")
+                print("     before comparing variants; more seeds only helps if the")
+                print("     spread is symmetric. Check for a bimodal failure mode")
+                print("     (compare median vs sd above: a large gap means a discrete")
+                print("     collapse, not noise). Controlled-block alternative:")
+                print("     force HubSchedule.setShiftSeed('B')/('R') per seed.")
             else:
                 print("  -> VERDICT: usable, but treat deltas under ~%.0f as noise"
                       % (1.96 * nf["se"]))

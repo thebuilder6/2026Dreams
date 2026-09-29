@@ -66,7 +66,14 @@ public class Robot extends LoggedRobot {
             Logger.addDataReceiver(new NT4Publisher());
             break;
         case SIM:
-            Logger.addDataReceiver(new NT4Publisher());
+            // A score-rig worker must not touch the network at all. NT4Publisher
+            // makes ntcore a *client* when it cannot be a server, and with N workers
+            // on one machine the losers dial 127.0.0.1:5810 and land on a sibling
+            // worker's NT -- two matches writing one namespace. The rig reads its
+            // result from the JSONL, and the wpilog below is the real telemetry.
+            if (!frc.robot.Sim.HeadlessMatchDriver.isHeadless()) {
+                Logger.addDataReceiver(new NT4Publisher());
+            }
             if (frc.robot.Sim.HeadlessMatchDriver.isHeadless()) {
                 Logger.addDataReceiver(new WPILOGWriter(
                         frc.robot.Sim.HeadlessMatchDriver.resolveLogPath()));
@@ -111,23 +118,61 @@ public class Robot extends LoggedRobot {
   public void robotInit() {
     // Headless AI-vs-AI training matches: self-driving DS sequence, .wpilog + report, auto-exit.
     frc.robot.Sim.HeadlessMatchDriver.maybeStartHeadlessMatch();
-    // Start WPILib WebServer to serve elastic-layout.json for Elastic Dashboard remote loading (Ctrl+D)
-    try {
-      edu.wpi.first.net.WebServer.start(5800, edu.wpi.first.wpilibj.Filesystem.getDeployDirectory().getPath());
-    } catch (Throwable t) {
-      System.out.println("[WebServer] Notice: Elastic layout WebServer on port 5800 could not be started: " + t.getMessage());
-    }
 
-    // The PortForwarder Trick: Forward coprocessor web interfaces and camera streams over USB tether (172.22.11.2)
-    try {
-      edu.wpi.first.net.PortForwarder.add(5801, "limelight-front.local", 5800);      // Limelight Web Dashboard
-      edu.wpi.first.net.PortForwarder.add(5802, "limelight-front.local", 5802);      // Limelight Camera Stream
-      edu.wpi.first.net.PortForwarder.add(5803, "rubik-pi-coprocessor.local", 5800); // PhotonVision Web Dashboard
-      edu.wpi.first.net.PortForwarder.add(5804, "rubik-pi-coprocessor.local", 1181); // PhotonVision Primary Stream
-      edu.wpi.first.net.PortForwarder.add(5805, "rubik-pi-coprocessor.local", 1182); // PhotonVision Secondary Stream
-      System.out.println("[PortForwarder] Coprocessor ports 5801-5805 successfully forwarded.");
-    } catch (Throwable t) {
-      System.out.println("[PortForwarder] Notice: Port forwarding setup encountered: " + t.getMessage());
+    // The desktop conveniences below (Elastic layout WebServer on 5800, coprocessor
+    // port forwards on 5801-5805) exist for a human watching a dashboard. A
+    // headless score-rig match has no dashboard, and running N of them in parallel
+    // on one machine made every worker fight for the same six ports -- producing
+    // bind failures, degraded NT, and loop overruns that can perturb a match. They
+    // are also strictly real-robot/coplay wiring. Skipped when headless; the rig
+    // reads its results from the JSONL, not from a browser.
+    if (!frc.robot.Sim.HeadlessMatchDriver.isHeadless()) {
+      // Start WPILib WebServer to serve elastic-layout.json for Elastic Dashboard remote loading (Ctrl+D)
+      try {
+        edu.wpi.first.net.WebServer.start(5800, edu.wpi.first.wpilibj.Filesystem.getDeployDirectory().getPath());
+      } catch (Throwable t) {
+        System.out.println("[WebServer] Notice: Elastic layout WebServer on port 5800 could not be started: " + t.getMessage());
+      }
+
+      // The PortForwarder Trick: Forward coprocessor web interfaces and camera streams over USB tether (172.22.11.2)
+      try {
+        edu.wpi.first.net.PortForwarder.add(5801, "limelight-front.local", 5800);      // Limelight Web Dashboard
+        edu.wpi.first.net.PortForwarder.add(5802, "limelight-front.local", 5802);      // Limelight Camera Stream
+        edu.wpi.first.net.PortForwarder.add(5803, "rubik-pi-coprocessor.local", 5800); // PhotonVision Web Dashboard
+        edu.wpi.first.net.PortForwarder.add(5804, "rubik-pi-coprocessor.local", 1181); // PhotonVision Primary Stream
+        edu.wpi.first.net.PortForwarder.add(5805, "rubik-pi-coprocessor.local", 1182); // PhotonVision Secondary Stream
+        System.out.println("[PortForwarder] Coprocessor ports 5801-5805 successfully forwarded.");
+      } catch (Throwable t) {
+        System.out.println("[PortForwarder] Notice: Port forwarding setup encountered: " + t.getMessage());
+      }
+    } else {
+      System.out.println("[Headless] skipping Elastic WebServer (5800) and coprocessor port forwards (5801-5805)");
+      // ... and drop the NetworkTables *server* too. RobotBase.startRobot() has
+      // already called startServer() on the default instance, so this process is
+      // listening on NT3 1735 / NT4 5810. That is the one contended port pair with
+      // a real data path: the workers that lose the bind fall back to client mode.
+      // A headless match has no dashboard, so nothing needs a server. NT is still
+      // used in-process -- VisionSim writes the photonvision table that
+      // VisionIOSim reads, and SmartDashboard/AlertManager need the instance --
+      // so only the listener goes away, not the topics.
+      //
+      // startLocal() after stopServer() is belt and braces: it makes any *later*
+      // startServer/startClient call a no-op, so this worker can never become an
+      // NT client and attach to a sibling worker's namespace. It has no effect on
+      // the already-started server, which is why stopServer() comes first.
+      //
+      // The marker line is load-bearing: tools/score/sweep.ps1 requires it in each
+      // worker's output and degrades the row if it is absent, so "the port fix
+      // silently stopped working" fails the rig instead of passing quietly.
+      try {
+        edu.wpi.first.networktables.NetworkTableInstance nt =
+                edu.wpi.first.networktables.NetworkTableInstance.getDefault();
+        nt.stopServer();
+        nt.startLocal();
+        System.out.println("[Headless] NT server stopped (no 1735/5810 listener)");
+      } catch (Throwable t) {
+        System.out.println("[Headless] NT server stop FAILED: " + t);
+      }
     }
 
     // Fast 100Hz odometry polling scheduled with a 5ms timeslot offset from the 20ms main loop
@@ -176,14 +221,17 @@ public class Robot extends LoggedRobot {
    */
   @Override
   public void robotPeriodic() {
+    // Inert unless a headless match armed it (one volatile read); see LoopHealth.
+    long loopStart = frc.robot.Sim.LoopHealth.begin();
     SubsystemManager.updateSubsystems();
     SubsystemManager.logSubsystems();
     AlertManager.update();
-    
+
     // Only update test mode when in test mode or when test mode switch is explicitly active
     if (testMode != null && (DriverStation.isTest() || testMode.isEnabled())) {
       testMode.update();
     }
+    frc.robot.Sim.LoopHealth.end(loopStart);
   }
 
   /**
@@ -211,7 +259,18 @@ public class Robot extends LoggedRobot {
       // queuing poses on every autonomous enable.
       AIRobotSim.getInstance().resetForMatchStart();
     }
-    m_autoSelected = Dashboard.getInstance().getAutoChooser().getSelected();
+    // A headless score-rig match must not take an input from NetworkTables. The
+    // chooser is an NT-backed SendableChooser, and WPILib opens the NT4 server
+    // (5810) before robotInit, so a dashboard on the machine can write this value
+    // during the window before robotInit stops the server -- and ntcore keeps the
+    // written value, which would then be read here, ~15 s into the match. The
+    // training scenario does not use the player's auto mission anyway, so pin it
+    // and remove the variable. tools/score/sweep.ps1 refuses to start while a
+    // dashboard is running and degrades any row that saw a client connect; this
+    // is the third layer, for the case where one attaches after all.
+    m_autoSelected = frc.robot.Sim.HeadlessMatchDriver.isHeadless()
+            ? "Do Nothing (pinned: headless rig does not read NT)"
+            : Dashboard.getInstance().getAutoChooser().getSelected();
     System.out.println("Auto selected: " + m_autoSelected);
 
     mAutoMissionExecutor.stop();

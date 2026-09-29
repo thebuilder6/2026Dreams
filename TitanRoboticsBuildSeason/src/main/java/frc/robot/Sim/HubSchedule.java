@@ -123,6 +123,94 @@ public class HubSchedule {
     }
 
     /**
+     * The opponent hub's activity, derived from <em>our own</em> hub state plus
+     * the phase. This is the only correct way to infer the opponent hub from a
+     * single observed hub, because the two are complementary <b>only</b> during
+     * SHIFT 1-4:
+     *
+     * <ul>
+     *   <li>AUTO, TRANSITION and ENDGAME: <b>both</b> hubs are live, so the
+     *       opponent is active even though ours is.</li>
+     *   <li>SHIFT 1-4: exactly one hub is live, so the opponent is active
+     *       precisely when ours is not.</li>
+     *   <li>DONE: both hubs are dead.</li>
+     * </ul>
+     *
+     * <p>Callers that invert the observed hub state with {@code !myHubActive}
+     * get this wrong for all of AUTO, TRANSITION and ENDGAME -- that is 20 s of
+     * autonomous plus the entire 30 s endgame, during which a real robot would
+     * believe the opponent hub is dead. Prefer reading the opponent hub
+     * directly from {@link #isHubActiveNow(boolean)} when sim state is
+     * available; use this when all you have is one hub and a match clock.
+     *
+     * <p>Drift against {@link #isHubActive} is pinned by
+     * {@code HubScheduleTest.opponentHubDerivedFromOwnHubAgreesWithTheTable}
+     * for every phase, seed and alliance.
+     *
+     * @param myHubActive observed activity of the querying alliance's own hub
+     * @param phase       current match segment
+     */
+    /**
+     * The phase that follows {@code phase} as the match clock runs down, or the
+     * same phase when there is no further flip.
+     *
+     * <p>This follows <b>time order</b>, not the shift cycle. Per Table 6-2 the
+     * boundaries are SHIFT1_END 105, SHIFT2_END 80, SHIFT3_END 55, SHIFT4_END 30,
+     * so a match runs SHIFT1, SHIFT2, SHIFT3, SHIFT4, then ENDGAME. SHIFT4 is
+     * therefore followed by ENDGAME, <b>not</b> by SHIFT1: wrapping SHIFT4 to
+     * SHIFT1 was wrong, because it told a bot the shift pattern resumes when in
+     * fact both hubs go live for the endgame.
+     *
+     * <p>AUTO has no predecessor, and TRANSITION/ENDGAME have no successor: once
+     * both hubs are live for a stretch, no later phase turns one off, so the
+     * successor is the phase itself. DONE is terminal.
+     *
+     * <p>Callers use this to populate {@code WorldState}'s after-shift hub flags,
+     * which the {@code SHUTTLE_PASS} gate reads, so the distinction is
+     * behavioural, not cosmetic.
+     */
+    public static Phase nextPhase(Phase phase) {
+        return switch (phase) {
+            case SHIFT1 -> Phase.SHIFT2;
+            case SHIFT2 -> Phase.SHIFT3;
+            case SHIFT3 -> Phase.SHIFT4;
+            case SHIFT4 -> Phase.ENDGAME;
+            default -> phase;   // AUTO, TRANSITION, ENDGAME, DONE
+        };
+    }
+
+    /**
+     * Whether {@code allianceIsRed}'s hub is active during the phase that follows
+     * {@code phase}. This is the "where can I score next" half of the shift
+     * picture that {@code WorldState} did not previously carry.
+     *
+     * <p>Pure, so it is unit-testable and safe to call from the decision layer.
+     * The seed is the same value used everywhere else, so this stays consistent
+     * with {@link #isHubActive}.
+     */
+    public static boolean isHubActiveAfterNextPhase(boolean allianceIsRed, Phase phase,
+            char inactiveFirstSeed) {
+        return isHubActive(allianceIsRed, nextPhase(phase), inactiveFirstSeed);
+    }
+
+    public static boolean isOpponentHubActiveGivenMineIs(boolean myHubActive, Phase phase) {
+        switch (phase) {
+            case AUTO:
+            case TRANSITION:
+            case ENDGAME:
+                return true;
+            case DONE:
+                return false;
+            case SHIFT1:
+            case SHIFT2:
+            case SHIFT3:
+            case SHIFT4:
+            default:
+                return !myHubActive;
+        }
+    }
+
+    /**
      * Advances schedule state; call every sim tick with the current match clock.
      * Deactivation edges are stamped so {@link #isScoringActive} can honor the
      * 3-second processing grace.

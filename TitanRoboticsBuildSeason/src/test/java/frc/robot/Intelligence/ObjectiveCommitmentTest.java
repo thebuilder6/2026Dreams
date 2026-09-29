@@ -149,11 +149,11 @@ class ObjectiveCommitmentTest {
                 new ChassisSpeeds(), 120.0, true, true, 120.0, false, false);
 
         AIActionIntent first = JevDecisionEngine.getInstance()
-                .evaluatePolicy(w, MatchKnowledge.unknown(), Archetype.AUTONOMOUS_CYCLER);
+                .evaluatePolicy(w, ObservedKnowledge.selfOnly(), Archetype.AUTONOMOUS_CYCLER);
         for (int i = 0; i < 10; i++) {
             assertEquals(first.objective(),
                     JevDecisionEngine.getInstance().evaluatePolicy(
-                            w, MatchKnowledge.unknown(), Archetype.AUTONOMOUS_CYCLER).objective(),
+                            w, ObservedKnowledge.selfOnly(), Archetype.AUTONOMOUS_CYCLER).objective(),
                     "no latch must mean a pure function of the snapshot");
         }
     }
@@ -169,12 +169,12 @@ class ObjectiveCommitmentTest {
                 new ChassisSpeeds(), 120.0, false, true, 8.0, false, false);
 
         AIActionIntent raw = JevDecisionEngine.getInstance()
-                .evaluatePolicy(w, MatchKnowledge.unknown(), Archetype.AUTONOMOUS_CYCLER);
+                .evaluatePolicy(w, ObservedKnowledge.selfOnly(), Archetype.AUTONOMOUS_CYCLER);
         ObjectiveCommitment latch = new ObjectiveCommitment();
         StrategicObjective first = null;
         for (int i = 0; i < 30; i++) {
             StrategicObjective o = JevDecisionEngine.getInstance().evaluatePolicy(
-                    w, MatchKnowledge.unknown(), Archetype.AUTONOMOUS_CYCLER,
+                    w, ObservedKnowledge.selfOnly(), Archetype.AUTONOMOUS_CYCLER,
                     null, null, latch).objective();
             if (first == null) first = o;
             assertEquals(first, o, "latched selection must be stable");

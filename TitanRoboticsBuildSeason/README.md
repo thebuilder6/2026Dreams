@@ -1,8 +1,8 @@
----
+﻿---
 title: Platform README
 audience: [human, ai]
 owner: programming-leads
-last_verified: 2026-09-28
+last_verified: 2026-09-29
 status: authoritative
 ---
 
@@ -27,7 +27,7 @@ $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 ./gradlew compileJava --offline
 ```
 
-### 2. Tests (JUnit 5 — 35 files / 309 tests as of 2026-09-28)
+### 2. Tests (JUnit 5 — 36 files / 361 tests as of 2026-09-29; green on clean `--rerun-tasks` re-run, see `KNOWN_ISSUES.md` §A)
 ```powershell
 ./gradlew test --offline
 # Single class: ./gradlew test --offline --tests "frc.robot.Sim.JevDecisionEngineTest"
@@ -52,3 +52,4 @@ Launch the WPILib SimGUI with our full `IronMaple` arena, simulated game pieces,
 - 🎮 [Operator's Guide](OPERATORS_GUIDE.md): Driver and operator controls, Glide Mode navigation, and match rules.
 - 🕹️ [Simulation Setup & User Guide](SIMULATION_GUIDE.md): Step-by-step setup for SimGUI, Elastic Dashboard, AdvantageScope, and AI sparring.
 - 🧪 [Testing & Diagnostics Guide](src/main/java/frc/robot/Test/README.md): Pre-flight checks, SysId characterization, and tuning routines.
+

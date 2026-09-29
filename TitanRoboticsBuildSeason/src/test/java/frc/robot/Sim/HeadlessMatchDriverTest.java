@@ -2,6 +2,7 @@ package frc.robot.Sim;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -165,7 +166,8 @@ class HeadlessMatchDriverTest {
                         new double[] {38.5, 44.1, 29.7},
                         new double[] {0.6, 1.1, 0.0},
                         new int[] {0, 1, 0}, new int[] {0, 1, 0}),
-                "logs/headless_3v3_seed2026_x.wpilog", "reports/headless_match_seed2026_x.md");
+                "logs/headless_3v3_seed2026_x.wpilog", "reports/headless_match_seed2026_x.md",
+                new HeadlessMatchDriver.MatchHealth(4, 63.0));
     }
 
     @Test
@@ -210,8 +212,54 @@ class HeadlessMatchDriverTest {
         assertTrue(line.contains("\"blueBots\":"));
         assertTrue(line.contains("\"maxContiguousStallSec\":[1.4,0.8,0.0]"));
         assertTrue(line.contains("\"archetype\":[\"AUTONOMOUS_CYCLER\",\"ADAPTIVE_COMPETITOR\",\"DEFENSE_BULLY\"]"));
+        // Loop health, so a load-perturbed match is visible in the data.
+        assertTrue(line.contains("\"health\":{"));
+        assertTrue(line.contains("\"loopOverruns\":4"));
+        assertTrue(line.contains("\"maxRobotPeriodicMs\":63.0"));
         // Single line: a JSONL row must never contain a raw newline.
         assertFalse(line.contains("\n"));
+    }
+
+    @Test
+    void unmeasuredHealthIsSentinelledNotZeroed() {
+        // A match that never armed LoopHealth must report -1, not 0. Reading a
+        // missing measurement as "zero overruns" is how a v1 row would have been
+        // mistaken for a clean one.
+        String line = HeadlessMatchDriver.toJsonLine(withHealth(
+                HeadlessMatchDriver.MatchHealth.UNKNOWN));
+        assertTrue(line.contains("\"loopOverruns\":-1"));
+        assertTrue(line.contains("\"maxRobotPeriodicMs\":-1.0"));
+    }
+
+    @Test
+    void reportShowsLoopHealth() {
+        String report = HeadlessMatchDriver.formatReport(sampleResult());
+        assertTrue(report.contains("Loop health"));
+        assertTrue(report.contains("63 ms"));
+    }
+
+    @Test
+    void reportSaysUnmeasuredRatherThanShowingZero() {
+        String report = HeadlessMatchDriver.formatReport(withHealth(
+                HeadlessMatchDriver.MatchHealth.UNKNOWN));
+        assertTrue(report.contains("Not measured"));
+        assertFalse(report.contains("Not measured") && report.contains("0 ms"));
+    }
+
+    /** The same fixture with a different health block. */
+    private static HeadlessMatchDriver.MatchResult withHealth(
+            HeadlessMatchDriver.MatchHealth health) {
+        HeadlessMatchDriver.MatchResult r = sampleResult();
+        return new HeadlessMatchDriver.MatchResult(
+                r.seed(), r.durationSec(), r.autoSec(), r.fieldFuelCount(), r.winner(),
+                r.blueTotal(), r.redTotal(), r.margin(), r.blueAutoFuel(), r.redAutoFuel(),
+                r.blueTeleopFuel(), r.redTeleopFuel(), r.blueClimb(), r.redClimb(),
+                r.blueClimbCount(), r.redClimbCount(), r.blueFouls(), r.redFouls(),
+                r.bluePenaltyPoints(), r.redPenaltyPoints(), r.blueWastedFuel(), r.redWastedFuel(),
+                r.botFuelScored(), r.allyFuelScored(), r.playerBlueFuel(), r.playerRedFuel(),
+                r.blueReconciliationResidual(), r.redReconciliationResidual(),
+                r.blueUnattributedFuel(), r.redUnattributedFuel(), r.variant(), r.replica(),
+                r.redBotMetrics(), r.blueBotMetrics(), r.logPath(), r.reportPath(), health);
     }
 
     @Test
@@ -252,6 +300,136 @@ class HeadlessMatchDriverTest {
     void negativeReplicaIsRejected() {
         System.setProperty("frc.headless.replica", "-1");
         assertThrows(IllegalArgumentException.class, () -> HeadlessMatchDriver.parseOptions());
+    }
+
+    @Test
+    void logTagDistinguishesVariantsAndReplicas() {
+        // A parallel sweep starts both replicas of a seed in the same second, so
+        // the replay filename must differ or they overwrite each other.
+        assertEquals("", HeadlessMatchDriver.logTag(
+                HeadlessMatchDriver.parseOptions()));
+
+        System.setProperty("frc.headless.variant", "batch18");
+        assertEquals("_batch18", HeadlessMatchDriver.logTag(
+                HeadlessMatchDriver.parseOptions()));
+
+        System.setProperty("frc.headless.replica", "1");
+        assertEquals("_batch18_r1", HeadlessMatchDriver.logTag(
+                HeadlessMatchDriver.parseOptions()));
+
+        System.setProperty("frc.headless.variant", "baseline");
+        assertEquals("_r1", HeadlessMatchDriver.logTag(
+                HeadlessMatchDriver.parseOptions()));
+    }
+
+    @Test
+    void logTagSanitisesVariantNames() {
+        System.setProperty("frc.headless.variant", "a/b c");
+        assertEquals("_a_b_c", HeadlessMatchDriver.logTag(
+                HeadlessMatchDriver.parseOptions()));
+    }
+
+    @Test
+    void reportNameCarriesTheSameTagAsTheReplayLog() {
+        // The replay log was tagged after a 16-match baseline wrote 8 wpilogs; the
+        // report was missed and two same-seed replicas still overwrote each other.
+        System.setProperty("frc.headless.variant", "batch18");
+        System.setProperty("frc.headless.replica", "1");
+        HeadlessMatchDriver.Options o = HeadlessMatchDriver.parseOptions();
+        assertEquals("headless_match_seed2026_batch18_r1_20260928-190000.md",
+                HeadlessMatchDriver.reportFileName(o, "20260928-190000"));
+    }
+
+    @Test
+    void reportNamesOfReplicasDiffer() {
+        System.setProperty("frc.headless.replica", "0");
+        String r0 = HeadlessMatchDriver.reportFileName(
+                HeadlessMatchDriver.parseOptions(), "20260928-190000");
+        System.setProperty("frc.headless.replica", "1");
+        String r1 = HeadlessMatchDriver.reportFileName(
+                HeadlessMatchDriver.parseOptions(), "20260928-190000");
+        assertNotEquals(r0, r1,
+                "two replicas finishing in the same second must not share a report path");
+    }
+
+    @Test
+    void loopHealthIsInertUntilArmed() {
+        LoopHealth.disarm();
+        assertFalse(LoopHealth.isArmed());
+        assertEquals(-1, LoopHealth.overrunCount());
+        assertEquals(-1.0, LoopHealth.maxEpochSec(), 1e-9);
+        // A disarmed begin()/end() pair must not arm anything or count anything.
+        LoopHealth.end(LoopHealth.begin());
+        assertFalse(LoopHealth.isArmed());
+        assertEquals(-1, LoopHealth.overrunCount());
+    }
+
+    @Test
+    void loopHealthDiscardsStartupWarmUp() {
+        // The first second of a match runs one-time init inside robotPeriodic
+        // (AprilTag layout, MapleSim arena, AdvantageKit structs, JIT). That epoch
+        // measured 0.81 s at 12-wide and 0.32-0.42 s at 6-wide while every later
+        // epoch was far smaller, so counting it would fail the gate even on an
+        // idle machine. Warm-up epochs must not register.
+        LoopHealth.arm();
+        try {
+            for (int i = 0; i < LoopHealth.WARMUP_EPOCHS; i++) {
+                long t = LoopHealth.begin();
+                Thread.sleep(2);
+                LoopHealth.end(t);
+            }
+            assertEquals(0, LoopHealth.measuredEpochs());
+            assertEquals(0, LoopHealth.overrunCount());
+            assertEquals(0.0, LoopHealth.maxEpochSec(), 1e-9,
+                    "a slow warm-up epoch must not become the reported maximum");
+
+            // Past warm-up, epochs are counted again.
+            long t = LoopHealth.begin();
+            Thread.sleep(2);
+            LoopHealth.end(t);
+            assertEquals(1, LoopHealth.measuredEpochs());
+            assertTrue(LoopHealth.maxEpochSec() > 0.0);
+            assertTrue(LoopHealth.maxEpochSec() < LoopHealth.PERIOD_SEC,
+                    "a sub-period epoch must not register as an overrun");
+            assertEquals(0, LoopHealth.overrunCount());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError("interrupted", e);
+        } finally {
+            LoopHealth.disarm();
+        }
+    }
+
+    @Test
+    void loopHealthArmResetsCounters() {
+        LoopHealth.arm();
+        try {
+            for (int i = 0; i < LoopHealth.WARMUP_EPOCHS + 5; i++) {
+                LoopHealth.end(LoopHealth.begin());
+            }
+            assertEquals(5, LoopHealth.measuredEpochs());
+            LoopHealth.arm();
+            assertEquals(0, LoopHealth.measuredEpochs());
+            assertEquals(0, LoopHealth.overrunCount());
+        } finally {
+            LoopHealth.disarm();
+        }
+    }
+
+    @Test
+    void matchHealthCaptureReflectsArmedState() {
+        LoopHealth.disarm();
+        assertEquals(HeadlessMatchDriver.MatchHealth.UNKNOWN,
+                HeadlessMatchDriver.MatchHealth.capture());
+        LoopHealth.arm();
+        try {
+            HeadlessMatchDriver.MatchHealth captured =
+                    HeadlessMatchDriver.MatchHealth.capture();
+            assertEquals(0, captured.loopOverruns());
+            assertEquals(0.0, captured.maxRobotPeriodicMs(), 1e-9);
+        } finally {
+            LoopHealth.disarm();
+        }
     }
 
     @Test

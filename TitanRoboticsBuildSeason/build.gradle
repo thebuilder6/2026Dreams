@@ -108,11 +108,25 @@ if (project.hasProperty('headless')) {
     for (String simTaskName : ['simulateJavaDebug', 'simulateJavaRelease']) {
         tasks.matching { it.name == simTaskName }.configureEach {
             systemProperty 'frc.headless', 'true'
-            // Opt-in Jev shift clock (frc.jev.realShiftClock). OFF by default:
-            // a real timeUntilHubShift lets STAGE_STANDOFF outrank
-            // VACUUM_MIDFIELD, and the measured result was Blue scoring ZERO
-            // in teleop. Enable with -PrealShiftClock together with the
-            // staging-priority fix, never on its own.
+            // Opt-in Jev shift clock (frc.jev.realShiftClock). Still OFF by
+            // default, but for a narrower reason than before.
+            //
+            // The old justification was "a real timeUntilHubShift lets
+            // STAGE_STANDOFF outrank VACUUM_MIDFIELD, and the measured result
+            // was Blue scoring ZERO in teleop", which implied the staging
+            // constants were wrong. They are not: with a working clock, staging
+            // (0.95) beating vacuum (0.92) inside the 3.5s window is correct
+            // behaviour, and mid-shift vacuum still wins. Pinned by
+            // JevDecisionEngineTest.testStagingBeatsHarvestingOnlyNearShiftBoundary.
+            // No constant retune is warranted.
+            //
+            // What actually blocked the flip was that the measurement behind it
+            // was confounded -- it predates the training-archetype override (Blue
+            // had no defender at all), the per-bot fuel attribution leak, and the
+            // Common Random Numbers work, and a single run of a sim that is
+            // low-variance-not-reproducible cannot settle this. Re-measure with
+            // tools/score/sweep.ps1 (>=5 seeds x >=2 replicas) on the current
+            // binary, then flip.
             systemProperty 'frc.jev.realShiftClock',
                     project.hasProperty('realShiftClock') ? 'true' : 'false'
             for (String key : ['seed', 'durationSec', 'autoSec', 'disabledGapSec',
@@ -258,9 +272,29 @@ task(replayWatch, type: JavaExec) {
 task generateBuildConstants {
     def buildConstantsFile = file("src/main/java/frc/robot/BuildConstants.java")
     def deployJson = file("src/main/deploy/git_info.json")
+
+    // A truncated generated file must never look up to date. The previous check
+    // was `exists() && exists()`, so a build killed mid-write left a half-written
+    // source file that every later build skipped -- and it reads as a compile
+    // error with no obvious cause. The `outToDateWhen` trap flagged in
+    // KNOWN_ISSUES.md ("an interrupted generateBuildConstants leaves a
+    // half-written BuildConstants.java") was this, not a Gradle bug.
+    // These are structural sentinels, not a parse: both files are generated, so
+    // their first and last meaningful lines are fixed.
+    def buildConstantsIntact = { f ->
+        if (!f.exists()) return false
+        def t = f.getText("UTF-8").trim()
+        t.contains("public final class BuildConstants") && t.endsWith("}")
+    }
+    def deployJsonIntact = { f ->
+        if (!f.exists()) return false
+        def t = f.getText("UTF-8").trim()
+        t.startsWith("{") && t.endsWith("}")
+    }
+
     outputs.file buildConstantsFile
     outputs.file deployJson
-    outputs.upToDateWhen { buildConstantsFile.exists() && deployJson.exists() }
+    outputs.upToDateWhen { buildConstantsIntact(buildConstantsFile) && deployJsonIntact(deployJson) }
 
     doLast {
         def getGitCmd = { cmd ->
@@ -285,8 +319,35 @@ task generateBuildConstants {
         def buildDate = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss z").format(new Date())
         def robotName = "TitanRobotics2026"
 
-        buildConstantsFile.parentFile.mkdirs()
-        buildConstantsFile.text = """package frc.robot;
+        // Atomic replace. `target.text = ...` truncates in place, so ANY
+        // interruption (a stray taskkill, a killed agent session, a full disk)
+        // leaves a partial file in src/main/java. Write a sibling temp file and
+        // make one atomic move instead: the target is either the old content or
+        // the new content, never a prefix of it.
+        def writeAtomic = { File target, String content ->
+            target.parentFile.mkdirs()
+            def tmp = new File(target.parentFile, target.name + ".tmp")
+            try {
+                tmp.setText(content, "UTF-8")
+                try {
+                    java.nio.file.Files.move(
+                        tmp.toPath(), target.toPath(),
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                        java.nio.file.StandardCopyOption.ATOMIC_MOVE)
+                } catch (java.nio.file.AtomicMoveNotSupportedException ignored) {
+                    // Some network / AV-backed filesystems refuse ATOMIC_MOVE.
+                    // REPLACE_EXISTING is still a single operation rather than an
+                    // in-place truncate, so it degrades rather than breaking.
+                    java.nio.file.Files.move(
+                        tmp.toPath(), target.toPath(),
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+                }
+            } finally {
+                if (tmp.exists()) { tmp.delete() }
+            }
+        }
+
+        writeAtomic(buildConstantsFile, """package frc.robot;
 
 /**
  * Automatically generated file containing build and git version information.
@@ -302,10 +363,9 @@ public final class BuildConstants {
 
     private BuildConstants() {}
 }
-"""
+""")
 
-        deployJson.parentFile.mkdirs()
-        deployJson.text = """{
+        writeAtomic(deployJson, """{
   "robotName": "${robotName}",
   "gitSha": "${gitSha}",
   "gitBranch": "${gitBranch}",
@@ -313,7 +373,7 @@ public final class BuildConstants {
   "buildDate": "${buildDate}",
   "dirty": ${isDirty}
 }
-"""
+""")
     }
 }
 

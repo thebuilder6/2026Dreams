@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>StaticPathfinder Roadmap + Trench Corridor Overlap</title>
+<style>
+  :root{
+    --bg:#0e1116; --panel:#161b22; --line:#30363d; --ink:#e6edf3; --dim:#8b949e;
+    --edge:#3fb950; --node:#58a6ff; --obs:#f85149; --inflate:#d29922;
+    --trench:#a371f7; --usable:#3fb950; --warn:#f0883e;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:13px/1.55 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif}
+  header{padding:14px 20px;border-bottom:1px solid var(--line);background:var(--panel)}
+  h1{margin:0;font-size:16px;letter-spacing:.2px}
+  header p{margin:4px 0 0;color:var(--dim);font-size:12px;max-width:100ch}
+  .wrap{display:grid;grid-template-columns:minmax(0,1fr) 372px;gap:0;height:calc(100vh - 66px)}
+  .canvas{padding:16px;overflow:auto}
+  aside{border-left:1px solid var(--line);background:var(--panel);padding:16px;overflow:auto}
+  h2{font-size:11px;text-transform:uppercase;letter-spacing:.9px;color:var(--dim);
+     margin:20px 0 8px}
+  h2:first-child{margin-top:0}
+  label.sw{display:flex;align-items:center;gap:8px;margin:5px 0;cursor:pointer;user-select:none}
+  label.sw input{accent-color:var(--node);cursor:pointer}
+  .k{display:flex;align-items:center;gap:8px;margin:4px 0;font-size:12px}
+  .dot{width:11px;height:11px;border-radius:3px;flex:0 0 auto}
+  table{width:100%;border-collapse:collapse;font-size:11.5px;margin:4px 0}
+  th{text-align:left;color:var(--dim);font-weight:600;border-bottom:1px solid var(--line);
+     padding:4px 6px 4px 0}
+  td{padding:3px 6px 3px 0;border-bottom:1px solid #21262d}
+  td.num{text-align:right;font-variant-numeric:tabular-nums}
+  code{background:#0d1117;border:1px solid var(--line);border-radius:4px;padding:1px 5px;
+       font-size:11px}
+  #tip{position:fixed;pointer-events:none;background:#010409f0;border:1px solid var(--line);
+       border-radius:6px;padding:6px 9px;font-size:11.5px;display:none;z-index:9;white-space:pre}
+  .note{color:var(--dim);font-size:11.5px;margin:6px 0 0}
+  .warn{color:var(--warn)}
+  .ok{color:var(--edge)}
+  .bad{color:#ff7b72}
+  .fig{margin:10px 0 4px;padding:9px 11px;background:#0d1117;border:1px solid var(--line);
+       border-left:3px solid var(--warn);border-radius:0 5px 5px 0;font-size:12px}
+  .fig.ok{border-left-color:var(--edge)}
+  .fig.bad{border-left-color:#ff7b72}
+  footer{padding:8px 20px;border-top:1px solid var(--line);color:var(--dim);font-size:11px}
+</style>
+</head>
+<body>
+<header>
+  <h1>StaticPathfinder roadmap (34 nodes) &mdash; and the trench corridor / exclusion-zone overlap</h1>
+  <p>Field 16.541 &times; 8.069 m, Blue-origin. Bumper inflation 0.45 m (<code>FieldMap.ROBOT_RADIUS</code>)
+     applied once. All geometry transcribed from
+     <code>Navigation/FieldMap.java</code> and <code>Navigation/StaticPathfinder.java</code>;
+     <code>tools/nav/verify_roadmap.py</code> fails if this page drifts from source.</p>
+</header>
+
+<div class="wrap">
+  <div class="canvas">
+    <svg id="field" viewBox="-1.1 -1.1 18.75 10.3" width="100%"></svg>
+  </div>
+  <aside>
+    <h2>Layers</h2>
+    <label class="sw"><input type="checkbox" id="l-obs" checked> Physical obstacles (AABB)</label>
+    <label class="sw"><input type="checkbox" id="l-inflate" checked> Inflated +0.45 m (planning footprint)</label>
+    <label class="sw"><input type="checkbox" id="l-band" checked> Trench low-clearance band</label>
+    <label class="sw"><input type="checkbox" id="l-usable" checked> Legally drivable centre band</label>
+    <label class="sw"><input type="checkbox" id="l-edges" checked> Roadmap edges (A*)</label>
+    <label class="sw"><input type="checkbox" id="l-nodes" checked> Roadmap nodes</label>
+    <label class="sw"><input type="checkbox" id="l-labels" checked> Node ids</label>
+    <label class="sw"><input type="checkbox" id="l-zoom" checked> Zoom: Blue Top trench detail</label>
+
+    <h2>Legend</h2>
+    <div class="k"><span class="dot" style="background:var(--node)"></span>Roadmap node</div>
+    <div class="k"><span class="dot" style="background:var(--edge)"></span>Edge, line-of-sight validated at search time</div>
+    <div class="k"><span class="dot" style="background:var(--obs)"></span>Hub core / ramp / trench wall / tower post</div>
+    <div class="k"><span class="dot" style="background:var(--inflate);opacity:.6"></span>Inflated planning footprint</div>
+    <div class="k"><span class="dot" style="background:var(--trench);opacity:.45"></span>Low-clearance band (<code>isLowClearance</code>)</div>
+    <div class="k"><span class="dot" style="background:var(--usable);opacity:.75"></span>Legally drivable centre band</div>
+    <div class="k"><span class="dot" style="background:#ff7b72"></span>Blocked: centre inside inflated footprint</div>
+
+    <h2>Does the overlap cause problems?</h2>
+    <div class="fig ok"><b>No &mdash; and the overlap is structural, not a bug.</b>
+      The low-clearance band is anchored to the <i>raw</i> wall face
+      (<code>TOP_TRENCH_MIN_Y = NORTH_CENTER_Y + WALL_Y_LEN/2 = 6.7903</code>), so the
+      0.45 m inflation necessarily intrudes 0.45 m into it. That is inherent to defining
+      a clearance zone on an un-inflated face, and is harmless here: it shrinks the
+      drivable band rather than making anything unreachable.</div>
+    <div class="fig"><b>But the band is narrower than the controller's cross-track gate.</b>
+      Usable centre band is <b>0.3787 m</b> wide; <code>TrajectoryController</code> advances
+      waypoints at cross-track &lt; <b>0.45 m</b>. A robot shoved 0.18&ndash;0.45 m off the lane
+      centreline therefore passes the gate while its centre is <i>already inside the inflated
+      footprint</i>. The planner self-corrects (escape waypoint, <code>path=3</code> in the probe),
+      so the cost is detour / potential lane re-entry churn &mdash; not a stall.</div>
+
+    <h2>Measured clearances (m)</h2>
+    <table>
+      <thead><tr><th>Quantity</th><th class="num">Top</th><th class="num">Bottom</th></tr></thead>
+      <tbody>
+        <tr><td>Raw wall face</td><td class="num">6.7903</td><td class="num">1.2787</td></tr>
+        <tr><td>Inflated face</td><td class="num">7.2403</td><td class="num">0.8287</td></tr>
+        <tr><td>Lane centreline</td><td class="num">7.4200</td><td class="num">0.6500</td></tr>
+        <tr><td>Lane &rarr; inflated wall</td><td class="num">0.1797</td><td class="num">0.1787</td></tr>
+        <tr><td>Lane &rarr; perimeter</td><td class="num">0.1990</td><td class="num">0.1990</td></tr>
+        <tr><td><b>Usable band width</b></td><td class="num"><b>0.3787</b></td><td class="num"><b>0.3787</b></td></tr>
+        <tr><td>Overlap depth</td><td class="num">0.4500</td><td class="num">0.4500</td></tr>
+      </tbody>
+    </table>
+    <p class="note">Both trenches are symmetric, so the mirror rule holds &mdash; no
+      Blue/Red literal drift. <code>Blocked</code> flips at y = 7.2403 top / 0.8287 bottom;
+      the probe swept 0.05 m steps and every published node and tunnel waypoint stayed clear
+      (closest: node&nbsp;#6 at 0.2479 m, tunnel waypoint 3.50 at 0.1932 m).</p>
+
+    <h2>Node inventory</h2>
+    <table id="inv"><thead><tr><th>Group</th><th class="num">#</th></tr></thead><tbody></tbody></table>
+
+    <h2>Other measured findings</h2>
+    <p class="note"><b>Roadmap connectivity is not a stuck source.</b> A 444,550-case
+      (start, peer, goal) probe of <code>findPath</code> found <span class="ok">zero</span>
+      route failures, minimum segment clearance 0.476 m over 203,401 paths. No grid-fallback
+      planner is warranted.</p>
+    <p class="note"><b>The real stall was elsewhere</b> and is now fixed: the APF summed
+      repulsion into the nominal command and inverted the drive, while both stall detectors
+      were blind to the resulting sub-0.80 m/s crawl. See <code>StuckRecoveryTest</code> and
+      <code>KNOWN_ISSUES.md</code> §A.</p>
+  </aside>
+</div>
+
+<div id="tip"></div>
+
+<footer>
+  Regenerate after any <code>FieldMap</code> / <code>StaticPathfinder</code> geometry change:
+  <code>python TitanRoboticsBuildSeason/tools/nav/verify_roadmap.py</code>
+</footer>
+
+<script>
+const L = 16.541, W = 8.069, M = 0.45;
+
+/* ---- Obstacles, transcribed from FieldMap.Obstacles / TrenchWalls / Ramps ---- */
+const A = (name,x0,x1,y0,y1) => ({name,x0,x1,y0,y1});
+const HUB_HW = 0.5969, BHX = 4.6256, RHX = L - 4.6256, HY = 4.0346;
+const WALL_HX = 0.5969, WALL_HY = 0.1524;
+const TWCX = 4.61769, SCY = 1.43113, NCY = W - SCY;
+const RAMP_L = 1.8542;
+const OBS = [
+  A("Blue Hub Core",  BHX-HUB_HW, BHX+HUB_HW, HY-HUB_HW, HY+HUB_HW),
+  A("Red Hub Core",   RHX-HUB_HW, RHX+HUB_HW, HY-HUB_HW, HY+HUB_HW),
+  A("Blue North Trench Wall", TWCX-WALL_HX, TWCX+WALL_HX, NCY-WALL_HY, NCY+WALL_HY),
+  A("Blue South Trench Wall", TWCX-WALL_HX, TWCX+WALL_HX, SCY-WALL_HY, SCY+WALL_HY),
+  A("Red North Trench Wall",  (L-TWCX)-WALL_HX, (L-TWCX)+WALL_HX, NCY-WALL_HY, NCY+WALL_HY),
+  A("Red South Trench Wall",  (L-TWCX)-WALL_HX, (L-TWCX)+WALL_HX, SCY-WALL_HY, SCY+WALL_HY),
+  A("Blue North Ramp", BHX-HUB_HW, BHX+HUB_HW, HY+HUB_HW, HY+HUB_HW+RAMP_L),
+  A("Blue South Ramp", BHX-HUB_HW, BHX+HUB_HW, HY-HUB_HW-RAMP_L, HY-HUB_HW),
+  A("Red North Ramp",  RHX-HUB_HW, RHX+HUB_HW, HY+HUB_HW, HY+HUB_HW+RAMP_L),
+  A("Red South Ramp",  RHX-HUB_HW, RHX+HUB_HW, HY-HUB_HW-RAMP_L, HY-HUB_HW),
+  A("Blue Tower Post S", 1.062-0.045, 1.062+0.045, 3.315-0.02, 3.315+0.02),
+  A("Blue Tower Post N", 1.062-0.045, 1.062+0.045, 4.172-0.02, 4.172+0.02),
+  A("Red Tower Post S",  L-1.062-0.045, L-1.062+0.045, W-4.172-0.02, W-4.172+0.02),
+  A("Red Tower Post N",  L-1.062-0.045, L-1.062+0.045, W-3.315-0.02, W-3.315+0.02),
+];
+
+/* ---- Low-clearance bands: anchored to the RAW wall face (FieldMap.Trenches) ---- */
+const BTMX = 3.20, BTMX_MAX = 6.10;
+const TOP_MIN_Y = NCY + WALL_HY;          // 6.7903
+const BOT_MAX_Y = SCY - WALL_HY;          // 1.2787
+const TOP_LANE = 7.42, BOT_LANE = 0.65;
+const BANDS = [
+  {x0:BTMX,      x1:BTMX_MAX, y0:TOP_MIN_Y, y1:W,       lane:TOP_LANE, label:"Blue Top"},
+  {x0:BTMX,      x1:BTMX_MAX, y0:0,         y1:BOT_MAX_Y, lane:BOT_LANE, label:"Blue Bottom"},
+  {x0:L-BTMX_MAX, x1:L-BTMX, y0:TOP_MIN_Y, y1:W,       lane:TOP_LANE, label:"Red Top"},
+  {x0:L-BTMX_MAX, x1:L-BTMX, y0:0,         y1:BOT_MAX_Y, lane:BOT_LANE, label:"Red Bottom"},
+];
+
+/* ---- Drivable centre band: clear of inflated wall AND inflated perimeter ---- */
+const USABLE = BANDS.map(b => {
+  const lo = b.y0 === 0 ? M : b.y0 + M;
+  const hi = b.y1 === W ? W - M : b.y1 - M;
+  return {x0:b.x0, x1:b.x1, y0:lo, y1:hi, label:b.label};
+});
+
+/* ---- Roadmap nodes, transcribed from StaticPathfinder static block ---- */
+const N = [
+  [0,"Blue Alliance Center",2.40,4.035,"blue"],[1,"Blue Alliance Top",1.80,6.00,"blue"],
+  [2,"Blue Alliance Bottom",1.80,2.00,"blue"],[3,"Blue Hub Midfield Top Staging",6.20,5.75,"blue"],
+  [4,"Blue Hub Midfield Bot Staging",6.20,2.32,"blue"],
+  [5,"Blue Top Trench W",2.60,7.42,"trench"],[6,"Blue Top Trench In",3.40,7.42,"trench"],
+  [7,"Blue Top Trench Out",5.85,7.42,"trench"],[8,"Blue Top Trench E",6.65,7.42,"trench"],
+  [9,"Blue Bot Trench W",2.60,0.65,"trench"],[10,"Blue Bot Trench In",3.40,0.65,"trench"],
+  [11,"Blue Bot Trench Out",5.85,0.65,"trench"],[12,"Blue Bot Trench E",6.65,0.65,"trench"],
+  [13,"Midfield Top",8.27,6.20,"mid"],[14,"Midfield Center Top",8.27,4.90,"mid"],
+  [15,"Midfield Center Bot",8.27,3.17,"mid"],[16,"Midfield Bottom",8.27,1.90,"mid"],
+  [17,"Red Top Trench W",9.89,7.42,"trench"],[18,"Red Top Trench In",10.69,7.42,"trench"],
+  [19,"Red Top Trench Out",13.14,7.42,"trench"],[20,"Red Top Trench E",13.94,7.42,"trench"],
+  [21,"Red Bot Trench W",9.89,0.65,"trench"],[22,"Red Bot Trench In",10.69,0.65,"trench"],
+  [23,"Red Bot Trench Out",13.14,0.65,"trench"],[24,"Red Bot Trench E",13.94,0.65,"trench"],
+  [25,"Red Hub Midfield Top Staging",10.34,5.75,"red"],[26,"Red Hub Midfield Bot Staging",10.34,2.32,"red"],
+  [27,"Red Alliance Center",14.14,4.035,"red"],[28,"Red Alliance Top",14.74,6.00,"red"],
+  [29,"Red Alliance Bottom",14.74,2.00,"red"],
+  [30,"Blue Alliance Top Bypass",3.04,5.75,"blue"],[31,"Blue Alliance Bot Bypass",3.04,2.32,"blue"],
+  [32,"Red Alliance Top Bypass",13.50,5.75,"red"],[33,"Red Alliance Bot Bypass",13.50,2.32,"red"],
+];
+
+/* ---- Edges, transcribed from the connect(...) list ---- */
+const E = [
+  [1,0],[2,0],[1,5],[2,9],
+  [0,30],[1,30],[30,5],[0,31],[2,31],[31,9],
+  [5,6],[6,7],[7,8],[9,10],[10,11],[11,12],
+  [8,13],[8,3],[12,16],[12,4],[3,14],[4,15],[3,13],[4,16],
+  [13,14],[14,15],[15,16],
+  [13,17],[16,21],[17,25],[21,26],[14,25],[15,26],[13,25],[16,26],
+  [17,18],[18,19],[19,20],[21,22],[22,23],[23,24],
+  [20,28],[24,29],[28,27],[29,27],
+  [27,32],[28,32],[32,20],[27,33],[29,33],[33,24],
+];
+
+/* ---- planTunnelRoute waypoints (Blue, west->east) ---- */
+const TUNNEL = [2.90, 3.50, 5.75, 6.35];
+
+const COL = {blue:"#58a6ff", red:"#ff7b72", trench:"#a371f7", mid:"#e3b341"};
+const NS = "http://www.w3.org/2000/svg";
+const svg = document.getElementById("field");
+const tip = document.getElementById("tip");
+
+function el(tag, attrs, parent){
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+
+function distToInflated(ob, x, y){
+  const dx = Math.max(Math.max(ob.x0 - M - x, 0), x - (ob.x1 + M));
+  const dy = Math.max(Math.max(ob.y0 - M - y, 0), y - (ob.y1 + M));
+  return Math.hypot(dx, dy);
+}
+
+el("rect",{x:0,y:0,width:L,height:W,fill:"#12181f",stroke:"#3d444d","stroke-width":0.05},svg);
+for (let x=1;x<L;x++) el("line",{x1:x,y1:0,x2:x,y2:W,stroke:"#1b222b","stroke-width":0.012},svg);
+for (let y=1;y<W;y++) el("line",{x1:0,y1:y,x2:L,y2:y,stroke:"#1b222b","stroke-width":0.012},svg);
+
+const gBand   = el("g",{},svg);
+const gUsable = el("g",{},svg);
+const gInfl   = el("g",{},svg);
+const gObs    = el("g",{},svg);
+const gEdges  = el("g",{},svg);
+const gTunnel = el("g",{},svg);
+const gNodes  = el("g",{},svg);
+const gLabel  = el("g",{},svg);
+const gLegend = el("g",{},svg);
+const gZoom   = el("g",{},svg);
+
+BANDS.forEach(b=>el("rect",{x:b.x0,y:b.y0,width:b.x1-b.x0,height:b.y1-b.y0,
+  fill:"#a371f7",opacity:0.10,stroke:"#a371f7","stroke-opacity":0.5,
+  "stroke-dasharray":"0.12 0.1","stroke-width":0.02},gBand));
+
+USABLE.forEach(u=>el("rect",{x:u.x0,y:u.y0,width:u.x1-u.x0,height:u.y1-u.y0,
+  fill:"#3fb950",opacity:0.16,stroke:"#3fb950","stroke-width":0.02},gUsable));
+
+OBS.forEach(o=>{
+  el("rect",{x:o.x0-M,y:o.y0-M,width:(o.x1-o.x0)+2*M,height:(o.y1-o.y0)+2*M,
+    fill:"#d29922",opacity:0.13,stroke:"#d29922","stroke-opacity":0.42,
+    "stroke-width":0.02,rx:0.05},gInfl);
+  const r = el("rect",{x:o.x0,y:o.y0,width:o.x1-o.x0,height:o.y1-o.y0,
+    fill:"#f85149",opacity:0.62,stroke:"#ffb4ab","stroke-width":0.02,rx:0.03},gObs);
+  r.addEventListener("mousemove",ev=>show(ev,
+    `${o.name}\n raw      x ${o.x0.toFixed(3)} .. ${o.x1.toFixed(3)}\n          y ${o.y0.toFixed(3)} .. ${o.y1.toFixed(3)}\n inflated  +${M} m on every face`));
+  r.addEventListener("mouseleave",hide);
+});
+
+E.forEach(([a,b])=>{
+  const p=N.find(n=>n[0]===a), q=N.find(n=>n[0]===b);
+  const d = Math.hypot(p[2]-q[2], p[3]-q[3]);
+  const ln = el("line",{x1:p[2],y1:p[3],x2:q[2],y2:q[3],
+    stroke:"#3fb950",opacity:0.6,"stroke-width":0.045,"stroke-linecap":"round"},gEdges);
+  ln.addEventListener("mousemove",ev=>show(ev,
+    `${p[1]}  ↔  ${q[1]}\nEuclidean edge weight ${d.toFixed(2)} m\nvalidated by isLineOfSightClear at search time`));
+  ln.addEventListener("mouseleave",hide);
+});
+
+/* tunnel waypoints, coloured by whether the centre is blocked */
+TUNNEL.forEach(x=>{
+  const y = TOP_LANE;
+  let blocked = false, nearest = Infinity, who = "";
+  OBS.forEach(o=>{ const d = distToInflated(o,x,y); if (d < nearest){ nearest = d; who = o.name; } });
+  blocked = nearest <= 1e-9;
+  const c = el("rect",{x:x-0.11,y:y-0.11,width:0.22,height:0.22,
+    fill: blocked ? "#ff7b72" : "#3fb950", stroke:"#0e1116","stroke-width":0.03,rx:0.03},gTunnel);
+  c.addEventListener("mousemove",ev=>show(ev,
+    `planTunnelRoute waypoint (${x.toFixed(2)}, ${y.toFixed(2)})\n clearance to nearest inflated obstacle ${nearest.toFixed(4)} m (${who})\n centre blocked = ${blocked}`));
+  c.addEventListener("mouseleave",hide);
+});
+
+N.forEach(n=>{
+  let nearest = Infinity, who = "";
+  OBS.forEach(o=>{ const d = distToInflated(o,n[2],n[3]); if (d < nearest){ nearest = d; who = o.name; } });
+  const blocked = nearest <= 1e-9;
+  const c = el("circle",{cx:n[2],cy:n[3],r:0.115,fill: blocked ? "#ff7b72" : COL[n[4]],
+    stroke:"#0e1116","stroke-width":0.03},gNodes);
+  c.addEventListener("mousemove",ev=>show(ev,
+    `#${n[0]}  ${n[1]}\n (${n[2].toFixed(2)}, ${n[3].toFixed(2)})\n clearance to nearest inflated obstacle ${nearest.toFixed(4)} m (${who})`));
+  c.addEventListener("mouseleave",hide);
+  const t = el("text",{x:n[2],y:n[3]-0.19,fill: blocked ? "#ff7b72" : COL[n[4]],
+    "font-size":0.235,"text-anchor":"middle","font-family":"ui-monospace,monospace",
+    opacity:0.9},gLabel);
+  t.textContent = n[0];
+});
+
+/* zone edges + labels */
+el("line",{x1:BHX,y1:0,x2:BHX,y2:W,stroke:"#58a6ff","stroke-width":0.035,
+  "stroke-dasharray":"0.3 0.16",opacity:0.75},gLegend);
+el("line",{x1:RHX,y1:0,x2:RHX,y2:W,stroke:"#ff7b72","stroke-width":0.035,
+  "stroke-dasharray":"0.3 0.16",opacity:0.75},gLegend);
+const mk=(x,y,s,col,anchor)=>{const t=el("text",{x,y,fill:col,"font-size":0.4,"font-weight":700,
+  "text-anchor":anchor||"start","font-family":"ui-sans-serif,sans-serif"},gLegend);
+  t.textContent=s;return t;};
+mk(0.25,0.95,"BLUE","#58a6ff");
+mk(L-0.25,0.95,"RED","#ff7b72","end");
+mk(L/2-1.1,1.4,"MIDFIELD  X = 8.27","#e3b341","middle");
+mk(BHX+0.1,7.9,"zone 4.6256","#58a6ff");
+mk(RHX-0.1,7.9,"zone 11.9154","#ff7b72","end");
+
+/* ---- Blue Top trench detail callout ---- */
+const u0 = USABLE[0];
+el("rect",{x:BTMX-0.35,y:u0.y0-0.30,width:(BTMX_MAX-BTMX)+0.70,
+  height:(u0.y1-u0.y0)+0.60,fill:"none",stroke:"#f0883e","stroke-width":0.035,rx:0.12},gZoom);
+el("line",{x1:BTMX-0.30,y1:TOP_LANE,x2:BTMX_MAX+0.30,y2:TOP_LANE,
+  stroke:"#3fb950","stroke-width":0.03,"stroke-dasharray":"0.08 0.06",opacity:0.85},gZoom);
+el("line",{x1:BTMX-0.30,y1:u0.y0,x2:BTMX_MAX+0.30,y2:u0.y0,
+  stroke:"#ff7b72","stroke-width":0.03},gZoom);
+el("line",{x1:BTMX-0.30,y1:u0.y1,x2:BTMX_MAX+0.30,y2:u0.y1,
+  stroke:"#ff7b72","stroke-width":0.03},gZoom);
+const cal = mk(BTMX_MAX+0.45, (u0.y0+u0.y1)/2,
+  `usable 0.3787 m\n(inflated wall ${u0.y0.toFixed(3)} → perimeter ${u0.y1.toFixed(3)})\nband 0.45 m narrower than the 0.45 m cross-track gate`,
+  "#f0883e","start");
+cal.setAttribute("font-size", 0.30);
+cal.setAttribute("font-weight", 600);
+
+/* node inventory table */
+const groups = {
+  "Blue alliance staging": N.filter(n=>n[4]==="blue" && n[1].indexOf("Hub")<0).length,
+  "Blue hub bypass":      N.filter(n=>n[1].indexOf("Blue Hub Midfield")>=0).length,
+  "Blue trench":          N.filter(n=>/Blue (Top|Bot) Trench/.test(n[1])).length,
+  "Red trench":           N.filter(n=>/Red (Top|Bot) Trench/.test(n[1])).length,
+  "Red hub bypass":       N.filter(n=>n[1].indexOf("Red Hub Midfield")>=0).length,
+  "Red alliance staging": N.filter(n=>n[4]==="red" && n[1].indexOf("Hub")<0).length,
+  "Midfield crossings":   N.filter(n=>n[4]==="mid").length,
+};
+const tb = document.querySelector("#inv tbody");
+let tot = 0;
+for (const k in groups){ tot += groups[k];
+  const tr=document.createElement("tr");
+  tr.innerHTML = `<td>${k}</td><td class="num">${groups[k]}</td>`; tb.appendChild(tr); }
+const tr=document.createElement("tr");
+tr.innerHTML = `<td><b>total</b></td><td class="num"><b>${tot}</b></td>`; tb.appendChild(tr);
+
+function show(ev,txt){tip.textContent=txt;tip.style.display="block";
+  tip.style.left=Math.min(ev.clientX+14,innerWidth-280)+"px";tip.style.top=(ev.clientY+16)+"px";}
+function hide(){tip.style.display="none";}
+
+const bind=(id,g)=>document.getElementById(id).addEventListener("change",e=>{
+  g.style.display = e.target.checked ? "" : "none";});
+bind("l-obs",gObs); bind("l-inflate",gInfl); bind("l-band",gBand);
+bind("l-usable",gUsable); bind("l-edges",gEdges); bind("l-nodes",gNodes);
+bind("l-labels",gLabel); bind("l-zoom",gZoom);
+</script>
+</body>
+</html>

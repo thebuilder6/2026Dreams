@@ -21,6 +21,26 @@ is the runnable shortcut, not a second copy.
 - Never hand-edit generated code: `src/main/java/frc/robot/BuildConstants.java`,
   `src/main/deploy/git_info.json`, `.apt_generated*/`, `build/`.
 
+## Shared resources — acquire before you touch one
+
+Other agents and a human may be using this tree. Every script in this skill
+takes the appropriate lock itself, so the normal path needs nothing from you. If
+you invoke `gradlew` **directly** rather than through these scripts, take the lock
+yourself:
+
+```powershell
+powershell -File tools/lock/status.ps1     # first: is anyone already working?
+powershell -File tools/lock/acquire.ps1 -Resource gradle-build -Reason "compileJava"
+# ... run the build ...
+powershell -File tools/lock/release.ps1 -Resource gradle-build   # in a finally
+```
+
+`gradle-build` for `compileJava` / `test` / `dumpSimLaunch`, `sim-gui` for a GUI
+sim, `sweep` for a score-rig sweep, `deploy` for a RoboRIO deploy. A blocked
+acquire waits, printing who holds it, then exits `3`. **That is a wait, not a
+corruption — do not kill the holder.** Full rules: `AGENTS.md`
+§Resource coordination and `docs/COORDINATION.md`.
+
 ## Tier 0 — Headless gate (CI-safe, no display)
 
 Run `scripts/smoke-headless.ps1`, or manually:
@@ -33,9 +53,10 @@ Run `scripts/smoke-headless.ps1`, or manually:
 This validates scenario inputs only — it does not run a live match.
 The full suite is slow (`forkEvery = 1`); prefer `--tests`. See
 `KNOWN_ISSUES.md` §A for the current test count and any tracked failures.
-On `build/jni` lock or phantom one-off failure: kill stray `java` processes
-(kills a running SimGUI too), then re-run with `--rerun-tasks` before
-chasing a regression.
+On `build/jni` lock or phantom one-off failure: kill **the specific PID holding
+the file** (from `tools/lock/status.ps1` or the error), never `taskkill /IM
+java.exe` and never `gradlew --stop` — on a shared tree those kill another
+agent's live run. Then re-run with `--rerun-tasks` before chasing a regression.
 
 ## Tier 1 — GUI sim with auto-launch (needs display)
 
@@ -77,9 +98,10 @@ chasing a regression.
 
 Semi-automated: enabling still needs a click in SimGUI; everything else is scripted.
 
-1. Stop any running sim (its console is not captured), then run
-   `scripts/run-practice-match.ps1 [-MatchSec 170] [-Drill "..."] [-RealDs]`.
-   `-RealDs` is required for representative bot behavior (see step 2).
+1. Run `scripts/run-practice-match.ps1 [-MatchSec 170] [-Drill "..."] [-RealDs]`.
+   It takes the `sim-gui` lock itself, so if another agent is running a sim it
+   waits and then exits `3` naming the holder — do **not** stop that sim to make
+   room. `-RealDs` is required for representative bot behavior (see step 2).
    It reuses Tier 0 as a preflight expectation (compile green), starts the sim
    with console tee'd to `TitanRoboticsBuildSeason/reports/sim-console-<ts>.log`,
    prints the checklist, waits for Enter after the match, stops the sim, and
@@ -116,6 +138,9 @@ prefixes — the reviewer normalizes all three shapes.
 
 ## Traps — do not "fix"
 
+- **Never kill another agent's process to free a resource.** No `taskkill /IM
+  java.exe`, no `gradlew --stop`, no wildcard `Stop-Process` over `java.exe`. A
+  lock timeout is a wait; take a specific PID you own, or wait.
 - `bind() to port 1181 failed`: non-fatal CameraServer collision, ignore.
 - `SimulatedBattery.disableBatterySim()` in `simulationInit` must stay:
   MapleSim uses one static battery for all bots; without it multi-bot sim

@@ -18,7 +18,7 @@ Must use the WPILib 2026 JDK or builds fail (`Unsupported class file major versi
 $env:JAVA_HOME = "C:\Users\Public\wpilib\2026\jdk"
 $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 .\gradlew compileJava --offline   # fast compile
-.\gradlew test --offline --no-daemon   # JUnit 5 suite (36 test files, 361 tests as of 2026-09-29 — green on clean --rerun-tasks re-run, see KNOWN_ISSUES.md §A)
+.\gradlew test --offline --no-daemon   # JUnit 5 suite (36 test files, 362 tests as of 2026-09-29 — green on clean --rerun-tasks re-run, see KNOWN_ISSUES.md §A)
 .\gradlew simulateJava            # desktop SimGUI + IronMaple arena
 .\gradlew deploy                  # deploy to RoboRIO (same JAVA_HOME)
 ```
@@ -27,7 +27,33 @@ $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 - `--offline` avoids slow/failing network fetches against `C:\Users\Public\wpilib\2026\maven`.
 - GradleRIO `2026.2.1`, Java 17 (`build.gradle`). `settings.gradle` resolves plugins from the local WPILib maven, not Maven Central.
 - Single test: `.\gradlew test --tests "frc.robot.Sim.JevDecisionEngineTest"` (`test { forkEvery = 1 }`, so full suite is slow — prefer `--tests`).
-- Stale `java` processes lock `build/jni` DLLs and `build/test-results` binaries: if `extractReleaseNative` fails or the build complains about undeletable dirs, kill stray java processes (note: that also kills a running SimGUI) and re-run. Daemon-locked runs can also produce a phantom one-off test failure — clean re-run (`--rerun-tasks`) is the tiebreaker before chasing a regression.
+- Stale `java` processes lock `build/jni` DLLs and `build/test-results` binaries: if `extractReleaseNative` fails or the build complains about undeletable dirs, find the PID that actually holds the file and kill **that PID only**, then re-run. **Never `taskkill /IM java.exe` and never `gradlew --stop`** — on a shared tree those kill other agents' live test runs and sims, which is the failure this repo's locking exists to prevent (see §Resource coordination). Daemon-locked runs can also produce a phantom one-off test failure — clean re-run (`--rerun-tasks`) is the tiebreaker before chasing a regression.
+- Botched `generateBuildConstants` cannot corrupt the tree any more: it writes via a temp file plus an atomic move, and its up-to-date check requires the output to be structurally complete. A file truncated by a killed build now regenerates on the next build instead of persisting as a permanent compile error.
+
+## Resource coordination
+
+Multiple agents share **one** working tree, so `build/`, `.gradle/`, and a fixed set of WPILib network ports are single-tenant even though nothing used to enforce it. Guard the four resources in `tools/lock` before touching any of them:
+
+| Resource | Hold it while running | Conflicts with |
+|---|---|---|
+| `gradle-build` | `compileJava`, `test`, `dumpSimLaunch` | itself |
+| `sim-gui` | `simulateJava` / SimGUI | itself, `sweep` |
+| `sweep` | `tools/score/sweep.ps1` | itself, `sim-gui` |
+| `deploy` | `gradlew deploy` | itself |
+
+```powershell
+powershell -File tools/lock/status.ps1                          # who holds what
+powershell -File tools/lock/acquire.ps1 -Resource gradle-build -Reason "full suite"
+powershell -File tools/lock/release.ps1 -Resource gradle-build  # in a finally
+```
+
+- **Wait, then fail loudly.** A blocked acquire prints progress every 15 s and exits `3` naming the holder, its PID, its age and its stated reason. That is a *wait*, not a corruption — do not clear the way by killing anything. Re-run later, or work a different resource.
+- **Never kill another agent's process to make room.** Not `taskkill /IM java.exe`, not `gradlew --stop`, not a wildcard `Stop-Process` over `java.exe`. Kill a specific PID you own, or use the lock.
+- **Fan-out:** an orchestrator takes `gradle-build` once for the whole batch; workers run under it rather than each contending for it. Concurrent `gradlew` runs against one tree are not a tuning problem, they invalidate the result.
+- A lock held by a dead process is reclaimed automatically and loudly (`[lock] STALE`). `status.ps1` reports a running Elastic/AdvantageScope/SimGUI too, which is legal for a GUI sim but contaminates a rig sweep (`KNOWN_ISSUES.md` §E).
+- The lock is **advisory**: it protects agent-against-agent. A human in a terminal or a teammate in VS Code bypasses it, so a timeout is a reason to wait, never a reason to assume the path is clear.
+
+Reasoning, the conflict matrix, and recovery recipes: `TitanRoboticsBuildSeason/docs/COORDINATION.md`.
 
 ## Generated code — do not hand-edit
 

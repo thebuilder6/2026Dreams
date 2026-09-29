@@ -32,7 +32,8 @@ Single map for all durable human + AI knowledge. Code wins over prose on conflic
 | Test mode | `TitanRoboticsBuildSeason/src/main/java/frc/robot/Test/README.md` | TestMode categories, controller layout, tuning workflow, safety | test-owner |
 | External links | `TitanRoboticsBuildSeason/docs/RESOURCES.md` | Merged vendor doc URLs (Photon, Choreo, Limelight, MapleSim, WPILib, AdvantageKit, YAGSL, REV, Elastic) | leads |
 | Issues + roadmap | `KNOWN_ISSUES.md` (repo root) | §A–D resolved history, §E desired features, §F test roadmap, §G multi-robot | leads |
-| Agent rules | `AGENTS.md` (repo root) | Build env, generated-code ban, Blue-origin, Alert/LED, TunableNumber, timing quirks | leads |
+| Agent rules | `AGENTS.md` (repo root) | Build env, generated-code ban, Blue-origin, Alert/LED, TunableNumber, timing quirks, resource-coordination protocol | leads |
+| Resource coordination | `TitanRoboticsBuildSeason/docs/COORDINATION.md` | The four shared resources (`gradle-build` / `sim-gui` / `sweep` / `deploy`), the `tools/lock` protocol, why ports cannot be offset, and recovery recipes for the two interrupt bugs it closed | leads |
 | Nav roadmap diagram | `TitanRoboticsBuildSeason/docs/nav/roadmap.html` | Interactive SVG: 34-node roadmap, obstacle AABBs, 0.45 m inflated footprints, trench bands + drivable centres, per-node clearance. Guarded by `tools/nav/verify_roadmap.py` | leads |
 | Changelog | `TitanRoboticsBuildSeason/docs/CHANGELOG.md` | Agent-maintained per-change log | any-agent |
 | New-doc template | `TitanRoboticsBuildSeason/docs/_TEMPLATE.md` | Required frontmatter + sections for new guides | leads |
@@ -53,6 +54,7 @@ Single map for all durable human + AI knowledge. Code wins over prose on conflic
 ## Where things live (so nobody re-discovers)
 
 - Gradle project root: `TitanRoboticsBuildSeason/` — all `./gradlew` runs from here.
+- Inter-agent locks: `tools/lock/` (`Lock.psm1` + `acquire.ps1` / `release.ps1` / `status.ps1`), state in the gitignored `TitanRoboticsBuildSeason/.locks/`. Guards `gradle-build`, `sim-gui`, `sweep`, `deploy`; see [Resource Coordination](COORDINATION.md) and `AGENTS.md` §Resource coordination.
 - Deploy dir: `TitanRoboticsBuildSeason/src/main/deploy/` (`example.txt` explains RoboRIO deploy semantics).
 - Elastic layout source: `TitanRoboticsBuildSeason/src/main/deploy/elastic-layout.json` (served on port 5800).
 - Coaching tool: `TitanRoboticsBuildSeason/tools/coaching/jev_coach.py` (`--live` / `--report`).

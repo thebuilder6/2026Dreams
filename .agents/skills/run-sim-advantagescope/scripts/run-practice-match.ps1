@@ -93,7 +93,7 @@ try {
   Write-Output "  2. Set Simulation/DebugAI=true (Elastic or SimGUI NT view) so STUCK dumps print."
   Write-Output ("  3. Drill: " + $Drill + ".")
   if ($RealDs) {
-    Write-Output "  3. Enable from the REAL Driver Station app (Practice mode) — full auto then teleop. Ignore the SimGUI DS."
+    Write-Output "  3. Enable from the REAL Driver Station app (Practice mode) - full auto then teleop. Ignore the SimGUI DS."
   } else {
     Write-Output "  3. Enable Teleoperated in SimGUI and play."
   }

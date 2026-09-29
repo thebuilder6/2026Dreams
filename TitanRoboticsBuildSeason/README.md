@@ -1,4 +1,4 @@
-﻿---
+---
 title: Platform README
 audience: [human, ai]
 owner: programming-leads
@@ -8,7 +8,7 @@ status: authoritative
 
 # 🚀 Titan Robotics 2026/2027 Robot Platform (Mentor Fork)
 
-Welcome to the **Team 8334 Titan Robotics** advanced exploration repository. This codebase pairs full competition-proven hardware calibrations with modern software innovations: high-fidelity physics simulation, AdvantageKit IO abstraction, dual-camera AprilTag fusion, an automated pre-flight diagnostics suite, and the Jev AI tactical decision engine.
+Welcome to the **Team 8664 Titan Robotics** advanced exploration repository. This codebase pairs full competition-proven hardware calibrations with modern software innovations: high-fidelity physics simulation, AdvantageKit IO abstraction, dual-camera AprilTag fusion, an automated pre-flight diagnostics suite, and the Jev AI tactical decision engine.
 
 ---
 
@@ -27,19 +27,19 @@ $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 ./gradlew compileJava --offline
 ```
 
-### 2. Tests (JUnit 5 — 36 files / 361 tests as of 2026-09-29; green on clean `--rerun-tasks` re-run, see `KNOWN_ISSUES.md` §A)
+### 2. Tests (JUnit 5 — 66 files / 661 tests as of 2026-09-29; green on clean `--rerun-tasks` re-run, see `KNOWN_ISSUES.md` §A)
 ```powershell
 ./gradlew test --offline
 # Single class: ./gradlew test --offline --tests "frc.robot.Sim.JevDecisionEngineTest"
 ```
 
-### 3. Launching Desktop Physics Simulation
+### 6. Launching Desktop Physics Simulation
 Launch the WPILib SimGUI with our full `IronMaple` arena, simulated game pieces, and `AIRobotSim` opponent:
 ```powershell
 ./gradlew simulateJava
-# Headless 3v3 (no GUI, replayable .wpilog + markdown report):
+# Headless 6v6 (no GUI, replayable .wpilog + markdown report):
 # ./gradlew simulateJavaRelease --offline -Pheadless [-Pseed=2026] [-PdurationSec=150] [-PautoSec=15]
-#   [-PfieldFuelCount=108] [-PdisabledGapSec=3] [-PbootWaitSec=8] [-PlogDir=logs] [-PreportDir=reports]
+#   [-PfieldFuelCount=108] [-PdisabledGapSec=6] [-PbootWaitSec=8] [-PlogDir=logs] [-PreportDir=reports]
 ```
 
 ### 4. Deploying to RoboRIO
@@ -47,7 +47,7 @@ Launch the WPILib SimGUI with our full `IronMaple` arena, simulated game pieces,
 ./gradlew deploy   # same WPILib JDK as above
 ```
 
-### 3. Key Documentation Links
+### 6. Key Documentation Links
 - 📖 [Architecture Specification](ARCHITECTURE.md): Deep-dive into subsystems, vision fusion, and Jev AI.
 - 🎮 [Operator's Guide](OPERATORS_GUIDE.md): Driver and operator controls, Glide Mode navigation, and match rules.
 - 🕹️ [Simulation Setup & User Guide](SIMULATION_GUIDE.md): Step-by-step setup for SimGUI, Elastic Dashboard, AdvantageScope, and AI sparring.

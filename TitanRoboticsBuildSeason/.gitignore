@@ -176,6 +176,18 @@ simgui.json
 # Simulation data log directory
 logs/
 
+# Score-rig match artifacts (tools/score/sweep.ps1 output; see ARCHITECTURE.md 3L)
+results/
+
+# Generated coaching / headless / practice-review output. Ignore the whole
+# directory: these are timestamped scratch, one file per run, and there is no
+# value in reviewing them as a diff. A few older files predate this rule and are
+# still tracked on purpose -- the seed_sweep_*.csv trio is cited as evidence in
+# docs/CHANGELOG.md, and the match_coach_report_* pair is referenced from
+# KNOWN_ISSUES.md -- so they will keep showing up as modified when regenerated.
+# See docs/INDEX.md for the report contract.
+reports/
+
 # Folder that has CTRE Phoenix Sim device config storage
 ctre_sim/
 

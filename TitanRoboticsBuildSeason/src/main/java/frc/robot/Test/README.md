@@ -2,7 +2,7 @@
 title: Test Mode
 audience: [human, ai]
 owner: test-owner
-last_verified: 2026-09-26
+last_verified: 2026-09-28
 status: authoritative
 ---
 
@@ -36,25 +36,25 @@ Default category is `SYSID_CHARACTERIZATION` (`TestMode.java:20-29`).
    - PID gain tuning via NetworkTables
    - Physics-based shooting validation
 
-2. **Intake Testing**
+3. **Intake Testing**
    - Arm position control and calibration
    - Roller and hopper speed testing
    - Jam detection simulation
    - Position accuracy validation
 
-3. **Drive Characterization**
+4. **Drive Characterization**
    - SysID quasistatic and dynamic tests
    - Individual module testing
    - Kinematics validation
    - Odometry accuracy testing
 
-4. **System Diagnostics**
+5. **System Diagnostics**
    - Motor direction verification
    - Encoder functionality checks
    - CAN communication testing
    - Automated test sequences
 
-5. **Vision Testing**
+6. **Vision Testing**
    - Limelight functionality testing
    - PhotonVision integration testing
    - Target tracking accuracy
@@ -154,15 +154,15 @@ The LED system provides visual feedback for test status:
 
 ### Robot Class Integration
 ```java
-// In Robot constructor (Robot.java:92)
+// In Robot constructor (Robot.java:96)
 testMode = TestMode.getInstance();
 
-// In robotPeriodic() — gated, not unconditional (Robot.java:177-180)
+// In robotPeriodic() — gated, not unconditional (Robot.java:184-185)
 if (testMode != null && (DriverStation.isTest() || testMode.isEnabled())) {
     testMode.update();
 }
 ```
-// Also required: `testInit()` enables (`Robot.java:275-280`), `disabledInit()` cleans up (`Robot.java:261-263`).
+// Also required: `testInit()` enables (`Robot.java:283-287`), `disabledInit()` cleans up (`Robot.java:262-271`).
 
 ### Subsystem Integration
 - All subsystems continue normal operation when test mode is disabled
@@ -182,7 +182,7 @@ Data can be exported for analysis and comparison.
 ## Troubleshooting
 
 ### Common Issues
-1. **Test mode not responding**: Check dashboard `TestMode/Enabled` or DriverStation Test mode (`Robot.java:177-180`). Note: `TUNING_MODE` in Constants gates `TunableNumber` only, not TestMode.
+1. **Test mode not responding**: Check dashboard `TestMode/Enabled` or DriverStation Test mode (`Robot.java:184-185`). Note: `TUNING_MODE` in Constants gates `TunableNumber` only, not TestMode.
 2. **Dashboard values not updating**: Verify NetworkTables connection
 3. **Motors not responding**: Check CAN connection and motor controllers
 4. **LED feedback not working**: Verify LED controller connection

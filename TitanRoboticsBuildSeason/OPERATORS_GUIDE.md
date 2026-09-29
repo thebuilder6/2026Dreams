@@ -2,7 +2,7 @@
 title: Operator Map
 audience: [human, drive-team]
 owner: drive-team
-last_verified: 2026-09-26
+last_verified: 2026-09-28
 status: authoritative
 ---
 
@@ -22,14 +22,14 @@ The robot supports **Dual Xbox Controllers** (Driver on Port 0, Operator on Port
 
 | Control | Function | Description |
 | :--- | :--- | :--- |
-| **Left Stick (X/Y)** | **Field-Oriented Translation** | Non-linear cubic response ($0.7x^3 + 0.3x$) with slew rate acceleration smoothing (tunable via `Operator/TranslationSlewRate`, default 16, `Constants.java:131`). |
-| **Right Stick (X)** | **Manual Rotation** | Precision cubic angular response (slew limited, tunable via `Operator/RotationSlewRate`, default 10, `Constants.java:132`). |
+| **Left Stick (X/Y)** | **Field-Oriented Translation** | Non-linear cubic response ($0.7x^3 + 0.3x$) with slew rate acceleration smoothing (tunable via `Operator/TranslationSlewRate`, default 16, `Constants.java:130`). Deadband 0.08 (`Teleop.java:113`). |
+| **Right Stick (X)** | **Manual Rotation** | Precision cubic angular response (slew limited, tunable via `Operator/RotationSlewRate`, default 10, `Constants.java:131`). Deadband 0.06 (`Teleop.java:114`). |
 | **Left Stick Click** | **Slow Mode (Toggle)** | Caps linear speed to 35% and angular speed to 50% for precision alignment. |
 | **D-Pad (POV)** | **Cardinal Snap-to-Heading** | **Up**: Face $0^\circ$ (Forward)<br>**Right**: Face $-90^\circ$ / $270^\circ$ (Right)<br>**Down**: Face $180^\circ$ (Backward)<br>**Left**: Face $+90^\circ$ (Left)<br>Headings are driver-relative via `AllianceFlipUtil` (+180° on Red). Gated by Dashboard Snap-Turn toggle; any rotation input clears snap. |
-| **A Button** | **Zero Gyro** | **Double-tap within 0.4s** re-calibrates field orientation (`zeroGyroTrigger.multiPress(2, 0.4)`, `Teleop.java:116-119`). Single press does nothing. |
-| **Right Trigger (Hold > 30%)** | **Auto-Aim & Shoot** | Locks swerve heading onto the Hub, spools dual flywheels to distance-interpolated RPM, triggers haptic confirmation buzz, and automatically fires when lined up ($<3^\circ$ error) and at target speed. **Rule Constraint**: Firing is permitted *only within your Alliance Zone* (Blue $X \le 4.5974\text{m}$, Red $X \ge 11.938\text{m}$, `Navigation/FieldMap.java:130-132`); shooter solution covers 1.2–6.5 m (`Shooter.java:194,247`). |
+| **A Button** | **Zero Gyro** | **Double-tap within 0.4s** re-calibrates field orientation (`zeroGyroTrigger.multiPress(2, 0.4)`, `Teleop.java:137-140`). Single press does nothing. |
+| **Right Trigger (Hold > 30%)** | **Auto-Aim & Shoot** | Locks swerve heading onto the Hub, spools dual flywheels to distance-interpolated RPM, triggers haptic confirmation buzz, and automatically fires when lined up ($<3^\circ$ error) and at target speed. **Rule Constraint**: Firing is permitted *only within your Alliance Zone* (Blue $X \le 4.6256\text{m}$, Red $X \ge 11.9154\text{m}$, owned by `Navigation/FieldMap.java` `AllianceZones` `:265-268`); shooter solution covers 1.2–6.5 m (`Shooter.java:189,242`). |
 | **Left Trigger (Hold > 30%)** | **Ground Intake (Hold-to-Run)** | Deploys arm to ground ($250^\circ$), runs intake rollers and hopper. Retracts to standby ($347^\circ$) upon release. |
-| **Right Bumper (Hold)** | **Smart Glide Mode** | Autonomously navigates to the optimal waypoint arbitrated dynamically by the Jev AI Decision Engine. Manual stick deflection (drive > 0.65 or rotation > 0.60) cancels cleanly (`AutonomousTeleopAgent.java:120`). |
+| **Right Bumper (Hold)** | **Smart Glide Mode** | Autonomously navigates to the optimal waypoint arbitrated dynamically by the Jev AI Decision Engine. Manual stick deflection (drive > 0.65 or rotation > 0.60) cancels cleanly; smaller nudges blend shared authority (`BLEND_MIN = 0.10`). Thresholds are single-owned in `AutonomousTeleopAgent.java:42-44` and consumed by `Teleop.java:392-419`. |
 | **Left Bumper (Hold)** | **Auto Ball Pick Up** | Activates vision object tracking and autonomous intake alignment. Features **Shared Driver Authority** (driver stick nudges search area without cancelling) and **350ms Blindspot Memory** for seamless bumper-level ingestion. |
 | **X Button (Press)** | **Arm Toggle** | Manually toggles intake arm between Standby ($347^\circ$) and Deployed ($250^\circ$). |
 | **B Button (Hold)** | **Eject / Unjam** | Reverses rollers and hopper to clear obstructions. |
@@ -51,6 +51,10 @@ The robot supports **Dual Xbox Controllers** (Driver on Port 0, Operator on Port
 | **D-Pad Down (POV 180)** | **Arm Ground** | Commands arm directly to $250^\circ$ ground position. |
 | **Back / Start** | **E-Stop / Abort** | Immediate safety override. |
 
+### Co-Pilot Auto-Feed (Sep 28)
+
+When the assist hold (Right Bumper) is active, the Co-Pilot executes `SHOOTING` and feed requests through the protected Shooter state machine (`AutonomousTeleopAgent.java:132-179`): the kicker fires only with a live shooting solution, heading within 3°, alliance-zone position, open ceiling, and flywheel RPM error < 150. Operator MANUAL states are never overridden; breakout/E-stop returns control to `Teleop.shooterControl`. Watch `CoPilot/AutoFeedActive` telemetry to see when auto-feed fires. Full behavior contract lives in `ARCHITECTURE.md` §3J; sim validation in `SIMULATION_GUIDE.md` §4.
+
 ---
 
 ## 📳 Tactile Haptic Feedback Patterns
@@ -59,7 +63,7 @@ Both controllers feature non-blocking rumble patterns to communicate real-time r
 
 1. **Target Locked (Crisp Double Pulse)**: Fires on right rumble motor when flywheels reach target RPM and robot heading aligns within $3^\circ$ with an active Hub.
 2. **Ball Acquired (Solid Medium Buzz)**: Fires when a fuel piece is ingested into the intake / hopper.
-3. **Pin Warning (Rapid Double Buzz, aspirational — `PIN_WARNING` currently has no callers)**: Intended alert when bumper contact approaches the pin limit (code warns at 1.8 s, max 2.4 s, `LegalPinningWatchdog.java:17`).
+3. **Pin Warning (Rapid Double Buzz, aspirational — `PIN_WARNING` currently has no callers)**: Intended alert when bumper contact approaches the pin limit (code warns at 1.8 s, max 2.4 s, `Navigation/ContactWatchdog.java:43-44`).
 4. **Hub Phase Shift (Rhythmic Double Pulse, aspirational — currently unwired)**: Intended warning before Hub active/inactive switches.
 5. **Collision Impact (Directional Opposing Deceleration Pulse)**: Instantaneous full-intensity pulse ($160\text{ms}$) triggered by opposing deceleration ($a_{\text{opposing}} = -(\vec{a}_{\text{filt}} \cdot \hat{u}_v) > 10.0\text{ m/s}^2$ and $J_{\text{opposing}} > 120.0\text{ m/s}^3$) filtered with a 1st-order low-pass filter ($\alpha = 0.35$). Normal driving/acceleration produces negative opposing deceleration, mathematically preventing false positives. Gated by dashboard switch (`Operator/HapticCollisionEnabled`, default disabled in simulation, enabled on real hardware).
 6. **Directional Flank Alert (aspirational — `triggerDirectionalFlankAlert()` currently has no callers)**: Intended left/right grip vibration on blindspot approach.
@@ -78,6 +82,7 @@ Holding **Right Bumper** calculates a smooth, obstacle-aware trajectory:
   - **Opponent Blockage Detection & Auto-Diversion**: Continuously monitors dynamic obstacles in the Top and Bottom trenches; if an opponent blocks the preferred trench, the router instantly and safely diverts to the open corridor.
   - **4-Stage Funneling & Centerline Lock**: Smooth pre-entry funneling ($X \pm 0.60\text{m}$) prevents clipping the steel truss, while stiff cross-track centering locks the chassis onto the corridor centerline.
 - **Midfield Crossings (Top/Bottom)**: Protected lanes across the center zone.
+- **Climb parking fallback**: `Blue Right Side Climb` (`GlidePoints.java`) — canonical Blue `(1.05, 2.80)` derived to Red via `AllianceFlipUtil` (`AutonomousTeleopAgent.java:230-241`).
 
 ---
 
@@ -113,7 +118,7 @@ The Elastic Dashboard (`elastic-layout.json`) provides real-time situational awa
 ### 5. Simulation & Multi-Bot Match Telemetry
 - **Embedded Arena Field View**: 2D holonomic field tracking the player robot alongside up to 3 AI opponent bots (`OpponentBot0`, `OpponentBot1`, `OpponentBot2`) with target waypoints and heading vectors.
 - **Opponent Count Dropdown Chooser**: Select between 1, 2, or 3 simultaneous opponent bots.
-- **Independent Bot Archetype Dropdowns**: Dropdown menus for Bot 0, Bot 1, and Bot 2 strategy assignments (Autonomous Fuel Cycler, Aggressive Defense Bully, Adaptive Match Competitor, Tactical Defender, Lead Pursuit Interceptor — `Archetype.java:7-12`) with live status rationale.
+- **Independent Bot Archetype Dropdowns**: Dropdown menus for Bot 0, Bot 1, and Bot 2 strategy assignments (Autonomous Fuel Cycler, Aggressive Defense Bully, Adaptive Match Competitor, Tactical Defender, Lead Pursuit Interceptor — `Intelligence/Archetype.java`) with live status rationale.
 - **Speed Slider**: Interactive `Number Slider` for opponent velocity scaling (20% to 100%).
 - **Interactive Action Triggers**: `Toggle Button` controls to Reset Simulation and Respawn Fuel Balls.
 - **Multi-Bot Scoring & Ball Count**: Live tally of individual bot scores and total opponent points scored against the driver.
@@ -126,7 +131,7 @@ The Elastic Dashboard (`elastic-layout.json`) provides real-time situational awa
 - **Shooter Dual Flywheels**: Real-time RPM telemetry & live PID ($kP, kI, kD$) + Feedforward ($kS, kV, kA$) text inputs with submit buttons.
 - **Intake Arm Pivot**: Real-time angle telemetry bars vs goal & live Profiled PID ($kP, kI, kD$) + Gravity Feedforward ($kS, kG, kV, kA$).
 - **Autonomous Holonomic Pathfinding**: Live Choreo/Pure Pursuit Drive ($kP, kI, kD$) and Heading Turn ($kP, kI, kD$) controllers.
-- **Driver Response Shaping**: Live Slew Rate Limiters ($4.5\text{ m/s}^2$ translation, $7.0\text{ rad/s}^2$ rotation) and assist toggles (`Toggle Switch`).
+- **Driver Response Shaping**: Live Slew Rate Limiters (code defaults $16\text{ m/s}^2$ translation, $10\text{ rad/s}^2$ rotation, `Constants.java:130-131`, tunable via `Operator/*` keys) and assist toggles (`Toggle Switch`).
 
 ---
 

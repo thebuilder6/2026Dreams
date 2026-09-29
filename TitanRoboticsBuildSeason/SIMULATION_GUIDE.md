@@ -2,7 +2,7 @@
 title: Simulation Setup
 audience: [human, ai]
 owner: sim-owner
-last_verified: 2026-09-26
+last_verified: 2026-09-28
 status: authoritative
 ---
 
@@ -110,8 +110,8 @@ Our robot code serves the official layout directly over HTTP port 5800 (`edu.wpi
 - **Tab 3: Pre-Flight Diagnostics**: Automated 15-second scorecard with progress bar and individual `Toggle Button` widgets to pulse each swerve steer/drive motor, intake arm, intake rollers, and flywheels.
 - **Tab 4: SysID & Characterization**: `Toggle Button` for Quasistatic / Dynamic Forward / Reverse and ABORT / E-STOP, with real-time `Graph` widgets for live applied voltage and velocity response waves.
 - **Tab 5: Simulation & Match Info**: Dropdown menus for Opponent Count (1, 2, or 3 bots) and per-bot Archetypes (Bot 0 Lead, Bot 1 Bully, Bot 2 Adaptive), Ally Bots Active toggle with Ally Count (0–2) and Ally Speed slider, interactive `Number Slider` for opponent speed (20-100%), interactive `Toggle Button` controls for Sim Reset and Respawn Balls, multi-bot state/score telemetry, and `Toggle Switch` for Opponent AI.
-- **Tab 6: Tuning & PID**: Flywheel dual-RPM bars, pivot arm setpoint/goal bars, interactive `Toggle Switch` settings, and text displays with `show_submit_button: true` to edit PID constants live.
-- **Tab 7: Match Scoreboard**: Live red/blue totals, Leader, auto/teleop fuel splits, per-robot balls, foul points, and climb status — see `OPERATORS_GUIDE.md` §6 for the widget map.
+- **Tab 6: Match Scoreboard**: Live red/blue totals, Leader, auto/teleop fuel splits, per-robot balls, foul points, and climb status — see `OPERATORS_GUIDE.md` §6 for the widget map.
+- **Tab 7: Tuning & PID**: Flywheel dual-RPM bars, pivot arm setpoint/goal bars, interactive `Toggle Switch` settings, and text displays with `show_submit_button: true` to edit PID constants live.
 
 ---
 
@@ -126,7 +126,7 @@ AdvantageScope gives you a live 3D rendering of the arena, robot, articulated me
    - Open a **3D Field** tab.
    - Select the field model: **2026 Rebuilt** (or 2024 Crescendo as fallback).
    - Under **Robot Poses**, add `/SmartDashboard/Field` or `/RealOutputs/Pose`.
-   - Under **Game Pieces**, add `Simulation/GamePieces` (`GameSim.java:129`, Logger `FieldSimulation/Fuel`) to see Fuel balls (54 standard; up to ~384 with `Simulation/FullMatchBallDensity`).
+   - Under **Game Pieces**, add `Simulation/GamePieces` (`SimDashboardKeys.java:120`; Logger `FieldSimulation/Fuel` at `GameSim.java:309`) to see Fuel balls (54 standard; up to ~384 with `Simulation/FullMatchBallDensity`).
 5. **Configure Mechanism 3D**:
    - Add `/Subsystems/Intake/ArmPose3d` to observe the intake arm rotating between standby ($347^\circ$) and ground ($250^\circ$).
    - Add `/Subsystems/Shooter/ShooterPose3d` to visualize the shooter flywheel angle and position.
@@ -137,7 +137,56 @@ AdvantageScope gives you a live 3D rendering of the arena, robot, articulated me
 
 ### Training scenario input validation
 
-The current training scenario API applies a match duration, a seeded subset of the existing preplaced depot/midfield fuel positions, and every robot's archetype, starting pose, and preload. Blue slot 0 is an independent `AIRobotInstance`; later Blue slots use the ally pool and Red slots use the opponent pool. The physical `SwerveBase` is parked off-field during the scenario and restored when it is cleared. The headless match lifecycle and result summary are not wired yet. Run the focused JUnit tests from `TitanRoboticsBuildSeason/` to check scenario setup:
+The current training scenario API applies a match duration, a seeded subset of the existing preplaced depot/midfield fuel positions, and every robot's archetype, starting pose, and preload. Blue slot 0 is an independent `AIRobotInstance`; later Blue slots use the ally pool and Red slots use the opponent pool. The physical `SwerveBase` is parked off-field during the scenario and restored when it is cleared.
+
+### 3v3 AI-vs-AI training matches
+
+One-click start from the Elastic Simulation tab: set `Simulation/Training/Seed` (default 2026), then toggle `Simulation/Training/Start3v3`. This applies `TrainingMatchScenario.default3v3` (3 Blue + 3 Red on staggered lanes, 8-fuel preloads, 150 s, 54 fuel) and parks the player `SwerveBase`. `Simulation/Training/Stop` clears back to interactive defaults. Training bots only drive while the DriverStation is enabled (clean start/stop); run Autonomous 15 s then Teleoperated as usual and the scenario clock, Hub schedule seeding, scoring, and referee all follow. When the clock expires the scoreboard latches to `Training/Result/*` (Winner, Blue/RedScore, Margin, AUTO/TELEOP splits, climb).
+
+### Headless 3v3 matches (no GUI, replayable)
+
+`Sim/HeadlessMatchDriver.java` runs the same 3v3 through the real robot loop with a self-driving DS sequence (AUTO → disabled gap → TELEOP until the scenario clock expires), then writes a replayable `.wpilog` and a markdown report and exits. No SimGUI, gamepad, or clicks required:
+
+```powershell
+$env:JAVA_HOME = "C:\Users\Public\wpilib\2026\jdk"
+$env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
+.\gradlew simulateJavaRelease --offline -Pheadless [-Pseed=2026] [-PdurationSec=150] [-PautoSec=15]
+```
+
+Options (`-Pkey=value`): `seed` (default 2026), `durationSec` (150), `autoSec` (15), `disabledGapSec` (3), `bootWaitSec` (8), `fieldFuelCount` (108 loose field pieces + 6×8 preloads = 156 total), `logDir` (`logs/`, gitignored), `reportDir` (`reports/`), `resultJsonl` (unset = off; appends one JSON object per match), `variant` (default `baseline`), `replica` (default 0). Counts above the 54-ball lightweight layout draw a seeded subset from the full-density preplaced positions (`GameSim`). A 30 s smoke (`-PdurationSec=30 -PautoSec=5`) finishes in ~50 s wall clock. Replay: AdvantageScope → File → Open Log → `logs/headless_3v3_seed<seed>_<stamp>.wpilog` (per-bot poses/objectives, `FieldSimulation/Fuel`, `Headless/*` phase + scoreboard, existing `JevAI/*` / `Trajectory/*` / `Scoreboard/*`). Lifecycle note: `Robot.autonomousInit` uses `AIRobotSim.resetForMatchStart()` so enabling auto re-applies scenario spawns instead of wiping bots to queuing poses.
+
+> **A 150 s scenario clock is mandatory for a valid score sample.** `HubSchedule`'s phase table is hardcoded to 130/105/80/55/30 s remaining, and `MatchScoreTracker.updateClimbEvaluation` zeroes every climb whenever `20 < matchTime <= 150`. A 30 s smoke therefore lands straight in ENDGAME, never exercises a shift, and scores zero climb — fine for "does it run", useless as a fitness value.
+
+Every report now ends with a reconciliation line (`Blue per-bot N vs total M (residual R, unattributed U)`) and prints **`RECONCILIATION FAILED`** if either residual is non-zero. That means a scoring path is inflating an alliance total that the per-bot table cannot account for. It was non-zero in 13 of the 20 archived reports before the Sep 28 fix — see `KNOWN_ISSUES.md` §B.
+
+### Score rig (parallel sweeps + paired comparison)
+
+For "did this change help?" questions, run a grid instead of one match. Never parse the markdown report: the old sweep script split rows on `|` and silently produced plausible-but-wrong columns (which is how the attribution leak above was found). Read the JSONL.
+
+```powershell
+$env:JAVA_HOME = "C:\Users\Public\wpilib\2026\jdk"
+$env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
+
+# 8 seeds x 2 replicas, 12-way parallel, resumable
+powershell -File tools\score\sweep.ps1 -Seeds 7,11,42,101,500,1337,2026,9999 `
+    -Variants baseline -Replicas 2 -OutFile results\baseline.jsonl -Fresh
+
+# How repeatable is a single score? (two runs of identical code)
+python tools\score\compare.py --results results\baseline.jsonl --noise-floor
+
+# Compare a variant against the baseline
+powershell -File tools\score\sweep.ps1 -Variants baseline,mystery -Seeds 7,11,42,101,500,1337,2026,9999 `
+    -OutFile results\grid.jsonl
+python tools\score\compare.py --results results\grid.jsonl
+```
+
+- `sweep.ps1` gets its launch recipe from `gradlew dumpSimLaunch`, which reflects over the real `simulateJavaRelease` JavaExec — so the classpath, `-Djava.library.path`, and main class cannot drift from what Gradle would run. **`-Djava.library.path` alone is not enough:** WPILib's `HAL_LoadExtension` goes through the OS loader, which searches `PATH`, so the recipe also emits a `pathPrefix` the script prepends. Without it every worker dies with `Unable to find wpi driver binary` then `EXCEPTION_UNCAUGHT_CXX_EXCEPTION`, even though all natives are present.
+- It uses `Start-Process`, not `Start-ThreadJob` (needs PowerShell 6+) or `Start-Job` (a per-worker process cannot share a queue).
+- Rows already present for a `(variant, seed, replica)` are skipped, so an interrupted sweep is re-run rather than restarted.
+- `compare.py` exits non-zero when a variant regresses or trips a guardrail, so it works as a gate. Guardrails are **role-aware**: a defender is designed not to score (`JevDecisionEngine` zeroes `scoreUtility` for `TACTICAL_DEFENDER` / `DEFENSE_BULLY`), so defenders are gated on distance travelled, not fuel share. The role comes from the sim's reported archetype, never inferred from scoring.
+- **There is nothing to sweep yet.** Every Jev utility weight is a hardcoded literal in `JevDecisionEngine.evaluatePolicy`; see `KNOWN_ISSUES.md` §E for the `PolicyWeights` seam that unblocks it.
+
+Run the focused JUnit tests from `TitanRoboticsBuildSeason/` to check scenario setup:
 
 ```powershell
 $env:JAVA_HOME = "C:\Users\Public\wpilib\2026\jdk"
@@ -152,9 +201,12 @@ In the WPILib SimGUI:
 - Click **`Teleoperated`** and then **`Enabled`** in the DriverStation control panel to start manual driving.
 - Click **`Autonomous`** and then **`Enabled`** to test the auto routine selected in the Elastic Dashboard dropdown.
 
+> [!NOTE]
+> Bot0 STUCK diagnostics require `Simulation/DebugAI=true`. For representative bot behavior use a real Driver Station in Practice mode: SimGUI-DS runs show a degenerate pickup-1-or-2-and-shoot pattern that is a DS artifact, not a bot regression. The repo's guided loop lives in the `run-sim-advantagescope` skill (`.agents/skills/run-sim-advantagescope/SKILL.md`: Tier 0 headless gate, Tier 1 GUI auto-launch via `scripts/launch-gui.ps1`, Tier 2 practice-match capture + `review-practice-log.py`; opt-in real-DS via `-PrealDs` in `build.gradle`).
+
 ### 2. Driving & Handling
-- **Left Stick (X/Y)**: Field-oriented translation with smooth acceleration (slew default 16, `Constants.java:131`).
-- **Right Stick (X)**: Holonomic heading rotation (slew default 10, `Constants.java:132`).
+- **Left Stick (X/Y)**: Field-oriented translation with smooth acceleration (slew default 16, `Constants.java:130`).
+- **Right Stick (X)**: Holonomic heading rotation (slew default 10, `Constants.java:131`).
 - **Left Stick Click**: Toggles **Slow Mode** (35% speed) for precision positioning.
 - **D-Pad (POV)**: Cardinal snap-to-heading:
   - **Up**: Face Away ($0^\circ$)
@@ -170,7 +222,7 @@ In the WPILib SimGUI:
 - **Release Left Trigger**: The arm automatically retracts to the standby upright position ($347^\circ$).
 
 ### 4. Auto-Aiming & Scoring in the Hub
-- Drive to any shooting position inside your Alliance Zone (Blue $X \le 4.5974\text{m}$, Red $X \ge 11.938\text{m}$, `Navigation/FieldMap.java:130-132`). Shooter solutions cover 1.2–6.5 m (`Shooter.java:194,247`); bots use 1.40–4.00 m valid zone (`AIRobotSim.java:959`). Shots from Midfield are automatically inhibited.
+- Drive to any shooting position inside your Alliance Zone (Blue $X \le 4.6256\text{m}$, Red $X \ge 11.9154\text{m}$, owned by `Navigation/FieldMap.java` `AllianceZones` `:265-268`). Shooter solutions cover 1.2–6.5 m (`Shooter.java:189,242`); bots use the shared 1.40–4.20 m valid zone (`FieldMap.Hubs.SHOOTING_MAX_DISTANCE`, read by both the snipe utility and `AIRobotSim`). Shots from Midfield are automatically inhibited.
 - **Hold Right Trigger (>30%)**:
   - The robot locks heading onto the Hub center.
   - Dual flywheels spool up to the interpolated target RPM based on distance.
@@ -190,7 +242,7 @@ The simulation engine supports scaling from a single sparring opponent up to **3
   - In Elastic Dashboard (`Simulation & Match Info` tab), toggle **`Opponent AI Active`** (`Features/Opponent Robot`).
   - Set the number of active opponent bots via the **`Opponent Count (1-3)`** bar (`Simulation/OpponentCount`). Select `1`, `2`, or `3`.
   - Adjust sparring speed with **`Opponent Speed %`** (`Simulation/OpponentSpeedPercent`, 20% to 100%, defaults to 75%).
-  - Bots spawn at staggered, non-overlapping starting coordinates on their alliance wall (Blue X=2.00 m, Red X=14.535 m). When the player is Blue, opponents spawn Red and allies spawn Blue (`AIRobotSim.java:1449-1492`):
+  - Bots spawn at staggered, non-overlapping starting coordinates on their alliance wall (Blue X=2.00 m, Red X=14.541 m = `FIELD_LENGTH − 2.00`). When the player is Blue, opponents spawn Red and allies spawn Blue (`AIRobotSim.java:1376-1423`). Interactive spawns use X=2.00/14.541; training `default3v3` uses X=2.00/14.50 with 8-fuel preloads (`TrainingMatchScenario.java:71-90`):
     - **Bot 0**: Centerline spawn ($Y=4.035\text{m}$)
     - **Bot 1**: Upper corridor spawn ($Y=5.80\text{m}$)
     - **Bot 2**: Lower corridor spawn ($Y=2.25\text{m}$)
@@ -204,7 +256,7 @@ The simulation engine supports scaling from a single sparring opponent up to **3
   | Archetype | Macro Strategy | Tactical Behaviors |
   | :--- | :--- | :--- |
   | **`AUTONOMOUS_CYCLER`** | High-Throughput Fuel Scoring | Evaluates Gaussian cluster density scent to target rich fuel patches. Adheres to Alliance Zone firing geofencing, standoff arcs ($2.40\text{m}$), and shoot-on-the-fly ballistics. |
-  | **`DEFENSE_BULLY`** | Aggressive Physical Harassment | Pursues player bumpers, pins against walls (warn 1.8 s, max 2.4 s, `LegalPinningWatchdog.java:17`), and disrupts player intake lanes. |
+  | **`DEFENSE_BULLY`** | Aggressive Physical Harassment | Pursues player bumpers, pins against walls (warn 1.8 s, max 2.4 s, `Navigation/ContactWatchdog.java:43-44`), and disrupts player intake lanes. |
   | **`ADAPTIVE_COMPETITOR`** | Hybrid Two-Way Play | Scavenges loose balls when the Hub is active; transitions to lane denial and player harassment when its Hub is inactive. |
   | **`TACTICAL_DEFENDER`** | Positional Lane & Depot Denial | Shadows player along the midfield boundary ($X = 8.27\text{m}$), blocks direct shooting corridors to the Hub, and contests neutral depots. |
   | **`LEAD_PURSUIT_INTERCEPTOR`** | Predictive Path Interception | Projects the player's instantaneous velocity vector and executes quadratic lead intercept to cut off travel routes. |
@@ -250,7 +302,7 @@ In addition to opposing sparring robots, the simulation engine allows you to spa
     - **Player**: Center start position ($X \approx 2.00\text{m}, Y \approx 4.035\text{m}$ for Blue)
     - **Ally 1**: Left flank start position ($X = 2.00\text{m}, Y = 5.80\text{m}$ for Blue, facing $0^\circ$)
     - **Ally 2**: Right flank start position ($X = 2.00\text{m}, Y = 2.25\text{m}$ for Blue, facing $0^\circ$)
-    *(Coordinates automatically mirror to $X = 14.54\text{m}$, facing $180^\circ$ when on Red Alliance).*
+    *(Coordinates automatically mirror to $X = 14.541\text{m}$ (`FIELD_LENGTH − 2.00`), facing $180^\circ$ when on Red Alliance).*
 
 - **Ally Bot Archetypes & Behavior**:
   - Each ally can be assigned an independent behavioral archetype via SmartDashboard:
@@ -276,6 +328,7 @@ The simulation runs an automated, authoritative FRC match scoring engine via [`M
   - **Fuel Ball in Active Hub**: $1\text{ point}$ per ball scored.
   - **Wasted Shots**: Balls launched into an inactive Hub during opposing shifts score $0\text{ points}$ and are logged as wasted fuel.
   - **Endgame Tower Climb**: $10\text{ points}$ per robot positioned within $1.20\text{m}$ of the alliance climbing pole during the final 20 seconds of the match ($t \le 20.0\text{s}$).
+  - **Fouls** (`RefereeSim` + `MatchScoreTracker`, awarded to the opponent alliance total): MINOR $5\text{ pts}$ / MAJOR $15\text{ pts}$ — AUTO centerline contact (MAJOR), G407 alliance-zone shooting (MAJOR, checked on every player/bot shot), G418 pinning (MINOR at 3 s, MAJOR per extra uncorrected 3 s), G420 tower protection in the last 30 s (MAJOR). Published under `Scoreboard/Referee/*` and the scoreboard tab.
 
 - **FRC Ranking Points (RP)**:
   - **Match Outcome**: $2\text{ RP}$ for a win, $1\text{ RP}$ for a tie.
@@ -298,7 +351,7 @@ Switch to the **`AI Coach & Practice`** tab in Elastic Dashboard for focused dri
 - **Practice Drill Modes** (Select via `Practice Drill Mode` chooser):
   - **`Free Play Match`**: Standard match simulation against an autonomous cycling opponent (`AIRobotSim` at 75% speed).
   - **`Rapid Cycling Sprint`**: Disables opponent defense and enables automatic ball respawns for solo time-trial throughput drills.
-  - **`Trench Defense & Pirouette Drill`**: Spawns an 80% speed sparring partner patrolling the trenches to practice automated Smart Tunnel diversions, bumper pirouettes, and 2.0-second legal pinning evasion.
+  - **`Trench Defense & Pirouette Drill`**: Spawns an 80% speed sparring partner patrolling the trenches to practice automated Smart Tunnel diversions, bumper pirouettes, and legal pinning evasion (warn 1.8 s, max 2.4 s per `ContactWatchdog`; G418 fouls at 3 s per `RefereeSim`).
   - **`Anti-Defense SOTF Drill`**: Spawns an 85% speed lead-pursuit interceptor to practice shoot-on-the-fly (SOTF) accuracy while under heavy pursuit.
 - **1-Click Proving Ground Reset**:
   - Click **`Reset Practice Arena`** (`Coaching/ResetPractice`).
@@ -314,7 +367,7 @@ Switch to the **`AI Coach & Practice`** tab in Elastic Dashboard for focused dri
     # Generate Post-Match Debrief Report (Saved to reports/)
     python tools/coaching/jev_coach.py --report
     ```
-  - If a `TYPESAFE_API_KEY` or `OPENROUTER_API_KEY` environment variable is defined, the tool queries the TypeSafe Jev API (`https://docs.typesafe.ai`) for automated System One AI tactical critiques.
+  - If a `TYPESAFE_API_KEY` or `OPENROUTER_API_KEY` environment variable is defined, the tool queries the TypeSafe Jev API (`https://api.typesafe.ai/v1/systemone`, `jev_coach.py:174`) for automated System One AI tactical critiques.
 
 ---
 

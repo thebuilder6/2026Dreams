@@ -2,7 +2,7 @@
 title: Platform README
 audience: [human, ai]
 owner: programming-leads
-last_verified: 2026-09-26
+last_verified: 2026-09-28
 status: authoritative
 ---
 
@@ -20,17 +20,31 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the authoritative 4-layer diagram and
 
 ## 🛠️ Quick Start & Developer Guide
 
-### 1. Compiling the Code (Offline / WPILib JDK)
+### 1. Compiling the Code (Offline / WPILib JDK, Java 17, GradleRIO 2026.2.1)
 ```powershell
 $env:JAVA_HOME = "C:\Users\Public\wpilib\2026\jdk"
 $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 ./gradlew compileJava --offline
 ```
 
-### 2. Launching Desktop Physics Simulation
+### 2. Tests (JUnit 5 — 35 files / 309 tests as of 2026-09-28)
+```powershell
+./gradlew test --offline
+# Single class: ./gradlew test --offline --tests "frc.robot.Sim.JevDecisionEngineTest"
+```
+
+### 3. Launching Desktop Physics Simulation
 Launch the WPILib SimGUI with our full `IronMaple` arena, simulated game pieces, and `AIRobotSim` opponent:
 ```powershell
 ./gradlew simulateJava
+# Headless 3v3 (no GUI, replayable .wpilog + markdown report):
+# ./gradlew simulateJavaRelease --offline -Pheadless [-Pseed=2026] [-PdurationSec=150] [-PautoSec=15]
+#   [-PfieldFuelCount=108] [-PdisabledGapSec=3] [-PbootWaitSec=8] [-PlogDir=logs] [-PreportDir=reports]
+```
+
+### 4. Deploying to RoboRIO
+```powershell
+./gradlew deploy   # same WPILib JDK as above
 ```
 
 ### 3. Key Documentation Links

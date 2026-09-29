@@ -106,14 +106,138 @@ class TargetProgressWatchdogTest {
                 "overshooting without a new objective must trigger recovery");
     }
 
+    /**
+     * Reached AND holding (commanded ~0, e.g. staging or planting to shoot)
+     * stays idle forever. This is the half of the old
+     * `arrivingAtTargetResetsProgress` that remains true.
+     */
     @Test
-    void arrivingAtTargetResetsProgress() {
-        // Commanded motion but already inside ARRIVED_M: intentional hold, no give-up.
+    void arrivedHoldStaysIdle() {
         Pose2d arrived = new Pose2d(TARGET.getX() + 0.1, TARGET.getY(), Rotation2d.fromDegrees(0));
         for (int i = 0; i < 400; i++) {
             TargetProgressWatchdog.Result r =
-                    watchdog.update(arrived, drive(1.5), TARGET, DT);
+                    watchdog.update(arrived, drive(0.0), TARGET, DT);
             assertFalse(r.recovering());
+        }
+        assertEquals(0, watchdog.blockedPoints().size());
+    }
+
+    /**
+     * The churn case: the target keeps changing while the robot is physically
+     * pinned, and the give-up timer must still fire.
+     *
+     * <p>This is the hole the whole class was written for. The watchdog tracked
+     * <i>commanded</i> speed only, so "no progress" meant "the commanded target
+     * got no closer" -- and a selector that re-targets every few ticks resets
+     * that window on every change. A robot pinned against a static obstacle
+     * therefore never accumulated GIVEUP_SEC: the stall was classified
+     * {@code STALLED_CHURN} and nothing ever rescued it.
+     *
+     * <p>Passing the measured velocity is what makes "pinned" observable
+     * independently of what is being aimed at.
+     */
+    @Test
+    void pinnedChurnTriggersEscapeWithoutBlacklistingOnePiece() {
+        Pose2d pinned = new Pose2d(5.26, 7.17, Rotation2d.fromDegrees(0));
+        ChassisSpeeds pushing = new ChassisSpeeds(1.5, 0.0, 0.0);
+        ChassisSpeeds notMoving = new ChassisSpeeds(0.0, 0.0, 0.0);
+
+        // Command real speed, move not at all, and hand it a different
+        // unreachable piece every cycle for longer than the give-up window.
+        TargetProgressWatchdog.Result last = TargetProgressWatchdog.Result.IDLE;
+        int cycles = (int) (TargetProgressWatchdog.GIVEUP_SEC / DT) * 3;
+        for (int i = 0; i < cycles; i++) {
+            // > NEW_TARGET_RESET_M apart each cycle, so every update is a new target.
+            double y = 6.40 - (i % 5) * 0.75;
+            Pose2d shifting = new Pose2d(5.20, y, Rotation2d.fromDegrees(0));
+            last = watchdog.update(pinned, pushing, notMoving, shifting, DT);
+            if (last.recovering()) {
+                break;
+            }
+        }
+
+        assertTrue(last.recovering(),
+                "a pinned robot whose target keeps changing must still be rescued");
+        assertTrue(last.escapeVector().getNorm() > 0.5, "escape must be a real command");
+        assertEquals(0, watchdog.blockedPoints().size(),
+                "churn must not blacklist: no single piece caused a stall, so "
+                        + "excluding one would just starve the bot of options");
+    }
+
+    /**
+     * The counterpart guard: when the robot really is moving, an oscillating
+     * target must NOT trigger recovery. Without this, the churn escape above
+     * would fire on every harvest tick.
+     */
+    @Test
+    void movingTargetChangesDoNotTriggerPinnedEscape() {
+        ChassisSpeeds driving = new ChassisSpeeds(1.0, 0.0, 0.0);
+
+        for (int i = 0; i < (int) (TargetProgressWatchdog.GIVEUP_SEC / DT) * 3; i++) {
+            // Genuinely travelling: 1 m/s along +x, tracked from a moving pose.
+            Pose2d moving = new Pose2d(5.0 + i * 0.02, 4.0, Rotation2d.fromDegrees(0));
+            Pose2d shifting = new Pose2d(5.20, 6.40 - (i % 5) * 0.75, Rotation2d.fromDegrees(0));
+            TargetProgressWatchdog.Result r = watchdog.update(moving, driving, driving, shifting, DT);
+            assertFalse(r.recovering(),
+                    "a moving robot must never be rescued out from under itself");
+        }
+        assertEquals(0, watchdog.blockedPoints().size());
+    }
+
+    /**
+     * A stable unreachable target must still blacklist. The churn escape above is
+     * additive; it must not have displaced the original, working recovery.
+     */
+    @Test
+    void stableUnreachableTargetStillBlacklistsWithActualVelocity() {
+        Pose2d pinned = new Pose2d(5.26, 7.17, Rotation2d.fromDegrees(0));
+        ChassisSpeeds pushing = new ChassisSpeeds(1.5, 0.0, 0.0);
+        ChassisSpeeds notMoving = new ChassisSpeeds();
+
+        for (int i = 0; i <= (int) (TargetProgressWatchdog.GIVEUP_SEC / DT); i++) {
+            watchdog.update(pinned, pushing, notMoving, TARGET, DT);
+        }
+
+        assertEquals(1, watchdog.blockedPoints().size(),
+                "a stable unreachable target must still be excluded from selection");
+    }
+
+    /**
+     * Reached but still pushing is abandoned after the window.
+     *
+     * <p>This deliberately reverses the other half of the old
+     * `arrivingAtTargetResetsProgress` (arrived + commanding 1.5 never gave
+     * up), whose premise Phase 0b disproved on the current binary: seed 7,
+     * variant `nav-phase0b`, measured two bots stalled 15.9/16.2 s inside this
+     * radius with no recovery firing. An unconditional arrived-idle is the
+     * arrived hole, not a hold protection — holds command ~0 and stay idle via
+     * the test above.
+     */
+    @Test
+    void arrivedButPushingIsAbandoned() {
+        Pose2d arrived = new Pose2d(TARGET.getX() + 0.1, TARGET.getY(), Rotation2d.fromDegrees(0));
+        TargetProgressWatchdog.Result r = TargetProgressWatchdog.Result.IDLE;
+        for (int i = 0; i <= (int) (TargetProgressWatchdog.GIVEUP_SEC / DT); i++) {
+            r = watchdog.update(arrived, drive(1.5), TARGET, DT);
+        }
+        assertTrue(r.recovering(), "pushing from inside ARRIVED_M must still give up");
+        assertEquals(1, watchdog.blockedPoints().size());
+    }
+
+    /**
+     * A slow final approach inside ARRIVED_M still converges and is never
+     * abandoned: every 0.25 m of closing resets the window.
+     */
+    @Test
+    void slowConvergingApproachNearTargetIsNotAbandoned() {
+        // 0.55 m out, closing 0.02 m/cycle at full command: inside ARRIVED_M
+        // the whole way, but always making progress.
+        for (int i = 0; i < 20; i++) {
+            Pose2d pose = new Pose2d(
+                    TARGET.getX() + 0.55 - i * 0.02, TARGET.getY(), Rotation2d.fromDegrees(0));
+            TargetProgressWatchdog.Result r =
+                    watchdog.update(pose, drive(1.5), TARGET, DT);
+            assertFalse(r.recovering(), "a closing approach must never be abandoned");
         }
         assertEquals(0, watchdog.blockedPoints().size());
     }

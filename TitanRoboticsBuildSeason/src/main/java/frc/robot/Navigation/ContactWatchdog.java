@@ -272,35 +272,7 @@ public class ContactWatchdog {
         Resolution deadlock = updateDeadlock(stalled, nearestPeerDist, dt, inTrenchCorridor);
 
         // ---- 5. Pirouette arming (TrajectoryController) ----
-        if (stalled && now > unstickEndTime) {
-            if (now - lastUnstickStartTime < 3.0) {
-                unstickAttempts = Math.min(unstickAttempts + 1, 5);
-            } else {
-                unstickAttempts = 0;
-            }
-            lastUnstickStartTime = now;
-            double unstickDuration = 0.40 + unstickAttempts * 0.20;
-            unstickEndTime = now + unstickDuration;
-
-            Translation2d vel = new Translation2d(
-                    actualVel.vxMetersPerSecond, actualVel.vyMetersPerSecond);
-            if (vel.getNorm() < 0.10) {
-                vel = new Translation2d(commandedVel.vxMetersPerSecond, commandedVel.vyMetersPerSecond);
-            }
-            if (vel.getNorm() > 0.10) {
-                Translation2d reverseDir = vel.div(vel.getNorm()).times(-1.0);
-                if (unstickAttempts > 0) {
-                    double escapeAngleDeg =
-                            (unstickAttempts % 2 == 1 ? 1.0 : -1.0) * (60.0 + (unstickAttempts * 15.0));
-                    reverseDir = reverseDir.rotateBy(Rotation2d.fromDegrees(escapeAngleDeg));
-                }
-                double escapeSpeed = 1.8 + unstickAttempts * 0.4;
-                unstickVector = reverseDir.times(Math.min(escapeSpeed, 3.5));
-            } else {
-                double escapeAngle = (unstickAttempts * Math.PI / 3.0);
-                unstickVector = new Translation2d(Math.cos(escapeAngle), Math.sin(escapeAngle)).times(2.2);
-            }
-        }
+        updateUnstick(stalled, actualVel, commandedVel, now);
 
         prevFilteredAccelX = filteredAccelX;
         prevFilteredAccelY = filteredAccelY;
@@ -308,6 +280,104 @@ public class ContactWatchdog {
         lastTimestamp = now;
 
         publishTelemetry(isImpact, deadlock);
+    }
+
+    /**
+     * Advances stall detection and pirouette arming only, with no peer-contact,
+     * pinning, or G418 state involved.
+     *
+     * <p>This exists because a static-obstacle wedge (hub core, ramp, trench wall,
+     * tower post) is peer-independent: {@link #updateDeadlock} only accumulates
+     * when a peer is within {@link #PROXIMITY_M}, so a bot wedged alone against
+     * geometry never armed an escape from the peer path. Previously the only
+     * escape for that case was the peer-independent
+     * {@link frc.robot.Navigation.TargetProgressWatchdog}, and the sim bots
+     * additionally skipped the full {@link #update} entirely for allies, so the
+     * escalating pirouette was never applied to their commands at all.
+     *
+     * <p>Deliberately excludes pin/backoff: {@code update} arms a forced 3-foot
+     * G418 backoff from stall + proximity, and applying that to allies (who are
+     * not pinning an opponent) would produce rule violations rather than
+     * recoveries. Only the geometry-escape state is shared.
+     *
+     * @param actualVel    measured field-relative chassis velocity
+     * @param commandedVel requested field-relative chassis velocity
+     */
+    public synchronized void updateUnstickOnly(
+            ChassisSpeeds actualVel,
+            ChassisSpeeds commandedVel,
+            double dt) {
+        if (actualVel == null) actualVel = new ChassisSpeeds();
+        if (commandedVel == null) commandedVel = new ChassisSpeeds();
+        if (dt <= 1e-6) dt = 0.02;
+
+        double now = Timer.getFPGATimestamp();
+        double cmdSpeed = Math.hypot(commandedVel.vxMetersPerSecond, commandedVel.vyMetersPerSecond);
+        double actSpeed = Math.hypot(actualVel.vxMetersPerSecond, actualVel.vyMetersPerSecond);
+        boolean stalled = (cmdSpeed > STALL_CMD_SPEED_MIN)
+                && (actSpeed < STALL_ACTUAL_SPEED_MAX);
+
+        updateUnstick(stalled, actualVel, commandedVel, now);
+        prevSpeeds = actualVel;
+        lastTimestamp = now;
+    }
+
+    /**
+     * Arms or extends the escalating pirouette when the robot is stalled.
+     *
+     * <p>Shared by {@link #update} (opponents, which additionally get pin and
+     * deadlock state) and {@link #updateUnstickOnly} (allies, geometry only), so
+     * both agree on what a stall is and on the escape geometry.
+     */
+    private void updateUnstick(
+            boolean stalled, ChassisSpeeds actualVel, ChassisSpeeds commandedVel, double now) {
+        if (!stalled || now <= unstickEndTime) {
+            return;
+        }
+        if (now - lastUnstickStartTime < 3.0) {
+            unstickAttempts = Math.min(unstickAttempts + 1, 5);
+        } else {
+            unstickAttempts = 0;
+        }
+        lastUnstickStartTime = now;
+        double unstickDuration = 0.40 + unstickAttempts * 0.20;
+        unstickEndTime = now + unstickDuration;
+
+        Translation2d vel = new Translation2d(
+                actualVel.vxMetersPerSecond, actualVel.vyMetersPerSecond);
+        if (vel.getNorm() < 0.10) {
+            vel = new Translation2d(commandedVel.vxMetersPerSecond, commandedVel.vyMetersPerSecond);
+        }
+        if (vel.getNorm() > 0.10) {
+            Translation2d reverseDir = vel.div(vel.getNorm()).times(-1.0);
+            if (unstickAttempts > 0) {
+                double escapeAngleDeg =
+                        (unstickAttempts % 2 == 1 ? 1.0 : -1.0) * (60.0 + (unstickAttempts * 15.0));
+                reverseDir = reverseDir.rotateBy(Rotation2d.fromDegrees(escapeAngleDeg));
+            }
+            double escapeSpeed = 1.8 + unstickAttempts * 0.4;
+            unstickVector = reverseDir.times(Math.min(escapeSpeed, 3.5));
+        } else {
+            double escapeAngle = (unstickAttempts * Math.PI / 3.0);
+            unstickVector = new Translation2d(Math.cos(escapeAngle), Math.sin(escapeAngle)).times(2.2);
+        }
+    }
+
+    /**
+     * Applies the pirouette escape if one is latched, otherwise returns the
+     * command unchanged.
+     *
+     * <p>Separate from {@link #arbitrate} so a caller that has already arbitrated
+     * peer corrections (deadlock, trench yield, separation) can add the
+     * peer-independent geometry escape without also re-deriving pin and deadlock
+     * state, which would apply them twice.
+     */
+    public synchronized ChassisSpeeds applyUnstickOnly(ChassisSpeeds commanded) {
+        ChassisSpeeds base = (commanded != null) ? commanded : new ChassisSpeeds();
+        if (Timer.getFPGATimestamp() < unstickEndTime) {
+            return new ChassisSpeeds(unstickVector.getX(), unstickVector.getY(), 6.0);
+        }
+        return base;
     }
 
     /**

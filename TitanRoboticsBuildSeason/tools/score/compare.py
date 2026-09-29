@@ -307,6 +307,30 @@ def main():
     shas = sorted({(r.get("gitSha") or "?")[:7] for r in rows})
     print("  git sha(s): %s%s" % (", ".join(shas),
                                   "   <-- MIXED, rows are not comparable" if len(shas) > 1 else ""))
+    # Dirty-tree provenance. A gitSha on its own does not identify the code that
+    # ran: a build from a modified working tree reports the HEAD sha, so a sweep
+    # of uncommitted edits is indistinguishable from a sweep of that commit. Rows
+    # written before the dirty field existed are reported as unknown rather than
+    # assumed clean.
+    dirty_rows = [r for r in rows if r.get("dirty") == 1]
+    unknown_rows = [r for r in rows if "dirty" not in r]
+    clean_rows = [r for r in rows if r.get("dirty") == 0]
+    if dirty_rows:
+        print("  !! DIRTY TREE: %d/%d row(s) were produced from an uncommitted"
+              " working tree" % (len(dirty_rows), len(rows)))
+        print("     These rows report a clean-looking gitSha but ran modified code."
+              " They cannot be")
+        print("     compared against a clean sweep, and cannot be reproduced from the"
+              " named commit.")
+        print("     Commit the change (or stash it) and re-run before drawing a"
+              " conclusion from them.")
+    if unknown_rows:
+        print("  ?? provenance unknown: %d/%d row(s) predate the 'dirty' field, so it"
+              " cannot be shown" % (len(unknown_rows), len(rows)))
+        print("     they were not built from a modified tree. Treat as dirty until"
+              " re-run.")
+    if clean_rows and not dirty_rows and not unknown_rows:
+        print("  provenance: clean tree (all %d rows)" % len(rows))
     print("  objective: %s  (currently == Blue fuel; climb and penalty terms are"
           % args.objective)
     print("              structurally zero in the headless 3v3 - see docstring)")

@@ -194,6 +194,25 @@ public class StaticPathfinder {
     public static final int N_RED_ALLIANCE_TOP_BYPASS = 32;
     public static final int N_RED_ALLIANCE_BOT_BYPASS = 33;
 
+    // Outer driver-wall corridors behind the climbing towers. The alliance nodes
+    // stop at x = 1.80 (Blue) and x = 14.74 (Red), so a robot or fuel piece in the
+    // wall band behind a tower could see no roadmap node at all and get an empty
+    // path. These give that band an endpoint to attach to.
+    //
+    // X is derived from FIELD_LENGTH rather than hardcoded, so the Blue/Red mirror
+    // rule holds by construction (see AGENTS.md: derive the Red value).
+    public static final int N_BLUE_TOWER_WEST_TOP = 34;
+    public static final int N_BLUE_TOWER_WEST_BOT = 35;
+    public static final int N_RED_TOWER_EAST_TOP = 36;
+    public static final int N_RED_TOWER_EAST_BOT = 37;
+
+    /** Wall-band X for the tower corridor nodes, mirrored about the field centre. */
+    public static final double TOWER_WALL_X = 0.75;
+
+    /** Y lanes for the tower corridor nodes. */
+    public static final double TOWER_WALL_TOP_Y = 5.50;
+    public static final double TOWER_WALL_BOT_Y = 2.30;
+
     static {
         // Blue Alliance Staging & Low Zones
         NODES.add(new RoadmapNode(0, "Blue Alliance Center", 2.40, 4.035));
@@ -244,6 +263,15 @@ public class StaticPathfinder {
         NODES.add(new RoadmapNode(31, "Blue Alliance Bot Bypass", 3.04, 2.32));
         NODES.add(new RoadmapNode(32, "Red Alliance Top Bypass", 13.50, 5.75));
         NODES.add(new RoadmapNode(33, "Red Alliance Bot Bypass", 13.50, 2.32));
+
+        // Outer driver-wall corridors behind the climbing towers. The tower posts
+        // sit at x ~= 1.06 (Blue) and occlude the alliance nodes from the wall band,
+        // so without these the band has no roadmap endpoint and findPath returns
+        // nothing. Mirrored via FIELD_LENGTH, never a second hardcoded constant.
+        NODES.add(new RoadmapNode(34, "Blue Tower West Top", TOWER_WALL_X, TOWER_WALL_TOP_Y));
+        NODES.add(new RoadmapNode(35, "Blue Tower West Bot", TOWER_WALL_X, TOWER_WALL_BOT_Y));
+        NODES.add(new RoadmapNode(36, "Red Tower East Top", FIELD_LENGTH - TOWER_WALL_X, TOWER_WALL_TOP_Y));
+        NODES.add(new RoadmapNode(37, "Red Tower East Bot", FIELD_LENGTH - TOWER_WALL_X, TOWER_WALL_BOT_Y));
 
         // ---------------------------------------------------------------------
         // Connect Bidirectional Topological Edges
@@ -322,6 +350,19 @@ public class StaticPathfinder {
         connect(N_RED_ALLIANCE_CTR, N_RED_ALLIANCE_BOT_BYPASS);
         connect(N_RED_ALLIANCE_BOT, N_RED_ALLIANCE_BOT_BYPASS);
         connect(N_RED_ALLIANCE_BOT_BYPASS, N_RED_BOT_TRENCH_E);
+
+        // Outer wall corridors tie back into the alliance area. Both the direct
+        // node and the bypass are linked so a bot in the wall band has a route out
+        // even when one of the alliance nodes is masked by a contested corridor.
+        connect(N_BLUE_TOWER_WEST_TOP, N_BLUE_ALLIANCE_TOP);
+        connect(N_BLUE_TOWER_WEST_TOP, N_BLUE_ALLIANCE_TOP_BYPASS);
+        connect(N_BLUE_TOWER_WEST_BOT, N_BLUE_ALLIANCE_BOT);
+        connect(N_BLUE_TOWER_WEST_BOT, N_BLUE_ALLIANCE_BOT_BYPASS);
+
+        connect(N_RED_TOWER_EAST_TOP, N_RED_ALLIANCE_TOP);
+        connect(N_RED_TOWER_EAST_TOP, N_RED_ALLIANCE_TOP_BYPASS);
+        connect(N_RED_TOWER_EAST_BOT, N_RED_ALLIANCE_BOT);
+        connect(N_RED_TOWER_EAST_BOT, N_RED_ALLIANCE_BOT_BYPASS);
     }
 
     private static void connect(int id1, int id2) {
@@ -646,20 +687,50 @@ public class StaticPathfinder {
     // Core Pathfinding Entry Point
     // =========================================================================
     /**
-     * Computes a guaranteed collision-free, piecewise linear path from start to
-     * target.
-     * 1. Sanitizes start and target poses so neither is located inside an obstacle.
-     * 2. Direct Line-of-Sight check (optimizes open-carpet driving to zero
-     * overhead).
-     * 3. Topological Roadmap Graph Search (A* over pre-cleared field corridors).
-     * 4. String-Pulling Shortcut Smoothing (eliminates redundant intermediate
-     * turns).
-     * 
-     * @param start  Current robot pose
-     * @param target Desired target pose
-     * @return List of waypoints routing safely to target
+     * How a path request was resolved.
+     *
+     * <p>Exists so a caller can tell "I have a route" from "I am making a bounded
+     * local recovery move because I have no route" from "there is no route and I
+     * am not moving". Collapsing the last two into a silent empty list is what
+     * made a frozen bot indistinguishable from a hang in a replay.
      */
-    public static List<Pose2d> findPath(Pose2d start, Pose2d target) {
+    public enum PathStatus {
+        /** Clear line of sight; no roadmap involved. */
+        DIRECT,
+        /** A* over the roadmap. */
+        ROADMAP,
+        /**
+         * No full route exists, but a short verified-safe step away from the
+         * obstruction was found. The waypoint list holds only that step.
+         */
+        LOCAL_RECOVERY,
+        /** No route and no safe local step. The waypoint list is empty. */
+        UNREACHABLE
+    }
+
+    /** A path plus why it is the one it is. */
+    public record PathResult(List<Pose2d> waypoints, PathStatus status) {
+    }
+
+    /**
+     * Longest local recovery step, metres. A recovery is a shake-loose, not a
+     * drive: it must be short enough that a robot which is genuinely boxed in
+     * cannot creep into a wall while trying to escape.
+     */
+    public static final double LOCAL_RECOVERY_MAX_STEP_M = 0.50;
+
+    /**
+     * Shortest local recovery step, metres. Below the 0.45 m robot radius a step
+     * is not a move.
+     */
+    public static final double LOCAL_RECOVERY_MIN_STEP_M = 0.30;
+
+    /**
+     * {@link #findPath} with an explicit status. Prefer this when the caller needs
+     * to distinguish a frozen robot from a routed one; the two-argument
+     * {@link #findPath} is the same computation with the status discarded.
+     */
+    public static PathResult findPathWithStatus(Pose2d start, Pose2d target) {
         Pose2d safeStart = ensurePoseOutsideObstacles(start, target.getTranslation());
         Pose2d safeTarget = ensurePoseOutsideObstacles(target, safeStart.getTranslation());
 
@@ -677,14 +748,10 @@ public class StaticPathfinder {
                 direct.add(new Pose2d(safeStart.getTranslation(), escapeHeading));
             }
             direct.add(new Pose2d(pTarget, safeTarget.getRotation()));
-            return direct;
+            return new PathResult(direct, PathStatus.DIRECT);
         }
 
         // 2. Connect start and target to visible roadmap nodes
-        int nNodes = NODES.size();
-        int startId = nNodes;
-        int targetId = nNodes + 1;
-
         List<Integer> startVisible = new ArrayList<>();
         List<Integer> targetVisible = new ArrayList<>();
 
@@ -698,17 +765,19 @@ public class StaticPathfinder {
         }
 
         // Never attach an endpoint to a node through an obstacle. If the
-        // sanitized endpoint cannot see the roadmap, stop instead of inventing
-        // a blocked connector.
-        if (startVisible.isEmpty() || targetVisible.isEmpty())
-            return List.of();
+        // sanitized endpoint cannot see the roadmap, try a bounded local recovery
+        // rather than inventing a blocked connector -- and rather than silently
+        // returning nothing, which reads as a hang in a replay.
+        if (startVisible.isEmpty() || targetVisible.isEmpty()) {
+            return localRecoveryResult(safeStart, pStart, pTarget);
+        }
 
         // 3. A* Search over Roadmap Graph
         List<Integer> rawPath = aStarSearch(pStart, pTarget, startVisible, targetVisible);
         if (rawPath.isEmpty()) {
             // Never turn an unreachable route into a straight-line command through an
-            // obstacle.
-            return List.of();
+            // obstacle. A short verified-safe step is acceptable; the target is not.
+            return localRecoveryResult(safeStart, pStart, pTarget);
         }
 
         // Convert node IDs to 2D coordinates
@@ -751,7 +820,72 @@ public class StaticPathfinder {
             finalPath.add(new Pose2d(pTarget, safeTarget.getRotation()));
         }
 
-        return finalPath;
+        return new PathResult(finalPath, PathStatus.ROADMAP);
+    }
+
+    /**
+     * A bounded, verified-safe step away from an obstruction.
+     *
+     * <p>Tries the direction to the target first, then fans out. Every candidate
+     * is accepted only if the <i>whole step</i> is line-of-sight clear and the
+     * endpoint is outside static obstacles, so this can never command the robot
+     * through a wall or into a hub. If nothing qualifies the result is honestly
+     * {@link PathStatus#UNREACHABLE} with an empty list: a bot that is truly
+     * boxed in should hold and be measured as stalled, not be told to drive into
+     * geometry.
+     */
+    private static PathResult localRecoveryResult(Pose2d safeStart, Translation2d pStart,
+            Translation2d pTarget) {
+        Translation2d towardTarget = pTarget.minus(pStart);
+        if (towardTarget.getNorm() < 1e-6) {
+            return new PathResult(List.of(), PathStatus.UNREACHABLE);
+        }
+        double baseAngle = towardTarget.getAngle().getDegrees();
+
+        // Toward the target, then a fan either side. 12 steps of 30 degrees covers
+        // a full reversal, which is what a robot facing into a wall needs.
+        for (int i = 0; i < 12; i++) {
+            double angleDeg = baseAngle + (i * 30.0);
+            Translation2d candidate = pStart.plus(new Translation2d(
+                    LOCAL_RECOVERY_MAX_STEP_M, 0.0).rotateBy(Rotation2d.fromDegrees(angleDeg)));
+            if (isLineOfSightClear(pStart, candidate)
+                    && !isPointInStaticObstacle(candidate)
+                    && FieldMap.isWithinField(candidate, BUMPER_MARGIN)) {
+                Pose2d step = new Pose2d(candidate,
+                        Rotation2d.fromDegrees(baseAngle + (i * 30.0)));
+                return new PathResult(List.of(step), PathStatus.LOCAL_RECOVERY);
+            }
+        }
+
+        // Nothing safe. Hold, and say so.
+        return new PathResult(List.of(), PathStatus.UNREACHABLE);
+    }
+
+    /**
+     * Computes a guaranteed collision-free, piecewise linear path from start to
+     * target.
+     *
+     * <ol>
+     *   <li>Sanitizes start and target poses so neither is inside an obstacle.
+     *   <li>Direct line-of-sight check (open-carpet driving, no roadmap).
+     *   <li>A* over the topological roadmap.
+     *   <li>String-pulling shortcut smoothing.
+     * </ol>
+     *
+     * <p>Returns the waypoint list only. Callers that need to tell a frozen robot
+     * from a routed one (a replay reviewer, the score rig) want
+     * {@link #findPathWithStatus}, which also reports whether a fallback was
+     * used. The one thing this never returns is a straight line to a target it
+     * could not route to: an unreachable route yields a bounded local recovery
+     * step or an empty list, never a command through geometry.
+     *
+     * @param start  current robot pose
+     * @param target desired target pose
+     * @return waypoints routing safely to the target, or an empty list if no safe
+     *         route and no safe local step exist
+     */
+    public static List<Pose2d> findPath(Pose2d start, Pose2d target) {
+        return findPathWithStatus(start, target).waypoints();
     }
 
     private static class NodeRecord {
@@ -818,13 +952,43 @@ public class StaticPathfinder {
         return length * (1.0 + (CLEARANCE_COST_MULTIPLIER_MAX - 1.0) * tightness);
     }
 
+    /**
+     * Cost added for traversing a node in a peer-occupied trench corridor,
+     * replacing the previous hard pruning.
+     *
+     * <p>Hard pruning ({@code if (blocked) continue;}) was not merely a path
+     * quality choice, it was a connectivity bug. The Blue alliance nodes reach
+     * midfield <i>only</i> through the trench funnel pairs
+     * (ALLIANCE -&gt; *_BYPASS -&gt; TRENCH_W), so masking both Blue corridors
+     * isolated every Blue node from the entire rest of the roadmap: A* returned
+     * an empty path, the controller commanded zero, and the bot froze in open
+     * field. Verified by
+     * {@code StaticPathfinderTrenchMaskTest.twoPeerOccupiedCorridorsDoNotSeverTheField},
+     * which failed against the pruning implementation.
+     *
+     * <p>An additive penalty keeps the corridor usable, so A* always has a route;
+     * it simply prefers the clear corridor when one exists. Sized well above any
+     * real path cost (a full field diagonal is ~18.5 m) so a contested trench is
+     * only chosen when it is genuinely the only way through.
+     */
+    private static final double OCCUPIED_TRENCH_PENALTY_M = 20.0;
+
+    /** Additive cost for entering a node in an occupied trench corridor. */
+    private static double trenchPenalty(int nodeId, java.util.Set<Integer> blockedNodes) {
+        return blockedNodes.contains(nodeId) ? OCCUPIED_TRENCH_PENALTY_M : 0.0;
+    }
+
     private static List<Integer> aStarSearch(
             Translation2d startPos,
             Translation2d targetPos,
             List<Integer> startVisible,
             List<Integer> targetVisible) {
 
-        java.util.Set<Integer> blockedNodes = getBlockedTrenchNodes();
+        // Exclude this robot's own registered obstacle from the corridor mask.
+        // Without it a robot sitting in a trench masks the trench it is in and
+        // cannot plan an exit -- the jitter/dance loop. A peer in the same
+        // corridor is outside EGO_DYNAMIC_EXCLUSION_M and still masks it.
+        java.util.Set<Integer> blockedNodes = getBlockedTrenchNodes(startPos);
 
         int totalNodes = NODES.size();
         double[] gScore = new double[totalNodes];
@@ -835,12 +999,13 @@ public class StaticPathfinder {
         PriorityQueue<NodeRecord> openSet = new PriorityQueue<>(Comparator.comparingDouble(nr -> nr.fScore));
 
         for (int startNodeId : startVisible) {
-            if (blockedNodes.contains(startNodeId))
-                continue;
-            // Penalised like any other edge, so an endpoint connector that hugs an
-            // obstacle does not get a free pass into the graph.
+            // Penalised rather than skipped, so a contested corridor never
+            // severs the graph (see OCCUPIED_TRENCH_PENALTY_M). Penalised like
+            // any other edge, so an endpoint connector that hugs an obstacle
+            // does not get a free pass into the graph.
             double d = clearancePenalisedCost(startPos, NODES.get(startNodeId).pos,
-                    startPos.getDistance(NODES.get(startNodeId).pos));
+                    startPos.getDistance(NODES.get(startNodeId).pos))
+                    + trenchPenalty(startNodeId, blockedNodes);
             gScore[startNodeId] = d;
             double h = NODES.get(startNodeId).pos.getDistance(targetPos);
             openSet.add(new NodeRecord(startNodeId, d, d + h));
@@ -867,11 +1032,7 @@ public class StaticPathfinder {
             }
 
             RoadmapNode curNode = NODES.get(current.id);
-            if (blockedNodes.contains(current.id))
-                continue;
             for (int neighborId : curNode.neighbors) {
-                if (blockedNodes.contains(neighborId))
-                    continue;
                 // Roadmap links are only topological hints. Geometry and obstacle modes
                 // change at runtime, so validate each edge before allowing A* to use it.
                 if (!isLineOfSightClear(curNode.pos, NODES.get(neighborId).pos))
@@ -879,7 +1040,8 @@ public class StaticPathfinder {
                 Translation2d neighbourPos = NODES.get(neighborId).pos;
                 double edgeWeight = curNode.pos.getDistance(neighbourPos);
                 double tentativeG = current.gScore + clearancePenalisedCost(
-                        curNode.pos, neighbourPos, edgeWeight);
+                        curNode.pos, neighbourPos, edgeWeight)
+                        + trenchPenalty(neighborId, blockedNodes);
 
                 if (tentativeG < gScore[neighborId]) {
                     gScore[neighborId] = tentativeG;
@@ -975,23 +1137,59 @@ public class StaticPathfinder {
             N_RED_BOT_TRENCH_OUT, N_RED_BOT_TRENCH_E);
 
     public static boolean isTrenchBlocked(boolean isTopTrench, boolean isBlueAlliance) {
+        return isTrenchBlocked(isTopTrench, isBlueAlliance, null);
+    }
+
+    /**
+     * Ego-aware trench occupancy.
+     *
+     * <p>Robots register their own poses as dynamic obstacles, so a robot standing
+     * in a trench would otherwise mask the corridor it occupies and be unable to
+     * plan its way out of it. Passing {@code excludePos} ignores obstacles within
+     * {@link #EGO_DYNAMIC_EXCLUSION_M} of that point; a peer further away still
+     * masks the corridor.
+     *
+     * <p>Keep the two-argument form for callers that genuinely want the
+     * robot-agnostic answer (diversion logic, the published API, tests that
+     * assert a corridor really is occupied). The exclusion is deliberately a small
+     * radius -- it absorbs ego-position smear between ticks, it does not grant
+     * clearance around a genuine blocker.
+     */
+    public static boolean isTrenchBlocked(boolean isTopTrench, boolean isBlueAlliance,
+            Translation2d excludePos) {
         double xMin = isBlueAlliance ? FieldMap.Trenches.BLUE_TRENCH_MIN_X : FieldMap.Trenches.RED_TRENCH_MIN_X;
         double xMax = isBlueAlliance ? FieldMap.Trenches.BLUE_TRENCH_MAX_X : FieldMap.Trenches.RED_TRENCH_MAX_X;
         double yMin = isTopTrench ? FieldMap.Trenches.TOP_TRENCH_MIN_Y : FieldMap.Trenches.BOT_TRENCH_MIN_Y;
         double yMax = isTopTrench ? FieldMap.Trenches.TOP_TRENCH_MAX_Y : FieldMap.Trenches.BOT_TRENCH_MAX_Y;
-        return DynamicRouter.isZoneBlocked(xMin, xMax, yMin, yMax);
+        return DynamicRouter.isZoneBlocked(xMin, xMax, yMin, yMax, excludePos,
+                EGO_DYNAMIC_EXCLUSION_M);
     }
 
+    /**
+     * Radius around the requesting robot within which registered obstacles are
+     * ignored when deciding whether a corridor is peer-occupied.
+     *
+     * <p>Small on purpose. This exists to stop a robot from blocking itself, not
+     * to let a robot claim a contested corridor: a peer 0.5 m away in the same
+     * trench must still mask it, or two robots in one lane would both believe it
+     * is clear.
+     */
+    public static final double EGO_DYNAMIC_EXCLUSION_M = 0.30;
+
     private static java.util.Set<Integer> getBlockedTrenchNodes() {
+        return getBlockedTrenchNodes(null);
+    }
+
+    static java.util.Set<Integer> getBlockedTrenchNodes(Translation2d excludePos) {
         java.util.Set<Integer> blocked = new java.util.HashSet<>();
         // Evaluate both alliances; zones are disjoint so only occupied corridors mask.
-        if (isTrenchBlocked(true, true))
+        if (isTrenchBlocked(true, true, excludePos))
             blocked.addAll(BLUE_TOP_TRENCH_NODES);
-        if (isTrenchBlocked(false, true))
+        if (isTrenchBlocked(false, true, excludePos))
             blocked.addAll(BLUE_BOT_TRENCH_NODES);
-        if (isTrenchBlocked(true, false))
+        if (isTrenchBlocked(true, false, excludePos))
             blocked.addAll(RED_TOP_TRENCH_NODES);
-        if (isTrenchBlocked(false, false))
+        if (isTrenchBlocked(false, false, excludePos))
             blocked.addAll(RED_BOT_TRENCH_NODES);
         return blocked;
     }

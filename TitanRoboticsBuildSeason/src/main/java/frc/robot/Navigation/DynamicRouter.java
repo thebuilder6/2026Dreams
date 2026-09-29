@@ -186,9 +186,39 @@ public class DynamicRouter {
      * @return True if an unexpired obstacle intersects the bounding box
      */
     public static synchronized boolean isZoneBlocked(double xMin, double xMax, double yMin, double yMax) {
+        return isZoneBlocked(xMin, xMax, yMin, yMax, null, 0.0);
+    }
+
+    /**
+     * Zone-occupancy test that can ignore the querying robot's own registered
+     * obstacle.
+     *
+     * <p>Every sim robot registers its own pose as a dynamic obstacle (see
+     * {@code AIRobotInstance} step 5 and {@code AIRobotSim}'s Bot 0 block), and
+     * the exclusion is not free: with a plain overlap test, a robot standing
+     * <i>inside</i> a corridor satisfies the test that is supposed to detect a
+     * <i>peer</i> in it, and the planner then refuses the passage the robot is
+     * physically sitting in. That is the trench jitter loop -- enter, lose the
+     * route, reverse out, re-enter.
+     *
+     * @param excludePoint   a point whose nearby obstacles are ignored (the
+     *                       requesting robot's own pose), or {@code null}
+     * @param excludeRadius  obstacles within this distance of {@code excludePoint}
+     *                       are skipped
+     * @return true if a non-excluded unexpired obstacle intersects the box
+     */
+    public static synchronized boolean isZoneBlocked(
+            double xMin, double xMax, double yMin, double yMax,
+            Translation2d excludePoint, double excludeRadius) {
         double now = Timer.getTimestamp();
         activeObstacles.removeIf(obs -> obs.isExpired(now));
         for (DynamicObstacle obs : activeObstacles) {
+            // Ego exclusion. Scoped to a radius rather than blanket, so a real
+            // peer inside the same corridor still masks it.
+            if (excludePoint != null
+                    && obs.position.getDistance(excludePoint) <= excludeRadius) {
+                continue;
+            }
             double ox = obs.position.getX();
             double oy = obs.position.getY();
             double r = obs.radius;

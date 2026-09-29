@@ -196,6 +196,18 @@ class HeadlessMatchDriverTest {
         assertTrue(line.endsWith("}"));
         assertTrue(line.contains("\"schemaVersion\":" + HeadlessMatchDriver.JSONL_SCHEMA_VERSION));
         assertTrue(line.contains("\"gitSha\":"));
+        // Dirty-tree provenance. A gitSha alone does not identify the code that
+        // ran: a build from a modified working tree reports the HEAD sha, so a
+        // sweep of uncommitted edits was indistinguishable from a sweep of that
+        // commit. -1 means BuildConstants was unreadable, which is itself a
+        // provenance failure and must not read as clean (0).
+        assertTrue(line.contains("\"dirty\":"),
+                "every row must record whether the tree was dirty when it was built");
+        // find(), not matches(): matches() anchors the whole string and this is a
+        // substring probe. -1 = BuildConstants unreadable, which is a provenance
+        // failure and must not read as clean (0).
+        assertTrue(java.util.regex.Pattern.compile("\"dirty\":(-1|0|1)[,}]").matcher(line).find(),
+                "dirty must be -1, 0, or 1 followed by a delimiter, got: " + line);
         assertTrue(line.contains("\"seed\":2026"));
         // Sweep identity, used for resume + grouping.
         assertTrue(line.contains("\"variant\":\"baseline\""));

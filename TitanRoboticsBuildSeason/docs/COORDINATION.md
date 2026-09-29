@@ -28,7 +28,7 @@ intra-sweep parallelism, which `sweep.ps1` already owns via `-MaxWorkers`.
 
 | Resource | Held during | Conflicts with | Why it must be exclusive |
 |---|---|---|---|
-| `gradle-build` | `compileJava` / `test` / `dumpSimLaunch` | itself | `build/test-results/*.xml` is clobbered by a concurrent run, and the "362 tests" baseline cited across `AGENTS.md`, `KNOWN_ISSUES.md` and `docs/CHANGELOG.md` is read out of those XML files. |
+| `gradle-build` | `compileJava` / `test` / `dumpSimLaunch` | itself | `build/test-results/*.xml` is clobbered by a concurrent run, and the "442 tests" baseline cited across `AGENTS.md`, `KNOWN_ISSUES.md` and `docs/CHANGELOG.md` is read out of those XML files. |
 | `sim-gui` | `simulateJava` / SimGUI | itself, `sweep` | Owns NT4 5810, WebServer 5800, CameraServer 1181-1182 for the whole run. Hardcoded `public static final` constants with no environment override. |
 | `sweep` | `tools/score/sweep.ps1` | itself, `sim-gui` | Same ports, plus a live GUI sim and a rig worker sharing one NetworkTables namespace is silent data corruption, not a bind error. |
 | `deploy` | `gradlew deploy` | itself | One RoboRIO; last writer wins. |
@@ -110,15 +110,52 @@ the non-destructive shutdown in `run-practice-match.ps1`. Treat a lock timeout a
   check the task was skipped and the corruption persisted.
 - `smoke-headless.ps1` run end to end under the lock: `BUILD SUCCESSFUL`, lock
   released, no leftover lock files.
-- Full suite on the current binary, after all of the above: **36 files / 362
+- Full suite on the current binary, after all of the above: **44 files / 442
   tests / 0 failures** (`--offline --no-daemon --rerun-tasks`). The count is
-  362, not the 361 previously recorded: both the `build/test-results/test/*.xml`
-  sum and an on-disk count of `@Test` annotations agree at 362, and `git status`
-  is clean for `src/test`. Note that a PowerShell `**` glob undercounts this to
-  357, which is the trap `KNOWN_ISSUES.md` warns about.
-- Not yet verified: two agents actually racing each other in one session. The
-  mechanism is tested directly as listed above, but the end-to-end multi-agent
-  case has not been exercised, which is why the `AGENTS.md` rule is advisory.
+  measured, never inferred: `build/test-results/test/*.xml` sums to 442 across 44
+  files, and an on-disk count of `@Test` annotations agrees at 442. Note that a
+  PowerShell `**` glob undercounts this badly, which is the trap
+  `KNOWN_ISSUES.md` warns about — count from the XML.
+- **The lock prevented a real collision, and it was worth having.** During the
+  nav work a background full-suite run and a foreground targeted run overlapped
+  and the second died with `Unable to delete directory
+  build\test-results\test\binary\output.bin` — exactly the shared-output clobber
+  this resource exists to prevent. Every test class then failed as
+  "could not execute", which reads like a catastrophic regression and was not
+  one: each class passed individually, and a single clean re-run was green. Two
+  lessons for the next agent: hold `gradle-build` for the whole verification
+  window, and if a run dies on an undeletable `build/` directory, re-run once
+  before investigating.
+- **The advisory gap is real and was hit in practice.** A 150 s headless match
+  (pid 1528, `-Dfrc.headless=true -Dfrc.headless.durationSec=150`) was running
+  with `sweep` reported **free** — it had been launched without taking the lock.
+  It held the `build/jni` natives (so `extractReleaseNative` failed), bound
+  ports 1181/1250, and the concurrent load crashed a test JVM with
+  `-1073741819` (access violation), which surfaced as a red suite rather than
+  the environmental problem it was. **The correct response was to wait, not to
+  kill it** — that PID was another agent's live match, and killing it is exactly
+  the interrupt this module exists to stop. It exited on its own after 167 s and
+  the next run was green. If a run fails on `extractReleaseNative` or a
+  `non-zero exit value -1073741819`, check for a foreign headless match *before*
+  concluding anything about the code.
+- **`--rerun-tasks` is not a usable verification form while a sweep is running,
+  and the reason is sharper than "something holds a handle".** It forces
+  `extractReleaseNative` to re-copy the JNI natives, and the actual failure is
+  `build\jni\release\wpiHal.dll … being used by another process` — the running
+  match has that DLL mapped. Waiting for one match to exit is **not** sufficient
+  when a sweep is cycling matches: on 2026-09-29 a second match
+  (`-Dfrc.headless=true`, pid 38184) was already 16 s old when the first one
+  exited, so there was no window in which re-extraction was safe, and re-running
+  failed identically three times. Forcing it would mean killing another agent's
+  match, which is the interrupt this module exists to prevent. **Use
+  `.\gradlew build --offline --no-daemon` for verification**; reserve
+  `--rerun-tasks` for a genuinely idle machine, and read
+  `extractReleaseNative FAILED` as a contention signal rather than a build
+  break.
+- Not yet verified: two agents actually racing each other in one session by
+  design. The mechanism is tested directly as listed above, but the end-to-end
+  multi-agent case has not been exercised, which is why the `AGENTS.md` rule is
+  advisory.
 - Next review due: 2026-10-29.
 
 ## Related

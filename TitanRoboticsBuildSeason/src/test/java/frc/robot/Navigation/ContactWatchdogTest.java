@@ -276,6 +276,101 @@ public class ContactWatchdogTest {
         assertFalse(res.recovering(), "Reset must clear an in-progress recovery");
     }
 
+    // ── Peer-independent static unstick (geometry escape) ───────────
+    //
+    // The gap these pin: a bot wedged against a hub core, ramp, trench wall, or
+    // tower post has no peer nearby, so updateDeadlock never accumulates
+    // (ContactWatchdog:379-386 gates on PROXIMITY_M). Sim allies additionally
+    // skipped the full update() entirely, so the escalating pirouette was never
+    // armed for them and never applied to their commanded speeds -- they were
+    // only ever rescued by the peer-independent TargetProgressWatchdog.
+
+    /** Feeds N unstick-only cycles at a genuine stall (commanding, not moving). */
+    private static void unstickTick(ContactWatchdog w, int n) {
+        for (int i = 0; i < n; i++) {
+            w.updateUnstickOnly(
+                    new ChassisSpeeds(), new ChassisSpeeds(2.0, 0.0, 0.0), DT);
+        }
+    }
+
+    @Test
+    public void unstickIsNotArmedWithoutAStall() {
+        ContactWatchdog r = new ContactWatchdog(new java.util.Random(1));
+        // Commanding hard AND actually moving: free motion must not arm an escape.
+        for (int i = 0; i < 200; i++) {
+            r.updateUnstickOnly(new ChassisSpeeds(2.0, 0.0, 0.0), new ChassisSpeeds(2.0, 0.0, 0.0), DT);
+        }
+        assertFalse(r.isPirouetteActive(), "a moving bot must never be told to escape");
+    }
+
+    @Test
+    public void staticUnstickArmsAndCommandsAnEscape() {
+        ContactWatchdog r = new ContactWatchdog(new java.util.Random(1));
+        unstickTick(r, 5);
+
+        assertTrue(r.isPirouetteActive(), "a stalled bot with no peer must still arm an escape");
+        ChassisSpeeds out = r.applyUnstickOnly(new ChassisSpeeds(2.0, 0.0, 0.0));
+        assertTrue(Math.hypot(out.vxMetersPerSecond, out.vyMetersPerSecond) > 0.5,
+                "an armed escape must command a real velocity");
+    }
+
+    @Test
+    public void inactiveUnstickLeavesTheCommandAlone() {
+        ContactWatchdog r = new ContactWatchdog(new java.util.Random(1));
+        for (int i = 0; i < 200; i++) {
+            r.updateUnstickOnly(new ChassisSpeeds(2.0, 0.0, 0.0), new ChassisSpeeds(2.0, 0.0, 0.0), DT);
+        }
+        ChassisSpeeds in = new ChassisSpeeds(1.5, -0.5, 0.3);
+        ChassisSpeeds out = r.applyUnstickOnly(in);
+        assertEquals(1.5, out.vxMetersPerSecond, 1e-9);
+        assertEquals(-0.5, out.vyMetersPerSecond, 1e-9);
+        assertEquals(0.3, out.omegaRadiansPerSecond, 1e-9);
+    }
+
+    /**
+     * The reason this is a separate entry point. The full {@link #update} arms a
+     * forced 3-foot G418 backoff from stall + proximity; applying that to an ally
+     * (which is not pinning an opponent) would create rule violations rather than
+     * recoveries.
+     */
+    @Test
+    public void unstickOnlyNeverEngagesPinOrBackoff() {
+        ContactWatchdog r = new ContactWatchdog(new java.util.Random(1));
+        unstickTick(r, 125);
+        assertTrue(r.isPirouetteActive(), "the escape itself must arm");
+        assertFalse(r.isForcedBackoffActive(),
+                "the geometry escape must never arm a G418 forced backoff");
+        assertEquals(0.0, r.getPinDuration(), 1e-9,
+                "unstick-only must not accumulate pin contact");
+    }
+
+    /**
+     * The two recoveries are independent: a static wedge needs no peer, and a
+     * peer deadlock needs no stall against geometry. Both must survive the
+     * refactor of the pirouette arming into a shared helper.
+     */
+    @Test
+    public void unstickOnlyStillLeavesDeadlockToThePeerPath() {
+        ContactWatchdog r = new ContactWatchdog(new java.util.Random(1));
+        unstickTick(r, 20);
+        // Deadlock is only advanced by updateDeadlockOnly / update, never by
+        // updateUnstickOnly, so no recovery can be counted from unstick ticks.
+        assertEquals(0, r.getRecoveryCount(),
+                "unstick-only must not fabricate deadlock recoveries");
+    }
+
+    @Test
+    public void repeatedStallsEscalateTheEscape() throws InterruptedException {
+        ContactWatchdog r = new ContactWatchdog(new java.util.Random(1));
+        unstickTick(r, 5);
+        assertTrue(r.isPirouetteActive());
+        // Let it lapse, then re-stall: attempts must accumulate so a persistent
+        // wedge gets a wider-angle escape rather than repeating one direction.
+        Thread.sleep(500);
+        unstickTick(r, 5);
+        assertTrue(r.isPirouetteActive(), "a re-stall must re-arm the escape");
+    }
+
     // ── Arbitrate priority ───────────────────────────────────────────
 
     @Test

@@ -30,6 +30,11 @@ public class AutonomousTeleopAgent {
     // the real robot re-decides every cycle and walks in circles between
     // "go score" and "go sweep" (the two sit ~0.02 apart in the utility matrix).
     private final ObjectiveCommitment objectiveCommitment = new ObjectiveCommitment();
+    // Co-Pilot's own fuel-target latch, for the same reason as the sim bots': the
+    // cluster-weighted selector's alignment term depends on instantaneous heading,
+    // so without hysteresis the player re-targets between comparable pieces every
+    // few cycles and never commits to collecting one.
+    private final FuelTargetMemory fuelTargetMemory = new FuelTargetMemory();
     private AIActionIntent latestIntent = null;
     private boolean assistActive = false;
     private boolean breakoutTriggered = false;
@@ -57,7 +62,7 @@ public class AutonomousTeleopAgent {
         WorldState world = WorldStateBuilder.buildForPlayerRobot(heldBalls);
         latestIntent = JevDecisionEngine.getInstance().evaluatePolicy(
                 world, ObservedKnowledge.selfOnly(), Archetype.CO_PILOT, null, null,
-                objectiveCommitment);
+                objectiveCommitment, fuelTargetMemory);
         activeObjective = latestIntent.objective();
 
         SmartDashboard.putString("CoPilot/CurrentObjective", activeObjective.name());

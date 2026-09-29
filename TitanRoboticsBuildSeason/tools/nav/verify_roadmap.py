@@ -34,16 +34,92 @@ def check(cond, msg):
 
 # ---- roadmap nodes ---------------------------------------------------------
 src_nodes = {}
+# Two literal shapes, because the tower-wall nodes added 2026-09-29 take their
+# coordinates from named constants (TOWER_WALL_X, FIELD_LENGTH - TOWER_WALL_X)
+# so the Blue/Red mirror rule holds by construction rather than by a second
+# hardcoded literal. Resolve those against the declared constants so the
+# verifier still compares real numbers.
+consts_raw = dict(re.findall(
+    r"public static final (?:int|double) ([A-Z_0-9]+) = ([-\d.]+);", sp))
+consts_num = {k: float(v) for k, v in consts_raw.items()}
+
+
+def _coord(expr):
+    """Resolve a coordinate expression to a float, or return None if symbolic."""
+    e = expr.strip()
+    try:
+        return float(e)
+    except ValueError:
+        pass
+    m = re.fullmatch(r"([A-Z_0-9]+)\s*-\s*([A-Z_0-9]+)", e)
+    if m and m.group(1) in consts_num and m.group(2) in consts_num:
+        return consts_num[m.group(1)] - consts_num[m.group(2)]
+    m = re.fullmatch(r"([A-Z_0-9]+)", e)
+    if m and m.group(1) in consts_num:
+        return consts_num[m.group(1)]
+    return None
+
+
+def _lookup_const(name):
+    """Resolve a Java static constant, including one on another class.
+
+    The tower-wall nodes use `FieldMap.FIELD_LENGTH - TOWER_WALL_X`, and
+    FIELD_LENGTH lives on FieldMap rather than StaticPathfinder, so a single-file
+    constant table is not enough.
+    """
+    if name in consts_num:
+        return consts_num[name]
+    m = re.search(r"public static final double " + re.escape(name) + r" = ([\d.]+);", sp)
+    if m:
+        return float(m.group(1))
+    try:
+        fm = (NAV / "FieldMap.java").read_text(encoding="utf-8")
+    except OSError:
+        return None
+    m = re.search(r"public static final double " + re.escape(name) + r" = ([\d.]+);", fm)
+    return float(m.group(1)) if m else None
+
+
+def _coord(expr):
+    """Resolve a coordinate expression to a float, or None if symbolic."""
+    e = expr.strip()
+    try:
+        return float(e)
+    except ValueError:
+        pass
+    m = re.fullmatch(r"([A-Z_0-9.]+)\s*-\s*([A-Z_0-9.]+)", e)
+    if m:
+        a, b = _lookup_const(m.group(1)), _lookup_const(m.group(2))
+        if a is not None and b is not None:
+            return a - b
+    m = re.fullmatch(r"([A-Z_0-9.]+)", e)
+    if m:
+        return _lookup_const(m.group(1))
+    return None
+
+
 for m in re.finditer(
-    r'NODES\.add\(new RoadmapNode\((\d+), "([^"]+)", ([\d.]+), ([\d.]+)\)\)', sp
+    r'NODES\.add\(new RoadmapNode\((\d+), "([^"]+)", ([^,]+), ([^)]+)\)\)', sp
 ):
-    src_nodes[int(m.group(1))] = (m.group(2), float(m.group(3)), float(m.group(4)))
+    cx, cy = _coord(m.group(3)), _coord(m.group(4))
+    if cx is None or cy is None:
+        errors.append(
+            f"node {m.group(1)} ({m.group(2)}) has an unresolvable coordinate "
+            f"({m.group(3)}, {m.group(4)}); the verifier cannot check it")
+        continue
+    src_nodes[int(m.group(1))] = (m.group(2), cx, cy)
 
 html_nodes = {}
 for m in re.finditer(r'\[(\d+),"([^"]+)",([\d.]+),([\d.]+),"(\w+)"\]', html):
     html_nodes[int(m.group(1))] = (m.group(2), float(m.group(3)), float(m.group(4)))
 
-check(len(src_nodes) == 34, f"source has {len(src_nodes)} nodes, expected 34")
+# 34 through 2026-09-28, then 38 once the four tower-wall nodes (34-37) were
+# added to give the driver-wall band behind the climbing towers a roadmap
+# endpoint. See WallPocketRecoveryTest.roadmapNowHasThirtyEightNodes, which pins
+# the same number on the Java side.
+EXPECTED_NODES = 38
+check(len(src_nodes) == EXPECTED_NODES,
+      f"source has {len(src_nodes)} nodes, expected {EXPECTED_NODES}")
 check(len(html_nodes) == len(src_nodes),
       f"html has {len(html_nodes)} nodes, source has {len(src_nodes)}")
 for i in sorted(set(src_nodes) | set(html_nodes)):

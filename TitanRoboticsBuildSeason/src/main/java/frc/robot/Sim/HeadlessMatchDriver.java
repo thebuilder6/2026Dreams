@@ -543,10 +543,29 @@ public final class HeadlessMatchDriver {
         } catch (Throwable t) {
             sha = "unknown";
         }
+        // Was the tree dirty when this binary was generated? Recorded separately
+        // from gitSha because a sha alone is a lie about a dirty build: the
+        // working tree carried 31 uncommitted files on 2026-09-29 and every row
+        // still claimed a clean HEAD sha, so a sweep of modified code was
+        // indistinguishable from a sweep of the commit. compare.py now treats
+        // dirty rows as non-comparable.
+        //
+        // Not a schemaVersion bump: this is provenance metadata alongside
+        // gitSha, not a change to what a row measures, and bumping would make
+        // compare.py reject the four existing result files on disk for no gain.
+        // Rows written before this field simply lack it, and compare.py reports
+        // those as "provenance unknown" rather than assuming clean.
+        int dirty;
+        try {
+            dirty = frc.robot.BuildConstants.DIRTY;
+        } catch (Throwable t) {
+            dirty = -1;
+        }
         StringBuilder sb = new StringBuilder(512);
         sb.append('{');
         sb.append("\"schemaVersion\":").append(JSONL_SCHEMA_VERSION);
         sb.append(",\"gitSha\":\"").append(esc(sha)).append('"');
+        sb.append(",\"dirty\":").append(dirty);
         sb.append(",\"stamp\":\"").append(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"))).append('"');
         sb.append(",\"seed\":").append(r.seed());
         sb.append(",\"variant\":\"").append(esc(r.variant())).append('"');
@@ -638,11 +657,84 @@ public final class HeadlessMatchDriver {
         String stamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"));
         Path report = dir.resolve(reportFileName(options, stamp));
         MatchResult result = snapshotResult(options, report.toString());
-        Files.writeString(report, formatReport(result));
+        String stallCauses = formatStallCauseSection();
+        Files.writeString(report, formatReport(result) + stallCauses);
         writeResultJsonl(options, result);
         System.out.println("[Headless] report: " + report);
         System.out.println("[Headless] replay log: " + result.logPath());
+        System.out.print(stallCauses);
         return report.toString();
+    }
+
+    /**
+     * Stall-cause breakdown for the nav-overhaul taxonomy (Phase 0).
+     *
+     * <p>Read live from the bots rather than from {@link MatchResult}, so the
+     * JSONL schema, `compare.py`, and their tests are untouched — the report is
+     * human-only. Appended to the report and echoed to the console by
+     * {@link #writeMatchReport}.
+     */
+    static String stallCauseRow(String label, BotMatchMetrics m) {
+        java.util.Locale locale = java.util.Locale.US;
+        return "| " + label + " | "
+                + String.format(locale, "%.2f", m.getMaxContiguousStallSec()) + " | "
+                + String.format(locale, "%.2f",
+                        m.getStallSecByCause(BotMatchMetrics.StallCause.DEADLOCK_TRENCH))
+                + " | "
+                + String.format(locale, "%.2f",
+                        m.getStallSecByCause(BotMatchMetrics.StallCause.DEADLOCK_OPEN))
+                + " | "
+                + String.format(locale, "%.2f",
+                        m.getStallSecByCause(BotMatchMetrics.StallCause.TRENCH_YIELD))
+                + " | "
+                + String.format(locale, "%.2f",
+                        m.getStallSecByCause(BotMatchMetrics.StallCause.TARGET_UNREACHABLE))
+                + " | "
+                + String.format(locale, "%.2f",
+                        m.getStallSecByCause(BotMatchMetrics.StallCause.STATIC_UNSTICK))
+                + " | "
+                + String.format(locale, "%.2f",
+                        m.getStallSecByCause(BotMatchMetrics.StallCause.STALLED_ARRIVED))
+                + " | "
+                + String.format(locale, "%.2f",
+                        m.getStallSecByCause(BotMatchMetrics.StallCause.STALLED_CHURN))
+                + " | "
+                + String.format(locale, "%.2f",
+                        m.getStallSecByCause(BotMatchMetrics.StallCause.STALLED_OTHER))
+                + " |\n";
+    }
+
+    /** Per-bot stall-cause table, index-aligned with the fuel table in {@link #formatReport}. */
+    static String formatStallCauseSection() {
+        AIRobotSim sim = AIRobotSim.getInstance();
+        if (sim == null) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("\n## Stall cause breakdown (s)\n\n");
+        sb.append("| Bot | Max stall | Trench deadlock | Open deadlock | Trench yield | Unreachable target | Static unstick | Arrived | Churn | Unattributed |\n");
+        sb.append("|---|---|---|---|---|---|---|---|---|---|---|\n");
+        if (!sim.getOpponents().isEmpty() && sim.getOpponents().get(0) != null) {
+            sb.append(stallCauseRow("Red Bot0", sim.getOpponents().get(0).getMatchMetrics()));
+        }
+        for (int i = 1; i < 3; i++) {
+            if (i - 1 < sim.getAdditionalBots().size()
+                    && sim.getAdditionalBots().get(i - 1) != null) {
+                sb.append(stallCauseRow("Red Bot" + i,
+                        sim.getAdditionalBots().get(i - 1).getMatchMetrics()));
+            }
+        }
+        if (sim.getTrainingBluePrimaryBot() != null) {
+            sb.append(stallCauseRow("Blue Ally0",
+                    sim.getTrainingBluePrimaryBot().getMatchMetrics()));
+        }
+        for (int i = 1; i < 3; i++) {
+            if (i - 1 < sim.getAllyBots().size() && sim.getAllyBots().get(i - 1) != null) {
+                sb.append(stallCauseRow("Blue Ally" + i,
+                        sim.getAllyBots().get(i - 1).getMatchMetrics()));
+            }
+        }
+        return sb.toString();
     }
 
     /** Renders the markdown match report from a {@link MatchResult}. */

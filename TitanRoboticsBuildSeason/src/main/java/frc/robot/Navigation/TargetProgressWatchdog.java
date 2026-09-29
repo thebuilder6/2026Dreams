@@ -95,8 +95,20 @@ public final class TargetProgressWatchdog {
     /** Keep-out band the escape must not breach. */
     private static final double WALL_MARGIN_M = 0.5;
 
-    /** Never abandon a target that is already reached. */
+    /** Never abandon a target that is already reached and held. */
     public static final double ARRIVED_M = 0.60;
+
+    /**
+     * Measured speed below this counts as "pinned", i.e. commanding motion while
+     * going nowhere.
+     *
+     * <p>Shares its value with {@code ContactWatchdog.STALL_ACTUAL_SPEED_MAX}
+     * deliberately: both answer the same question ("is this robot actually
+     * moving?"), and the Sep 26 trap was precisely that the two detectors
+     * disagreed about it. If one is retuned the other must be.
+     */
+    public static final double STALL_ACTUAL_SPEED_MAX =
+            frc.robot.Navigation.ContactWatchdog.STALL_ACTUAL_SPEED_MAX;
 
     /** Per-update outcome; {@code escapeVector} is field-relative. */
     public record Result(
@@ -115,6 +127,31 @@ public final class TargetProgressWatchdog {
     private double noProgressSec = 0.0;
     private double escapeRemainingSec = 0.0;
     private Translation2d escapeFrom = new Translation2d();
+    /**
+     * Seconds since the currently-tracked target was adopted (dt-accumulated,
+     * so it works when the WPILib clock is frozen in tests). Phase 0b stall
+     * taxonomy: a bot stalled longer than {@link #GIVEUP_SEC} while tracking a
+     * target younger than that window is churning targets, not stuck on one.
+     */
+    private double trackedSec = 0.0;
+    /**
+     * Seconds spent commanding motion while measured speed stayed below
+     * {@link #STALL_ACTUAL_SPEED_MAX}. Survives target changes, unlike
+     * {@link #noProgressSec}.
+     *
+     * <p>Only accumulated when a caller supplies measured velocity; with the
+     * distance-only overload this stays 0 and the original recovery is the only
+     * path, so legacy call sites are unchanged.
+     */
+    private double pinnedSec = 0.0;
+    /**
+     * Target changes since the current target was adopted. Non-zero means the
+     * selector is churning and the distance window cannot be trusted to expire;
+     * zero means one stable target, which the distance path owns (and which then
+     * blacklists the piece, because a single unreachable piece is a real
+     * target-selection failure).
+     */
+    private int recentTargetChanges = 0;
 
     /**
      * Advances the watchdog by one cycle.
@@ -126,6 +163,39 @@ public final class TargetProgressWatchdog {
      */
     public synchronized Result update(
             Pose2d pose, ChassisSpeeds commanded, Pose2d navTarget, double dt) {
+        // Legacy call sites have no measured velocity. Passing null keeps the
+        // original distance-only semantics exactly, so this overload is not a
+        // behaviour change for existing callers.
+        return update(pose, commanded, null, navTarget, dt);
+    }
+
+    /**
+     * Advances the watchdog with the robot's <i>measured</i> velocity alongside the
+     * commanded one.
+     *
+     * <p><b>Why the actual velocity is a separate input.</b> Without it,
+     * "no progress" is inferred purely from the distance to the commanded target,
+     * and a target that changes every few ticks resets that window every time. A
+     * bot physically pinned against a hub core, a ramp, or a trench wall while a
+     * selector oscillated between two fuel pieces therefore never accumulated
+     * {@link #GIVEUP_SEC} and was never rescued -- classified
+     * {@code STALLED_CHURN}. With the measured velocity, "commanding motion and
+     * going nowhere" is directly observable, independent of what is being aimed
+     * at, so the rescue fires on a pinned robot no matter how the target moves.
+     *
+     * <p>The two recoveries are deliberately different. A stable unreachable
+     * target is a real target-selection failure, so the piece is blacklisted and
+     * the selector can pick something else. A pinned robot under a churning
+     * target has no guilty piece: nothing about any one piece caused the stall,
+     * so it is escaped <i>without</i> blacklisting. Excluding a piece the bot never
+     * had a fair shot at would only starve it of options.
+     *
+     * @param actual measured field-relative chassis speeds, or {@code null} to use
+     *              distance-to-target progress only
+     */
+    public synchronized Result update(
+            Pose2d pose, ChassisSpeeds commanded, ChassisSpeeds actual,
+            Pose2d navTarget, double dt) {
         if (pose == null || commanded == null || !Double.isFinite(dt) || dt <= 0.0) {
             return Result.IDLE;
         }
@@ -141,20 +211,64 @@ public final class TargetProgressWatchdog {
 
         Translation2d target = navTarget.getTranslation();
         double distance = pose.getTranslation().getDistance(target);
-        if (trackedTarget == null || trackedTarget.getDistance(target) > NEW_TARGET_RESET_M) {
-            // Adopt the new objective and start its window on this same cycle,
-            // so GIVEUP_SEC means GIVEUP_SEC of no progress after adoption.
+        double commandedSpeed = Math.hypot(
+                commanded.vxMetersPerSecond, commanded.vyMetersPerSecond);
+
+        // Pinned: commanding motion, going nowhere. Tracked across target changes
+        // on purpose -- the whole point is that a churning target must not be able
+        // to clear it.
+        boolean measured = (actual != null);
+        double actualSpeed = measured
+                ? Math.hypot(actual.vxMetersPerSecond, actual.vyMetersPerSecond)
+                : Double.MAX_VALUE;
+        boolean pinned = measured
+                && commandedSpeed >= COMMAND_MIN_MPS
+                && actualSpeed < STALL_ACTUAL_SPEED_MAX;
+        if (pinned) {
+            pinnedSec += dt;
+        } else {
+            pinnedSec = 0.0;
+        }
+
+        boolean isNewTarget =
+                trackedTarget == null || trackedTarget.getDistance(target) > NEW_TARGET_RESET_M;
+        if (isNewTarget) {
+            // Adopting a target for the first time is not churn. Only a *change*
+            // from an already-tracked target counts, so read the previous value
+            // before resetProgress() clears it.
+            boolean hadTrackedTarget = (trackedTarget != null);
             resetProgress();
             trackedTarget = target;
             windowStartDistanceM = distance;
+            if (hadTrackedTarget) {
+                recentTargetChanges++;
+            }
         }
-        if (distance < ARRIVED_M) {
+        trackedSec += dt;
+
+        // The churn rescue. Only claims the tick when the target is *also* moving,
+        // because a churning target is what prevents the distance window from ever
+        // expiring. A stable target falls through to the distance path below, which
+        // blacklists the piece: that is a genuine target-selection failure and the
+        // selector should be allowed to pick something else. Claiming the tick here
+        // unconditionally would silently delete the blacklist behaviour for every
+        // pinned bot, which is the recovery that actually works.
+        if (pinnedSec >= GIVEUP_SEC && recentTargetChanges > 0) {
+            escapeFrom = target;
+            escapeRemainingSec = ESCAPE_SEC;
+            resetProgress();
+            return new Result(true, escapeVector(pose), List.of(), pinnedSec, ESCAPE_SEC);
+        }
+        if (distance < ARRIVED_M && commandedSpeed < COMMAND_MIN_MPS) {
+            // Reached and holding (staging, planting to shoot, parked): an
+            // intentional hold is never a stall. Reached but still commanding
+            // motion falls through to normal tracking below — Phase 0b
+            // measured bots stalled 16+ s within this radius (seed 7, variant
+            // nav-phase0b) while the old unconditional idle let them sit.
             resetProgress();
             return Result.IDLE;
         }
 
-        double commandedSpeed = Math.hypot(
-                commanded.vxMetersPerSecond, commanded.vyMetersPerSecond);
         if (commandedSpeed < COMMAND_MIN_MPS) {
             // Not trying to move (staging, planting to shoot, parked): decay so
             // an intentional hold never counts as a stall.
@@ -231,6 +345,10 @@ public final class TargetProgressWatchdog {
         trackedTarget = null;
         windowStartDistanceM = Double.MAX_VALUE;
         noProgressSec = 0.0;
+        trackedSec = 0.0;
+        recentTargetChanges = 0;
+        // pinnedSec is deliberately NOT reset here. It is the one accumulator that
+        // has to outlive a target change, which is the entire reason it exists.
     }
 
     /** True when a fuel piece at this point is inside a blacklisted radius. */
@@ -285,6 +403,16 @@ public final class TargetProgressWatchdog {
     /** No-progress window currently accumulated, in seconds. */
     public synchronized double getNoProgressSec() {
         return noProgressSec;
+    }
+
+    /**
+     * Seconds since the currently-tracked target was adopted, or -1 when no
+     * target is tracked (idle, arrived, or escaping). A stalled bot whose
+     * tracked target is younger than {@link #GIVEUP_SEC} while the stall itself
+     * is older is churning through targets rather than stuck on one.
+     */
+    public synchronized double getTrackedTargetAgeSec() {
+        return trackedTarget == null ? -1.0 : trackedSec;
     }
 
     /** True while an escape maneuver is latched. */

@@ -336,6 +336,25 @@ public class JevDecisionEngine {
     public AIActionIntent evaluatePolicy(
             WorldState world, MatchKnowledge knowledge, Archetype archetype, String cloudContext,
             Set<Translation2d> blockedFuel, ObjectiveCommitment commitmentIn) {
+        return evaluatePolicy(world, knowledge, archetype, cloudContext, blockedFuel,
+                commitmentIn, null);
+    }
+
+    /**
+     * Full evaluation including both of the caller's per-agent latches.
+     *
+     * <p>{@code fuelTargetMemory} holds the fuel piece this agent is committed to
+     * collecting, so a heading swing cannot make the selector oscillate between
+     * two comparable pieces. Like {@code commitmentIn} it belongs to the agent,
+     * not to this engine; pass {@code null} for the legacy behaviour.
+     *
+     * @param commitmentIn     this agent's objective latch, or {@code null}
+     * @param fuelTargetMemory this agent's fuel-target latch, or {@code null}
+     */
+    public AIActionIntent evaluatePolicy(
+            WorldState world, MatchKnowledge knowledge, Archetype archetype, String cloudContext,
+            Set<Translation2d> blockedFuel, ObjectiveCommitment commitmentIn,
+            FuelTargetMemory fuelTargetMemory) {
         if (knowledge == null) {
             // Null used to become legacyObserved(), i.e. "opponents seen". Default to
             // the tier that claims the least, so a caller that forgets to pass
@@ -749,7 +768,7 @@ public class JevDecisionEngine {
 
             case VACUUM_MIDFIELD:
                 navTarget = findClusterWeightedFuelTarget(world.selfPose(), world.isRedAlliance(),
-                        world.isAutonomous(), blockedFuel);
+                        world.isAutonomous(), blockedFuel, fuelTargetMemory);
                 intakeCmd = IntakeState.INTAKING;
                 shooterCmd = ShooterState.STOPPED;
                 rationale = String.format("Hunting fuel (%d/30). Hopper capacity available.", world.heldFuelCount());
@@ -1065,11 +1084,27 @@ public class JevDecisionEngine {
      */
     public Pose2d findClusterWeightedFuelTarget(Pose2d robotPose, boolean isRedAlliance,
             boolean isAutonomous, Set<Translation2d> blockedFuel) {
+        return findClusterWeightedFuelTarget(robotPose, isRedAlliance, isAutonomous, blockedFuel, null);
+    }
+
+    /**
+     * Cluster-weighted fuel selection with optional per-agent target hysteresis.
+     *
+     * <p>{@code memory} is this agent's {@link FuelTargetMemory} latch. It must be
+     * owned by the caller, never by this engine: a latch held on the shared
+     * singleton leaks one bot's target into every other bot's decisions and into
+     * the Co-Pilot (see {@link ObjectiveCommitment} for the incident). Pass
+     * {@code null} for the legacy winner-take-all behaviour.
+     */
+    public Pose2d findClusterWeightedFuelTarget(Pose2d robotPose, boolean isRedAlliance,
+            boolean isAutonomous, Set<Translation2d> blockedFuel,
+            FuelTargetMemory memory) {
         SimulatedArena arena = SimulatedArena.getInstance();
         Translation2d bestTarget = null;
         double highestScent = -1.0;
 
         List<Translation2d> candidates = new ArrayList<>();
+        List<FuelTargetMemory.ScoredTarget> scored = new ArrayList<>();
 
         if (arena != null) {
             try {
@@ -1147,11 +1182,25 @@ public class JevDecisionEngine {
                 }
 
                 double scent = (Math.pow(density, 1.5) / (dist + 0.40)) * (alignBonus + directionBonus);
+                scored.add(new FuelTargetMemory.ScoredTarget(cand, scent));
 
                 if (scent > highestScent) {
                     highestScent = scent;
                     bestTarget = cand;
                 }
+            }
+        }
+
+        // Hysteresis, when the caller supplied per-agent memory. The raw
+        // winner above is a function of the robot's instantaneous heading (the
+        // alignBonus term), so comparable pieces trade places whenever the robot
+        // turns slightly -- which resets TargetProgressWatchdog's no-progress
+        // window every few ticks and produces STALLED_CHURN. A null memory
+        // (Match Coach, unit tests) keeps the legacy winner-take-all behaviour.
+        if (memory != null && !scored.isEmpty()) {
+            Translation2d held = memory.resolve(scored);
+            if (held != null) {
+                bestTarget = held;
             }
         }
 

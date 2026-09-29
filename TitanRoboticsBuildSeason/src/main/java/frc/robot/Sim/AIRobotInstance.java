@@ -71,6 +71,16 @@ public class AIRobotInstance {
     private final frc.robot.Intelligence.ObjectiveCommitment objectiveCommitment =
             new frc.robot.Intelligence.ObjectiveCommitment();
 
+    // Per-bot fuel-target latch. Same ownership rule as objectiveCommitment and
+    // for the same reason: state on the shared engine singleton leaked one bot's
+    // decision into another's. Without this the cluster-weighted selector
+    // oscillates between comparable pieces as the robot's heading changes, which
+    // resets TargetProgressWatchdog's no-progress window every few ticks and
+    // produces STALLED_CHURN -- a bot stalled for many seconds on a target that is
+    // always seconds old, so the give-up timer never fires.
+    private final frc.robot.Intelligence.FuelTargetMemory fuelTargetMemory =
+            new frc.robot.Intelligence.FuelTargetMemory();
+
     // Stall watchdog
     private Pose2d lastActualPose = new Pose2d();
     private double stallDuration = 0.0;
@@ -228,6 +238,7 @@ public class AIRobotInstance {
         contactWatchdog.reset();
         targetProgressWatchdog.reset();
         objectiveCommitment.reset();
+        fuelTargetMemory.reset();
         trajectoryController.reset();
         matchMetrics.reset();
         try {
@@ -346,7 +357,7 @@ public class AIRobotInstance {
         AIActionIntent intent = JevDecisionEngine.getInstance().evaluatePolicy(
                 worldState, knowledge, archetype,
                 "Sim/" + (isAlly ? "Alliance/Ally" + (botId - 100) : "Opponents/Bot" + botId),
-                targetProgressWatchdog.blockedPoints(), objectiveCommitment);
+                targetProgressWatchdog.blockedPoints(), objectiveCommitment, fuelTargetMemory);
         String intentPrefix = isAlly ? "Alliance/Ally" + (botId - 100) : "Opponents/Bot" + botId;
         edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putString(
                 intentPrefix + "/NextIntent", intent.plan().nextObjective().name());
@@ -363,10 +374,16 @@ public class AIRobotInstance {
         // Track pinning against the assigned mark (or the player by default) -
         // only for opponent bots. RefereeSim scores the actual foul; this drives
         // the backoff maneuver. Unified through ContactWatchdog.
-        if (!isAlly) {
-            Pose2d pinReference = (markPose != null && archetype.isDefensive())
-                    ? markPose
-                    : ((peerRobotPoses != null && !peerRobotPoses.isEmpty()) ? peerRobotPoses.get(0) : null);
+        Pose2d pinReference = (markPose != null && archetype.isDefensive())
+                ? markPose
+                : ((peerRobotPoses != null && !peerRobotPoses.isEmpty()) ? peerRobotPoses.get(0) : null);
+
+        if (isAlly) {
+            // Allies get the geometry escape only. The full update also arms a
+            // forced 3-foot G418 backoff from stall + proximity, which would be a
+            // rule violation for a bot that is not pinning an opponent.
+            contactWatchdog.updateUnstickOnly(currentVel, currentTargetSpeeds, 0.02);
+        } else {
             double nearestForPin = pinReference != null
                     ? currentPose.getTranslation().getDistance(pinReference.getTranslation())
                     : Double.MAX_VALUE;
@@ -390,12 +407,11 @@ public class AIRobotInstance {
             }
         }
 
-        // Deadlock recovery via ContactWatchdog: sustained stall pressed against a peer means the
-        // symmetric separation nudges below have stalemated (trench head-on or
-        // shared target). Computed BEFORE separation: trench reverse-out scales
-        // the whole command negative, which would flip an away-from-peer nudge
-        // into a toward-peer push — so separation is skipped while trench
-        // recovery is active.
+        // Single-owner drive arbitration (Phase 1): the trajectory speeds get
+        // exactly one peer correction per tick — deadlock recovery, trench
+        // yield, or soft separation — never a sum. Previously the separation
+        // nudge was added first and then scaled again by the deadlock recovery,
+        // so two corrections fought over one command. See resolvePreProgressCommand.
         boolean inTrenchCorridor = FieldMap.Trenches.isLowClearance(currentPose.getTranslation());
         double nearestPeerDist = Double.MAX_VALUE;
         if (peerRobotPoses != null) {
@@ -407,48 +423,46 @@ public class AIRobotInstance {
         }
         ContactWatchdog.Resolution deadlock = contactWatchdog.updateDeadlockOnly(
                 stalled, nearestPeerDist, 0.02, inTrenchCorridor);
-        boolean trenchRecovering = deadlock.recovering() && inTrenchCorridor;
 
-        // Soft peer separation (avoids jamming and scrums between multi-bots)
-        if (peerRobotPoses != null && !trenchRecovering) {
-            for (Pose2d peerPose : peerRobotPoses) {
-                if (peerPose == null) continue;
-                double dist = currentPose.getTranslation().getDistance(peerPose.getTranslation());
-                if (dist > 0.05 && dist < 1.10) {
-                    Translation2d diff = currentPose.getTranslation().minus(peerPose.getTranslation());
-                    double scale = (1.10 - dist) / 1.10;
-                    Translation2d nudge = diff.div(dist).times(scale * 1.5);
-                    currentTargetSpeeds.vxMetersPerSecond += nudge.getX();
-                    currentTargetSpeeds.vyMetersPerSecond += nudge.getY();
-                }
-            }
+        boolean trenchCoolingYield = inTrenchCorridor
+                && contactWatchdog.isDeadlockCooling()
+                && nearestPeerDist < ContactWatchdog.PROXIMITY_M;
+        ResolvedDrive resolved = resolvePreProgressCommand(
+                currentTargetSpeeds, currentPose, peerRobotPoses,
+                deadlock, trenchCoolingYield);
+        currentTargetSpeeds = resolved.speeds();
+        if (resolved.detail() != null) {
+            currentAIStateDetail = resolved.detail();
         }
 
-        if (deadlock.recovering()) {
-            Translation2d jinkField = new Translation2d(0, deadlock.lateralJink())
-                    .rotateBy(currentPose.getRotation());
-            currentTargetSpeeds.vxMetersPerSecond =
-                    currentTargetSpeeds.vxMetersPerSecond * deadlock.forwardScale() + jinkField.getX();
-            currentTargetSpeeds.vyMetersPerSecond =
-                    currentTargetSpeeds.vyMetersPerSecond * deadlock.forwardScale() + jinkField.getY();
-            currentAIStateDetail = "DEADLOCK_RECOVERY";
-        } else if (inTrenchCorridor
-                && contactWatchdog.isDeadlockCooling()
-                && nearestPeerDist < ContactWatchdog.PROXIMITY_M) {
-            // Post-recovery yield: hold back while the peer is still close so a
-            // head-on pair doesn't re-enter in lockstep the moment recovery ends.
-            // Jittered cooldowns desynchronize the pair; the shorter one proceeds first.
-            currentTargetSpeeds.vxMetersPerSecond *= 0.2;
-            currentTargetSpeeds.vyMetersPerSecond *= 0.2;
-            currentAIStateDetail = "TRENCH_YIELD";
+        // Peer-independent geometry escape, applied after the peer corrections so
+        // it is a true single-owner override rather than a second correction
+        // summed onto this tick. Deadlock cannot cover this case: it only
+        // accumulates when a peer is within PROXIMITY_M, so a bot wedged alone
+        // against a hub core, ramp, trench wall, or tower post has no peer path
+        // to be rescued by. Allies previously skipped the whole watchdog update,
+        // so they never even armed this.
+        //
+        // Priority order, highest first: rule-mandated G418 backoff (inside
+        // contactWatchdog.update) > this geometry escape > peer deadlock/yield/
+        // separation > raw trajectory. The target-unreachable escape below is
+        // peer-independent too and keeps its existing later position in the
+        // pipeline; it needs the nav target rather than just a stall signal.
+        if (contactWatchdog.isPirouetteActive()) {
+            currentTargetSpeeds = contactWatchdog.applyUnstickOnly(currentTargetSpeeds);
+            currentAIStateDetail = "STATIC_UNSTICK";
         }
 
         // Unreachable-target recovery (peer-independent). ContactWatchdog only
         // fires near a peer, so a bot that drives alone into an unreachable
         // fuel target used to hold position for the rest of the match.
         String progressPrefix = (isAlly ? "AI_Telemetry/Ally" + (botId - 100) : "AI_Telemetry/Bot" + botId) + "/";
+        // currentVel is the measured chassis velocity, which is what lets the
+        // watchdog recognise a physically pinned robot even while the Jev
+        // selector churns between fuel pieces. Passing only the commanded speeds
+        // made "no progress" depend entirely on the target holding still.
         TargetProgressWatchdog.Result progress = targetProgressWatchdog.update(
-                currentPose, currentTargetSpeeds, currentTargetPose, 0.02);
+                currentPose, currentTargetSpeeds, currentVel, currentTargetPose, 0.02);
         if (progress.recovering()) {
             currentTargetSpeeds.vxMetersPerSecond = progress.escapeVector().getX();
             currentTargetSpeeds.vyMetersPerSecond = progress.escapeVector().getY();
@@ -544,10 +558,216 @@ public class AIRobotInstance {
                 || contactWatchdog.isForcedBackoffActive()
                 || contactWatchdog.isPirouetteActive()
                 || progress.recovering();
+        // Phase 0 stall taxonomy: attribute every stalled sample to the
+        // recovery that owns it, so headless replays can separate APF/deadlock
+        // stalls from trench-yield holds from unreachable-target freezes.
+        // Null while flowing attributes nothing.
+        BotMatchMetrics.StallCause stallCause = classifyStallCause(
+                new RecoveryState(
+                        contactWatchdog.isPirouetteActive(),
+                        progress.recovering(),
+                        deadlock.recovering(),
+                        inTrenchCorridor,
+                        trenchCoolingYield,
+                        stalled),
+                currentTargetPose != null
+                        ? currentPose.getTranslation().getDistance(
+                                currentTargetPose.getTranslation())
+                        : Double.MAX_VALUE,
+                targetProgressWatchdog.getTrackedTargetAgeSec(),
+                matchMetrics.getCurrentStallSec());
         boolean onField = currentPose.getX() > 0.0 && currentPose.getY() > 0.0;
         matchMetrics.sample(currentPose, stalled, inRecovery,
                 onField && edu.wpi.first.wpilibj.DriverStation.isEnabled(),
-                edu.wpi.first.wpilibj.Timer.getFPGATimestamp());
+                edu.wpi.first.wpilibj.Timer.getFPGATimestamp(), stallCause);
+        Logger.recordOutput(prefix + "StallCause",
+                stallCause == null ? "flowing" : stallCause.name());
+        Logger.recordOutput(prefix + "DriveCorrection", resolved.correction().name());
+    }
+
+    /**
+     * Which pre-progress peer correction owns the command this tick.
+     * Exactly one is applied by {@link #resolvePreProgressCommand} — never a sum.
+     */
+    public enum DriveCorrection {
+        NONE,
+        SEPARATION,
+        DEADLOCK,
+        TRENCH_YIELD
+    }
+
+    /** Single-owner result of the pre-progress peer arbitration. */
+    public record ResolvedDrive(ChassisSpeeds speeds, DriveCorrection correction, String detail) {}
+
+    /** Post-recovery trench yield scale: hold back, do not creep. */
+    public static final double TRENCH_YIELD_SCALE = 0.2;
+
+    /**
+     * Phase 0b: splits an otherwise-unattributed stall by the watchdog state
+     * that explains why no recovery fired. Pure function for unit tests.
+     *
+     * @param distToTargetM   distance from the measured pose to the nav target
+     *                        this tick ({@code Double.MAX_VALUE} when none)
+     * @param trackedAgeSec   {@link TargetProgressWatchdog#getTrackedTargetAgeSec()}
+     * @param currentStallSec uninterrupted stalled seconds so far
+     */
+    public static BotMatchMetrics.StallCause classifyUnattributedStall(
+            double distToTargetM, double trackedAgeSec, double currentStallSec) {
+        if (distToTargetM < TargetProgressWatchdog.ARRIVED_M) {
+            return BotMatchMetrics.StallCause.STALLED_ARRIVED;
+        }
+        if (trackedAgeSec >= 0.0
+                && trackedAgeSec < TargetProgressWatchdog.GIVEUP_SEC
+                && currentStallSec >= TargetProgressWatchdog.GIVEUP_SEC) {
+            return BotMatchMetrics.StallCause.STALLED_CHURN;
+        }
+        return BotMatchMetrics.StallCause.STALLED_OTHER;
+    }
+
+    /**
+     * Which recovery state this tick, as read by the stall taxonomy.
+     *
+     * <p>A record rather than six positional booleans so the call site stays
+     * readable and the argument order cannot silently swap.
+     */
+    public record RecoveryState(
+            boolean staticUnstickActive,
+            boolean targetUnreachable,
+            boolean deadlockRecovering,
+            boolean inTrench,
+            boolean trenchYieldActive,
+            boolean stalled) {
+    }
+
+    /**
+     * Attributes a tick to the recovery that owns it, or {@code null} while
+     * flowing (which attributes nothing).
+     *
+     * <p>Order mirrors the drive pipeline exactly, highest priority first, because
+     * the last correction applied is the one the robot actually executed and
+     * therefore the one that explains the stall:
+     * <ol>
+     *   <li>unreachable-target escape — applied last, so it wins outright,</li>
+     *   <li>static-geometry unstick — applied after the peer corrections,</li>
+     *   <li>deadlock (trench-aware),</li>
+     *   <li>trench yield,</li>
+     *   <li>otherwise the unattributed buckets.</li>
+     * </ol>
+     *
+     * <p>Extracted as a pure function for the same reason
+     * {@link #classifyUnattributedStall} is one: inlined in {@code update} it
+     * could not be unit-tested, and that is how the missing
+     * {@link BotMatchMetrics.StallCause#STATIC_UNSTICK} branch went unnoticed in
+     * the first place — the unstick recovery was counted as "recovering" but had
+     * no cause of its own, so all of its samples landed in
+     * {@code STALLED_OTHER} and the newest recovery was the one the report could
+     * not distinguish.
+     */
+    public static BotMatchMetrics.StallCause classifyStallCause(
+            RecoveryState s, double distToTargetM, double trackedAgeSec, double currentStallSec) {
+        if (s.targetUnreachable()) {
+            return BotMatchMetrics.StallCause.TARGET_UNREACHABLE;
+        }
+        if (s.staticUnstickActive()) {
+            return BotMatchMetrics.StallCause.STATIC_UNSTICK;
+        }
+        if (s.deadlockRecovering()) {
+            return s.inTrench()
+                    ? BotMatchMetrics.StallCause.DEADLOCK_TRENCH
+                    : BotMatchMetrics.StallCause.DEADLOCK_OPEN;
+        }
+        if (s.trenchYieldActive()) {
+            return BotMatchMetrics.StallCause.TRENCH_YIELD;
+        }
+        if (s.stalled()) {
+            return classifyUnattributedStall(distToTargetM, trackedAgeSec, currentStallSec);
+        }
+        return null;
+    }
+
+    /** Peer radius for the soft separation nudge (m). */
+    public static final double SEPARATION_RADIUS_M = 1.10;
+
+    /** Peak soft separation nudge speed (m/s at contact). */
+    public static final double SEPARATION_NUDGE_MPS = 1.5;
+
+    /**
+     * Single-owner peer arbitration over the trajectory speeds.
+     *
+     * <p>Priority: deadlock recovery &gt; trench yield &gt; soft separation.
+     * The winner is applied alone: a trench reverse-out at −0.8x would flip an
+     * away-from-peer nudge into a toward-peer push if the two were summed, and
+     * an open-field jink plus a radial nudge double-count the same peer.
+     * Pure function of its inputs (no watchdog or dashboard reads) so it is
+     * unit-testable without a drive simulation.
+     *
+     * @param trajectorySpeeds speeds from {@link TrajectoryController} (not mutated)
+     * @param currentPose      measured robot pose (for the jink frame + nudge geometry)
+     * @param peerRobotPoses   peer poses (null/empty = no separation possible)
+     * @param deadlock         latest deadlock resolution for this bot
+     * @param trenchCoolingYield true while the post-recovery trench hold applies
+     * @return resolved speeds plus which correction won (detail null when none did)
+     */
+    public static ResolvedDrive resolvePreProgressCommand(
+            ChassisSpeeds trajectorySpeeds,
+            Pose2d currentPose,
+            List<Pose2d> peerRobotPoses,
+            ContactWatchdog.Resolution deadlock,
+            boolean trenchCoolingYield) {
+        ChassisSpeeds base = (trajectorySpeeds != null) ? trajectorySpeeds : new ChassisSpeeds();
+        Pose2d pose = (currentPose != null) ? currentPose : new Pose2d();
+
+        if (deadlock != null && deadlock.recovering()) {
+            Translation2d jinkField = new Translation2d(0, deadlock.lateralJink())
+                    .rotateBy(pose.getRotation());
+            ChassisSpeeds out = new ChassisSpeeds(
+                    base.vxMetersPerSecond * deadlock.forwardScale() + jinkField.getX(),
+                    base.vyMetersPerSecond * deadlock.forwardScale() + jinkField.getY(),
+                    base.omegaRadiansPerSecond);
+            return new ResolvedDrive(out, DriveCorrection.DEADLOCK, "DEADLOCK_RECOVERY");
+        }
+
+        if (trenchCoolingYield) {
+            // Hold back while the peer is still close so a head-on pair doesn't
+            // re-enter in lockstep the moment recovery ends. Jittered cooldowns
+            // desynchronize the pair; the shorter one proceeds first.
+            ChassisSpeeds out = new ChassisSpeeds(
+                    base.vxMetersPerSecond * TRENCH_YIELD_SCALE,
+                    base.vyMetersPerSecond * TRENCH_YIELD_SCALE,
+                    base.omegaRadiansPerSecond);
+            return new ResolvedDrive(out, DriveCorrection.TRENCH_YIELD, "TRENCH_YIELD");
+        }
+
+        // Soft peer separation (avoids jamming and scrums between multi-bots).
+        // Only reached when no recovery owns the tick.
+        double nudgeX = 0.0;
+        double nudgeY = 0.0;
+        boolean nudged = false;
+        if (peerRobotPoses != null) {
+            for (Pose2d peerPose : peerRobotPoses) {
+                if (peerPose == null) continue;
+                double dist = pose.getTranslation().getDistance(peerPose.getTranslation());
+                if (dist > 0.05 && dist < SEPARATION_RADIUS_M) {
+                    Translation2d diff = pose.getTranslation().minus(peerPose.getTranslation());
+                    double scale = (SEPARATION_RADIUS_M - dist) / SEPARATION_RADIUS_M;
+                    Translation2d nudge = diff.div(dist).times(scale * SEPARATION_NUDGE_MPS);
+                    nudgeX += nudge.getX();
+                    nudgeY += nudge.getY();
+                    nudged = true;
+                }
+            }
+        }
+        if (nudged) {
+            ChassisSpeeds out = new ChassisSpeeds(
+                    base.vxMetersPerSecond + nudgeX,
+                    base.vyMetersPerSecond + nudgeY,
+                    base.omegaRadiansPerSecond);
+            return new ResolvedDrive(out, DriveCorrection.SEPARATION, null);
+        }
+        return new ResolvedDrive(
+                new ChassisSpeeds(
+                        base.vxMetersPerSecond, base.vyMetersPerSecond, base.omegaRadiansPerSecond),
+                DriveCorrection.NONE, null);
     }
 
     /** Score-rig instrumentation for this bot. Never null. */

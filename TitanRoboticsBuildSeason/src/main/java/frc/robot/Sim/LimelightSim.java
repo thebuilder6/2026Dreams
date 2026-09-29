@@ -57,10 +57,15 @@ public class LimelightSim {
                         return;
                 }
 
-                // Add some noise to the robot pose for "realism"
-                double noiseX = (Math.random() - 0.5) * 0.05; // +/- 2.5cm
-                double noiseY = (Math.random() - 0.5) * 0.05;
-                double noiseRot = (Math.random() - 0.5) * Units.degreesToRadians(0.5);
+                // Add some noise to the robot pose for "realism".
+                // Drawn from the named scenario-seeded stream rather than
+                // Math.random(), which made a match seed meaningless for any run
+                // where vision was active. The three components are drawn in a
+                // fixed order from one stream so the sequence stays deterministic.
+                java.util.Random visionNoise = MatchDeterminism.random("vision:player");
+                double noiseX = (visionNoise.nextDouble() - 0.5) * 0.05; // +/- 2.5cm
+                double noiseY = (visionNoise.nextDouble() - 0.5) * 0.05;
+                double noiseRot = (visionNoise.nextDouble() - 0.5) * Units.degreesToRadians(0.5);
 
                 Pose2d noisyPose = new Pose2d(
                                 robotPose.getTranslation().plus(new Translation2d(noiseX, noiseY)),

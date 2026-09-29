@@ -67,6 +67,10 @@ public class Robot extends LoggedRobot {
             break;
         case SIM:
             Logger.addDataReceiver(new NT4Publisher());
+            if (frc.robot.Sim.HeadlessMatchDriver.isHeadless()) {
+                Logger.addDataReceiver(new WPILOGWriter(
+                        frc.robot.Sim.HeadlessMatchDriver.resolveLogPath()));
+            }
             break;
         case REPLAY:
             setUseTiming(false); // Run cycles as fast as possible during replay
@@ -105,6 +109,8 @@ public class Robot extends LoggedRobot {
 
   @Override
   public void robotInit() {
+    // Headless AI-vs-AI training matches: self-driving DS sequence, .wpilog + report, auto-exit.
+    frc.robot.Sim.HeadlessMatchDriver.maybeStartHeadlessMatch();
     // Start WPILib WebServer to serve elastic-layout.json for Elastic Dashboard remote loading (Ctrl+D)
     try {
       edu.wpi.first.net.WebServer.start(5800, edu.wpi.first.wpilibj.Filesystem.getDeployDirectory().getPath());
@@ -201,7 +207,9 @@ public class Robot extends LoggedRobot {
   public void autonomousInit() {
     if (isSimulation()) {
       GameSim.getInstance().resetGame();
-      AIRobotSim.getInstance().reset();
+      // Scenario-preserving: bare reset() would wipe training spawns back to
+      // queuing poses on every autonomous enable.
+      AIRobotSim.getInstance().resetForMatchStart();
     }
     m_autoSelected = Dashboard.getInstance().getAutoChooser().getSelected();
     System.out.println("Auto selected: " + m_autoSelected);

@@ -366,6 +366,21 @@ public class StaticPathfinder {
         return FieldMap.clampToField(p);
     }
 
+    /** Total roadmap node count. */
+    public static int getNodeCount() {
+        return NODES.size();
+    }
+
+    /** Field position of a roadmap node, for diagnostics and tests. */
+    public static Translation2d getNodePosition(int id) {
+        return NODES.get(id).pos;
+    }
+
+    /** Display name of a roadmap node, for diagnostics and tests. */
+    public static String getNodeName(int id) {
+        return NODES.get(id).name;
+    }
+
     // =========================================================================
     // Obstacle Containment & Safe Target Projection
     // =========================================================================
@@ -751,6 +766,58 @@ public class StaticPathfinder {
         }
     }
 
+    /**
+     * Cost multiplier ceiling applied to an edge that runs close to an inflated
+     * obstacle. A 2026-09-28 probe found no route failures and a 0.476 m minimum
+     * segment clearance over 203,401 paths, so this is not a correctness fix -- it
+     * biases the planner toward routes the tracker can actually hold when two
+     * candidates are otherwise comparable, rather than the shortest one that happens
+     * to graze a ramp corner.
+     */
+    public static final double CLEARANCE_COST_MULTIPLIER_MAX = 1.60;
+
+    /**
+     * Closest approach to an inflated obstacle below which an edge starts costing
+     * more than its length. Set just under half the drivable width in a trench
+     * (~0.3787 m) so trench edges are never free.
+     */
+    public static final double CLEARANCE_TIGHT_M = 0.30;
+
+    /**
+     * Smallest distance from the segment to any inflated obstacle, sampled along it.
+     * A large value simply means nothing is nearby; the caller decides what counts as
+     * tight via {@link #CLEARANCE_TIGHT_M}.
+     */
+    public static double segmentMinClearance(Translation2d a, Translation2d b) {
+        double worst = Double.MAX_VALUE;
+        for (FieldMap.AABB obstacle : getInflatedActiveObstacles()) {
+            // Perpendicular-free approximation is not good enough near a corner, so
+            // sample the segment. Routes are short (roadmap nodes are metres apart) and
+            // A* evaluates a few dozen edges, so this stays well inside budget.
+            int samples = Math.max(2, (int) Math.ceil(a.getDistance(b) / 0.15));
+            for (int i = 0; i <= samples; i++) {
+                Translation2d p = a.interpolate(b, (double) i / samples);
+                double dx = Math.max(Math.max(obstacle.minX - p.getX(), 0.0), p.getX() - obstacle.maxX);
+                double dy = Math.max(Math.max(obstacle.minY - p.getY(), 0.0), p.getY() - obstacle.maxY);
+                worst = Math.min(worst, Math.hypot(dx, dy));
+            }
+        }
+        return worst;
+    }
+
+    /**
+     * Edge cost = length, scaled up to {@link #CLEARANCE_COST_MULTIPLIER_MAX} as the
+     * segment's closest approach to an inflated obstacle falls to zero.
+     */
+    private static double clearancePenalisedCost(Translation2d a, Translation2d b, double length) {
+        double clearance = segmentMinClearance(a, b);
+        if (!(clearance < CLEARANCE_TIGHT_M)) {
+            return length;
+        }
+        double tightness = 1.0 - (clearance / CLEARANCE_TIGHT_M); // 0 .. 1
+        return length * (1.0 + (CLEARANCE_COST_MULTIPLIER_MAX - 1.0) * tightness);
+    }
+
     private static List<Integer> aStarSearch(
             Translation2d startPos,
             Translation2d targetPos,
@@ -770,7 +837,10 @@ public class StaticPathfinder {
         for (int startNodeId : startVisible) {
             if (blockedNodes.contains(startNodeId))
                 continue;
-            double d = startPos.getDistance(NODES.get(startNodeId).pos);
+            // Penalised like any other edge, so an endpoint connector that hugs an
+            // obstacle does not get a free pass into the graph.
+            double d = clearancePenalisedCost(startPos, NODES.get(startNodeId).pos,
+                    startPos.getDistance(NODES.get(startNodeId).pos));
             gScore[startNodeId] = d;
             double h = NODES.get(startNodeId).pos.getDistance(targetPos);
             openSet.add(new NodeRecord(startNodeId, d, d + h));
@@ -787,7 +857,9 @@ public class StaticPathfinder {
 
             // Check if current node can reach target directly
             if (targetVisible.contains(current.id)) {
-                double totalCost = current.gScore + NODES.get(current.id).pos.getDistance(targetPos);
+                Translation2d endPos = NODES.get(current.id).pos;
+                double totalCost = current.gScore
+                        + clearancePenalisedCost(endPos, targetPos, endPos.getDistance(targetPos));
                 if (totalCost < bestTotalCost) {
                     bestTotalCost = totalCost;
                     bestEndNode = current.id;
@@ -804,8 +876,10 @@ public class StaticPathfinder {
                 // change at runtime, so validate each edge before allowing A* to use it.
                 if (!isLineOfSightClear(curNode.pos, NODES.get(neighborId).pos))
                     continue;
-                double edgeWeight = curNode.pos.getDistance(NODES.get(neighborId).pos);
-                double tentativeG = current.gScore + edgeWeight;
+                Translation2d neighbourPos = NODES.get(neighborId).pos;
+                double edgeWeight = curNode.pos.getDistance(neighbourPos);
+                double tentativeG = current.gScore + clearancePenalisedCost(
+                        curNode.pos, neighbourPos, edgeWeight);
 
                 if (tentativeG < gScore[neighborId]) {
                     gScore[neighborId] = tentativeG;

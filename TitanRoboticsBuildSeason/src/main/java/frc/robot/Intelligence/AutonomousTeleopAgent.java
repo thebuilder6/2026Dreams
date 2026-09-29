@@ -26,6 +26,10 @@ public class AutonomousTeleopAgent {
     }
 
     private StrategicObjective activeObjective = null;
+    // Co-Pilot's own objective commitment, mirroring the sim bots. Without it
+    // the real robot re-decides every cycle and walks in circles between
+    // "go score" and "go sweep" (the two sit ~0.02 apart in the utility matrix).
+    private final ObjectiveCommitment objectiveCommitment = new ObjectiveCommitment();
     private AIActionIntent latestIntent = null;
     private boolean assistActive = false;
     private boolean breakoutTriggered = false;
@@ -37,6 +41,12 @@ public class AutonomousTeleopAgent {
     private static final int MAX_FUEL_CAPACITY = frc.robot.Data.Constants.IntakeConstants.MAX_HELD_BALLS; // 30
     private int estimatedHeldBalls = 0;
 
+    // Single owner for shared-authority thresholds (Teleop mirrors these —
+    // do not re-hardcode 0.65/0.60/0.10 elsewhere).
+    public static final double BREAKOUT_TRANSLATION = 0.65;
+    public static final double BREAKOUT_ROTATION = 0.60;
+    public static final double BLEND_MIN = 0.10;
+
     /**
      * Evaluates the Co-Pilot policy for the player robot and caches the result.
      *
@@ -46,7 +56,8 @@ public class AutonomousTeleopAgent {
     public AIActionIntent getCoPilotIntent(int heldBalls) {
         WorldState world = WorldStateBuilder.buildForPlayerRobot(heldBalls);
         latestIntent = JevDecisionEngine.getInstance().evaluatePolicy(
-                world, MatchKnowledge.unknown(), Archetype.CO_PILOT);
+                world, MatchKnowledge.unknown(), Archetype.CO_PILOT, null, null,
+                objectiveCommitment);
         activeObjective = latestIntent.objective();
 
         SmartDashboard.putString("CoPilot/CurrentObjective", activeObjective.name());
@@ -81,6 +92,7 @@ public class AutonomousTeleopAgent {
         assistActive = true;
         breakoutTriggered = false;
         activeObjective = null;
+        objectiveCommitment.reset();
         getCoPilotIntent(resolveHeldBalls());
     }
 
@@ -106,7 +118,7 @@ public class AutonomousTeleopAgent {
         double maxRotSpeed = Math.max(0.1, frc.robot.Data.Constants.MAX_ROTATION_SPEED);
         double normRotMag = Math.abs(driverRotation) / maxRotSpeed;
 
-        if (normDriverMag > 0.65 || normRotMag > 0.60) {
+        if (normDriverMag > BREAKOUT_TRANSLATION || normRotMag > BREAKOUT_ROTATION) {
             breakoutTriggered = true;
             stopAssist();
             return false;
@@ -132,6 +144,41 @@ public class AutonomousTeleopAgent {
             shooter.prepareToShoot();
         }
 
+        // CoPilot fire execution: route the intent's SHOOTING + feed request
+        // through the Shooter state machine (which gates the kicker on flywheel
+        // RPM error < 150). Execution interlocks mirror the driver path
+        // (Teleop.shooterControl): alliance zone, open ceiling, live shooting
+        // solution, live heading alignment. Driver authority is the assist hold
+        // itself — releasing Right Bumper or a strong stick input breaks out
+        // (Teleop resumes shooterControl), and Back/Start E-stops. Operator
+        // MANUAL states are never overridden.
+        boolean autoFeedActive = false;
+        Shooter.ShooterState currentShooterState = shooter.getStateEnum();
+        boolean operatorManual = currentShooterState == Shooter.ShooterState.MANUAL_FIRE
+                || currentShooterState == Shooter.ShooterState.MANUAL_PREP;
+        if (!operatorManual && assistActive
+                && intent.shooterCommand() == Shooter.ShooterState.SHOOTING
+                && intent.triggerFeedKicker()) {
+            Pose2d livePose = swerve.getPose();
+            Shooter.ShootingSolution solution = shooter.getLatestShootingSolution();
+            boolean inZone = frc.robot.Navigation.FieldMap.AllianceZones.isInAllianceZone(
+                    livePose, world.isRedAlliance());
+            boolean openCeiling = !frc.robot.Navigation.FieldMap.Trenches.isLowClearance(livePose);
+            boolean solutionOk = solution != null && solution.shotPossibility();
+            boolean aligned = solutionOk && Math.abs(solution.shootingAngle()
+                    .minus(livePose.getRotation()).getDegrees())
+                    <= frc.robot.Subsystems.shooter.ShooterConstants.ALIGNMENT_HEADING_TOLERANCE_DEG;
+            if (inZone && openCeiling && solutionOk && aligned) {
+                shooter.setTargetRPM(solution.flywheelRpmLeft(), solution.flywheelRpmRight());
+                shooter.shoot();
+                autoFeedActive = true;
+            } else {
+                // Hold readiness without feeding: kicker only fires in SHOOTING.
+                shooter.prepareToShoot();
+            }
+        }
+        SmartDashboard.putBoolean("CoPilot/AutoFeedActive", autoFeedActive);
+
         if (intent.intakeCommand() == Intake.IntakeState.INTAKING || intent.objective() == StrategicObjective.VACUUM_MIDFIELD) {
             intake.setState(Intake.IntakeState.INTAKING);
         }
@@ -143,6 +190,7 @@ public class AutonomousTeleopAgent {
     public void stopAssist() {
         assistActive = false;
         activeObjective = null;
+        objectiveCommitment.reset();
     }
 
     public boolean isAssistActive() {
@@ -192,6 +240,10 @@ public class AutonomousTeleopAgent {
             return frc.robot.Navigation.GlidePoints.GLIDE_POINTS.get(parkKey).pose();
         }
         if (targetFallback != null) return targetFallback;
-        return new Pose2d(isRed ? 15.48 : 1.05, 2.88, Rotation2d.fromDegrees(isRed ? 0 : 180));
+        // Canonical Blue point is (1.05, 2.80) — Y=2.80 keeps the robot center
+        // outside the inflated BLUE_TOWER_POST_SOUTH (see GlidePoints). Derive Red
+        // via AllianceFlipUtil so this fallback can never drift from GLIDE_POINTS.
+        Pose2d blueCanonical = new Pose2d(1.05, 2.80, Rotation2d.fromDegrees(180));
+        return frc.robot.Utils.AllianceFlipUtil.apply(blueCanonical, isRed);
     }
 }

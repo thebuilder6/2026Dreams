@@ -182,6 +182,91 @@ public class ContactWatchdogTest {
     }
 
     @Test
+    public void testTrenchTriggersFasterWithReverse() {
+        ContactWatchdog r = new ContactWatchdog(new java.util.Random(1));
+        ContactWatchdog.Resolution res = tickTrench(r, true, 0.6, 24);
+        assertFalse(res.recovering(), "24 ticks (0.48s) must not trigger yet in trench");
+        res = r.updateDeadlockOnly(true, 0.6, DT, true);
+        assertTrue(res.recovering(), "25 ticks (0.5s) of trench stall-pressed must trigger yield");
+        assertEquals(ContactWatchdog.TRENCH_FORWARD_SCALE, res.forwardScale(), 1e-9);
+        assertEquals(0.0, res.lateralJink(), 1e-9);
+        assertEquals(1, r.getRecoveryCount());
+    }
+
+    @Test
+    public void testTrenchArbitrateReversesWithoutLateral() {
+        ContactWatchdog r = new ContactWatchdog(new java.util.Random(1));
+        tickTrench(r, true, 0.6, 25);
+        // Trench pose: Blue bottom corridor (X 3.20-6.10, Y <= 1.28).
+        Pose2d trenchPose = new Pose2d(4.5, 0.65, new Rotation2d());
+        ChassisSpeeds out = r.arbitrate(new ChassisSpeeds(2.0, 0.0, 0.0), trenchPose, null);
+        assertTrue(out.vxMetersPerSecond < -0.5,
+                "Trench recovery must reverse out, not jink laterally into the truss");
+        assertEquals(0.0, out.vyMetersPerSecond, 1e-9);
+    }
+
+    @Test
+    public void testTrenchEscalatesConsecutiveRecoveries() {
+        ContactWatchdog r = new ContactWatchdog(new java.util.Random(1));
+        int d1 = ticksUntilRecoveringEnds(trenchTriggered(r));
+        assertTrue(d1 >= 35 && d1 <= 60, "First trench recovery should last 0.7-1.2s, was " + d1 + " ticks");
+        assertEquals(1, r.getTrenchEscalation());
+        int d2 = ticksUntilRecoveringEnds(retriggerAfterCooldown(r));
+        assertEquals(2, r.getTrenchEscalation());
+        assertTrue(d2 >= 39 && d2 <= 70, "Escalated trench recovery should last 0.9-1.4s, was " + d2 + " ticks");
+        // Stall clearing (after cooldown drains) resets escalation.
+        tick(r, false, 5.0, 200);
+        assertEquals(0, r.getTrenchEscalation());
+    }
+
+    @Test
+    public void testTrenchCoolingFlagTracksCooldown() {
+        ContactWatchdog r = new ContactWatchdog(new java.util.Random(1));
+        tickTrench(r, true, 0.6, 25);
+        assertFalse(r.isDeadlockCooling(), "No cooldown while recovering");
+        ticksUntilRecoveringEnds(r);
+        assertTrue(r.isDeadlockCooling(), "Cooldown must be active right after recovery ends");
+        tick(r, false, 5.0, 200);
+        assertFalse(r.isDeadlockCooling(), "Cooldown must expire after ~2-3s idle");
+    }
+
+    private static ContactWatchdog trenchTriggered(ContactWatchdog r) {
+        for (int i = 0; i < 40; i++) {
+            ContactWatchdog.Resolution res = r.updateDeadlockOnly(true, 0.6, DT, true);
+            if (res.recovering()) return r;
+        }
+        fail("Trench recovery never triggered");
+        return r;
+    }
+
+    private static int ticksUntilRecoveringEnds(ContactWatchdog r) {
+        int n = 0;
+        while (n < 120) {
+            ContactWatchdog.Resolution res = r.updateDeadlockOnly(true, 0.6, DT, true);
+            n++;
+            if (!res.recovering()) return n;
+        }
+        fail("Trench recovery never ended");
+        return n;
+    }
+
+    private static ContactWatchdog retriggerAfterCooldown(ContactWatchdog r) {
+        for (int i = 0; i < 400; i++) {
+            ContactWatchdog.Resolution res = r.updateDeadlockOnly(true, 0.6, DT, true);
+            if (res.recovering()) return r;
+        }
+        fail("Second trench recovery never triggered");
+        return r;
+    }
+    private static ContactWatchdog.Resolution tickTrench(ContactWatchdog r, boolean stalled, double dist, int n) {
+        ContactWatchdog.Resolution last = null;
+        for (int i = 0; i < n; i++) {
+            last = r.updateDeadlockOnly(stalled, dist, DT, true);
+        }
+        return last;
+    }
+
+    @Test
     public void testResetClearsState() {
         ContactWatchdog r = new ContactWatchdog(new java.util.Random(1));
         tick(r, true, 0.6, 60);

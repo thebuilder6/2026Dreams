@@ -19,6 +19,7 @@ import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import frc.robot.Navigation.DynamicObstacle;
 import frc.robot.Navigation.DynamicRouter;
 import frc.robot.Navigation.StaticPathfinder;
+import frc.robot.Navigation.TargetProgressWatchdog;
 import frc.robot.Data.Constants;
 import frc.robot.Navigation.FieldMap;
 import frc.robot.Navigation.GlidePoints;
@@ -146,6 +147,105 @@ public class JevDecisionEngine {
     private volatile DecisionMode decisionMode = DecisionMode.AUTO_FALLBACK;
     private final Map<String, String> lastPublishedCloudErrors = new ConcurrentHashMap<>();
 
+    // ── Objective commitment thresholds ────────────────────────────────────
+    // The utility matrix is re-evaluated every cycle, and several objectives sit
+    // within ~0.02 of each other (SWEEP 0.96 vs CYCLE 0.72-0.98, VACUUM 0.35 at
+    // batch vs 0.82+ when a piece drifts out of reach). Without a latch a
+    // loaded bot re-routes every 20 ms: the observed symptom was "constantly
+    // moving before trying to shoot".
+    //
+    // The engine itself stays STATELESS. Commitment is per-agent state owned by
+    // the caller (AIRobotInstance, AutonomousTeleopAgent) and passed in, so two
+    // agents can never read each other's decision. These thresholds are shared
+    // constants only.
+    /** Challenger must beat the incumbent by this much to steal commitment. */
+    public static final double COMMITMENT_MARGIN = 0.06;
+
+    /**
+     * Diagnostic: forces every agent onto one objective, bypassing the commitment
+     * latch, when {@code -Dfrc.jev.freezeObjective=<NAME>} is set. Read once so a typo
+     * cannot fail silently mid-match. Exists to isolate whether headless
+     * non-reproducibility originates in the AI or in the unseeded MapleSim physics
+     * beneath it — see {@code KNOWN_ISSUES.md} §A. Returns {@code null} when unset.
+     */
+    private static volatile StrategicObjective frozenObjectiveCache;
+    private static volatile boolean frozenObjectiveResolved;
+
+    static StrategicObjective frozenObjective() {
+        if (!frozenObjectiveResolved) {
+            frozenObjectiveResolved = true;
+            String raw = System.getProperty("frc.jev.freezeObjective", "").trim();
+            if (raw.isEmpty()) {
+                frozenObjectiveCache = null;
+            } else {
+                try {
+                    frozenObjectiveCache = StrategicObjective.valueOf(raw.toUpperCase());
+                } catch (IllegalArgumentException e) {
+                    System.err.println("[Jev] frc.jev.freezeObjective unknown objective: " + raw
+                            + " -- leaving the AI unfrozen");
+                    frozenObjectiveCache = null;
+                }
+            }
+        }
+        return frozenObjectiveCache;
+    }
+
+    /**
+     * A challenger this far ahead switches immediately, ignoring the minimum
+     * hold. A decisive gap means the match state materially changed (hub
+     * deactivating, inventory filling), and delaying it would be wrong. Small
+     * gaps are the thrash we are damping, so they must also clear
+     * {@link #COMMITMENT_MIN_HOLD_SEC}.
+     */
+    public static final double COMMITMENT_DECISIVE_MARGIN = 0.20;
+
+    /** Minimum time on an objective before a non-decisive challenger may take it. */
+    public static final double COMMITMENT_MIN_HOLD_SEC = 1.5;
+
+    /**
+     * Resolves the committed objective for one agent.
+     *
+     * <p>Pure: it reads and returns the caller's own latch fields without
+     * mutating engine state. The caller writes the result back, which keeps
+     * commitment ownership with the agent that owns the robot.
+     *
+     * @param candidate fresh local utility winner
+     * @param utilities this cycle's utility scores
+     * @param held currently committed objective, or null if none
+     * @param heldSinceSeconds when the incumbent was adopted
+     * @param nowSeconds current time (monotonic seconds)
+     * @return the objective the agent should pursue this cycle
+     */
+    public static StrategicObjective resolveCommittedObjective(
+            StrategicObjective candidate,
+            Map<StrategicObjective, Double> utilities,
+            StrategicObjective held,
+            double heldSinceSeconds,
+            double nowSeconds) {
+        if (candidate == null) {
+            return held;
+        }
+        if (held == null) {
+            return candidate;
+        }
+        if (candidate == held) {
+            return held;
+        }
+
+        // The incumbent is no longer viable (its utility collapsed, e.g. its
+        // hub just went inactive): release immediately rather than honor the
+        // minimum hold.
+        double incumbentUtility = utilities.getOrDefault(held, 0.0);
+        if (incumbentUtility <= 0.0) {
+            return candidate;
+        }
+
+        double gain = utilities.getOrDefault(candidate, 0.0) - incumbentUtility;
+        boolean decisive = gain >= COMMITMENT_DECISIVE_MARGIN;
+        boolean matured = (nowSeconds - heldSinceSeconds) >= COMMITMENT_MIN_HOLD_SEC;
+        return (decisive || (matured && gain >= COMMITMENT_MARGIN)) ? candidate : held;
+    }
+
     public DecisionMode getDecisionMode() {
         return decisionMode;
     }
@@ -201,6 +301,39 @@ public class JevDecisionEngine {
      */
     public AIActionIntent evaluatePolicy(
             WorldState world, MatchKnowledge knowledge, Archetype archetype, String cloudContext) {
+        return evaluatePolicy(world, knowledge, archetype, cloudContext, null);
+    }
+
+    /**
+     * Evaluation overload for executors that own transient navigation state
+     * (sim bots via {@code TargetProgressWatchdog}). {@code blockedFuel} holds
+     * points the caller has abandoned this match - unreachable behind a hard
+     * footprint, or a standoff with no legal approach - so fuel selectors skip
+     * them instead of re-picking the same piece every cycle. The engine stays
+     * stateless; the caller owns the lifetime.
+     *
+     * @param blockedFuel abandoned fuel points, or {@code null} for none
+     */
+    public AIActionIntent evaluatePolicy(
+            WorldState world, MatchKnowledge knowledge, Archetype archetype, String cloudContext,
+            Set<Translation2d> blockedFuel) {
+        return evaluatePolicy(world, knowledge, archetype, cloudContext, blockedFuel, null);
+    }
+
+    /**
+     * Full evaluation overload, including the caller's objective commitment.
+     *
+     * <p>{@code commitmentIn} is this agent's latch (one per robot, owned by
+     * the caller). Passing null selects the raw utility winner, which is the
+     * correct behavior for callers that have no persistent identity - the Match
+     * Coach, and unit tests.
+     *
+     * @param blockedFuel  abandoned fuel points, or {@code null}
+     * @param commitmentIn this agent's objective latch, or {@code null}
+     */
+    public AIActionIntent evaluatePolicy(
+            WorldState world, MatchKnowledge knowledge, Archetype archetype, String cloudContext,
+            Set<Translation2d> blockedFuel, ObjectiveCommitment commitmentIn) {
         if (knowledge == null) {
             knowledge = MatchKnowledge.legacyObserved();
         }
@@ -300,7 +433,7 @@ public class JevDecisionEngine {
         }
         utilities.put(StrategicObjective.STOCKPILE_DEPOT, stockpileUtility);
 
-        int homeFuelCount = countFuelInZone(world.isRedAlliance(), false);
+        int homeFuelCount = countFuelInZone(world.isRedAlliance(), false, blockedFuel);
         double sweepUtility = 0.0;
         if (homeFuelCount > 0 && !world.isInventoryFull()) {
             sweepUtility = world.isAllianceHubActive()
@@ -311,7 +444,8 @@ public class JevDecisionEngine {
 
         double opponentZoneUtility = 0.0;
         if (!world.isAutonomous() && !world.isInventoryFull() && world.timeUntilHubShift() <= 6.0
-                && world.heldFuelCount() < 20 && countFuelInZone(!world.isRedAlliance(), true) > 0) {
+                && world.heldFuelCount() < 20
+                && countFuelInZone(!world.isRedAlliance(), true, blockedFuel) > 0) {
             opponentZoneUtility = 0.78;
         }
         utilities.put(StrategicObjective.POACH_OPPONENT_ZONE, opponentZoneUtility);
@@ -327,7 +461,7 @@ public class JevDecisionEngine {
         double longRangeUtility = 0.0;
         if (world.isAllianceHubActive() && world.heldFuelCount() >= 6
                 && FieldMap.AllianceZones.isInAllianceZone(world.selfPose(), world.isRedAlliance())
-                && distToSelfHub >= 3.6 && distToSelfHub <= 4.3) {
+                && distToSelfHub >= 3.6 && distToSelfHub <= FieldMap.Hubs.SHOOTING_MAX_DISTANCE) {
             longRangeUtility = opponentObserved
                     && world.opponentPose().getTranslation().getDistance(selfHub) <= 2.4 ? 0.94 : 0.86;
         }
@@ -353,13 +487,12 @@ public class JevDecisionEngine {
         boolean defensiveArchetype = archetype == Archetype.TACTICAL_DEFENDER
                 || archetype == Archetype.DEFENSE_BULLY || archetype == Archetype.ADAPTIVE_COMPETITOR;
         double chokeUtility = 0.0;
-        if (defensiveArchetype && opponentObserved && !world.isAutonomous()) {
-            double opponentX = world.opponentPose().getX();
-            if ((opponentX >= FieldMap.Trenches.BLUE_TRENCH_MIN_X && opponentX <= FieldMap.Trenches.BLUE_TRENCH_MAX_X)
-                    || (opponentX >= FieldMap.Trenches.RED_TRENCH_MIN_X
-                            && opponentX <= FieldMap.Trenches.RED_TRENCH_MAX_X)) {
-                chokeUtility = 0.91;
-            }
+        // Gate on the occupied trench itself (X band AND low-clearance Y), not
+        // the X band alone — an opponent driving midfield at trench X must not
+        // pull a defender to a trench mouth.
+        if (defensiveArchetype && opponentObserved && !world.isAutonomous()
+                && FieldMap.Trenches.isLowClearance(world.opponentPose())) {
+            chokeUtility = 0.91;
         }
         utilities.put(StrategicObjective.CHOKE_TRENCH, chokeUtility);
 
@@ -467,6 +600,26 @@ public class JevDecisionEngine {
 
         // ── 2. Select Highest Utility Objective ──────────────────────────────
         StrategicObjective bestObjective = evaluateLocalUtilityMatrix(utilities);
+
+        // Diagnostic pin: frc.jev.freezeObjective=<NAME> forces every agent onto one
+        // objective and bypasses the commitment latch entirely. Exists to isolate
+        // whether headless non-reproducibility comes from the AI or from the
+        // unseeded physics underneath it (see KNOWN_ISSUES.md §A). If a frozen-AI
+        // match is still non-reproducible, the AI is exonerated and the cause is
+        // physics. Off unless the property is set; never enable alongside
+        // frc.jev.realShiftClock.
+        StrategicObjective frozen = frozenObjective();
+        if (frozen != null) {
+            bestObjective = frozen;
+            Logger.recordOutput("JevAI/FrozenObjective", frozen.name());
+        }
+
+        // Commitment is applied by the caller (it owns the latch for this
+        // agent) and handed back in via commitmentIn, so the engine keeps its
+        // stateless contract and no two agents can share a decision.
+        if (commitmentIn != null && frozen == null) {
+            bestObjective = commitmentIn.apply(bestObjective, utilities);
+        }
         double maxUtility = utilities.getOrDefault(bestObjective, 0.0);
 
         // Tier-1 safety net: opponent-chasing objectives require a tracked
@@ -561,14 +714,15 @@ public class JevDecisionEngine {
 
             case VACUUM_MIDFIELD:
                 navTarget = findClusterWeightedFuelTarget(world.selfPose(), world.isRedAlliance(),
-                        world.isAutonomous());
+                        world.isAutonomous(), blockedFuel);
                 intakeCmd = IntakeState.INTAKING;
                 shooterCmd = ShooterState.STOPPED;
                 rationale = String.format("Hunting fuel (%d/30). Hopper capacity available.", world.heldFuelCount());
                 break;
 
             case SWEEP_ALLIANCE_ZONE:
-                navTarget = findAllianceZoneFuelTarget(world.selfPose(), world.isRedAlliance());
+                navTarget = findAllianceZoneFuelTarget(world.selfPose(), world.isRedAlliance(),
+                        blockedFuel);
                 intakeCmd = IntakeState.INTAKING;
                 if (world.isAllianceHubActive()) {
                     shooterCmd = ShooterState.PREPARING;
@@ -598,24 +752,29 @@ public class JevDecisionEngine {
                 break;
 
             case POACH_OPPONENT_ZONE:
-                navTarget = findOpponentZoneFuelTarget(world.selfPose(), world.isRedAlliance());
+                navTarget = findOpponentZoneFuelTarget(world.selfPose(), world.isRedAlliance(),
+                        blockedFuel);
                 intakeCmd = IntakeState.INTAKING;
                 rationale = "Harvesting opponent-zone fuel before the next Hub shift.";
                 break;
 
             case CHOKE_TRENCH:
                 boolean opponentAtTop = world.opponentPose().getY() >= FieldMap.FIELD_WIDTH / 2.0;
-                double trenchMouthY = opponentAtTop
-                        ? FieldMap.Trenches.TOP_TRENCH_MIN_Y - 0.8
-                        : FieldMap.Trenches.BOT_TRENCH_MAX_Y + 0.8;
                 // Identify whether opponent is in the Red or Blue half:
                 boolean opponentInRedTrench = world.opponentPose().getX() > FieldMap.CENTERLINE_X;
-                double minX = opponentInRedTrench ? FieldMap.Trenches.RED_TRENCH_MIN_X
-                        : FieldMap.Trenches.BLUE_TRENCH_MIN_X;
-                double maxX = opponentInRedTrench ? FieldMap.Trenches.RED_TRENCH_MAX_X
-                        : FieldMap.Trenches.BLUE_TRENCH_MAX_X;
-                double trenchX = Math.max(minX, Math.min(maxX, world.opponentPose().getX()));
-                navTarget = new Pose2d(trenchX, trenchMouthY, Rotation2d.fromDegrees(opponentAtTop ? 90.0 : -90.0));
+                // Stage at the occupied trench's midfield exit (east exit for
+                // Blue, west exit for Red). Staging at the opponent's own X
+                // would sit inside the Hub/ramp footprint — the whole
+                // (4.5, 5.2–6.5) mouth band near the trench is hard obstacle.
+                double exitX = opponentInRedTrench
+                        ? FieldMap.Trenches.RED_TRENCH_MIN_X - 0.9
+                        : FieldMap.Trenches.BLUE_TRENCH_MAX_X + 0.9;
+                double corridorY = opponentAtTop
+                        ? FieldMap.Trenches.TOP_CORRIDOR_Y
+                        : FieldMap.Trenches.BOT_CORRIDOR_Y;
+                Translation2d exitPos = new Translation2d(exitX, corridorY);
+                Rotation2d faceOpponent = world.opponentPose().getTranslation().minus(exitPos).getAngle();
+                navTarget = StaticPathfinder.ensurePoseOutsideObstacles(new Pose2d(exitPos, faceOpponent));
                 rationale = "Contesting the occupied trench approach.";
                 break;
 
@@ -655,10 +814,23 @@ public class JevDecisionEngine {
                 double distToGoal = toGoal.getNorm();
                 Translation2d dir = (distToGoal > 1e-3) ? toGoal.div(distToGoal) : new Translation2d(1, 0);
 
-                // Step halfway or 1.5m, but clamp so we never get closer than 1.6m to the Hub
-                // center:
-                double blockDist = Math.min(1.5, Math.max(0.5, distToGoal - 1.60));
-                Translation2d blockPos = world.opponentPose().getTranslation().plus(dir.times(blockDist));
+                // Block from the shooter-to-Hub line, but never stage inside the
+                // Hub/ramp safety shell (1.6 m) plus bumper margin — pressing
+                // into the footprint is what wedged defenders against it.
+                double minHubClearance = 1.60 + 0.45;
+                double maxBlockDist = distToGoal - minHubClearance;
+                Translation2d blockPos;
+                if (maxBlockDist >= 0.5) {
+                    double blockDist = Math.min(1.5, Math.max(0.5, maxBlockDist));
+                    blockPos = world.opponentPose().getTranslation().plus(dir.times(blockDist));
+                } else {
+                    // Shooter is already inside the shell: stage off to the side
+                    // of the shooter (toward field center) instead of between
+                    // shooter and Hub.
+                    Translation2d perp = new Translation2d(-dir.getY(), dir.getX());
+                    double side = world.opponentPose().getY() >= FieldMap.FIELD_WIDTH / 2.0 ? -1.0 : 1.0;
+                    blockPos = world.opponentPose().getTranslation().plus(perp.times(1.5 * side));
+                }
                 Rotation2d faceOpp = world.opponentPose().getTranslation().minus(blockPos).getAngle();
                 navTarget = StaticPathfinder.ensurePoseOutsideObstacles(new Pose2d(blockPos, faceOpp));
                 intakeCmd = IntakeState.STANDBY;
@@ -842,10 +1014,22 @@ public class JevDecisionEngine {
      * @return Target Pose2d on carpet facing the highest-density fuel cluster
      */
     public Pose2d findClusterWeightedFuelTarget(Pose2d robotPose, boolean isRedAlliance) {
-        return findClusterWeightedFuelTarget(robotPose, isRedAlliance, false);
+        return findClusterWeightedFuelTarget(robotPose, isRedAlliance, false, null);
     }
 
     public Pose2d findClusterWeightedFuelTarget(Pose2d robotPose, boolean isRedAlliance, boolean isAutonomous) {
+        return findClusterWeightedFuelTarget(robotPose, isRedAlliance, isAutonomous, null);
+    }
+
+    /**
+     * Cluster-weighted fuel selection that skips caller-abandoned points.
+     *
+     * @param blockedFuel points to skip (see
+     *        {@link #evaluatePolicy(WorldState, MatchKnowledge, Archetype, String, Set)}),
+     *        or {@code null}
+     */
+    public Pose2d findClusterWeightedFuelTarget(Pose2d robotPose, boolean isRedAlliance,
+            boolean isAutonomous, Set<Translation2d> blockedFuel) {
         SimulatedArena arena = SimulatedArena.getInstance();
         Translation2d bestTarget = null;
         double highestScent = -1.0;
@@ -854,7 +1038,11 @@ public class JevDecisionEngine {
 
         if (arena != null) {
             try {
-                Set<GamePieceOnFieldSimulation> pieces = arena.gamePiecesOnField();
+                // Sorted snapshot: the arena returns a HashSet whose order is
+                // identity-hash based, and equal-scoring candidates resolve by
+                // strict '>', so unsorted iteration picked a different target
+                // every JVM run.
+                var pieces = frc.robot.Sim.MatchDeterminism.fuelOnFieldSorted();
                 if (pieces != null && !pieces.isEmpty()) {
                     for (var piece : pieces) {
                         if (piece == null || !"Fuel".equals(piece.getType()))
@@ -867,6 +1055,8 @@ public class JevDecisionEngine {
                             continue;
                         if (StaticPathfinder.isPointInHardObstacle(pos)
                                 || StaticPathfinder.isPointNearDynamicObstacle(pos))
+                            continue;
+                        if (isBlocked(blockedFuel, pos))
                             continue;
 
                         // Restrict opposing driver wall zone (and centerline in autonomous under FRC
@@ -948,24 +1138,53 @@ public class JevDecisionEngine {
      * Selects the densest reachable Fuel cluster strictly inside our alliance zone.
      */
     public Pose2d findAllianceZoneFuelTarget(Pose2d robotPose, boolean isRedAlliance) {
-        return findFuelTargetInZone(robotPose, isRedAlliance, false);
+        return findFuelTargetInZone(robotPose, isRedAlliance, false, null);
+    }
+
+    /** Zone-limited variant that skips caller-abandoned points. */
+    public Pose2d findAllianceZoneFuelTarget(
+            Pose2d robotPose, boolean isRedAlliance, Set<Translation2d> blockedFuel) {
+        return findFuelTargetInZone(robotPose, isRedAlliance, false, blockedFuel);
     }
 
     /**
      * Selects the densest reachable Fuel cluster strictly inside the opponent zone.
      */
     public Pose2d findOpponentZoneFuelTarget(Pose2d robotPose, boolean isRedAlliance) {
-        return findFuelTargetInZone(robotPose, !isRedAlliance, true);
+        return findFuelTargetInZone(robotPose, !isRedAlliance, true, null);
     }
 
-    private Pose2d findFuelTargetInZone(Pose2d robotPose, boolean zoneIsRed, boolean strictOpponentZone) {
+    /** Opponent-zone variant that skips caller-abandoned points. */
+    public Pose2d findOpponentZoneFuelTarget(
+            Pose2d robotPose, boolean isRedAlliance, Set<Translation2d> blockedFuel) {
+        return findFuelTargetInZone(robotPose, !isRedAlliance, true, blockedFuel);
+    }
+
+    /** True when {@code point} sits within the blocked radius of any entry. */
+    private static boolean isBlocked(Set<Translation2d> blockedFuel, Translation2d point) {
+        if (blockedFuel == null || blockedFuel.isEmpty()) {
+            return false;
+        }
+        for (Translation2d blocked : blockedFuel) {
+            if (blocked != null
+                    && blocked.getDistance(point) <= TargetProgressWatchdog.BLACKLIST_RADIUS_M) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private Pose2d findFuelTargetInZone(Pose2d robotPose, boolean zoneIsRed, boolean strictOpponentZone,
+            Set<Translation2d> blockedFuel) {
         SimulatedArena arena = SimulatedArena.getInstance();
         Translation2d best = null;
         double bestScore = -1.0;
         if (arena != null) {
             try {
                 List<Translation2d> candidates = new ArrayList<>();
-                Set<GamePieceOnFieldSimulation> pieces = arena.gamePiecesOnField();
+                // Sorted snapshot: equal-scoring candidates resolve by strict
+                // '>', so the arena's HashSet order decided the target.
+                var pieces = frc.robot.Sim.MatchDeterminism.fuelOnFieldSorted();
                 if (pieces != null) {
                     for (GamePieceOnFieldSimulation piece : pieces) {
                         if (piece == null || !"Fuel".equals(piece.getType()))
@@ -977,6 +1196,8 @@ public class JevDecisionEngine {
                             continue;
                         if (StaticPathfinder.isPointInHardObstacle(point)
                                 || StaticPathfinder.isPointNearDynamicObstacle(point))
+                            continue;
+                        if (isBlocked(blockedFuel, point))
                             continue;
                         candidates.add(point);
                     }
@@ -1012,16 +1233,15 @@ public class JevDecisionEngine {
                 new Pose2d(fallback, new Rotation2d()), robotPose.getTranslation());
     }
 
-    private int countFuelInZone(boolean isRedZone, boolean strictOpponentZone) {
+    private int countFuelInZone(boolean isRedZone, boolean strictOpponentZone,
+            Set<Translation2d> blockedFuel) {
         SimulatedArena arena = SimulatedArena.getInstance();
         if (arena == null)
             return 0;
         try {
-            Set<GamePieceOnFieldSimulation> pieces = arena.gamePiecesOnField();
-            if (pieces == null)
-                return 0;
             int count = 0;
-            for (GamePieceOnFieldSimulation piece : pieces) {
+            for (GamePieceOnFieldSimulation piece :
+                    frc.robot.Sim.MatchDeterminism.fuelOnFieldSorted()) {
                 if (piece != null && "Fuel".equals(piece.getType())
                         && FieldMap.AllianceZones.isInAllianceZone(
                                 piece.getPoseOnField().getTranslation(), isRedZone)
@@ -1029,7 +1249,17 @@ public class JevDecisionEngine {
                                 ? piece.getPoseOnField().getTranslation().getX() >= 12.0
                                 : piece.getPoseOnField().getTranslation().getX() <= 4.5))
                         && !StaticPathfinder.isPointInHardObstacle(piece.getPoseOnField().getTranslation())
-                        && !StaticPathfinder.isPointNearDynamicObstacle(piece.getPoseOnField().getTranslation())) {
+                        && !StaticPathfinder.isPointNearDynamicObstacle(piece.getPoseOnField().getTranslation())
+                        // Fuel the TargetProgressWatchdog already abandoned must not
+                        // keep an objective viable. Without this, SWEEP_ALLIANCE_ZONE
+                        // stayed at 0.90-0.98 on pieces that are simultaneously
+                        // skipped as targets (isBlocked below), so the bot hunted fuel
+                        // it was forbidden to approach: sweepUtility never collapsed,
+                        // ObjectiveCommitment's release rule (incumbentUtility <= 0)
+                        // could never fire, and the latch held for the whole match.
+                        // This is what made 2 of 6 headless seeds collapse to ~0
+                        // teleop fuel.
+                        && !isBlocked(blockedFuel, piece.getPoseOnField().getTranslation())) {
                     count++;
                 }
             }

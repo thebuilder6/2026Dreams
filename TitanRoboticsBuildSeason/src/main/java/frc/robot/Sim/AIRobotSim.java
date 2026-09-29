@@ -6,7 +6,10 @@ import static edu.wpi.first.units.Units.Radians;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -161,6 +164,10 @@ public class AIRobotSim implements Subsystem {
     private final List<AIRobotInstance> allyBots = new ArrayList<>();
     private AIRobotInstance trainingBluePrimaryBot;
     private volatile TrainingMatchScenario trainingScenario;
+    // Last-tick defensive mark per defender label ("Bot0..2", "Ally0..2").
+    // Greedy exclusion: a defender prefers carriers no peer already holds, so
+    // two defenders stop piling onto the same hottest robot.
+    private final Map<String, String> lastMarkByDefender = new HashMap<>();
 
     public static synchronized AIRobotSim getInstance() {
         if (instance == null) {
@@ -261,6 +268,7 @@ public class AIRobotSim implements Subsystem {
         lastShotTimestamp = 0.0;
         bot0ContactWatchdog.reset();
         bot0Instance.reset();
+        lastMarkByDefender.clear();
         latchedShootTarget = null;
         try {
             var field = SwerveBase.getInstance().getField();
@@ -287,6 +295,24 @@ public class AIRobotSim implements Subsystem {
         }
     }
 
+    /**
+     * Match-start reset that preserves an active training scenario.
+     *
+     * <p>Bare {@link #reset()} returns every bot to its queuing pose, which
+     * would destroy scenario spawns when a training match transitions into
+     * autonomous ({@code Robot.autonomousInit} resets match state on every
+     * enable). With a scenario active this re-applies its archetypes, poses,
+     * and preloads instead; without one it behaves exactly like
+     * {@link #reset()}.
+     */
+    public void resetForMatchStart() {
+        TrainingMatchScenario scenario = trainingScenario;
+        reset();
+        if (scenario != null) {
+            configureTrainingScenario(scenario);
+        }
+    }
+
     @Override
     public void simulationUpdate() {
         TrainingMatchScenario scenario = trainingScenario;
@@ -296,7 +322,7 @@ public class AIRobotSim implements Subsystem {
         int allyCount = trainingMode
                 ? scenario.blueAllyRobots().size()
                 : (int) Math.max(0,
-                        Math.min(2, SmartDashboard.getNumber("Simulation/AllyCount", Dashboard.getAllyCount())));
+                        Math.min(2, SmartDashboard.getNumber(SimDashboardKeys.ALLY_COUNT, Dashboard.getAllyCount())));
         boolean anyBotActive = opponentEnabled || allyCount > 0;
 
         if (!anyBotActive) {
@@ -330,11 +356,30 @@ public class AIRobotSim implements Subsystem {
             return;
         }
 
+        if (trainingMode && !DriverStation.isEnabled()) {
+            // Training matches only run live: hold every bot parked while the
+            // DriverStation is disabled so a 3v3 has a clean start/stop.
+            // Poses and telemetry are left untouched (NT holds last values).
+            ChassisSpeeds zeroSpeeds = new ChassisSpeeds();
+            Translation2d noMove = new Translation2d();
+            if (trainingBluePrimaryBot != null) {
+                trainingBluePrimaryBot.getDriveSimulation().runChassisSpeeds(zeroSpeeds, noMove, false, true);
+            }
+            bot0Instance.getDriveSimulation().runChassisSpeeds(zeroSpeeds, noMove, false, true);
+            for (var bot : additionalBots) {
+                bot.getDriveSimulation().runChassisSpeeds(zeroSpeeds, noMove, false, true);
+            }
+            for (var ally : allyBots) {
+                ally.getDriveSimulation().runChassisSpeeds(zeroSpeeds, noMove, false, true);
+            }
+            return;
+        }
+
         // Lazy initialization of additional opponent bots
         int opponentCount = trainingMode
                 ? scenario.redOpponentRobots().size()
                 : (int) Math.max(1,
-                        Math.min(3, SmartDashboard.getNumber("Simulation/OpponentCount", Dashboard.getOpponentCount())));
+                        Math.min(3, SmartDashboard.getNumber(SimDashboardKeys.OPPONENT_COUNT, Dashboard.getOpponentCount())));
         try {
             if (opponentCount >= 2 && additionalBots.isEmpty()) {
                 TrainingMatchScenario.RobotConfig config = trainingMode ? scenario.redOpponentRobots().get(1) : null;
@@ -382,8 +427,8 @@ public class AIRobotSim implements Subsystem {
         } else if (aiModeChooser != null && aiModeChooser.getSelected() != null) {
             activeMode = aiModeChooser.getSelected();
         } else {
-            String modeStr = SmartDashboard.getString("Simulation/Bot0/Archetype",
-                    SmartDashboard.getString("Simulation/AIMode", AIMode.AUTONOMOUS_CYCLER.name()));
+            String modeStr = SmartDashboard.getString(SimDashboardKeys.BOT0_ARCHETYPE,
+                    SmartDashboard.getString(SimDashboardKeys.AI_MODE, AIMode.AUTONOMOUS_CYCLER.name()));
             activeMode = AIMode.fromString(modeStr);
         }
 
@@ -482,7 +527,7 @@ public class AIRobotSim implements Subsystem {
                     break;
             }
             bot0Instance.setArchetype(bot0Archetype);
-            SmartDashboard.putString("Simulation/Bot0/Archetype", bot0Archetype.displayName);
+            SmartDashboard.putString(SimDashboardKeys.BOT0_ARCHETYPE, bot0Archetype.displayName);
 
             if (activeMode == AIMode.MANUAL_2_PLAYER) {
                 // Manual 2-player defense drives Bot 0 chassis directly.
@@ -510,8 +555,8 @@ public class AIRobotSim implements Subsystem {
                 }
                 bot0Peers.add(0, playerPose);
                 if (trainingMode || bot0Archetype.isDefensive()) {
-                    MarkCandidate bot0Mark = resolveDefensiveMark(false, bot0Instance.getActualPose());
-                    SmartDashboard.putString("Simulation/Bot0/Mark", bot0Mark.label());
+                    MarkCandidate bot0Mark = resolveDefensiveMark("Bot0", false, bot0Instance.getActualPose());
+                    SmartDashboard.putString(SimDashboardKeys.BOT0_MARK, bot0Mark.label());
                     bot0Instance.update(bot0Peers, playerIsRed, maxSpeed, bot0Mark.pose(), bot0Mark.velocity());
                 } else {
                     bot0Instance.update(bot0Peers, playerIsRed, maxSpeed);
@@ -554,8 +599,8 @@ public class AIRobotSim implements Subsystem {
             List<Pose2d> botPeers = new ArrayList<>(fieldPicture);
             botPeers.remove(bot.getActualPose());
             if (trainingMode || bot.getArchetype().isDefensive()) {
-                MarkCandidate mark = resolveDefensiveMark(false, bot.getActualPose());
-                SmartDashboard.putString("Simulation/Bot" + bot.getBotId() + "/Mark", mark.label());
+                MarkCandidate mark = resolveDefensiveMark("Bot" + bot.getBotId(), false, bot.getActualPose());
+                SmartDashboard.putString(SimDashboardKeys.botPrefix(bot.getBotId()) + SimDashboardKeys.SUFFIX_MARK, mark.label());
                 bot.update(botPeers, playerIsRed, maxSpeed, mark.pose(), mark.velocity());
             } else {
                 bot.update(botPeers, playerIsRed, maxSpeed);
@@ -566,14 +611,17 @@ public class AIRobotSim implements Subsystem {
             additionalBots.get(i).reset();
         }
 
-        SmartDashboard.putString("Simulation/Bot1/Archetype", getBot1Archetype().displayName);
-        SmartDashboard.putString("Simulation/Bot2/Archetype", getBot2Archetype().displayName);
+        SmartDashboard.putString(SimDashboardKeys.BOT1_ARCHETYPE, getBot1Archetype().displayName);
+        SmartDashboard.putString(SimDashboardKeys.BOT2_ARCHETYPE, getBot2Archetype().displayName);
 
         // Execute Allies
         if (trainingMode) {
             List<Pose2d> primaryPeers = new ArrayList<>(fieldPicture);
             primaryPeers.remove(trainingBluePrimaryBot.getActualPose());
-            MarkCandidate mark = resolveDefensiveMark(true, trainingBluePrimaryBot.getActualPose());
+            MarkCandidate mark = resolveDefensiveMark("Ally0", true, trainingBluePrimaryBot.getActualPose());
+            SmartDashboard.putString(SimDashboardKeys.ALLY0_MARK, mark.label());
+            SmartDashboard.putString(SimDashboardKeys.ALLY0_ARCHETYPE,
+                    trainingBluePrimaryBot.getArchetype().displayName);
             trainingBluePrimaryBot.update(primaryPeers, playerIsRed, allyMaxSpeed,
                     mark.pose(), mark.velocity());
         }
@@ -583,9 +631,9 @@ public class AIRobotSim implements Subsystem {
                 List<Pose2d> allyPeers = new ArrayList<>(fieldPicture);
                 allyPeers.remove(ally.getActualPose());
                 if (trainingMode || ally.getArchetype().isDefensive()) {
-                    MarkCandidate mark = resolveDefensiveMark(true, ally.getActualPose());
+                    MarkCandidate mark = resolveDefensiveMark("Ally" + (ally.getBotId() - 100), true, ally.getActualPose());
                     SmartDashboard.putString(
-                            "Simulation/Ally" + (ally.getBotId() - 100) + "/Mark", mark.label());
+                            SimDashboardKeys.allyPrefix(ally.getBotId() - 100) + SimDashboardKeys.SUFFIX_MARK, mark.label());
                     ally.update(allyPeers, playerIsRed, allyMaxSpeed, mark.pose(), mark.velocity());
                 } else {
                     ally.update(allyPeers, playerIsRed, allyMaxSpeed);
@@ -596,8 +644,8 @@ public class AIRobotSim implements Subsystem {
                 allyBots.get(i).reset();
             }
 
-            SmartDashboard.putString("Simulation/Ally1/Archetype", getAlly1Archetype().displayName);
-            SmartDashboard.putString("Simulation/Ally2/Archetype", getAlly2Archetype().displayName);
+            SmartDashboard.putString(SimDashboardKeys.ALLY1_ARCHETYPE, getAlly1Archetype().displayName);
+            SmartDashboard.putString(SimDashboardKeys.ALLY2_ARCHETYPE, getAlly2Archetype().displayName);
         }
     }
 
@@ -674,14 +722,44 @@ public class AIRobotSim implements Subsystem {
     }
 
     /**
-     * Resolves which enemy a defensive bot should mark this tick.
+     * Pure threat selection over enemy candidates, skipping carriers already
+     * held by peer defenders. When exclusion empties the list (fewer carriers
+     * than defenders), falls back to the full list so every defender still
+     * marks someone. Returns the fallback when the list is empty (never null
+     * when fallback is non-null).
+     */
+    public static MarkCandidate selectMarkExcluding(
+            Pose2d defenderPose,
+            List<MarkCandidate> candidates,
+            MarkCandidate fallback,
+            Set<String> takenLabels) {
+        List<MarkCandidate> open = new ArrayList<>();
+        if (candidates != null) {
+            for (MarkCandidate c : candidates) {
+                if (c != null && (takenLabels == null || !takenLabels.contains(c.label()))) {
+                    open.add(c);
+                }
+            }
+            if (open.isEmpty()) {
+                open = candidates;
+            }
+        }
+        return selectMark(defenderPose, open, fallback);
+    }
+
+    /**
+     * Resolves which enemy a defensive bot should mark this tick, with greedy
+     * exclusion against fellow defenders' last-tick marks.
      *
+     * @param defenderLabel Stable label for this defender ("Bot0".."Bot2",
+     *            "Ally0".."Ally2") used for exclusion bookkeeping
      * @param defenderIsAlly True for Blue bots (enemies = opponent bots), false for
      *            opponent bots (enemies = player and Blue bots)
      * @param defenderPose Current pose of the defending bot
      * @return Selected mark (player entry doubles as the fallback default)
      */
-    public MarkCandidate resolveDefensiveMark(boolean defenderIsAlly, Pose2d defenderPose) {
+    public MarkCandidate resolveDefensiveMark(
+            String defenderLabel, boolean defenderIsAlly, Pose2d defenderPose) {
         boolean trainingMode = trainingScenario != null;
         AIRobotInstance primaryBlue = trainingMode ? trainingBluePrimaryBot : null;
         Pose2d playerPose = primaryBlue != null
@@ -723,7 +801,15 @@ public class AIRobotSim implements Subsystem {
                             bot.getFuelCount(), bot.getScoreCount()));
                 }
         } catch (Exception ignored) {}
-        return selectMark(defenderPose, enemies, playerEntry);
+        Set<String> takenByPeers = new HashSet<>();
+        for (Map.Entry<String, String> entry : lastMarkByDefender.entrySet()) {
+            if (!entry.getKey().equals(defenderLabel) && entry.getValue() != null) {
+                takenByPeers.add(entry.getValue());
+            }
+        }
+        MarkCandidate mark = selectMarkExcluding(defenderPose, enemies, playerEntry, takenByPeers);
+        lastMarkByDefender.put(defenderLabel, mark.label());
+        return mark;
     }
 
     public ChassisSpeeds computeDriveToPoseSpeeds(Pose2d currentPose, Pose2d targetPose, double maxSpeed) {
@@ -809,7 +895,7 @@ public class AIRobotSim implements Subsystem {
             return false;
         Translation2d hub = FieldMap.Hubs.getHubLocation2d(opponentIsRed);
         double dist = pose.getTranslation().getDistance(hub);
-        if (dist < 1.40 || dist > 4.00)
+        if (dist < 1.40 || dist > FieldMap.Hubs.SHOOTING_MAX_DISTANCE)
             return false;
         if (isPoseInLowClearanceZone(pose))
             return false;
@@ -874,7 +960,8 @@ public class AIRobotSim implements Subsystem {
 
         if (arena != null) {
             try {
-                Set<GamePieceOnFieldSimulation> pieces = arena.gamePiecesOnField();
+                // Sorted snapshot for stable tie-breaks (see MatchDeterminism).
+                var pieces = MatchDeterminism.fuelOnFieldSorted();
                 if (pieces != null && !pieces.isEmpty()) {
                     for (var piece : pieces) {
                         if (piece == null || !"Fuel".equals(piece.getType()))
@@ -935,8 +1022,8 @@ public class AIRobotSim implements Subsystem {
             return;
 
         try {
-            Set<GamePieceOnFieldSimulation> pieces = arena.gamePiecesOnField();
-            if (pieces == null)
+            var pieces = MatchDeterminism.fuelOnFieldSorted();
+            if (pieces.isEmpty())
                 return;
 
             Translation2d botPos = robotPose.getTranslation();
@@ -977,8 +1064,8 @@ public class AIRobotSim implements Subsystem {
         if (arena == null)
             return false;
         try {
-            Set<GamePieceOnFieldSimulation> pieces = arena.gamePiecesOnField();
-            if (pieces != null) {
+            var pieces = MatchDeterminism.fuelOnFieldSorted();
+            if (!pieces.isEmpty()) {
                 for (var piece : pieces) {
                     if (piece != null && "Fuel".equals(piece.getType())) {
                         if (piece.getPoseOnField().getTranslation().getDistance(botPos) <= radius)
@@ -1017,10 +1104,12 @@ public class AIRobotSim implements Subsystem {
         double denom = 2.0 * (distance * Math.tan(theta) - h);
         double exitVel = denom > 0.1 ? (distance / Math.cos(theta)) * Math.sqrt(g / denom) : 6.8;
 
-        double randomExitVelocity = exitVel * (1.0 + (Math.random() - 0.5) * 0.04);
+        // Seeded per purpose so a scenario seed reproduces the spread.
+        java.util.Random rng = MatchDeterminism.random("shot:player");
+        double randomExitVelocity = exitVel * (1.0 + (rng.nextDouble() - 0.5) * 0.04);
         Rotation2d aimAngle = compensatedTarget.minus(botPos).getAngle();
-        Rotation2d randomYaw = aimAngle.plus(Rotation2d.fromDegrees((Math.random() - 0.5) * 1.6));
-        double randomPitch = theta + (Math.random() - 0.5) * 0.025;
+        Rotation2d randomYaw = aimAngle.plus(Rotation2d.fromDegrees((rng.nextDouble() - 0.5) * 1.6));
+        double randomPitch = theta + (rng.nextDouble() - 0.5) * 0.025;
 
         try {
             var fuelOnFly = new RebuiltFuelOnFly(
@@ -1085,15 +1174,15 @@ public class AIRobotSim implements Subsystem {
         double distToPlayer = pose.getTranslation().getDistance(playerPose.getTranslation());
         Logger.recordOutput("AI_Telemetry/DistanceToPlayer", distToPlayer);
 
-        SmartDashboard.putBoolean("Simulation/OpponentActive", active);
-        SmartDashboard.putNumberArray("Simulation/OpponentPose",
+        SmartDashboard.putBoolean(SimDashboardKeys.OPPONENT_ACTIVE, active);
+        SmartDashboard.putNumberArray(SimDashboardKeys.OPPONENT_POSE,
                 new double[] { pose.getX(), pose.getY(), pose.getRotation().getDegrees() });
-        SmartDashboard.putNumberArray("Simulation/OpponentTargetPose", new double[] { bot0Target.getX(),
+        SmartDashboard.putNumberArray(SimDashboardKeys.OPPONENT_TARGET_POSE, new double[] { bot0Target.getX(),
                 bot0Target.getY(), bot0Target.getRotation().getDegrees() });
-        SmartDashboard.putString("Simulation/OpponentAIState", bot0Detail);
-        SmartDashboard.putNumber("Simulation/OpponentScoreCount", bot0Score);
-        SmartDashboard.putNumber("Simulation/OpponentFuelCount", bot0Fuel);
-        SmartDashboard.putBoolean("Simulation/OpponentStalled", bot0Stalled);
+        SmartDashboard.putString(SimDashboardKeys.OPPONENT_AI_STATE, bot0Detail);
+        SmartDashboard.putNumber(SimDashboardKeys.OPPONENT_SCORE_COUNT, bot0Score);
+        SmartDashboard.putNumber(SimDashboardKeys.OPPONENT_FUEL_COUNT, bot0Fuel);
+        SmartDashboard.putBoolean(SimDashboardKeys.OPPONENT_STALLED, bot0Stalled);
 
         if (active) {
             try {
@@ -1112,16 +1201,16 @@ public class AIRobotSim implements Subsystem {
         Logger.recordOutput("AI_Telemetry/Bot0/HeldFuel", bot0Fuel);
         Logger.recordOutput("AI_Telemetry/Bot0/Archetype", getAIMode().name());
 
-        SmartDashboard.putNumberArray("Simulation/Bot0/Pose",
+        SmartDashboard.putNumberArray(SimDashboardKeys.BOT0_POSE,
                 new double[] { pose.getX(), pose.getY(), pose.getRotation().getDegrees() });
-        SmartDashboard.putNumberArray("Simulation/Bot0/TargetPose", new double[] { bot0Target.getX(),
+        SmartDashboard.putNumberArray(SimDashboardKeys.BOT0_TARGET_POSE, new double[] { bot0Target.getX(),
                 bot0Target.getY(), bot0Target.getRotation().getDegrees() });
-        SmartDashboard.putString("Simulation/Bot0/StateDetail", bot0Detail);
-        SmartDashboard.putString("Simulation/Bot0/Objective", getAIMode().name());
-        SmartDashboard.putNumber("Simulation/Bot0/Score", bot0Score);
-        SmartDashboard.putNumber("Simulation/Bot0/Fuel", bot0Fuel);
-        SmartDashboard.putBoolean("Simulation/Bot0/Stalled", bot0Stalled);
-        SmartDashboard.putString("Simulation/Bot0/Archetype", getAIMode().name());
+        SmartDashboard.putString(SimDashboardKeys.BOT0_STATE_DETAIL, bot0Detail);
+        SmartDashboard.putString(SimDashboardKeys.BOT0_OBJECTIVE, getAIMode().name());
+        SmartDashboard.putNumber(SimDashboardKeys.BOT0_SCORE, bot0Score);
+        SmartDashboard.putNumber(SimDashboardKeys.BOT0_FUEL, bot0Fuel);
+        SmartDashboard.putBoolean(SimDashboardKeys.BOT0_STALLED, bot0Stalled);
+        SmartDashboard.putString(SimDashboardKeys.BOT0_ARCHETYPE, getAIMode().name());
 
         // Multi-bot aggregate telemetry
         int totalScore = bot0Score;
@@ -1132,9 +1221,9 @@ public class AIRobotSim implements Subsystem {
             totalScore += additionalBots.get(i).getScoreCount();
             totalFuel += additionalBots.get(i).getFuelCount();
         }
-        SmartDashboard.putNumber("Simulation/TotalOpponentScore", totalScore);
-        SmartDashboard.putNumber("Simulation/TotalOpponentFuel", totalFuel);
-        SmartDashboard.putNumber("Simulation/MultiBotActiveCount", opponentCount);
+        SmartDashboard.putNumber(SimDashboardKeys.TOTAL_OPPONENT_SCORE, totalScore);
+        SmartDashboard.putNumber(SimDashboardKeys.TOTAL_OPPONENT_FUEL, totalFuel);
+        SmartDashboard.putNumber(SimDashboardKeys.MULTI_BOT_ACTIVE_COUNT, opponentCount);
 
         int totalAllyScore = trainingMode ? trainingBluePrimaryBot.getScoreCount() : 0;
         int totalAllyFuel = trainingMode ? trainingBluePrimaryBot.getFuelCount() : 0;
@@ -1144,9 +1233,9 @@ public class AIRobotSim implements Subsystem {
             totalAllyScore += allyBots.get(i).getScoreCount();
             totalAllyFuel += allyBots.get(i).getFuelCount();
         }
-        SmartDashboard.putNumber("Simulation/TotalAllyScore", totalAllyScore);
-        SmartDashboard.putNumber("Simulation/TotalAllyFuel", totalAllyFuel);
-        SmartDashboard.putNumber("Simulation/AllyActiveCount", allyCount + (trainingMode ? 1 : 0));
+        SmartDashboard.putNumber(SimDashboardKeys.TOTAL_ALLY_SCORE, totalAllyScore);
+        SmartDashboard.putNumber(SimDashboardKeys.TOTAL_ALLY_FUEL, totalAllyFuel);
+        SmartDashboard.putNumber(SimDashboardKeys.ALLY_ACTIVE_COUNT, allyCount + (trainingMode ? 1 : 0));
 
         double now = Timer.getFPGATimestamp();
         ChassisSpeeds bot0CmdSpeeds = bot0Instance.getCurrentTargetSpeeds();
@@ -1159,7 +1248,7 @@ public class AIRobotSim implements Subsystem {
 
         // Only dump multi-line diagnostics to stdout if explicitly requested via
         // SmartDashboard
-        boolean debugAI = SmartDashboard.getBoolean("Simulation/DebugAI", false);
+        boolean debugAI = SmartDashboard.getBoolean(SimDashboardKeys.DEBUG_AI, false);
         if (isStuck && debugAI && (now - lastConsoleDumpTime > 2.0)) {
             lastConsoleDumpTime = now;
             System.out.printf(
@@ -1184,8 +1273,8 @@ public class AIRobotSim implements Subsystem {
             aiModeChooser.addOption(mode.displayName, mode);
         }
         aiModeChooser.setDefaultOption(AIMode.AUTONOMOUS_CYCLER.displayName, AIMode.AUTONOMOUS_CYCLER);
-        SmartDashboard.putData("Simulation/AIModeChooser", aiModeChooser);
-        SmartDashboard.putData("Simulation/Bot0/ArchetypeChooser", aiModeChooser);
+        SmartDashboard.putData(SimDashboardKeys.AI_MODE_CHOOSER, aiModeChooser);
+        SmartDashboard.putData(SimDashboardKeys.BOT0_ARCHETYPE_CHOOSER, aiModeChooser);
 
         for (Archetype a : Archetype.values()) {
             if (a != Archetype.CO_PILOT) {
@@ -1201,17 +1290,17 @@ public class AIRobotSim implements Subsystem {
         ally2ArchetypeChooser.setDefaultOption(Archetype.ADAPTIVE_COMPETITOR.displayName,
                 Archetype.ADAPTIVE_COMPETITOR);
 
-        SmartDashboard.putData("Simulation/Bot1/ArchetypeChooser", bot1ArchetypeChooser);
-        SmartDashboard.putData("Simulation/Bot2/ArchetypeChooser", bot2ArchetypeChooser);
-        SmartDashboard.putData("Simulation/Ally1/ArchetypeChooser", ally1ArchetypeChooser);
-        SmartDashboard.putData("Simulation/Ally2/ArchetypeChooser", ally2ArchetypeChooser);
+        SmartDashboard.putData(SimDashboardKeys.BOT1_ARCHETYPE_CHOOSER, bot1ArchetypeChooser);
+        SmartDashboard.putData(SimDashboardKeys.BOT2_ARCHETYPE_CHOOSER, bot2ArchetypeChooser);
+        SmartDashboard.putData(SimDashboardKeys.ALLY1_ARCHETYPE_CHOOSER, ally1ArchetypeChooser);
+        SmartDashboard.putData(SimDashboardKeys.ALLY2_ARCHETYPE_CHOOSER, ally2ArchetypeChooser);
     }
 
     public Archetype getBot1Archetype() {
         if (bot1ArchetypeChooser != null && bot1ArchetypeChooser.getSelected() != null) {
             return bot1ArchetypeChooser.getSelected();
         }
-        String str = SmartDashboard.getString("Simulation/Bot1/Archetype", Archetype.DEFENSE_BULLY.name());
+        String str = SmartDashboard.getString(SimDashboardKeys.BOT1_ARCHETYPE, Archetype.DEFENSE_BULLY.name());
         return Archetype.fromString(str);
     }
 
@@ -1219,7 +1308,7 @@ public class AIRobotSim implements Subsystem {
         if (bot2ArchetypeChooser != null && bot2ArchetypeChooser.getSelected() != null) {
             return bot2ArchetypeChooser.getSelected();
         }
-        String str = SmartDashboard.getString("Simulation/Bot2/Archetype", Archetype.ADAPTIVE_COMPETITOR.name());
+        String str = SmartDashboard.getString(SimDashboardKeys.BOT2_ARCHETYPE, Archetype.ADAPTIVE_COMPETITOR.name());
         return Archetype.fromString(str);
     }
 
@@ -1227,7 +1316,7 @@ public class AIRobotSim implements Subsystem {
         if (ally1ArchetypeChooser != null && ally1ArchetypeChooser.getSelected() != null) {
             return ally1ArchetypeChooser.getSelected();
         }
-        String str = SmartDashboard.getString("Simulation/Ally1/Archetype", Archetype.AUTONOMOUS_CYCLER.name());
+        String str = SmartDashboard.getString(SimDashboardKeys.ALLY1_ARCHETYPE, Archetype.AUTONOMOUS_CYCLER.name());
         return Archetype.fromString(str);
     }
 
@@ -1235,7 +1324,7 @@ public class AIRobotSim implements Subsystem {
         if (ally2ArchetypeChooser != null && ally2ArchetypeChooser.getSelected() != null) {
             return ally2ArchetypeChooser.getSelected();
         }
-        String str = SmartDashboard.getString("Simulation/Ally2/Archetype", Archetype.ADAPTIVE_COMPETITOR.name());
+        String str = SmartDashboard.getString(SimDashboardKeys.ALLY2_ARCHETYPE, Archetype.ADAPTIVE_COMPETITOR.name());
         return Archetype.fromString(str);
     }
 
@@ -1275,16 +1364,16 @@ public class AIRobotSim implements Subsystem {
     @Override
     public void initialize() {
         setTrajectory("OpponentPath");
-        SmartDashboard.setDefaultString("Simulation/AIMode", AIMode.AUTONOMOUS_CYCLER.name());
-        SmartDashboard.setDefaultNumber("Simulation/OpponentCount", 1.0);
-        SmartDashboard.setDefaultNumber("Simulation/OpponentSpeedPercent", 75.0);
-        SmartDashboard.setDefaultNumber("Simulation/AllySpeedPercent", 75.0);
-        SmartDashboard.setDefaultNumber("Simulation/AllyCount", 0.0);
-        SmartDashboard.setDefaultString("Simulation/Bot0/Archetype", AIMode.AUTONOMOUS_CYCLER.name());
-        SmartDashboard.setDefaultString("Simulation/Bot1/Archetype", Archetype.DEFENSE_BULLY.name());
-        SmartDashboard.setDefaultString("Simulation/Bot2/Archetype", Archetype.ADAPTIVE_COMPETITOR.name());
-        SmartDashboard.setDefaultString("Simulation/Ally1/Archetype", Archetype.AUTONOMOUS_CYCLER.name());
-        SmartDashboard.setDefaultString("Simulation/Ally2/Archetype", Archetype.ADAPTIVE_COMPETITOR.name());
+        SmartDashboard.setDefaultString(SimDashboardKeys.AI_MODE, AIMode.AUTONOMOUS_CYCLER.name());
+        SmartDashboard.setDefaultNumber(SimDashboardKeys.OPPONENT_COUNT, 1.0);
+        SmartDashboard.setDefaultNumber(SimDashboardKeys.OPPONENT_SPEED_PERCENT, 75.0);
+        SmartDashboard.setDefaultNumber(SimDashboardKeys.ALLY_SPEED_PERCENT, 75.0);
+        SmartDashboard.setDefaultNumber(SimDashboardKeys.ALLY_COUNT, 0.0);
+        SmartDashboard.setDefaultString(SimDashboardKeys.BOT0_ARCHETYPE, AIMode.AUTONOMOUS_CYCLER.name());
+        SmartDashboard.setDefaultString(SimDashboardKeys.BOT1_ARCHETYPE, Archetype.DEFENSE_BULLY.name());
+        SmartDashboard.setDefaultString(SimDashboardKeys.BOT2_ARCHETYPE, Archetype.ADAPTIVE_COMPETITOR.name());
+        SmartDashboard.setDefaultString(SimDashboardKeys.ALLY1_ARCHETYPE, Archetype.AUTONOMOUS_CYCLER.name());
+        SmartDashboard.setDefaultString(SimDashboardKeys.ALLY2_ARCHETYPE, Archetype.ADAPTIVE_COMPETITOR.name());
     }
 
     public static Pose2d getAllySpawnPose(int allyIndex, boolean playerIsRed) {
@@ -1383,7 +1472,7 @@ public class AIRobotSim implements Subsystem {
         if (aiModeChooser != null && aiModeChooser.getSelected() != null) {
             return aiModeChooser.getSelected();
         }
-        String modeStr = SmartDashboard.getString("Simulation/AIMode", AIMode.AUTONOMOUS_CYCLER.name());
+        String modeStr = SmartDashboard.getString(SimDashboardKeys.AI_MODE, AIMode.AUTONOMOUS_CYCLER.name());
         return AIMode.fromString(modeStr);
     }
 

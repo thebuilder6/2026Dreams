@@ -41,6 +41,35 @@ public class TrajectoryController {
     private static final double MAX_ACCELERATION_MPS2 = 4.25; // Traction-limited acceleration
     private static final double MAX_DECELERATION_MPS2 = 3.50; // Smooth deceleration approaching target
 
+    /**
+     * Cross-track error a robot may have before a waypoint-plane crossing counts as
+     * real progress, in open field.
+     */
+    public static final double CROSS_TRACK_GATE_M = 0.45;
+
+    /**
+     * Tighter cross-track gate inside a trench corridor. The drivable centre band
+     * there is only ~0.3787 m wide (see {@code TrenchCorridorClearanceTest}), so the
+     * open-field 0.45 m gate was <i>wider than the corridor the robot may legally
+     * occupy</i>: a robot shoved 0.18-0.45 m off the lane centreline passed the gate
+     * and advanced a waypoint while its centre was already inside the inflated
+     * footprint. The planner then prepended an escape waypoint and the robot
+     * re-entered the lane, so the visible symptom was detour and lane re-entry churn
+     * rather than a hard stall.
+     *
+     * <p>Derived, not guessed: the lane centreline sits 0.1797 m clear of the inflated
+     * wall, so half the drivable band is the most lateral error the robot can carry
+     * before it is illegal. Rounded up slightly to absorb odometry noise without
+     * returning to the full-band width.
+     */
+    public static final double TRENCH_CROSS_TRACK_GATE_M = 0.22;
+
+    /**
+     * Retry cadence for a plan that came back empty. See the no-route branch in
+     * {@link #calculate}.
+     */
+    public static final double REPLAN_RETRY_SEC = 0.25;
+
     // Rotation override (e.g. SOTF auto-aiming at Hub while moving)
     private Supplier<Rotation2d> rotationOverride = null;
 
@@ -64,6 +93,11 @@ public class TrajectoryController {
         currentCommandedSpeed = 0.0;
         isExplicitPath = false;
         rotationOverride = null;
+        // A new path must not inherit derivative kick / integral from the old
+        // path's heading history. Without this, the first calculate() after a
+        // reset (or the first call in a unit test sharing the singleton
+        // controller) can saturate omega from stale PID state.
+        headingController.reset();
     }
 
     /**
@@ -126,7 +160,12 @@ public class TrajectoryController {
         double distTargetMoved = targetPose.getTranslation().getDistance(lastPathTarget.getTranslation());
         boolean needReplan = !isExplicitPath && (waypoints.isEmpty()
                 || (distTargetMoved > 0.85)
-                || (now - lastPlanTimestamp > 0.50 && distTargetMoved > 0.30));
+                || (now - lastPlanTimestamp > 0.50 && distTargetMoved > 0.30)
+                // Stuck off-segment (e.g. APF shove past the 0.45 m cross-track
+                // gate in a trench): refresh from the measured pose so the new
+                // segment starts near the robot instead of holding an angled
+                // lookahead forever. Throttled to 0.5 s to avoid replan thrash.
+                || (isStalled && !waypoints.isEmpty() && now - lastPlanTimestamp > 0.50));
 
         if (needReplan) {
             waypoints.clear();
@@ -135,6 +174,20 @@ public class TrajectoryController {
             lastPathTarget = targetPose;
             lastPlanTimestamp = now;
             pathStartTranslation = currentPose.getTranslation();
+            if (waypoints.isEmpty()) {
+                // No valid route. Sep 26 made this a deliberate stop rather than a
+                // straight-line command through an obstacle, which is still the right
+                // call. But lastPathTimestamp was just stamped, so the next replan
+                // would wait for the target to move 0.85 m -- for a static target, that
+                // is an indefinite hold. Retry every REPLAN_RETRY_SEC instead, and let
+                // the caller-visible flag plus the stall detectors handle a genuinely
+                // unreachable target. Logged because a silent stop is indistinguishable
+                // from a hang in a replay.
+                lastPlanTimestamp = now - REPLAN_RETRY_SEC;
+                Logger.recordOutput("Trajectory/NoRoute", true);
+            } else {
+                Logger.recordOutput("Trajectory/NoRoute", false);
+            }
         } else if (!isExplicitPath && distTargetMoved > 0.01 && !waypoints.isEmpty()) {
             waypoints.set(waypoints.size() - 1, targetPose);
             lastPathTarget = targetPose;
@@ -147,6 +200,12 @@ public class TrajectoryController {
 
         boolean evacuatingStaticObstacle = currentWaypointIndex == 0
                 && StaticPathfinder.isPointInStaticObstacle(currentPose.getTranslation());
+
+        // A trench corridor is far narrower than open field, so the cross-track gate
+        // has to shrink with it (see TRENCH_CROSS_TRACK_GATE_M). Computed once here
+        // because waypoint progression and the lookahead clamp both depend on it.
+        boolean inTrench = FieldMap.Trenches.isLowClearance(currentPose.getTranslation());
+        double crossTrackGate = inTrench ? TRENCH_CROSS_TRACK_GATE_M : CROSS_TRACK_GATE_M;
 
         // ── 3. Waypoint Progression (Cross-Plane Projection) ────────────────
         while (!evacuatingStaticObstacle && currentWaypointIndex < waypoints.size() - 1) {
@@ -166,11 +225,13 @@ public class TrajectoryController {
                 double crossTrack = Math.abs(toBot.getX() * unitY - toBot.getY() * unitX);
                 // Crossing the waypoint plane is only progress if we passed near
                 // the segment. Otherwise a shove/avoidance detour can skip a
-                // tunnel corner and command a path that clips the obstacle.
-                passedPlane = alongTrack >= 0.0 && crossTrack < 0.45;
+                // tunnel corner and command a path that clips the obstacle. In a
+                // trench the gate is tightened so a lateral shove cannot advance the
+                // path from inside the inflated footprint.
+                passedPlane = alongTrack >= 0.0 && crossTrack < crossTrackGate;
             }
 
-            if (toBot.getNorm() < 0.45 || passedPlane) {
+            if (toBot.getNorm() < crossTrackGate || passedPlane) {
                 currentWaypointIndex++;
             } else {
                 break;
@@ -205,7 +266,7 @@ public class TrajectoryController {
         currentCommandedSpeed = targetSpeed;
 
         // ── 6. Lookahead Vector & Translation ───────────────────────────────
-        boolean inTrench = FieldMap.Trenches.isLowClearance(currentPose.getTranslation());
+        // inTrench was resolved above alongside the cross-track gate.
         // In tight corridors, clamp lookahead to 0.35m to prevent cutting corners into
         // the truss
         double lookaheadDist = inTrench

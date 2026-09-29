@@ -110,8 +110,8 @@ public class AllianceFlipUtil {
 
     /**
      * Checks if a given field translation is inside the specified alliance's scoring zone.
-     * Blue Alliance Zone: X <= 4.597m (Blue Alliance Wall to Blue Hub)
-     * Red Alliance Zone: X >= 11.938m (Red Hub to Red Alliance Wall)
+     * Blue Alliance Zone: X <= 4.6256m, Red Alliance Zone: X >= 11.9154m
+     * (single owner: `FieldMap.AllianceZones`, which sets both edges from the Hub X).
      * 
      * @param translation Field translation in standard Blue-origin coordinates
      * @param isRedAlliance True if checking Red Alliance zone, false for Blue Alliance zone

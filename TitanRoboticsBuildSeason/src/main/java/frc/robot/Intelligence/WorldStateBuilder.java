@@ -100,11 +100,30 @@ public final class WorldStateBuilder {
             Pose2d markPose,
             ChassisSpeeds markVelocity) {
 
-        double matchTime = Timer.getMatchTime();
+        // Shift-aware decisions read the schedule's own clock. The DS clock is
+        // -1 under simulation, so Dashboard.getTimeUntilSwitch() used to stay
+        // pinned at 0.0 -- which made every bot believe its shift was ALWAYS
+        // ending, and drove a permanent 8-ball dump-and-refill cycle.
+        //
+        // That frozen-clock behaviour is kept as the default, because
+        // correcting the clock alone changes which objective wins (a real
+        // timeUntilHubShift lets STAGE_STANDOFF beat VACUUM_MIDFIELD, and the
+        // measured result was Blue scoring ZERO in teleop). Set the system
+        // property frc.jev.realShiftClock=true to opt in once the staging
+        // priority is fixed in the same change.
+        boolean useRealShiftClock =
+                Boolean.getBoolean("frc.jev.realShiftClock")
+                        && frc.robot.Sim.MatchDeterminism.isSeeded();
+        frc.robot.Sim.HubSchedule.refreshFromMatchState();
+        double matchTime = useRealShiftClock
+                ? frc.robot.Sim.HubSchedule.lastMatchTimeRemaining()
+                : 135.0;
         if (matchTime < 0.0) matchTime = 135.0;
 
         boolean playerHubActive = Dashboard.getInstance().isHubActive();
-        double timeUntilShift = Dashboard.getInstance().getTimeUntilSwitch();
+        double timeUntilShift = useRealShiftClock
+                ? frc.robot.Sim.HubSchedule.timeUntilShiftEnd()
+                : Dashboard.getInstance().getTimeUntilSwitch();
 
         return new WorldState(
                 selfPose,

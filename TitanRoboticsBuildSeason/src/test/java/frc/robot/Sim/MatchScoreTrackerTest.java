@@ -29,6 +29,105 @@ public class MatchScoreTrackerTest {
         assertEquals(0.0, tracker.getPlayerAccuracyPercent(), 1e-4);
     }
 
+    // ---------------------------------------------------------------------
+    // Per-slot attribution (F2)
+    //
+    // The player used to call recordFuelScore directly, so every player score
+    // landed in the alliance total while the per-bot table showed nothing. That
+    // made 13 of 20 archived headless reports fail the per-bot sum against the
+    // alliance total, short by 2-10, always on Blue -- structurally one-sided
+    // because the player always shoots at its own hub. These pin the fix.
+    // ---------------------------------------------------------------------
+
+    @Test
+    public void playerScoreIsAttributedNotJustTotalled() {
+        // 4 player scores into the Blue hub (the player's own alliance).
+        for (int i = 0; i < 4; i++) {
+            tracker.recordPlayerScore(false);
+        }
+        assertEquals(4, tracker.getPlayerShotsScored());
+        assertEquals(4, tracker.getPlayerBlueFuelScored());
+        assertEquals(0, tracker.getPlayerRedFuelScored());
+        // Alliance total moved...
+        assertEquals(4, tracker.getBlueFuelScore());
+        // ...and it is fully explained by the player's own row.
+        assertEquals(4, tracker.getPlayerBlueFuelScored());
+        assertEquals(0, tracker.getBlueReconciliationResidual());
+        assertEquals(0, tracker.getBlueUnattributedFuel());
+        // No bot row was invented for it.
+        assertEquals(0, tracker.getAlly0FuelScored());
+        assertEquals(0, tracker.getAlly1FuelScored());
+        assertEquals(0, tracker.getAlly2FuelScored());
+    }
+
+    @Test
+    public void playerScoreIntoRedHubAttributesToRed() {
+        tracker.recordPlayerScore(true);
+        assertEquals(1, tracker.getPlayerRedFuelScored());
+        assertEquals(0, tracker.getPlayerBlueFuelScored());
+        assertEquals(1, tracker.getRedFuelScore());
+        assertEquals(0, tracker.getRedReconciliationResidual());
+        assertEquals(0, tracker.getBlueFuelScore());
+        assertEquals(0, tracker.getBlueReconciliationResidual());
+    }
+
+    @Test
+    public void unknownBotIdIsCountedAsUnattributedNotDropped() {
+        // 7 is not a valid bot id (Red 0-2, Blue 100-102).
+        tracker.recordBotScore(7, true);
+        assertEquals(1, tracker.getRedUnattributedFuel());
+        assertEquals(0, tracker.getBlueUnattributedFuel());
+        // It still reached the alliance total...
+        assertEquals(1, tracker.getRedFuelScore());
+        // ...and the residual stays 0 because the canary accounts for it.
+        assertEquals(0, tracker.getRedReconciliationResidual());
+        // No bot row was touched.
+        assertEquals(0, tracker.getBot0FuelScored());
+        assertEquals(0, tracker.getBot1FuelScored());
+        assertEquals(0, tracker.getBot2FuelScored());
+    }
+
+    @Test
+    public void allScoringPathsReconcileAgainstAllianceTotals() {
+        // A mixed sequence across all three entry points, in the id order the
+        // headless 3v3 actually uses.
+        tracker.recordBotScore(0, true);      // Red Bot0
+        tracker.recordBotScore(1, true);      // Red Bot1
+        tracker.recordBotScore(2, true);      // Red Bot2
+        tracker.recordBotScore(100, false);   // Blue training primary
+        tracker.recordBotScore(101, false);   // Blue Ally1
+        tracker.recordBotScore(102, false);   // Blue Ally2
+        tracker.recordPlayerScore(false);     // player -> Blue hub
+        tracker.recordPlayerScore(false);
+        tracker.recordBotScore(99, false);     // unknown -> Blue canary
+
+        assertEquals(3, tracker.getRedFuelScore());
+        // Blue: 3 bots (100/101/102) + 2 player + 1 unknown-id = 6
+        assertEquals(6, tracker.getBlueFuelScore());
+        assertEquals(0, tracker.getRedReconciliationResidual());
+        assertEquals(0, tracker.getBlueReconciliationResidual());
+        assertEquals(1, tracker.getBlueUnattributedFuel());
+        assertEquals(0, tracker.getRedUnattributedFuel());
+    }
+
+    @Test
+    public void resetClearsAttributionAndCanaries() {
+        tracker.recordPlayerScore(false);
+        tracker.recordBotScore(101, false);
+        tracker.recordBotScore(7, false);
+        assertNotEquals(0, tracker.getBlueUnattributedFuel());
+
+        tracker.reset();
+
+        assertEquals(0, tracker.getPlayerBlueFuelScored());
+        assertEquals(0, tracker.getPlayerRedFuelScored());
+        assertEquals(0, tracker.getRedUnattributedFuel());
+        assertEquals(0, tracker.getBlueUnattributedFuel());
+        assertEquals(0, tracker.getBlueReconciliationResidual());
+        assertEquals(0, tracker.getRedReconciliationResidual());
+        assertEquals(0, tracker.getAlly1FuelScored());
+    }
+
     @Test
     public void testFuelScoringAndLeader() {
         // Red scores 5 fuel

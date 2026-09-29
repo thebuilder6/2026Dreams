@@ -59,11 +59,11 @@ public class FieldMapTest {
 
     @Test
     public void testAllianceScoringZones() {
-        // Blue Alliance Zone (X <= 4.597)
+        // Blue Alliance Zone (X <= 4.6256, single owner: FieldMap.AllianceZones)
         assertTrue(FieldMap.AllianceZones.isInAllianceZone(new Translation2d(2.0, 4.0), false));
         assertFalse(FieldMap.AllianceZones.isInAllianceZone(new Translation2d(2.0, 4.0), true));
 
-        // Red Alliance Zone (X >= 11.938)
+        // Red Alliance Zone (X >= 11.9154, single owner: FieldMap.AllianceZones)
         assertTrue(FieldMap.AllianceZones.isInAllianceZone(new Translation2d(13.5, 4.0), true));
         assertFalse(FieldMap.AllianceZones.isInAllianceZone(new Translation2d(13.5, 4.0), false));
 

@@ -112,7 +112,11 @@ public final class FieldMap {
 
         // Tactical shooting boundaries
         public static final double SHOOTING_MIN_DISTANCE = 1.60; // Clears Hub base frame
-        public static final double SHOOTING_MAX_DISTANCE = 4.20; // Maximum reliable flywheel ballistic distance
+        // Maximum reliable flywheel ballistic distance — the single owner of the
+        // validated shot envelope. JevDecisionEngine (LONG_RANGE_SNIPE utility)
+        // and AIRobotSim.isValidShootingLocation both read this; do not add a
+        // second max-distance literal.
+        public static final double SHOOTING_MAX_DISTANCE = 4.20;
         public static final double OPTIMAL_STANDOFF_DISTANCE = 2.40; // Sweet spot for accuracy and turnover speed
 
         public static Translation3d getHubLocation3d(boolean isRed) {

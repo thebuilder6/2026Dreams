@@ -11,6 +11,7 @@ import edu.wpi.first.math.geometry.Translation2d;
 import frc.robot.Data.Constants;
 import frc.robot.Navigation.FieldMap;
 import frc.robot.Navigation.GlidePoints;
+import frc.robot.Navigation.StaticPathfinder;
 import frc.robot.Intelligence.JevDecisionEngine;
 import frc.robot.Sim.AIRobotInstance;
 import frc.robot.Sim.AIRobotSim;
@@ -529,8 +530,8 @@ public class JevDecisionEngineTest {
 
     @Test
     public void testShootingRejectionOutsideAllianceZone() {
-        // Blue Hub is at (4.597, 4.035). Place robot in midfield at (6.0, 4.035).
-        // Distance is ~1.403m (well within 1.4m - 3.6m shooting distance), but outside Blue Alliance Zone (X <= 4.5974)
+        // Blue Hub is at (4.6256, 4.035). Place robot in midfield at (6.0, 4.035).
+        // Distance is ~1.374m (well within 1.4m - 3.6m shooting distance), but outside Blue Alliance Zone (X <= 4.6256)
         Pose2d midfieldPose = new Pose2d(6.0, 4.035, new Rotation2d(Math.PI)); // Facing Hub
         WorldState midfieldWorld = new WorldState(
                 midfieldPose,
@@ -744,5 +745,113 @@ public class JevDecisionEngineTest {
         AIActionIntent intent = engine.evaluatePolicy(world, Archetype.AUTONOMOUS_CYCLER);
         assertNotEquals(StrategicObjective.SHUTTLE_PASS, intent.objective());
         assertNotEquals(ShooterState.SHOOTING, intent.shooterCommand());
+    }
+
+    @Test
+    public void testLongRangeSnipeUsesSharedShotEnvelope() {
+        assertEquals(4.20, FieldMap.Hubs.SHOOTING_MAX_DISTANCE, 1e-9,
+                "Shot envelope has a single owner; decision and sim must read FieldMap.Hubs.SHOOTING_MAX_DISTANCE");
+        Translation2d hub = FieldMap.Hubs.BLUE_HUB_2D;
+
+        // 4.1 m: inside the shared envelope (old sim limit 4.0 would reject, old
+        // snipe limit 4.3 allowed) — must snipe with a live feed request.
+        Pose2d outerEdgePose = new Pose2d(hub.getX() - 4.1, hub.getY(), new Rotation2d());
+        WorldState outerEdge = new WorldState(outerEdgePose,
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(), 15,
+                new Pose2d(13.0, 4.0, new Rotation2d()),
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                90.0, true, false, 20.0, false);
+        AIActionIntent snipe = engine.evaluatePolicy(outerEdge, Archetype.AUTONOMOUS_CYCLER);
+        assertEquals(StrategicObjective.LONG_RANGE_SNIPE, snipe.objective(),
+                "Bot at 4.1 m with hub active and 15 fuel must take the outer-perimeter shot");
+        assertEquals(ShooterState.SHOOTING, snipe.shooterCommand());
+        assertTrue(snipe.triggerFeedKicker(), "Aimed snipe (0 deg error) must request the feed");
+
+        // 4.4 m: beyond the shared envelope — must not snipe.
+        Pose2d beyondPose = new Pose2d(hub.getX() - 4.4, hub.getY(), new Rotation2d());
+        WorldState beyond = new WorldState(beyondPose,
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(), 15,
+                new Pose2d(13.0, 4.0, new Rotation2d()),
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                90.0, true, false, 20.0, false);
+        assertNotEquals(StrategicObjective.LONG_RANGE_SNIPE,
+                engine.evaluatePolicy(beyond, Archetype.AUTONOMOUS_CYCLER).objective(),
+                "Bot at 4.4 m is beyond the shared envelope and must not snipe");
+    }
+
+    @Test
+    public void testChokeTrenchRequiresOccupiedTrench() {
+        Pose2d selfPose = new Pose2d(8.0, 4.0, new Rotation2d());
+        edu.wpi.first.math.kinematics.ChassisSpeeds zero = new edu.wpi.first.math.kinematics.ChassisSpeeds();
+
+        // Opponent poaching in our (Blue) top trench: contest the midfield exit.
+        WorldState ownTrench = new WorldState(selfPose, zero, 30,
+                new Pose2d(4.5, 7.42, new Rotation2d()), zero,
+                90.0, false, false, 20.0, false);
+        AIActionIntent own = engine.evaluatePolicy(ownTrench, Archetype.TACTICAL_DEFENDER);
+        assertEquals(StrategicObjective.CHOKE_TRENCH, own.objective());
+        Translation2d ownExit = new Translation2d(FieldMap.Trenches.BLUE_TRENCH_MAX_X + 0.9,
+                FieldMap.Trenches.TOP_CORRIDOR_Y);
+        assertTrue(own.navigationTarget().getTranslation().getDistance(ownExit) < 1.2,
+                "Choke must stage at the occupied trench's midfield exit: " + own.navigationTarget());
+        assertFalse(StaticPathfinder.isPointInHardObstacle(own.navigationTarget().getTranslation()),
+                "Choke staging point must be reachable, not inside an obstacle");
+
+        // Opponent in the far-side (Red) top trench: target must stay on the
+        // occupied side, never mirror onto ours.
+        WorldState farTrench = new WorldState(selfPose, zero, 30,
+                new Pose2d(12.0, 7.42, new Rotation2d()), zero,
+                90.0, false, false, 20.0, false);
+        AIActionIntent far = engine.evaluatePolicy(farTrench, Archetype.TACTICAL_DEFENDER);
+        assertEquals(StrategicObjective.CHOKE_TRENCH, far.objective());
+        assertTrue(far.navigationTarget().getX() > FieldMap.CENTERLINE_X,
+                "Far-side choke target must stay on the occupied (Red) half: " + far.navigationTarget());
+        Translation2d farExit = new Translation2d(FieldMap.Trenches.RED_TRENCH_MIN_X - 0.9,
+                FieldMap.Trenches.TOP_CORRIDOR_Y);
+        assertTrue(far.navigationTarget().getTranslation().getDistance(farExit) < 1.2,
+                "Far-side choke must stage at the Red trench's midfield exit: " + far.navigationTarget());
+        assertFalse(StaticPathfinder.isPointInHardObstacle(far.navigationTarget().getTranslation()),
+                "Far-side choke staging point must be reachable, not inside an obstacle");
+
+        // Opponent midfield at trench X but center field: not a trench
+        // occupant — must not pull the defender to a trench mouth.
+        WorldState midfieldX = new WorldState(selfPose, zero, 30,
+                new Pose2d(4.5, 4.0, new Rotation2d()), zero,
+                90.0, false, false, 20.0, false);
+        assertNotEquals(StrategicObjective.CHOKE_TRENCH,
+                engine.evaluatePolicy(midfieldX, Archetype.TACTICAL_DEFENDER).objective(),
+                "Midfield opponent at trench X is not a trench occupant");
+    }
+
+    @Test
+    public void testDenyShootingLaneStagesOutsideHubFootprint() {
+        Translation2d redHub = FieldMap.Hubs.RED_HUB_2D;
+        Pose2d selfPose = new Pose2d(8.0, 4.0, new Rotation2d());
+        edu.wpi.first.math.kinematics.ChassisSpeeds zero = new edu.wpi.first.math.kinematics.ChassisSpeeds();
+
+        // Shooter 2.9 m out: block between shooter and Hub, outside the shell.
+        WorldState approach = new WorldState(selfPose, zero, 30,
+                new Pose2d(9.0, 4.0, new Rotation2d()), zero,
+                90.0, false, true, 20.0, false);
+        AIActionIntent deny = engine.evaluatePolicy(approach, Archetype.TACTICAL_DEFENDER);
+        assertEquals(StrategicObjective.DENY_SHOOTING_LANE, deny.objective());
+        double approachDist = deny.navigationTarget().getTranslation().getDistance(redHub);
+        assertTrue(approachDist >= 1.9,
+                "Lane block must stage outside the Hub safety shell, dist: " + approachDist);
+        assertFalse(StaticPathfinder.isPointInHardObstacle(deny.navigationTarget().getTranslation()),
+                "Lane block must be reachable, not inside an obstacle");
+
+        // Shooter already inside the shell (1.4 m): stage off to the side,
+        // never between shooter and Hub.
+        WorldState inside = new WorldState(selfPose, zero, 30,
+                new Pose2d(10.5, 4.04, new Rotation2d()), zero,
+                90.0, false, true, 20.0, false);
+        AIActionIntent side = engine.evaluatePolicy(inside, Archetype.TACTICAL_DEFENDER);
+        assertEquals(StrategicObjective.DENY_SHOOTING_LANE, side.objective());
+        double sideDist = side.navigationTarget().getTranslation().getDistance(redHub);
+        assertTrue(sideDist >= 1.9,
+                "Close-range lane block must stage laterally outside the shell, dist: " + sideDist);
+        assertFalse(StaticPathfinder.isPointInHardObstacle(side.navigationTarget().getTranslation()),
+                "Lateral lane block must be reachable, not inside an obstacle");
     }
 }

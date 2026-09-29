@@ -98,6 +98,25 @@ public class HubShiftShotAllowanceTest {
     }
 
     @Test
+    public void settleGateBlocksFireOnTheMove() {
+        // Plant-and-fire: aiming + solution ready must still hold fire while
+        // the chassis is moving; the volley streams every 80 ms, so any
+        // transit-speed release is a guaranteed miss spread.
+        assertTrue(AIRobotInstance.isSettledSpeeds(new edu.wpi.first.math.kinematics.ChassisSpeeds()),
+                "Rest must count as settled");
+        assertTrue(AIRobotInstance.isSettledSpeeds(
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(0.5, 0.0, 0.0)),
+                "Crawl must count as settled");
+        assertFalse(AIRobotInstance.isSettledSpeeds(
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(3.0, 0.0, 0.0)),
+                "Transit speed must block fire");
+        assertFalse(AIRobotInstance.isSettledSpeeds(
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(0.0, 0.0, 2.5)),
+                "Fast turn must block fire");
+        assertTrue(AIRobotInstance.isSettledSpeeds(null), "Null (no sim) must count as settled");
+    }
+
+    @Test
     public void aiInstanceFiresOnlyOnActiveHub() {
         AIRobotInstance bot = new AIRobotInstance(1,
                 new Pose2d(1.5, -5, new Rotation2d(0)), Archetype.AUTONOMOUS_CYCLER);

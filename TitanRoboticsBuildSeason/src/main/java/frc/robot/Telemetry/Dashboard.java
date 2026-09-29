@@ -492,7 +492,7 @@ public class Dashboard implements Subsystem {
         table.getDoubleTopic(SimDashboardKeys.ALLY_COUNT).publish().set(clamped);
         SmartDashboard.putNumber(SimDashboardKeys.ALLY_COUNT, clamped);
         String optName = clamped == 0 ? "0 Ally Bots (Solo)" : (clamped == 1 ? "1 Ally Bot (2v3)" : "2 Ally Bots (Full 3v3)");
-        SmartDashboard.putString("Simulation/AllyCountChooser/selected", optName);
+        SmartDashboard.putString(SimDashboardKeys.ALLY_COUNT_CHOOSER_SELECTED, optName);
     }
 
     public SendableChooser<Integer> getAllyCountChooser() {

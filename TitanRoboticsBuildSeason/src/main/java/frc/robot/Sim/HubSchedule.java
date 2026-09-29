@@ -52,6 +52,8 @@ public class HubSchedule {
     private static boolean lastBlueActive = true;
     private static double redDeactivatedAt = Double.NaN;
     private static double blueDeactivatedAt = Double.NaN;
+    /** Match clock from the latest {@link #update}; -1 before the first update. */
+    private static double lastTimeRemaining = -1.0;
     private static java.util.function.DoubleSupplier clockForTests = null;
 
     private HubSchedule() {
@@ -143,6 +145,7 @@ public class HubSchedule {
         lastRedActive = redActive;
         lastBlueActive = blueActive;
         lastPhase = phase;
+        lastTimeRemaining = matchTimeRemaining;
 
         SmartDashboard.putString("Scoreboard/Match/Phase", phase.name());
         SmartDashboard.putString("Scoreboard/Match/ShiftSeed", String.valueOf(shiftSeed));
@@ -157,6 +160,48 @@ public class HubSchedule {
     /** Strict activity from the latest {@link #update} (no grace). */
     public static synchronized boolean isHubActiveNow(boolean isRed) {
         return isRed ? lastRedActive : lastBlueActive;
+    }
+
+    /** Segment from the latest {@link #update}; for telemetry and debugging. */
+    public static synchronized Phase currentPhase() {
+        return lastPhase;
+    }
+
+    /**
+     * Match clock (seconds remaining) from the latest {@link #update}, or -1
+     * before the first update.
+     *
+     * <p>Jev's shift-aware decisions ({@code timeUntilHubShift}, batch sizing,
+     * the harvest-deadline override) must read this rather than
+     * {@code DriverStation.getMatchTime()}, which reports -1 under simulation
+     * and made the shift clock read a permanent 0.0 -- every bot then believed
+     * the shift was ending at all times, dumped its hopper on an 8-ball cycle,
+     * and flipped between SCORE and VACUUM each volley.
+     */
+    public static synchronized double lastMatchTimeRemaining() {
+        return lastTimeRemaining;
+    }
+
+    /**
+     * Seconds until the current shift ends (0 in AUTO/TRANSITION/ENDGAME/DONE,
+     * where both hubs stay active and no flip is coming).
+     */
+    public static synchronized double timeUntilShiftEnd() {
+        if (lastTimeRemaining < 0.0) {
+            return 0.0;
+        }
+        if (lastPhase == Phase.AUTO || lastPhase == Phase.TRANSITION
+                || lastPhase == Phase.ENDGAME || lastPhase == Phase.DONE) {
+            return 0.0;
+        }
+        double boundary;
+        switch (lastPhase) {
+            case SHIFT1: boundary = SHIFT1_END; break;
+            case SHIFT2: boundary = SHIFT2_END; break;
+            case SHIFT3: boundary = SHIFT3_END; break;
+            default: boundary = SHIFT4_END; break;
+        }
+        return Math.max(0.0, lastTimeRemaining - boundary);
     }
 
     /**
@@ -221,7 +266,9 @@ public class HubSchedule {
         if (blueAutoFuel > redAutoFuel) {
             return 'B';
         }
-        return Math.random() < 0.5 ? 'R' : 'B';
+        // Rule 6.4.1 says random; the sim draws it from the scenario seed so a
+        // tied AUTO reproduces the same SHIFT 1 order.
+        return MatchDeterminism.random("hubShiftTiebreak").nextBoolean() ? 'B' : 'R';
     }
 
     /** Seeds the shift order from the finished AUTO period's fuel totals. */
@@ -243,5 +290,6 @@ public class HubSchedule {
         lastBlueActive = true;
         redDeactivatedAt = Double.NaN;
         blueDeactivatedAt = Double.NaN;
+        lastTimeRemaining = -1.0;
     }
 }

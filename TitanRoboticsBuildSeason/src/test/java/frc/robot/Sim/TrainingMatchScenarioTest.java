@@ -104,6 +104,29 @@ class TrainingMatchScenarioTest {
         return new TrainingMatchScenario(0L, durationSeconds, fieldFuelCount, roster, roster);
     }
 
+    @Test
+    void default3v3BuildsFullRostersOnLegalSpawns() {
+        TrainingMatchScenario scenario = TrainingMatchScenario.default3v3(7L);
+
+        assertEquals(3, scenario.blueRobots().size());
+        assertEquals(3, scenario.redRobots().size());
+        assertEquals(150.0, scenario.durationSeconds());
+        assertEquals(54, scenario.fieldFuelCount());
+        for (TrainingMatchScenario.RobotConfig robot : scenario.blueRobots()) {
+            assertEquals(8, robot.preloadFuel());
+            assertTrue(robot.startingPose().getX() < FieldMap.CENTERLINE_X,
+                    "Blue spawns stay on the Blue half");
+        }
+        for (TrainingMatchScenario.RobotConfig robot : scenario.redRobots()) {
+            assertEquals(8, robot.preloadFuel());
+            assertTrue(robot.startingPose().getX() > FieldMap.CENTERLINE_X,
+                    "Red spawns stay on the Red half");
+        }
+        // Roster slots map 1:1 onto sim pools (primary + 2 allies / 3 opponents).
+        assertEquals(2, scenario.blueAllyRobots().size());
+        assertEquals(3, scenario.redOpponentRobots().size());
+    }
+
     private static TrainingMatchScenario.RobotConfig robot(
             Archetype archetype, double x, double y, int preloadFuel) {
         return new TrainingMatchScenario.RobotConfig(

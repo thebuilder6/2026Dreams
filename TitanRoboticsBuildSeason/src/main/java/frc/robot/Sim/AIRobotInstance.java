@@ -17,6 +17,7 @@ import edu.wpi.first.wpilibj.Timer;
 import frc.robot.Navigation.ContactWatchdog;
 import frc.robot.Navigation.DynamicRouter;
 import frc.robot.Navigation.TrajectoryController;
+import frc.robot.Navigation.TargetProgressWatchdog;
 import frc.robot.Data.Constants;
 import frc.robot.Intelligence.AIActionIntent;
 import frc.robot.Intelligence.Archetype;
@@ -61,13 +62,23 @@ public class AIRobotInstance {
     private String currentAIStateDetail = "IDLE";
     private int scoreCount = 0;
     private double lastShotTimestamp = 0.0;
-    private final ContactWatchdog contactWatchdog = new ContactWatchdog();
+    // Assigned in the constructor: the jitter stream name needs botId/isAlly,
+    // which are not set when field initializers run.
+    private final ContactWatchdog contactWatchdog;
+    private final TargetProgressWatchdog targetProgressWatchdog = new TargetProgressWatchdog();
+    // Per-bot objective commitment. Owned here (not on the shared engine) so
+    // this bot can never read another bot's decision.
+    private final frc.robot.Intelligence.ObjectiveCommitment objectiveCommitment =
+            new frc.robot.Intelligence.ObjectiveCommitment();
 
     // Stall watchdog
     private Pose2d lastActualPose = new Pose2d();
     private double stallDuration = 0.0;
     private boolean lastStallResult = false;
     private double lastStallEvalTimestamp = -1.0;
+
+    // Score-rig instrumentation (read-only; no behaviour depends on it).
+    private final BotMatchMetrics matchMetrics = new BotMatchMetrics();
 
     public AIRobotInstance(int botId, Pose2d queuingPose, Archetype defaultArchetype) {
         this(botId, queuingPose, defaultArchetype, false);
@@ -78,6 +89,10 @@ public class AIRobotInstance {
         this.queuingPose = queuingPose;
         this.archetype = defaultArchetype != null ? defaultArchetype : Archetype.AUTONOMOUS_CYCLER;
         this.isAlly = isAlly;
+        // Per-robot jitter stream so one bot's deadlock recovery draws cannot
+        // shift another's.
+        this.contactWatchdog = new ContactWatchdog(
+                "watchdog:" + (isAlly ? "Ally" + (botId - 100) : "Bot" + botId));
 
         String prefix = isAlly ? SimDashboardKeys.allyPrefix(botId - 100)
                 : SimDashboardKeys.botPrefix(botId);
@@ -211,7 +226,10 @@ public class AIRobotInstance {
         stallDuration = 0.0;
         lastShotTimestamp = 0.0;
         contactWatchdog.reset();
+        targetProgressWatchdog.reset();
+        objectiveCommitment.reset();
         trajectoryController.reset();
+        matchMetrics.reset();
         try {
             String botName = isAlly ? ("AllyBot" + (botId - 100)) : ("OpponentBot" + botId);
             String targetName = isAlly ? ("AllyTarget" + (botId - 100)) : ("OpponentTarget" + botId);
@@ -256,37 +274,49 @@ public class AIRobotInstance {
                 ? AIRobotSim.getInstance().isHubActiveForAlliance(botAllianceIsRed)
                 : true;
 
-        // 0. Update Archetype from chooser or dashboard if modified
-        if (isAlly) {
-            int allyIndex = botId - 100;
-            if (allyIndex == 0 && AIRobotSim.getInstance() != null
-                    && AIRobotSim.getInstance().isTrainingScenarioActive()) {
-                this.archetype = AIRobotSim.getInstance().getTrainingBluePrimaryArchetype();
-            } else if (allyIndex == 1 && AIRobotSim.getInstance() != null) {
-                this.archetype = AIRobotSim.getInstance().getAlly1Archetype();
-            } else if (allyIndex == 2 && AIRobotSim.getInstance() != null) {
-                this.archetype = AIRobotSim.getInstance().getAlly2Archetype();
-            } else {
-                String archStr = edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.getString(
-                        SimDashboardKeys.allyPrefix(allyIndex) + SimDashboardKeys.SUFFIX_ARCHETYPE,
-                        archetype.name());
-                Archetype selectedArch = Archetype.fromString(archStr);
-                if (selectedArch != null) {
-                    this.archetype = selectedArch;
+        // 0. Update Archetype from chooser or dashboard if modified.
+        //
+        // A training scenario is authoritative: it already assigned every bot an
+        // archetype via configureTrainingScenario -> reset(RobotConfig), and
+        // re-deriving from the dashboard here silently discarded that for 4 of the
+        // 6 headless 3v3 robots. With no operator present the choosers return null
+        // and the SmartDashboard string defaults won instead, so bots 1 and 2
+        // always played DEFENSE_BULLY / ADAPTIVE_COMPETITOR and allies 1 and 2
+        // always played AUTONOMOUS_CYCLER / ADAPTIVE_COMPETITOR -- the scenario's
+        // TACTICAL_DEFENDER never appeared in a single headless match. The live
+        // archetype is what the score rig's role-aware guardrails key on, so a
+        // drifting label would also make those gates unstable.
+        AIRobotSim aiSim = AIRobotSim.getInstance();
+        boolean scenarioActive = aiSim != null && aiSim.isTrainingScenarioActive();
+        if (!scenarioActive) {
+            if (isAlly) {
+                int allyIndex = botId - 100;
+                if (allyIndex == 1 && aiSim != null) {
+                    this.archetype = aiSim.getAlly1Archetype();
+                } else if (allyIndex == 2 && aiSim != null) {
+                    this.archetype = aiSim.getAlly2Archetype();
+                } else {
+                    String archStr = edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.getString(
+                            SimDashboardKeys.allyPrefix(allyIndex) + SimDashboardKeys.SUFFIX_ARCHETYPE,
+                            archetype.name());
+                    Archetype selectedArch = Archetype.fromString(archStr);
+                    if (selectedArch != null) {
+                        this.archetype = selectedArch;
+                    }
                 }
-            }
-        } else {
-            if (botId == 1 && AIRobotSim.getInstance() != null) {
-                this.archetype = AIRobotSim.getInstance().getBot1Archetype();
-            } else if (botId == 2 && AIRobotSim.getInstance() != null) {
-                this.archetype = AIRobotSim.getInstance().getBot2Archetype();
             } else {
-                String archStr = edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.getString(
-                        SimDashboardKeys.botPrefix(botId) + SimDashboardKeys.SUFFIX_ARCHETYPE,
-                        archetype.name());
-                Archetype selectedArch = Archetype.fromString(archStr);
-                if (selectedArch != null) {
-                    this.archetype = selectedArch;
+                if (botId == 1 && aiSim != null) {
+                    this.archetype = aiSim.getBot1Archetype();
+                } else if (botId == 2 && aiSim != null) {
+                    this.archetype = aiSim.getBot2Archetype();
+                } else {
+                    String archStr = edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.getString(
+                            SimDashboardKeys.botPrefix(botId) + SimDashboardKeys.SUFFIX_ARCHETYPE,
+                            archetype.name());
+                    Archetype selectedArch = Archetype.fromString(archStr);
+                    if (selectedArch != null) {
+                        this.archetype = selectedArch;
+                    }
                 }
             }
         }
@@ -310,10 +340,13 @@ public class AIRobotInstance {
         }
         MatchKnowledge knowledge = WorldStateBuilder.buildMatchKnowledgeForSimBot(botAllianceIsRed);
 
-        // 2. Evaluate unified Jev policy (stateless System 2 + System 1)
+        // 2. Evaluate unified Jev policy (stateless System 2 + System 1).
+        // Fuel the watchdog has abandoned this match is excluded so a selector
+        // cannot re-pick an unreachable piece every cycle.
         AIActionIntent intent = JevDecisionEngine.getInstance().evaluatePolicy(
                 worldState, knowledge, archetype,
-                "Sim/" + (isAlly ? "Alliance/Ally" + (botId - 100) : "Opponents/Bot" + botId));
+                "Sim/" + (isAlly ? "Alliance/Ally" + (botId - 100) : "Opponents/Bot" + botId),
+                targetProgressWatchdog.blockedPoints(), objectiveCommitment);
         String intentPrefix = isAlly ? "Alliance/Ally" + (botId - 100) : "Opponents/Bot" + botId;
         edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putString(
                 intentPrefix + "/NextIntent", intent.plan().nextObjective().name());
@@ -357,8 +390,27 @@ public class AIRobotInstance {
             }
         }
 
-        // Soft peer separation (avoids jamming and scrums between multi-bots)
+        // Deadlock recovery via ContactWatchdog: sustained stall pressed against a peer means the
+        // symmetric separation nudges below have stalemated (trench head-on or
+        // shared target). Computed BEFORE separation: trench reverse-out scales
+        // the whole command negative, which would flip an away-from-peer nudge
+        // into a toward-peer push — so separation is skipped while trench
+        // recovery is active.
+        boolean inTrenchCorridor = FieldMap.Trenches.isLowClearance(currentPose.getTranslation());
+        double nearestPeerDist = Double.MAX_VALUE;
         if (peerRobotPoses != null) {
+            for (Pose2d peerPose : peerRobotPoses) {
+                if (peerPose == null) continue;
+                double d = currentPose.getTranslation().getDistance(peerPose.getTranslation());
+                if (d > 0.05 && d < nearestPeerDist) nearestPeerDist = d;
+            }
+        }
+        ContactWatchdog.Resolution deadlock = contactWatchdog.updateDeadlockOnly(
+                stalled, nearestPeerDist, 0.02, inTrenchCorridor);
+        boolean trenchRecovering = deadlock.recovering() && inTrenchCorridor;
+
+        // Soft peer separation (avoids jamming and scrums between multi-bots)
+        if (peerRobotPoses != null && !trenchRecovering) {
             for (Pose2d peerPose : peerRobotPoses) {
                 if (peerPose == null) continue;
                 double dist = currentPose.getTranslation().getDistance(peerPose.getTranslation());
@@ -372,18 +424,6 @@ public class AIRobotInstance {
             }
         }
 
-        // Deadlock recovery via ContactWatchdog: sustained stall pressed against a peer means the
-        // symmetric separation nudges above have stalemated (trench head-on or
-        // shared target). Yield forward drive and jink laterally to break it.
-        double nearestPeerDist = Double.MAX_VALUE;
-        if (peerRobotPoses != null) {
-            for (Pose2d peerPose : peerRobotPoses) {
-                if (peerPose == null) continue;
-                double d = currentPose.getTranslation().getDistance(peerPose.getTranslation());
-                if (d > 0.05 && d < nearestPeerDist) nearestPeerDist = d;
-            }
-        }
-        ContactWatchdog.Resolution deadlock = contactWatchdog.updateDeadlockOnly(stalled, nearestPeerDist, 0.02);
         if (deadlock.recovering()) {
             Translation2d jinkField = new Translation2d(0, deadlock.lateralJink())
                     .rotateBy(currentPose.getRotation());
@@ -392,6 +432,44 @@ public class AIRobotInstance {
             currentTargetSpeeds.vyMetersPerSecond =
                     currentTargetSpeeds.vyMetersPerSecond * deadlock.forwardScale() + jinkField.getY();
             currentAIStateDetail = "DEADLOCK_RECOVERY";
+        } else if (inTrenchCorridor
+                && contactWatchdog.isDeadlockCooling()
+                && nearestPeerDist < ContactWatchdog.PROXIMITY_M) {
+            // Post-recovery yield: hold back while the peer is still close so a
+            // head-on pair doesn't re-enter in lockstep the moment recovery ends.
+            // Jittered cooldowns desynchronize the pair; the shorter one proceeds first.
+            currentTargetSpeeds.vxMetersPerSecond *= 0.2;
+            currentTargetSpeeds.vyMetersPerSecond *= 0.2;
+            currentAIStateDetail = "TRENCH_YIELD";
+        }
+
+        // Unreachable-target recovery (peer-independent). ContactWatchdog only
+        // fires near a peer, so a bot that drives alone into an unreachable
+        // fuel target used to hold position for the rest of the match.
+        String progressPrefix = (isAlly ? "AI_Telemetry/Ally" + (botId - 100) : "AI_Telemetry/Bot" + botId) + "/";
+        TargetProgressWatchdog.Result progress = targetProgressWatchdog.update(
+                currentPose, currentTargetSpeeds, currentTargetPose, 0.02);
+        if (progress.recovering()) {
+            currentTargetSpeeds.vxMetersPerSecond = progress.escapeVector().getX();
+            currentTargetSpeeds.vyMetersPerSecond = progress.escapeVector().getY();
+            currentTargetSpeeds.omegaRadiansPerSecond = 0.0;
+            currentAIStateDetail = String.format("TARGET_UNREACHABLE (%.1fs)", progress.escapeRemainingSec());
+            Logger.recordOutput(progressPrefix + "UnreachableRecovering", true);
+        } else {
+            Logger.recordOutput(progressPrefix + "UnreachableRecovering", false);
+        }
+        Logger.recordOutput(progressPrefix + "UnreachableNoProgressSec", progress.noProgressSec());
+
+        // Plant-and-fire: aiming + solution ready but still moving means the
+        // 80 ms volley would stream shots at transit speed (the dominant sim
+        // miss source). Brake translation so the bot settles, then fires;
+        // the aim override below keeps turning toward the Hub while planted.
+        if (intent.triggerFeedKicker()
+                && isShotSolutionReady(currentPose, botAllianceIsRed)
+                && !isSettledForShot()) {
+            currentTargetSpeeds.vxMetersPerSecond = 0.0;
+            currentTargetSpeeds.vyMetersPerSecond = 0.0;
+            currentAIStateDetail = "SETTLING_TO_SHOOT";
         }
 
         // Heading aim override (e.g. during shooting or tracking target)
@@ -456,23 +534,105 @@ public class AIRobotInstance {
         edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putNumber(dashPrefix + "Score", scoreCount);
         edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putBoolean(dashPrefix + "Stalled", stalled);
         edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putString(dashPrefix + "Archetype", archetype.name());
+
+        // 6. Score-rig instrumentation. Sampled last so it sees the settled state.
+        // Uses the same `stalled` flag that drives the production watchdogs, so the
+        // metric tracks exactly the condition that provokes recoveries. "Active"
+        // means on the field (queuing poses sit at y = -5) and DS-enabled, so the
+        // auto/teleop disabled gap is not scored as standing still.
+        boolean inRecovery = contactWatchdog.isDeadlockRecovering()
+                || contactWatchdog.isForcedBackoffActive()
+                || contactWatchdog.isPirouetteActive()
+                || progress.recovering();
+        boolean onField = currentPose.getX() > 0.0 && currentPose.getY() > 0.0;
+        matchMetrics.sample(currentPose, stalled, inRecovery,
+                onField && edu.wpi.first.wpilibj.DriverStation.isEnabled(),
+                edu.wpi.first.wpilibj.Timer.getFPGATimestamp());
+    }
+
+    /** Score-rig instrumentation for this bot. Never null. */
+    public BotMatchMetrics getMatchMetrics() {
+        return matchMetrics;
     }
 
     public boolean canShootNow(Pose2d currentPose, boolean botAllianceIsRed) {
-        if (AIRobotSim.getInstance() == null) return false;
-        if (!AIRobotSim.getInstance().isHubActiveForAlliance(botAllianceIsRed)) return false;
-        if (intakeSimulation == null || intakeSimulation.getGamePiecesAmount() <= 0) return false;
-        if (!AIRobotSim.getInstance().isValidShootingLocation(currentPose, botAllianceIsRed)) return false;
-
-        Translation2d hub = FieldMap.Hubs.getHubLocation2d(botAllianceIsRed);
-        if (AIRobotSim.getInstance().isShootingLaneBlocked(currentPose, hub)) return false;
-
-        Rotation2d aimAngle = hub.minus(currentPose.getTranslation()).getAngle();
-        double headingErr = Math.abs(currentPose.getRotation().minus(aimAngle).getRadians());
-        if (headingErr > Math.toRadians(8.0)) return false;
+        if (!isShotSolutionReady(currentPose, botAllianceIsRed)) return false;
+        if (!isSettledForShot()) {
+            String prefix = (isAlly ? "AI_Telemetry/Ally" + (botId - 100) : "AI_Telemetry/Bot" + botId) + "/";
+            Logger.recordOutput(prefix + "ShootGate", "not_settled");
+            return false;
+        }
 
         double now = Timer.getFPGATimestamp();
         return (now - lastShotTimestamp >= 0.08);
+    }
+
+    /**
+     * Shot solution ignoring motion and refire timing: hub active, fuel aboard,
+     * legal location, clear lane, aimed within 8°. Used both by
+     * {@link #canShootNow} and by the plant-and-fire brake (which holds
+     * position while the settle gate is the only blocker).
+     */
+    public boolean isShotSolutionReady(Pose2d currentPose, boolean botAllianceIsRed) {
+        if (AIRobotSim.getInstance() == null) { logShootGate("no_sim", currentPose, 0.0); return false; }
+        if (!AIRobotSim.getInstance().isHubActiveForAlliance(botAllianceIsRed)) {
+            logShootGate("hub_inactive", currentPose, 0.0);
+            return false;
+        }
+        if (intakeSimulation == null || intakeSimulation.getGamePiecesAmount() <= 0) {
+            logShootGate("no_fuel", currentPose, 0.0);
+            return false;
+        }
+        if (!AIRobotSim.getInstance().isValidShootingLocation(currentPose, botAllianceIsRed)) {
+            logShootGate("bad_location", currentPose, 0.0);
+            return false;
+        }
+
+        Translation2d hub = FieldMap.Hubs.getHubLocation2d(botAllianceIsRed);
+        if (AIRobotSim.getInstance().isShootingLaneBlocked(currentPose, hub)) {
+            logShootGate("lane_blocked", currentPose, 0.0);
+            return false;
+        }
+
+        Rotation2d aimAngle = hub.minus(currentPose.getTranslation()).getAngle();
+        double headingErr = Math.abs(currentPose.getRotation().minus(aimAngle).getRadians());
+        if (headingErr > Math.toRadians(8.0)) {
+            logShootGate("heading", currentPose, headingErr);
+            return false;
+        }
+        logShootGate("ready", currentPose, headingErr);
+        return true;
+    }
+
+    /**
+     * Publishes why {@link #isShotSolutionReady} refused, so a headless replay can name
+     * the blocking gate instead of leaving "full hopper, no score" unexplained. Also
+     * records the settle gate, which is the other half of {@link #canShootNow}.
+     */
+    private void logShootGate(String reason, Pose2d pose, double headingErr) {
+        String prefix = (isAlly ? "AI_Telemetry/Ally" + (botId - 100) : "AI_Telemetry/Bot" + botId) + "/";
+        Logger.recordOutput(prefix + "ShootGate", reason);
+        Logger.recordOutput(prefix + "ShootGateHeadingErrDeg",
+                Math.toDegrees(headingErr));
+    }
+
+    // Fire only when planted: releasing at transit speed was the dominant sim
+    // miss source (velocity compensation is approximate plus exit noise).
+    public static final double SETTLE_SPEED_MPS = 0.80;
+    public static final double SETTLE_OMEGA_RPS = 1.00;
+
+    /** Pure speed check, unit-testable without a drive simulation. */
+    public static boolean isSettledSpeeds(ChassisSpeeds fieldRelativeVel) {
+        if (fieldRelativeVel == null) return true;
+        double trans = Math.hypot(fieldRelativeVel.vxMetersPerSecond, fieldRelativeVel.vyMetersPerSecond);
+        return trans <= SETTLE_SPEED_MPS && Math.abs(fieldRelativeVel.omegaRadiansPerSecond) <= SETTLE_OMEGA_RPS;
+    }
+
+    /** Measured-speed gate for firing. Null sim (tests) counts as settled. */
+    public boolean isSettledForShot() {
+        if (driveSimulation == null || driveSimulation.getDriveTrainSimulation() == null) return true;
+        return isSettledSpeeds(
+                driveSimulation.getDriveTrainSimulation().getDriveTrainSimulatedChassisSpeedsFieldRelative());
     }
 
     public void launchShot(Pose2d robotPose, boolean botAllianceIsRed) {
@@ -503,10 +663,13 @@ public class AIRobotInstance {
         double denom = 2.0 * (distance * Math.tan(theta) - h);
         double exitVel = denom > 0.1 ? (distance / Math.cos(theta)) * Math.sqrt(g / denom) : 6.8;
 
-        double randomExitVelocity = exitVel * (1.0 + (Math.random() - 0.5) * 0.04);
+        // Spread is intentional (it models a real shooter) but must draw from
+        // the scenario seed, not Math.random(), or the seed means nothing.
+        java.util.Random rng = MatchDeterminism.random("shot:" + botId);
+        double randomExitVelocity = exitVel * (1.0 + (rng.nextDouble() - 0.5) * 0.04);
         Rotation2d aimAngle = compensatedTarget.minus(botPos).getAngle();
-        Rotation2d randomYaw = aimAngle.plus(Rotation2d.fromDegrees((Math.random() - 0.5) * 1.6));
-        double randomPitch = theta + (Math.random() - 0.5) * 0.025;
+        Rotation2d randomYaw = aimAngle.plus(Rotation2d.fromDegrees((rng.nextDouble() - 0.5) * 1.6));
+        double randomPitch = theta + (rng.nextDouble() - 0.5) * 0.025;
 
         try {
             var fuelOnFly = new RebuiltFuelOnFly(
@@ -538,8 +701,11 @@ public class AIRobotInstance {
         if (arena == null) return;
 
         try {
-            Set<GamePieceOnFieldSimulation> pieces = arena.gamePiecesOnField();
-            if (pieces == null) return;
+            // Sorted, not the arena's HashSet: with overlapping pieces the
+            // iteration order decided WHICH fuel filled the hopper, and
+            // HashSet order is identity-hash based, so it varied per JVM run.
+            var pieces = MatchDeterminism.fuelOnFieldSorted();
+            if (pieces.isEmpty()) return;
 
             Translation2d botPos = robotPose.getTranslation();
             Rotation2d botHeading = robotPose.getRotation();
@@ -583,7 +749,12 @@ public class AIRobotInstance {
         double actualSpeed = actualMoveDist / dt;
         double commandedSpeed = Math.hypot(currentTargetSpeeds.vxMetersPerSecond, currentTargetSpeeds.vyMetersPerSecond);
 
-        if (commandedSpeed > 0.80 && actualSpeed < 0.15) {
+        // Must agree with ContactWatchdog.STALL_CMD_SPEED_MIN: a mismatch left the
+        // bot-local stall flag and the watchdog disagreeing, so pirouette/pin were
+        // blind to stuck robots while deadlock still fired. 0.80 was too high because
+        // TrajectoryController commands as little as 0.25 m/s.
+        if (commandedSpeed > ContactWatchdog.STALL_CMD_SPEED_MIN
+                && actualSpeed < ContactWatchdog.STALL_ACTUAL_SPEED_MAX) {
             stallDuration += dt;
         } else {
             stallDuration = Math.max(0.0, stallDuration - dt * 2.0);

@@ -132,9 +132,34 @@ public class DynamicRouterTest {
         DynamicRouter.registerObstacle(new Translation2d(5.1, 3.0), new Translation2d(), 0.55, 1.0, true);
         ChassisSpeeds proprioceptiveSpeeds = DynamicRouter.computeAvoidanceSpeeds(currentPose, nominalSpeeds, targetWaypoint);
 
-        // Proprioceptive obstacle should generate stronger backward push (lower vx)
-        assertTrue(proprioceptiveSpeeds.vxMetersPerSecond < normalSpeeds.vxMetersPerSecond,
-                "Proprioceptive obstacle should exert stronger repulsive push to escape stall/pin");
+        // Repulsion here (2.76 m/s vs 6.07 m/s) outweighs the 2.0 m/s nominal command,
+        // so the router decomposes rather than summing: forward progress is floored at
+        // MIN_FORWARD_FRACTION and the surplus becomes a tangential slide. The slide
+        // scales with repulsion magnitude, so a proprioceptive contact must still evade
+        // harder than a passive obstacle. Asserting on total escape magnitude rather
+        // than vx: the old assertion compared vx, which is now identical in both cases
+        // by design (both sit on the same forward floor) and could no longer distinguish
+        // the two. The contract under test is "stronger repulsion escapes harder".
+        double normalEscape = Math.hypot(
+                normalSpeeds.vxMetersPerSecond, normalSpeeds.vyMetersPerSecond);
+        double proprioceptiveEscape = Math.hypot(
+                proprioceptiveSpeeds.vxMetersPerSecond, proprioceptiveSpeeds.vyMetersPerSecond);
+        assertTrue(proprioceptiveEscape > normalEscape + 0.1,
+                "Proprioceptive obstacle should exert a stronger evasive response, got "
+                        + proprioceptiveEscape + " vs " + normalEscape);
+    }
+
+    @Test
+    public void testObstacleExpiryUsesSharedClock() {
+        // Pins the single-clock fix: expiry is stamped on Timer.getTimestamp(),
+        // the same clock every prune/query path uses. A mixed FPGATimestamp
+        // stamp would drift from getTimestamp() queries and stale trench masks.
+        Translation2d pos = new Translation2d(5.0, 3.0);
+        DynamicObstacle obs = new DynamicObstacle(pos, new Translation2d(), 0.55, 1.0);
+        double now = edu.wpi.first.wpilibj.Timer.getTimestamp();
+        assertEquals(1.0, obs.expiryTimestamp - now, 0.5);
+        assertFalse(obs.isExpired(now));
+        assertTrue(obs.isExpired(now + 5.0));
     }
 
     @Test

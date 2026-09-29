@@ -101,6 +101,7 @@ public class GameSim implements Subsystem {
     private Random rng = new Random();
     private TrainingMatchScenario trainingScenario;
     private Pose2d playerPoseBeforeTraining;
+    private volatile boolean trainingResultLatched = false;
     private volatile int pendingRespawns = 0;
     private volatile double lastRespawnTime = 0;
 
@@ -124,7 +125,7 @@ public class GameSim implements Subsystem {
 
     private GameSim() {
         this.gamePiecePublisher = NetworkTableInstance.getDefault()
-                .getStructArrayTopic("Simulation/GamePieces", Pose3d.struct)
+                .getStructArrayTopic(SimDashboardKeys.GAME_PIECES, Pose3d.struct)
                 .publish();
         // Skip calling resetGame() here, move setup to initialize()
         // to ensure it runs after SimulatedArena is stable.
@@ -214,16 +215,29 @@ public class GameSim implements Subsystem {
      */
     private void handleDashboardCommands() {
         try {
-            boolean reset = SmartDashboard.getBoolean("Simulation/Reset", false);
+            boolean reset = SmartDashboard.getBoolean(SimDashboardKeys.RESET, false);
             if (reset) {
-                SmartDashboard.putBoolean("Simulation/Reset", false);
+                SmartDashboard.putBoolean(SimDashboardKeys.RESET, false);
                 resetGame();
             }
 
-            boolean respawn = SmartDashboard.getBoolean("Simulation/RespawnBalls", false);
+            boolean respawn = SmartDashboard.getBoolean(SimDashboardKeys.RESPAWN_BALLS, false);
             if (respawn) {
-                SmartDashboard.putBoolean("Simulation/RespawnBalls", false);
+                SmartDashboard.putBoolean(SimDashboardKeys.RESPAWN_BALLS, false);
                 spawnPickupBalls();
+            }
+
+            boolean startTraining = SmartDashboard.getBoolean(SimDashboardKeys.TRAINING_START_3V3, false);
+            if (startTraining) {
+                SmartDashboard.putBoolean(SimDashboardKeys.TRAINING_START_3V3, false);
+                long seed = (long) SmartDashboard.getNumber(SimDashboardKeys.TRAINING_SEED, 2026.0);
+                resetGame(TrainingMatchScenario.default3v3(seed));
+            }
+
+            boolean stopTraining = SmartDashboard.getBoolean(SimDashboardKeys.TRAINING_STOP, false);
+            if (stopTraining) {
+                SmartDashboard.putBoolean(SimDashboardKeys.TRAINING_STOP, false);
+                resetGame(null);
             }
         } catch (Exception e) {
             logRateLimitedError("handleDashboardCommands", e);
@@ -237,11 +251,18 @@ public class GameSim implements Subsystem {
         try {
             double dsTimeRemainingSec = DriverStation.getMatchTime();
             boolean isDsTimeValid = dsTimeRemainingSec >= 0.0;
-            SmartDashboard.putBoolean("Simulation/TimeRemainingValid", isDsTimeValid);
+            SmartDashboard.putBoolean(SimDashboardKeys.TIME_REMAINING_VALID, isDsTimeValid);
 
             if (isDsTimeValid) {
                 simTimeRemainingSec = dsTimeRemainingSec;
                 simRunning = DriverStation.isEnabled() && simTimeRemainingSec > 0.0;
+                // Keep the official hub schedule in step with the sim clock on
+                // BOTH branches. Previously this lived only in the else branch,
+                // so whenever the DS reported a valid match time the schedule
+                // froze and hub activity silently depended on whichever bot-side
+                // caller happened to refresh it next (headless logs recorded
+                // "hub never active" while both hubs were scoring).
+                HubSchedule.update(simTimeRemainingSec, DriverStation.isAutonomous());
             } else {
                 if (!DriverStation.isEnabled()) {
                     simRunning = false;
@@ -259,6 +280,13 @@ public class GameSim implements Subsystem {
                 // Keep the official hub schedule in step with match time.
                 HubSchedule.update(simTimeRemainingSec, DriverStation.isAutonomous());
             }
+
+            // Training result: latch once when the scenario clock expires so a
+            // finished 3v3 has a permanent scoreboard even after the sim stops.
+            if (trainingScenario != null && !trainingResultLatched && simTimeRemainingSec <= 0.0) {
+                trainingResultLatched = true;
+                publishTrainingResult();
+            }
         } catch (Exception e) {
             logRateLimitedError("updateSimulationTime", e);
         }
@@ -269,17 +297,17 @@ public class GameSim implements Subsystem {
      */
     private void publish() {
         try {
-            SmartDashboard.putNumber("Simulation/TimeRemainingSec", simTimeRemainingSec);
-            SmartDashboard.putBoolean("Simulation/Running", simRunning);
-            SmartDashboard.putNumber("Simulation/Score", score);
-            SmartDashboard.putNumber("Simulation/HeldBalls", heldBalls);
-            SmartDashboard.putBoolean("Simulation/LastShotScored", lastShotScored);
+            SmartDashboard.putNumber(SimDashboardKeys.TIME_REMAINING_SEC, simTimeRemainingSec);
+            SmartDashboard.putBoolean(SimDashboardKeys.RUNNING, simRunning);
+            SmartDashboard.putNumber(SimDashboardKeys.SCORE, score);
+            SmartDashboard.putNumber(SimDashboardKeys.HELD_BALLS, heldBalls);
+            SmartDashboard.putBoolean(SimDashboardKeys.LAST_SHOT_SCORED, lastShotScored);
 
             // --- Rebuilt 2026 Specific Telemetry (official 6.4 schedule) ---
             SimulatedArena arena = getCachedArena();
             if (arena instanceof Arena2026Rebuilt) {
-                SmartDashboard.putBoolean("Simulation/HubActive/Blue", HubSchedule.isHubActiveNow(false));
-                SmartDashboard.putBoolean("Simulation/HubActive/Red", HubSchedule.isHubActiveNow(true));
+                SmartDashboard.putBoolean(SimDashboardKeys.HUB_ACTIVE_BLUE, HubSchedule.isHubActiveNow(false));
+                SmartDashboard.putBoolean(SimDashboardKeys.HUB_ACTIVE_RED, HubSchedule.isHubActiveNow(true));
             }
 
             // --- AdvantageScope Consolidation ---
@@ -349,7 +377,9 @@ public class GameSim implements Subsystem {
             Rotation2d robotHeading = robotPose.getRotation();
 
             SimulatedArena arena = getCachedArena();
-            Set<GamePieceOnFieldSimulation> pieces = arena.gamePiecesOnField();
+            // Sorted snapshot: the arena's HashSet order decided which balls
+            // this loop picked up first.
+            var pieces = MatchDeterminism.fuelOnFieldSorted();
 
             int ballsPickedUp = 0;
             for (var piece : pieces) {
@@ -427,6 +457,12 @@ public class GameSim implements Subsystem {
         }
         trainingScenario = scenario;
         rng = scenario == null ? new Random() : new Random(scenario.seed());
+        // Seed every intentional random stream (shot spread, watchdog jink,
+        // hub-shift tie-break) from the same scenario seed, so a seeded run is
+        // reproducible instead of merely "seeded".
+        if (scenario != null) {
+            MatchDeterminism.seed(scenario.seed());
+        }
         try {
             int initialHeldBalls = scenario == null ? Config.INITIAL_HELD_BALLS : 0;
             heldBalls = initialHeldBalls;
@@ -446,6 +482,7 @@ public class GameSim implements Subsystem {
             AIRobotSim.getInstance().configureTrainingScenario(scenario);
             score = 0;
             MatchScoreTracker.getInstance().reset();
+            trainingResultLatched = false;
             simTimeRemainingSec = scenario == null
                     ? Config.MATCH_DURATION_SEC
                     : scenario.durationSeconds();
@@ -480,14 +517,40 @@ public class GameSim implements Subsystem {
             frc.robot.Telemetry.Dashboard.getInstance().setGameData(Config.DEFAULT_GAME_MESSAGE);
 
             // Reset dashboard commands
-            SmartDashboard.putBoolean("Simulation/Reset", false);
-            SmartDashboard.putBoolean("Simulation/RespawnBalls", false);
+            SmartDashboard.putBoolean(SimDashboardKeys.RESET, false);
+            SmartDashboard.putBoolean(SimDashboardKeys.RESPAWN_BALLS, false);
 
             if (RobotBase.isSimulation()) {
                 DriverStationSim.setGameSpecificMessage(Config.DEFAULT_GAME_MESSAGE);
             }
         } catch (Exception e) {
             logRateLimitedError("resetGame", e);
+        }
+    }
+
+    /**
+     * Latches the finished training-match scoreboard to NetworkTables.
+     * Totals come from the rulebook tracker, so fouls, climbs, and AUTO/TELEOP
+     * splits are included exactly as scored.
+     */
+    private void publishTrainingResult() {
+        try {
+            MatchScoreTracker tracker = MatchScoreTracker.getInstance();
+            int blue = tracker.getBlueTotalScore();
+            int red = tracker.getRedTotalScore();
+            String winner = blue > red ? "Blue" : (red > blue ? "Red" : "Tie");
+            SmartDashboard.putString("Training/Result/Winner", winner);
+            SmartDashboard.putNumber("Training/Result/BlueScore", blue);
+            SmartDashboard.putNumber("Training/Result/RedScore", red);
+            SmartDashboard.putNumber("Training/Result/Margin", Math.abs(blue - red));
+            SmartDashboard.putNumber("Training/Result/BlueAutoFuel", tracker.getBlueAutoFuelCount());
+            SmartDashboard.putNumber("Training/Result/RedAutoFuel", tracker.getRedAutoFuelCount());
+            SmartDashboard.putNumber("Training/Result/BlueTeleopFuel", tracker.getBlueTeleopFuelCount());
+            SmartDashboard.putNumber("Training/Result/RedTeleopFuel", tracker.getRedTeleopFuelCount());
+            SmartDashboard.putNumber("Training/Result/BlueClimb", tracker.getBlueClimbScore());
+            SmartDashboard.putNumber("Training/Result/RedClimb", tracker.getRedClimbScore());
+        } catch (Exception e) {
+            logRateLimitedError("publishTrainingResult", e);
         }
     }
 
@@ -528,7 +591,7 @@ public class GameSim implements Subsystem {
                 return;
             }
 
-            boolean fullDensity = SmartDashboard.getBoolean("Simulation/FullMatchBallDensity", false);
+            boolean fullDensity = SmartDashboard.getBoolean(SimDashboardKeys.FULL_MATCH_BALL_DENSITY, false);
             spawnFuelAtPositions(arena, getPreplacedFuelPositions(fullDensity));
         } catch (Exception e) {
             logRateLimitedError("spawnPickupBalls", e);

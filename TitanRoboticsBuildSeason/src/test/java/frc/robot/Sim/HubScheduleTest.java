@@ -78,6 +78,86 @@ public class HubScheduleTest {
     }
 
     @Test
+    public void currentPhaseTracksTheLatestUpdate() {
+        HubSchedule.update(150.0, false);
+        assertEquals(Phase.TRANSITION, HubSchedule.currentPhase());
+        HubSchedule.update(120.0, false);
+        assertEquals(Phase.SHIFT1, HubSchedule.currentPhase());
+        HubSchedule.update(10.0, false);
+        assertEquals(Phase.ENDGAME, HubSchedule.currentPhase());
+        HubSchedule.update(150.0, true);
+        assertEquals(Phase.AUTO, HubSchedule.currentPhase());
+    }
+
+    @Test
+    public void scheduleAdvancesWhileSimClockRunsDown() {
+        // Regression: GameSim only advanced the schedule on the branch where
+        // the DS reported no valid match time, so a headless match (valid DS
+        // time) logged "hub never active" while both hubs were scoring.
+        HubSchedule.reset();
+        HubSchedule.setShiftSeed('R');
+        // Sim clock counting down from 150 through every shift boundary.
+        double[] clock = {150.0, 135.0, 120.0, 100.0, 75.0, 50.0, 25.0, 5.0};
+        boolean sawBlueActive = false;
+        boolean sawRedActive = false;
+        boolean sawBothActive = false;
+        for (double remaining : clock) {
+            HubSchedule.update(remaining, false);
+            boolean blue = HubSchedule.isHubActiveNow(false);
+            boolean red = HubSchedule.isHubActiveNow(true);
+            sawBlueActive |= blue;
+            sawRedActive |= red;
+            sawBothActive |= (blue && red);
+        }
+        assertTrue(sawBothActive, "AUTO/TRANSITION/ENDGAME must have both hubs active");
+        assertTrue(sawBlueActive && sawRedActive,
+                "shifted phases must alternate which hub is active");
+    }
+
+    @Test
+    public void shiftClockAdvancesAndDrivesHarvestDecisions() {
+        // Regression: Jev read timeUntilHubShift from Dashboard, which reports
+        // -1 under sim and so stayed 0.0 forever. Every bot then believed its
+        // shift was always ending, dumping its hopper on an 8-ball cycle and
+        // flipping SCORE <-> VACUUM each volley. The shift clock must count
+        // down within a shift and read 0 where no flip is coming.
+        HubSchedule.reset();
+        HubSchedule.setShiftSeed('R');
+
+        HubSchedule.update(130.0, false);
+        assertEquals(Phase.SHIFT1, HubSchedule.currentPhase());
+        assertEquals(25.0, HubSchedule.timeUntilShiftEnd(), 0.01,
+                "a shift starts with the full 25 s until the flip");
+
+        HubSchedule.update(120.0, false);
+        assertEquals(15.0, HubSchedule.timeUntilShiftEnd(), 0.01,
+                "the shift clock must count down, not stick at 0 or 25");
+
+        HubSchedule.update(107.0, false);
+        assertEquals(2.0, HubSchedule.timeUntilShiftEnd(), 0.01,
+                "timeUntilHubShift must approach zero near the boundary");
+
+        // No flip is coming in these phases, so harvest planning must not see
+        // a shift deadline.
+        HubSchedule.update(140.0, false);
+        assertEquals(0.0, HubSchedule.timeUntilShiftEnd(), 0.01,
+                "TRANSITION has both hubs active: no shift deadline");
+        HubSchedule.update(20.0, false);
+        assertEquals(0.0, HubSchedule.timeUntilShiftEnd(), 0.01,
+                "ENDGAME has both hubs active: no shift deadline");
+    }
+
+    @Test
+    public void matchClockIsExposedForDecisionMakers() {
+        HubSchedule.reset();
+        assertEquals(-1.0, HubSchedule.lastMatchTimeRemaining(), 0.01,
+                "before the first update there is no clock");
+        HubSchedule.update(95.0, false);
+        assertEquals(95.0, HubSchedule.lastMatchTimeRemaining(), 0.01);
+        assertEquals(Phase.SHIFT2, HubSchedule.currentPhase());
+    }
+
+    @Test
     public void scoringGraceCoversThreeSecondsAfterDeactivation() {
         HubSchedule.setShiftSeed('R');
 

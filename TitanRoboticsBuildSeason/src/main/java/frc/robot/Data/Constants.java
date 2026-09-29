@@ -126,9 +126,6 @@ public class Constants {
     // =========================================================================
 
     public static class OperatorConstants {
-        // Joystick Deadband
-        public static final double DEADBAND = 0.1;
-
         // Driver Slew Rate Limiters (m/s^2 for translation, rad/s^2 for rotation)
         public static final TunableNumber TRANSLATION_SLEW_RATE = new TunableNumber("Operator/TranslationSlewRate", 16); // m/s^2
         public static final TunableNumber ROTATION_SLEW_RATE = new TunableNumber("Operator/RotationSlewRate", 10);       // rad/s^2

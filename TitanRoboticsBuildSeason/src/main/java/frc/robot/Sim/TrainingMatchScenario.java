@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Objects;
 
 import edu.wpi.first.math.geometry.Pose2d;
+import edu.wpi.first.math.geometry.Rotation2d;
 import frc.robot.Data.Constants;
 import frc.robot.Intelligence.Archetype;
 import frc.robot.Navigation.FieldMap;
@@ -58,6 +59,34 @@ public record TrainingMatchScenario(
     /** Primary Blue robot; maps to the training-only Blue 0 AI instance. */
     public RobotConfig bluePlayerRobot() {
         return blueRobots.get(0);
+    }
+
+    /**
+     * One-click 3v3 AI-vs-AI default: three Blue and three Red bots on the
+     * standard staggered lanes with full 8-fuel preloads. Applied from the
+     * Elastic Simulation tab ({@code Simulation/Training/Start3v3}).
+     *
+     * @param seed scenario seed (fuel scatter + SHIFT 1 tiebreaks)
+     */
+    public static TrainingMatchScenario default3v3(long seed) {
+        return new TrainingMatchScenario(
+                seed,
+                150.0,
+                54,
+                List.of(
+                        new RobotConfig(Archetype.AUTONOMOUS_CYCLER,
+                                new Pose2d(2.0, 2.25, Rotation2d.fromDegrees(0)), 8),
+                        new RobotConfig(Archetype.ADAPTIVE_COMPETITOR,
+                                new Pose2d(2.0, 4.035, Rotation2d.fromDegrees(0)), 8),
+                        new RobotConfig(Archetype.TACTICAL_DEFENDER,
+                                new Pose2d(2.0, 5.80, Rotation2d.fromDegrees(0)), 8)),
+                List.of(
+                        new RobotConfig(Archetype.AUTONOMOUS_CYCLER,
+                                new Pose2d(14.5, 2.25, Rotation2d.fromDegrees(180)), 8),
+                        new RobotConfig(Archetype.ADAPTIVE_COMPETITOR,
+                                new Pose2d(14.5, 4.035, Rotation2d.fromDegrees(180)), 8),
+                        new RobotConfig(Archetype.DEFENSE_BULLY,
+                                new Pose2d(14.5, 5.80, Rotation2d.fromDegrees(180)), 8)));
     }
 
     /** Additional Blue robots; maps to the existing ally-bot pool after Blue 0. */

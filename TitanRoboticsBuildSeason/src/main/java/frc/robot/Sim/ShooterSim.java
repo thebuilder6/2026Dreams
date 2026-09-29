@@ -100,10 +100,12 @@ public class ShooterSim {
                     double lateralOffset = (ballsToFire == 2) ? (i == 0 ? -0.12 : 0.12) : 0.0;
                     Translation2d shooterOffset = new Translation2d(ShooterConstants.SHOOTER_OFFSET_METERS.get(), lateralOffset);
 
-                    // Introduce Randomness (+/- 2% velocity, +/- 0.5 deg yaw, +/- 1 deg pitch)
-                    double randomExitVelocity = exitVelocity * (1.0 + (Math.random() - 0.5) * 0.04);
-                    Rotation2d randomYaw = robotPose.getRotation().plus(Rotation2d.fromDegrees((Math.random() - 0.5) * 1.0));
-                    double randomPitch = ShooterConstants.SHOOTER_ANGLE_RAD + (Math.random() - 0.5) * 0.035; // ~2 deg total spread
+                    // Seeded spread: the variance is intentional, but drawing it
+                    // from Math.random() made a scenario seed meaningless.
+                    java.util.Random spread = MatchDeterminism.random("shot:playerShooter");
+                    double randomExitVelocity = exitVelocity * (1.0 + (spread.nextDouble() - 0.5) * 0.04);
+                    Rotation2d randomYaw = robotPose.getRotation().plus(Rotation2d.fromDegrees((spread.nextDouble() - 0.5) * 1.0));
+                    double randomPitch = ShooterConstants.SHOOTER_ANGLE_RAD + (spread.nextDouble() - 0.5) * 0.035; // ~2 deg total spread
 
                     // Alliance of the targeted hub (player always shoots its own hub)
                     boolean isBlueGoal = targetLoc.equals(Constants.FieldConstants.BLUE_GOAL_LOCATION);

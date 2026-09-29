@@ -1,0 +1,79 @@
+package frc.robot.Intelligence;
+
+import java.util.Map;
+
+import edu.wpi.first.wpilibj.Timer;
+
+/**
+ * One agent's objective commitment (hysteresis latch).
+ *
+ * <p>The Jev utility matrix is recomputed every cycle and several objectives
+ * sit within ~0.02 of each other, so an unlatched engine re-routes a loaded bot
+ * every 20 ms - the observed "constantly moving before trying to shoot". This
+ * latch keeps the incumbent objective until a challenger is decisively better
+ * or the minimum hold has matured.
+ *
+ * <p>State lives here, on the agent that owns the robot, deliberately
+ * <em>not</em> on {@link JevDecisionEngine}. The engine is documented as a
+ * stateless System 2 evaluator; a static latch there made every agent share one
+ * box, so one bot's decision leaked into another's (and across unit tests in
+ * the same JVM).
+ *
+ * <p>Rules, in the order they are applied:
+ * <ol>
+ *   <li>no incumbent, or the same objective: adopt and hold,</li>
+ *   <li>incumbent utility collapsed to 0 (its hub just went inactive): release
+ *       immediately,</li>
+ *   <li>challenger ahead by {@link JevDecisionEngine#COMMITMENT_DECISIVE_MARGIN}:
+ *       switch at once,</li>
+ *   <li>otherwise hold until
+ *       {@link JevDecisionEngine#COMMITMENT_MIN_HOLD_SEC} has elapsed
+ *       <em>and</em> the challenger leads by
+ *       {@link JevDecisionEngine#COMMITMENT_MARGIN}.</li>
+ * </ol>
+ */
+public final class ObjectiveCommitment {
+    private StrategicObjective committed;
+    private double sinceSeconds;
+
+    /** Currently committed objective, or null before the first decision. */
+    public StrategicObjective committed() {
+        return committed;
+    }
+
+    /** Seconds the current commitment has been held. */
+    public double heldSeconds() {
+        return sinceSeconds;
+    }
+
+    /** Drops the commitment (match reset, new objective set). */
+    public void reset() {
+        committed = null;
+        sinceSeconds = 0.0;
+    }
+
+    /**
+     * Latches {@code candidate} against the current commitment and returns the
+     * objective to pursue. Mutates only this agent's latch.
+     */
+    public StrategicObjective apply(StrategicObjective candidate,
+            Map<StrategicObjective, Double> utilities) {
+        if (candidate == null) {
+            return committed;
+        }
+        double now = Timer.getFPGATimestamp();
+        if (committed == null) {
+            committed = candidate;
+            sinceSeconds = now;
+            return committed;
+        }
+
+        StrategicObjective resolved = JevDecisionEngine.resolveCommittedObjective(
+                candidate, utilities, committed, sinceSeconds, now);
+        if (resolved != committed) {
+            committed = resolved;
+            sinceSeconds = now;
+        }
+        return committed;
+    }
+}

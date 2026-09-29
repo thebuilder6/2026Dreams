@@ -74,6 +74,17 @@ public class MatchScoreTracker implements Subsystem {
     // Player specific shot tracking
     private int playerShotsAttempted = 0;
     private int playerShotsScored = 0;
+    // Per-alliance split of the player's own scores. The player is a legitimate
+    // scorer (our robot in a real match, the parked SwerveBase in a training
+    // match), so it needs a row of its own -- see recordPlayerScore.
+    private int playerBlueFuelScored = 0; // player fuel scored into the BLUE hub
+    private int playerRedFuelScored = 0;  // player fuel scored into the RED hub
+
+    // Fuel that reached an alliance total with no per-slot attribution. Must stay
+    // 0. Incremented only by recordBotScore's unknown-id branch, which is the one
+    // remaining path into recordFuelScore with nowhere to put the point.
+    private int redUnattributedFuel = 0;
+    private int blueUnattributedFuel = 0;
 
     // Per-bot scoring tracking (botId -> count)
     private int bot0FuelScored = 0;
@@ -136,10 +147,27 @@ public class MatchScoreTracker implements Subsystem {
     /**
      * Records a player score into the target hub.
      *
+     * <p>The player gets its own per-alliance slot rather than inflating the
+     * alliance total with no attribution. Previously this called
+     * {@code recordFuelScore} directly, so every player score landed in
+     * {@code blueFuelCount}/{@code redFuelCount} while the per-bot table showed
+     * nothing -- 13 of 20 archived headless reports had a per-bot sum that missed
+     * the alliance total, short by 2-10, always on Blue. The leak was
+     * structurally one-directional because the player always shoots at its own
+     * hub ({@code ShooterSim.getGoalLocation()} applies the alliance flip to
+     * {@code BLUE_GOAL_LOCATION}, and the training scenario forces station
+     * Blue1). With this split the report's per-bot table plus the player row now
+     * reconciles against the alliance total exactly.
+     *
      * @param isRedHub True if scored into Red Hub
      */
     public synchronized void recordPlayerScore(boolean isRedHub) {
         playerShotsScored++;
+        if (isRedHub) {
+            playerRedFuelScored++;
+        } else {
+            playerBlueFuelScored++;
+        }
         recordFuelScore(isRedHub);
     }
 
@@ -159,6 +187,11 @@ public class MatchScoreTracker implements Subsystem {
     /**
      * Records a score attributed to a specific bot.
      *
+     * <p>An id outside the known set is counted into the alliance's
+     * {@code unattributed} bucket rather than dropped, so a future id change shows
+     * up as a non-zero canary instead of silently inflating a total that the
+     * per-bot table cannot account for.
+     *
      * @param botId Bot identifier (0-2 = Red bots, 100 = training Blue 0, 101-102 = Blue allies)
      * @param isRedAlliance True if bot belongs to Red Alliance
      */
@@ -170,7 +203,13 @@ public class MatchScoreTracker implements Subsystem {
             case 100: ally0FuelScored++; break;
             case 101: ally1FuelScored++; break;
             case 102: ally2FuelScored++; break;
-            default: break;
+            default:
+                if (isRedAlliance) {
+                    redUnattributedFuel++;
+                } else {
+                    blueUnattributedFuel++;
+                }
+                break;
         }
         recordFuelScore(isRedAlliance);
     }
@@ -584,6 +623,10 @@ public class MatchScoreTracker implements Subsystem {
 
         playerShotsAttempted = 0;
         playerShotsScored = 0;
+        playerBlueFuelScored = 0;
+        playerRedFuelScored = 0;
+        redUnattributedFuel = 0;
+        blueUnattributedFuel = 0;
 
         bot0FuelScored = 0;
         bot1FuelScored = 0;
@@ -612,6 +655,36 @@ public class MatchScoreTracker implements Subsystem {
     public synchronized int getBlueWastedFuelCount() { return blueWastedFuelCount; }
     public synchronized int getPlayerShotsAttempted() { return playerShotsAttempted; }
     public synchronized int getPlayerShotsScored() { return playerShotsScored; }
+    public synchronized int getPlayerBlueFuelScored() { return playerBlueFuelScored; }
+    public synchronized int getPlayerRedFuelScored() { return playerRedFuelScored; }
+
+    /**
+     * Fuel that reached an alliance total with no per-slot attribution.
+     *
+     * <p>Must stay 0 in every match. A non-zero value means a scoring path is
+     * bypassing attribution, which is what made 13 of 20 archived headless
+     * reports fail the per-bot reconciliation. The score rig gates on this.
+     */
+    public synchronized int getRedUnattributedFuel() { return redUnattributedFuel; }
+    public synchronized int getBlueUnattributedFuel() { return blueUnattributedFuel; }
+
+    /**
+     * Reconciliation residual: alliance fuel total minus the sum of every
+     * attributed slot, including the player's own row and the unattributed
+     * bucket. Zero by construction for all three scoring paths; asserted by
+     * {@code MatchScoreTrackerTest} and reported by the score rig.
+     */
+    public synchronized int getBlueReconciliationResidual() {
+        return blueFuelCount
+                - (ally0FuelScored + ally1FuelScored + ally2FuelScored
+                        + playerBlueFuelScored + blueUnattributedFuel);
+    }
+
+    public synchronized int getRedReconciliationResidual() {
+        return redFuelCount
+                - (bot0FuelScored + bot1FuelScored + bot2FuelScored
+                        + playerRedFuelScored + redUnattributedFuel);
+    }
     public synchronized int getBot0FuelScored() { return bot0FuelScored; }
     public synchronized int getBot1FuelScored() { return bot1FuelScored; }
     public synchronized int getBot2FuelScored() { return bot2FuelScored; }

@@ -32,8 +32,15 @@ public class ContactWatchdog {
     private static final double COLLISION_DEBOUNCE_SEC = 0.35;
 
     // ---- Stall (CollisionDetector parity) ----
-    private static final double STALL_CMD_SPEED_MIN = 1.00;
-    private static final double STALL_ACTUAL_SPEED_MAX = 0.20;
+    // CMD threshold matches AIRobotInstance.isStalled so the bot-local stall flag
+    // and the watchdog agree. 0.80 was too high: TrajectoryController commands as
+    // little as 0.25 m/s (its carpet-friction breakout floor) and TRENCH_YIELD scales
+    // by 0.2x, so a robot wedged while commanding 0.25-0.79 m/s was invisible here.
+    // This is a "hold" floor, not a stall threshold: a true hold commands ~0 and still
+    // decays, and the measured side is already permissive (STALL_ACTUAL_SPEED_MAX).
+    // Same reasoning as TargetProgressWatchdog.COMMAND_MIN_MPS.
+    public static final double STALL_CMD_SPEED_MIN = 0.12;
+    public static final double STALL_ACTUAL_SPEED_MAX = 0.20;
     private static final double STALL_CURRENT_AMPS = 28.0;
 
     // ---- G418 pin (LegalPinningWatchdog parity) ----
@@ -49,6 +56,17 @@ public class ContactWatchdog {
     public static final double PROXIMITY_M = 1.10;
     public static final double FORWARD_SCALE = 0.3;
     public static final double JINK_SPEED = 1.2;
+    // Trench single-lane: lateral jink drives into the truss walls, so recovery
+    // reverses out instead (negative scale) and triggers faster (0.5 s).
+    // Recovery/cooldown are jittered per bot so head-on pairs desynchronize
+    // instead of re-entering in lockstep, and consecutive failed attempts
+    // escalate (longer reverse) until stall clears.
+    public static final double TRENCH_TRIGGER_STALL_SEC = 0.5;
+    public static final double TRENCH_FORWARD_SCALE = -0.8;
+    public static final double TRENCH_RECOVERY_JITTER_SEC = 0.5;
+    public static final double TRENCH_COOLDOWN_JITTER_SEC = 1.0;
+    public static final double TRENCH_ESCALATION_STEP_SEC = 0.2;
+    public static final int TRENCH_ESCALATION_MAX = 3;
 
     /** Recovery command for one tick (DeadlockResolver parity). */
     public record Resolution(boolean recovering, double forwardScale, double lateralJink) {}
@@ -88,6 +106,10 @@ public class ContactWatchdog {
     private double recoveryTimeSec = 0.0;
     private double cooldownTimeSec = 0.0;
     private double jinkSign = 1.0;
+    private double recoveryForwardScale = FORWARD_SCALE;
+    private double recoveryLateralJink = 0.0;
+    private boolean recoveryTrenchActive = false;
+    private int trenchEscalation = 0;
     private int recoveryCount = 0;
 
     // Pirouette escape state (TrajectoryController parity)
@@ -95,6 +117,20 @@ public class ContactWatchdog {
     private Translation2d unstickVector = new Translation2d();
     private int unstickAttempts = 0;
     private double lastUnstickStartTime = -1.0;
+
+    /**
+     * Creates a watchdog whose jitter draws from the shared scenario RNG.
+     *
+     * <p>The jink and cooldown jitter are intentional (they desynchronise
+     * head-on trench pairs), but an unseeded {@link java.util.Random} made a
+     * scenario seed meaningless. The stream name keeps each robot's draws
+     * independent, so one bot's recovery cannot shift another's.
+     *
+     * @param streamName per-robot generator name, e.g. {@code "watchdog:Bot0"}
+     */
+    public ContactWatchdog(String streamName) {
+        this(frc.robot.Sim.MatchDeterminism.random(streamName));
+    }
 
     public ContactWatchdog() {
         this(new java.util.Random());
@@ -230,7 +266,10 @@ public class ContactWatchdog {
         }
 
         // ---- 4. Deadlock (DeadlockResolver) ----
-        Resolution deadlock = updateDeadlock(stalled, nearestPeerDist, dt);
+        // Trench-aware: single-lane corridors reverse out instead of jinking.
+        boolean inTrenchCorridor =
+                frc.robot.Navigation.FieldMap.Trenches.isLowClearance(currentPose.getTranslation());
+        Resolution deadlock = updateDeadlock(stalled, nearestPeerDist, dt, inTrenchCorridor);
 
         // ---- 5. Pirouette arming (TrajectoryController) ----
         if (stalled && now > unstickEndTime) {
@@ -294,6 +333,14 @@ public class ContactWatchdog {
         }
 
         if (recoveryTimeSec > 0.0) {
+            if (recoveryTrenchActive) {
+                // Trench yield: reverse out along the commanded path, no lateral
+                // jink (lateral = into the truss walls).
+                return new ChassisSpeeds(
+                        commanded.vxMetersPerSecond * recoveryForwardScale,
+                        commanded.vyMetersPerSecond * recoveryForwardScale,
+                        commanded.omegaRadiansPerSecond);
+            }
             Translation2d jinkField =
                     new Translation2d(0, jinkSign * JINK_SPEED).rotateBy(currentPose.getRotation());
             return new ChassisSpeeds(
@@ -308,6 +355,10 @@ public class ContactWatchdog {
     // ---- Deadlock internals (DeadlockResolver parity) ----
 
     private Resolution updateDeadlock(boolean stalled, double nearestPeerDist, double dt) {
+        return updateDeadlock(stalled, nearestPeerDist, dt, false);
+    }
+
+    private Resolution updateDeadlock(boolean stalled, double nearestPeerDist, double dt, boolean inTrench) {
         if (cooldownTimeSec > 0.0) {
             cooldownTimeSec -= dt;
             return idleResolution();
@@ -315,22 +366,42 @@ public class ContactWatchdog {
         if (recoveryTimeSec > 0.0) {
             recoveryTimeSec -= dt;
             if (recoveryTimeSec <= 0.0) {
-                cooldownTimeSec = COOLDOWN_SEC;
+                // Jittered trench cooldown desynchronizes head-on pairs so they
+                // don't re-enter in lockstep; open-field stays deterministic.
+                cooldownTimeSec = recoveryTrenchActive
+                        ? COOLDOWN_SEC + random.nextDouble() * TRENCH_COOLDOWN_JITTER_SEC
+                        : COOLDOWN_SEC;
+                recoveryTrenchActive = false;
                 return idleResolution();
             }
-            return new Resolution(true, FORWARD_SCALE, jinkSign * JINK_SPEED);
+            return new Resolution(true, recoveryForwardScale, recoveryLateralJink);
         }
         if (stalled && nearestPeerDist < PROXIMITY_M) {
             deadlockStallTimeSec += dt;
         } else {
             deadlockStallTimeSec = 0.0;
+            // Stall cleared (moving or peer gone): reset escalation.
+            trenchEscalation = 0;
         }
-        if (deadlockStallTimeSec >= TRIGGER_STALL_SEC) {
+        double triggerSec = inTrench ? TRENCH_TRIGGER_STALL_SEC : TRIGGER_STALL_SEC;
+        if (deadlockStallTimeSec >= triggerSec) {
             deadlockStallTimeSec = 0.0;
-            recoveryTimeSec = RECOVERY_SEC;
-            jinkSign = random.nextBoolean() ? 1.0 : -1.0;
+            recoveryTrenchActive = inTrench;
+            if (inTrench) {
+                int esc = Math.min(trenchEscalation, TRENCH_ESCALATION_MAX);
+                recoveryTimeSec = RECOVERY_SEC + random.nextDouble() * TRENCH_RECOVERY_JITTER_SEC
+                        + esc * TRENCH_ESCALATION_STEP_SEC;
+                trenchEscalation = Math.min(trenchEscalation + 1, TRENCH_ESCALATION_MAX + 1);
+                recoveryForwardScale = TRENCH_FORWARD_SCALE;
+                recoveryLateralJink = 0.0;
+            } else {
+                recoveryTimeSec = RECOVERY_SEC;
+                recoveryForwardScale = FORWARD_SCALE;
+                jinkSign = random.nextBoolean() ? 1.0 : -1.0;
+                recoveryLateralJink = jinkSign * JINK_SPEED;
+            }
             recoveryCount++;
-            return new Resolution(true, FORWARD_SCALE, jinkSign * JINK_SPEED);
+            return new Resolution(true, recoveryForwardScale, recoveryLateralJink);
         }
         return idleResolution();
     }
@@ -344,7 +415,19 @@ public class ContactWatchdog {
      * themselves (sim bots). Mirrors {@code DeadlockResolver.update}.
      */
     public synchronized Resolution updateDeadlockOnly(boolean stalled, double nearestPeerDist, double dt) {
-        Resolution r = updateDeadlock(stalled, nearestPeerDist, dt);
+        Resolution r = updateDeadlock(stalled, nearestPeerDist, dt, false);
+        publishTelemetry(false, r);
+        return r;
+    }
+
+    /**
+     * Trench-aware variant: single-lane corridors reverse out instead of jinking
+     * laterally (lateral = into the truss), and trigger after
+     * {@link #TRENCH_TRIGGER_STALL_SEC}.
+     */
+    public synchronized Resolution updateDeadlockOnly(
+            boolean stalled, double nearestPeerDist, double dt, boolean inTrench) {
+        Resolution r = updateDeadlock(stalled, nearestPeerDist, dt, inTrench);
         publishTelemetry(false, r);
         return r;
     }
@@ -375,6 +458,11 @@ public class ContactWatchdog {
         return recoveryTimeSec > 0.0;
     }
 
+    /** True while a deadlock recovery cooldown is suppressing re-trigger. */
+    public synchronized boolean isDeadlockCooling() {
+        return cooldownTimeSec > 0.0;
+    }
+
     public synchronized double getStallDuration() {
         return stallDuration;
     }
@@ -393,6 +481,11 @@ public class ContactWatchdog {
 
     public synchronized int getRecoveryCount() {
         return recoveryCount;
+    }
+
+    /** Consecutive trench recoveries without stall clearing (escalation level). */
+    public synchronized int getTrenchEscalation() {
+        return trenchEscalation;
     }
 
     /**
@@ -441,6 +534,10 @@ public class ContactWatchdog {
         deadlockStallTimeSec = 0.0;
         recoveryTimeSec = 0.0;
         cooldownTimeSec = 0.0;
+        recoveryForwardScale = FORWARD_SCALE;
+        recoveryLateralJink = 0.0;
+        recoveryTrenchActive = false;
+        trenchEscalation = 0;
         unstickEndTime = -1.0;
         unstickVector = new Translation2d();
         unstickAttempts = 0;

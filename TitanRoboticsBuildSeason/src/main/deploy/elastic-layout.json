@@ -1468,6 +1468,45 @@
               "period": 0.06,
               "show_submit_button": false
             }
+          },
+          {
+            "title": "Ally 0 Archetype (Training)",
+            "x": 1024.0,
+            "y": 640.0,
+            "width": 320.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Simulation/Ally0/Archetype",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Ally 0 State & Objective",
+            "x": 1344.0,
+            "y": 640.0,
+            "width": 352.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Simulation/Ally0/StateDetail",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Ally 0 Score",
+            "x": 1696.0,
+            "y": 640.0,
+            "width": 224.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Simulation/Ally0/Score",
+              "period": 0.06,
+              "show_submit_button": false
+            }
           }
         ]
       }

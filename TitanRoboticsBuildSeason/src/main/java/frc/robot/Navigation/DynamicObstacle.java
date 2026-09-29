@@ -20,7 +20,9 @@ public class DynamicObstacle {
         this.position = position;
         this.velocity = velocity;
         this.radius = radius;
-        this.expiryTimestamp = Timer.getFPGATimestamp() + durationSec;
+        // Single clock: Timer.getTimestamp() — must match DynamicRouter's prune/query
+        // clock or trench masking goes stale (head-on trench jams).
+        this.expiryTimestamp = Timer.getTimestamp() + durationSec;
         this.isProprioceptive = isProprioceptive;
     }
 

@@ -41,6 +41,9 @@ public final class SimDashboardKeys {
     /** Suffix appended to a per-bot prefix for the archetype string. */
     public static final String SUFFIX_ARCHETYPE = "/Archetype";
 
+    /** Suffix appended to a per-bot prefix for the defensive-mark label. */
+    public static final String SUFFIX_MARK = "/Mark";
+
     // --- Bot 0 (lead sparring bot) ---
     public static final String BOT0_ARCHETYPE = "Simulation/Bot0/Archetype";
     public static final String BOT0_ARCHETYPE_CHOOSER = "Simulation/Bot0/ArchetypeChooser";
@@ -59,7 +62,9 @@ public final class SimDashboardKeys {
     public static final String BOT2_ARCHETYPE = "Simulation/Bot2/Archetype";
     public static final String BOT2_ARCHETYPE_CHOOSER = "Simulation/Bot2/ArchetypeChooser";
 
-    // --- Ally bots ---
+    // --- Ally bots (slot 0 exists only in training mode) ---
+    public static final String ALLY0_ARCHETYPE = "Simulation/Ally0/Archetype";
+    public static final String ALLY0_MARK = "Simulation/Ally0/Mark";
     public static final String ALLY1_ARCHETYPE = "Simulation/Ally1/Archetype";
     public static final String ALLY1_ARCHETYPE_CHOOSER = "Simulation/Ally1/ArchetypeChooser";
     public static final String ALLY2_ARCHETYPE = "Simulation/Ally2/Archetype";
@@ -101,6 +106,9 @@ public final class SimDashboardKeys {
     // --- Match control & player game state ---
     public static final String RESET = "Simulation/Reset";
     public static final String RESPAWN_BALLS = "Simulation/RespawnBalls";
+    public static final String TRAINING_START_3V3 = "Simulation/Training/Start3v3";
+    public static final String TRAINING_STOP = "Simulation/Training/Stop";
+    public static final String TRAINING_SEED = "Simulation/Training/Seed";
     public static final String RUNNING = "Simulation/Running";
     public static final String SCORE = "Simulation/Score";
     public static final String HELD_BALLS = "Simulation/HeldBalls";
@@ -129,6 +137,7 @@ public final class SimDashboardKeys {
                 BOT2_ARCHETYPE, BOT2_ARCHETYPE_CHOOSER,
                 ALLY1_ARCHETYPE, ALLY1_ARCHETYPE_CHOOSER,
                 ALLY2_ARCHETYPE, ALLY2_ARCHETYPE_CHOOSER,
+                ALLY0_ARCHETYPE, ALLY0_MARK,
                 AI_MODE, AI_MODE_CHOOSER,
                 ALLY_ACTIVE_COUNT, ALLY_COUNT, ALLY_COUNT_CHOOSER, ALLY_COUNT_CHOOSER_SELECTED,
                 OPPONENT_COUNT, OPPONENT_COUNT_CHOOSER, OPPONENT_COUNT_CHOOSER_SELECTED,
@@ -138,6 +147,7 @@ public final class SimDashboardKeys {
                 OPPONENT_SCORE_COUNT, OPPONENT_STALLED, OPPONENT_TARGET_POSE,
                 TOTAL_OPPONENT_SCORE, TOTAL_OPPONENT_FUEL, TOTAL_ALLY_SCORE, TOTAL_ALLY_FUEL,
                 RESET, RESPAWN_BALLS, RUNNING, SCORE, HELD_BALLS, LAST_SHOT_SCORED,
+                TRAINING_START_3V3, TRAINING_STOP, TRAINING_SEED,
                 TIME_REMAINING_SEC, TIME_REMAINING_VALID, HUB_ACTIVE_BLUE, HUB_ACTIVE_RED,
                 GAME_PIECES, FULL_MATCH_BALL_DENSITY, DEBUG_AI));
         for (int botId = 0; botId <= 2; botId++) {
@@ -145,7 +155,7 @@ public final class SimDashboardKeys {
                 keys.add(botPrefix(botId) + suffix);
             }
         }
-        for (int allyIndex = 1; allyIndex <= 2; allyIndex++) {
+        for (int allyIndex = 0; allyIndex <= 2; allyIndex++) {
             for (String suffix : PER_BOT_SUFFIXES) {
                 keys.add(allyPrefix(allyIndex) + suffix);
             }

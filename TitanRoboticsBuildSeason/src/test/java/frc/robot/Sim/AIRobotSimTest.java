@@ -175,6 +175,11 @@ public class AIRobotSimTest {
 
         // Player robot placed directly in front of AI bot at (9.0, 4.0)
         frc.robot.Subsystems.SwerveBase.getInstance().resetOdometry(new Pose2d(9.0, 4.0, new Rotation2d()));
+        // Mirror the production pipeline (AIRobotSim.update registers peers
+        // before the controller consumes them): the controller only sees
+        // registered DynamicRouter obstacles, and setup() just cleared them.
+        DynamicRouter.registerObstacle(
+                new Translation2d(9.0, 4.0), new Translation2d(), 0.55, 60.0);
 
         edu.wpi.first.math.kinematics.ChassisSpeeds speeds = aiSim.computeDriveToPoseSpeeds(currentPose, targetPose, 3.0);
         assertNotNull(speeds);
@@ -405,6 +410,18 @@ public class AIRobotSimTest {
         // When in Midfield (X = 6.0), shot is rejected
         var midfieldSolution = shooter.calculateShootingSolution(new Pose2d(6.0, 4.0, new Rotation2d()));
         assertFalse(midfieldSolution.shotPossibility(), "Shooter solution must be rejected when outside Alliance Zone");
+    }
+
+    @Test
+    public void testSharedShotEnvelopeOuterEdge() {
+        // Red hub at (11.9154, 4.0346). (15.6, 5.9) is 4.13 m out: inside the
+        // shared FieldMap.Hubs.SHOOTING_MAX_DISTANCE (4.2) envelope but beyond
+        // the old 4.0 sim limit — must now be a valid shooting location.
+        assertTrue(aiSim.isValidShootingLocation(new Pose2d(15.6, 5.9, new Rotation2d()), true),
+                "Pose at 4.13 m in-zone must be valid under the shared 4.2 m envelope");
+        // (15.9, 6.3) is 4.58 m out: beyond the envelope — must stay invalid.
+        assertFalse(aiSim.isValidShootingLocation(new Pose2d(15.9, 6.3, new Rotation2d()), true),
+                "Pose at 4.58 m must remain an invalid shooting location");
     }
 
     @Test
@@ -754,5 +771,35 @@ public class AIRobotSimTest {
         assertSame(fallback,
                 AIRobotSim.selectMark(defender, java.util.Arrays.asList(null, fallback), fallback),
                 "Null candidates must be skipped");
+    }
+
+    @Test
+    public void testMarkExclusionSplitsDefendersAcrossCarriers() {
+        Pose2d defender = new Pose2d(8.0, 4.0, new Rotation2d());
+        MarkCandidate hot = new MarkCandidate("Hot",
+                new Pose2d(6.0, 4.0, new Rotation2d()), new ChassisSpeeds(), 8, 2);
+        MarkCandidate warm = new MarkCandidate("Warm",
+                new Pose2d(7.0, 4.0, new Rotation2d()), new ChassisSpeeds(), 4, 0);
+        MarkCandidate fallback = new MarkCandidate("Fallback",
+                new Pose2d(0, 0, new Rotation2d()), new ChassisSpeeds(), 0, 0);
+        java.util.List<MarkCandidate> carriers = java.util.List.of(hot, warm);
+
+        // First defender takes the hottest carrier.
+        assertEquals("Hot",
+                AIRobotSim.selectMarkExcluding(defender, carriers, fallback, java.util.Set.of()).label());
+        // Second defender excludes the taken carrier and takes the next best.
+        assertEquals("Warm",
+                AIRobotSim.selectMarkExcluding(defender, carriers, fallback, java.util.Set.of("Hot")).label(),
+                "Second defender must not pile onto the held carrier");
+        // Fewer carriers than defenders: exclusion empties the list, so the
+        // full list applies and every defender still marks someone.
+        assertEquals("Hot",
+                AIRobotSim.selectMarkExcluding(defender, carriers, fallback, java.util.Set.of("Hot", "Warm")).label(),
+                "Exhausted exclusion must degrade to the full candidate list");
+        // Null/empty safety mirrors selectMark.
+        assertSame(fallback,
+                AIRobotSim.selectMarkExcluding(defender, java.util.List.of(), fallback, java.util.Set.of()));
+        assertSame(fallback,
+                AIRobotSim.selectMarkExcluding(defender, null, fallback, null));
     }
 }

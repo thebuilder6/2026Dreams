@@ -78,6 +78,99 @@ class TrainingMatchScenarioApplicationTest {
         aiSim.simulationUpdate();
     }
 
+    @Test
+    void trainingBotsHoldWhileDriverStationDisabled() {
+        // 2v2: matches the roster sizes other application tests assume, since
+        // sim bot pools are grow-only within a shared JVM.
+        TrainingMatchScenario scenario = new TrainingMatchScenario(
+                11L,
+                90.0,
+                54,
+                List.of(
+                        robot(Archetype.CO_PILOT, pose(1.0, 1.0, 0.0), 6),
+                        robot(Archetype.DEFENSE_BULLY, pose(2.2, 2.0, 25.0), 3)),
+                List.of(
+                        robot(Archetype.AUTONOMOUS_CYCLER, pose(14.5, 1.2, 180.0), 5),
+                        robot(Archetype.ADAPTIVE_COMPETITOR, pose(13.4, 2.2, 180.0), 7)));
+        GameSim.getInstance().resetGame(scenario);
+        DriverStationSim.setEnabled(false);
+        DriverStationSim.notifyNewData();
+
+        aiSim.simulationUpdate();
+        Pose2d primaryBefore = aiSim.getTrainingBluePrimaryBot().getActualPose();
+        Pose2d oppBefore = aiSim.getOpponents().get(0).getActualPose();
+
+        for (int i = 0; i < 5; i++) {
+            aiSim.simulationUpdate();
+        }
+
+        assertPoseNear(primaryBefore, aiSim.getTrainingBluePrimaryBot().getActualPose());
+        assertPoseNear(oppBefore, aiSim.getOpponents().get(0).getActualPose());
+
+        DriverStationSim.setEnabled(true);
+        DriverStationSim.notifyNewData();
+    }
+
+    @Test
+    void trainingResultLatchesWhenClockExpires() {
+        TrainingMatchScenario scenario = new TrainingMatchScenario(
+                13L,
+                90.0,
+                54,
+                List.of(robot(Archetype.CO_PILOT, pose(1.0, 1.0, 0.0), 6)),
+                List.of(robot(Archetype.AUTONOMOUS_CYCLER, pose(14.5, 1.2, 180.0), 5)));
+        GameSim.getInstance().resetGame(scenario);
+        GameSim.getInstance().setSimTimeRemainingSec(0.05);
+
+        for (int i = 0; i < 5; i++) {
+            GameSim.getInstance().simulationUpdate();
+        }
+
+        assertEquals("Tie", edu.wpi.first.wpilibj.smartdashboard.SmartDashboard
+                .getString("Training/Result/Winner", ""));
+        assertEquals(0.0, edu.wpi.first.wpilibj.smartdashboard.SmartDashboard
+                .getNumber("Training/Result/BlueScore", -1.0));
+        assertEquals(0.0, edu.wpi.first.wpilibj.smartdashboard.SmartDashboard
+                .getNumber("Training/Result/RedScore", -1.0));
+    }
+
+    @Test
+    void trainingPublishesAllyFieldObjectsForAdvantageScope() {
+        // 2v2: pool-size neutral for sibling tests (sim bot pools are grow-only).
+        TrainingMatchScenario scenario = new TrainingMatchScenario(
+                17L,
+                90.0,
+                54,
+                List.of(
+                        robot(Archetype.CO_PILOT, pose(1.0, 1.0, 0.0), 6),
+                        robot(Archetype.DEFENSE_BULLY, pose(2.2, 2.0, 25.0), 3)),
+                List.of(
+                        robot(Archetype.AUTONOMOUS_CYCLER, pose(14.5, 1.2, 180.0), 5),
+                        robot(Archetype.ADAPTIVE_COMPETITOR, pose(13.4, 2.2, 180.0), 7)));
+        GameSim.getInstance().resetGame(scenario);
+
+        aiSim.simulationUpdate();
+
+        edu.wpi.first.wpilibj.smartdashboard.Field2d field = SwerveBase.getInstance().getField();
+        assertTrue(field.getObject("AllyBot0").getPoses().size() > 0,
+                "Training primary must publish AllyBot0 for advantagescope-layout.json");
+        assertTrue(field.getObject("AllyBot1").getPoses().size() > 0,
+                "Ally must publish AllyBot1 for advantagescope-layout.json");
+        assertTrue(field.getObject("OpponentBot0").getPoses().size() > 0,
+                "Bot0 must publish OpponentBot0 for advantagescope-layout.json");
+
+        // Ally 0 dashboard fields (training primary): archetype display and
+        // mark published per tick for the Elastic Simulation tab.
+        assertTrue(edu.wpi.first.wpilibj.smartdashboard.SmartDashboard
+                .getString(SimDashboardKeys.ALLY0_ARCHETYPE, "").length() > 0,
+                "Training primary must publish Simulation/Ally0/Archetype");
+        assertTrue(edu.wpi.first.wpilibj.smartdashboard.SmartDashboard
+                .getString(SimDashboardKeys.ALLY0_MARK, "").length() > 0,
+                "Training primary must publish Simulation/Ally0/Mark");
+        assertTrue(SimDashboardKeys.allKeys().contains("Simulation/Ally0/Pose"),
+                "Ally0 per-bot keys must be in the dashboard key contract");
+    }
+
     private static TrainingMatchScenario.RobotConfig robot(Archetype archetype, Pose2d pose, int preload) {
         return new TrainingMatchScenario.RobotConfig(archetype, pose, preload);
     }

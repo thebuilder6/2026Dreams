@@ -1,167 +1,253 @@
 {
-  "version": 1.0,
-  "tabs": [
+  "hubs": [
     {
-      "type": "3d-field",
-      "title": "3D Arena Scrimmage",
-      "field": "2026 Rebuilt",
-      "robot": {
-        "source": "NT4",
-        "topic": "/SmartDashboard/Field/Robot",
-        "model": "KitBot",
-        "color": "#1E90FF"
-      },
-      "objects": [
-        {
-          "title": "Opponent Bot 0 (Lead)",
-          "topic": "/AI_Telemetry/Bot0/ActualPose",
-          "model": "KitBot",
-          "color": "#FF4500"
+      "x": -8,
+      "y": -8,
+      "width": 1920,
+      "height": 1152,
+      "state": {
+        "sidebar": {
+          "width": 300,
+          "expanded": [
+            "/AdvantageKit",
+            "/AdvantageKit/RealOutputs",
+            "/Simulation",
+            "/SmartDashboard",
+            "/SmartDashboard/Field",
+            "/SmartDashboard/Field/Driver",
+            "/AdvantageKit/RealOutputs/AI_Telemetry"
+          ]
         },
-        {
-          "title": "Opponent Bot 1 (Bully)",
-          "topic": "/AI_Telemetry/Bot1/ActualPose",
-          "model": "KitBot",
-          "color": "#FF6347"
-        },
-        {
-          "title": "Opponent Bot 2 (Adaptive)",
-          "topic": "/AI_Telemetry/Bot2/ActualPose",
-          "model": "KitBot",
-          "color": "#DC143C"
-        },
-        {
-          "title": "Field Fuel Pieces",
-          "topic": "/SmartDashboard/FieldSim/GamePieces",
-          "model": "Sphere",
-          "color": "#FFD700"
-        },
-        {
-          "title": "AI Successful Shots",
-          "topic": "/FieldSimulation/OpponentSuccessfulShotsTrajectory",
-          "model": "Trajectory",
-          "color": "#00FF7F"
-        },
-        {
-          "title": "AI Missed Shots",
-          "topic": "/FieldSimulation/OpponentMissedShotsTrajectory",
-          "model": "Trajectory",
-          "color": "#FF0000"
+        "tabs": {
+          "selected": 3,
+          "tabs": [
+            {
+              "type": 0,
+              "title": "",
+              "controller": null,
+              "controllerUUID": "yu12ym507io787l4enrroy2t1gi8q4fb",
+              "renderer": "",
+              "controlsHeight": 0
+            },
+            {
+              "type": 1,
+              "title": "Line Graph",
+              "controller": {
+                "leftSources": [],
+                "rightSources": [],
+                "discreteSources": [],
+                "leftLockedRange": null,
+                "rightLockedRange": null,
+                "leftUnitConversion": {
+                  "autoTarget": null,
+                  "preset": null
+                },
+                "rightUnitConversion": {
+                  "autoTarget": null,
+                  "preset": null
+                },
+                "leftFilter": 0,
+                "rightFilter": 0
+              },
+              "controllerUUID": "682vrnp89kl06bf8fxuk9huq81mdf1hk",
+              "renderer": null,
+              "controlsHeight": 200
+            },
+            {
+              "type": 2,
+              "title": "2D Field",
+              "controller": {
+                "sources": [],
+                "field": "FRC:2026 Field",
+                "orientation": 0,
+                "size": "large"
+              },
+              "controllerUUID": "trvqe99ml1u5b6bs2d7usln3ocmly51k",
+              "renderer": null,
+              "controlsHeight": 200
+            },
+            {
+              "type": 3,
+              "title": "3D Field",
+              "controller": {
+                "sources": [
+                  {
+                    "type": "robotLegacy",
+                    "logKey": "NT:/SmartDashboard/Field/Robot",
+                    "logType": "NumberArray",
+                    "visible": true,
+                    "options": {
+                      "model": "2026 KitBot",
+                      "format": "Pose2d",
+                      "units": "degrees"
+                    }
+                  },
+                  {
+                    "type": "robotLegacy",
+                    "logKey": "NT:/SmartDashboard/Field/OpponentBot0",
+                    "logType": "NumberArray",
+                    "visible": true,
+                    "options": {
+                      "model": "Crab Bot",
+                      "format": "Pose2d",
+                      "units": "degrees"
+                    }
+                  },
+                  {
+                    "type": "visionLegacy",
+                    "logKey": "NT:/SmartDashboard/Field/OpponentTarget0",
+                    "logType": "NumberArray",
+                    "visible": true,
+                    "options": {
+                      "color": "#00ff00",
+                      "size": "normal",
+                      "format": "Pose2d"
+                    }
+                  },
+                  {
+                    "type": "robotLegacy",
+                    "logKey": "NT:/SmartDashboard/Field/OpponentBot1",
+                    "logType": "NumberArray",
+                    "visible": true,
+                    "options": {
+                      "model": "Crab Bot",
+                      "format": "Pose2d",
+                      "units": "degrees"
+                    }
+                  },
+                  {
+                    "type": "visionLegacy",
+                    "logKey": "NT:/SmartDashboard/Field/OpponentTarget1",
+                    "logType": "NumberArray",
+                    "visible": true,
+                    "options": {
+                      "color": "#00ff00",
+                      "size": "normal",
+                      "format": "Pose2d"
+                    }
+                  },
+                  {
+                    "type": "robotLegacy",
+                    "logKey": "NT:/SmartDashboard/Field/OpponentBot2",
+                    "logType": "NumberArray",
+                    "visible": true,
+                    "options": {
+                      "model": "Duck Bot",
+                      "format": "Pose2d",
+                      "units": "degrees"
+                    }
+                  },
+                  {
+                    "type": "visionLegacy",
+                    "logKey": "NT:/SmartDashboard/Field/OpponentTarget2",
+                    "logType": "NumberArray",
+                    "visible": true,
+                    "options": {
+                      "color": "#00ff00",
+                      "size": "normal",
+                      "format": "Pose2d"
+                    }
+                  },
+                  {
+                    "type": "robotLegacy",
+                    "logKey": "NT:/SmartDashboard/Field/AllyBot0",
+                    "logType": "NumberArray",
+                    "visible": true,
+                    "options": {
+                      "model": "2026 KitBot",
+                      "format": "Pose2d",
+                      "units": "degrees"
+                    }
+                  },
+                  {
+                    "type": "visionLegacy",
+                    "logKey": "NT:/SmartDashboard/Field/AllyTarget0",
+                    "logType": "NumberArray",
+                    "visible": true,
+                    "options": {
+                      "color": "#00ff00",
+                      "size": "normal",
+                      "format": "Pose2d"
+                    }
+                  },
+                  {
+                    "type": "robotLegacy",
+                    "logKey": "NT:/SmartDashboard/Field/AllyBot1",
+                    "logType": "NumberArray",
+                    "visible": true,
+                    "options": {
+                      "model": "2026 KitBot",
+                      "format": "Pose2d",
+                      "units": "degrees"
+                    }
+                  },
+                  {
+                    "type": "visionLegacy",
+                    "logKey": "NT:/SmartDashboard/Field/AllyTarget1",
+                    "logType": "NumberArray",
+                    "visible": true,
+                    "options": {
+                      "color": "#00ff00",
+                      "size": "normal",
+                      "format": "Pose2d"
+                    }
+                  },
+                  {
+                    "type": "robotLegacy",
+                    "logKey": "NT:/SmartDashboard/Field/AllyBot2",
+                    "logType": "NumberArray",
+                    "visible": true,
+                    "options": {
+                      "model": "2025 KitBot",
+                      "format": "Pose2d",
+                      "units": "degrees"
+                    }
+                  },
+                  {
+                    "type": "visionLegacy",
+                    "logKey": "NT:/SmartDashboard/Field/AllyTarget2",
+                    "logType": "NumberArray",
+                    "visible": true,
+                    "options": {
+                      "color": "#00ff00",
+                      "size": "normal",
+                      "format": "Pose2d"
+                    }
+                  },
+                  {
+                    "type": "gamePiece",
+                    "logKey": "NT:Simulation/GamePieces",
+                    "logType": "Pose3d[]",
+                    "visible": true,
+                    "options": {
+                      "variant": "Fuel"
+                    }
+                  }
+                ],
+                "game": "FRC:2026 Field"
+              },
+              "controllerUUID": "be658c3y22o6f6oldozsvpxgak2rpltf",
+              "renderer": {
+                "cameraIndex": -1,
+                "orbitFov": 50,
+                "cameraPosition": [
+                  4.106652530980436,
+                  5.9541660697144465,
+                  -10.012613012884552
+                ],
+                "cameraTarget": [
+                  0,
+                  0.5,
+                  0
+                ]
+              },
+              "controlsHeight": 370
+            }
+          ]
         }
-      ]
-    },
-    {
-      "type": "odometry",
-      "title": "2D Tactical Field Map",
-      "field": "2026 Rebuilt",
-      "robot": {
-        "topic": "/SmartDashboard/Field/Robot",
-        "color": "#1E90FF"
-      },
-      "objects": [
-        {
-          "title": "Opponent Bot 0",
-          "topic": "/SmartDashboard/Field/OpponentBot0",
-          "color": "#FF4500"
-        },
-        {
-          "title": "Opponent Bot 1",
-          "topic": "/SmartDashboard/Field/OpponentBot1",
-          "color": "#FF6347"
-        },
-        {
-          "title": "Opponent Bot 2",
-          "topic": "/SmartDashboard/Field/OpponentBot2",
-          "color": "#DC143C"
-        },
-        {
-          "title": "Bot 0 Target",
-          "topic": "/SmartDashboard/Field/OpponentTarget0",
-          "color": "#FFA500"
-        },
-        {
-          "title": "Bot 1 Target",
-          "topic": "/SmartDashboard/Field/OpponentTarget1",
-          "color": "#FF8C00"
-        },
-        {
-          "title": "Bot 2 Target",
-          "topic": "/SmartDashboard/Field/OpponentTarget2",
-          "color": "#FF7F50"
-        },
-        {
-          "title": "Tactical Glide Points",
-          "topic": "/SmartDashboard/Field/GlidePoints",
-          "color": "#00FFFF"
-        },
-        {
-          "title": "Player Path",
-          "topic": "/SmartDashboard/Field/CurrentPath",
-          "color": "#ADFF2F"
-        }
-      ]
-    },
-    {
-      "type": "line-graph",
-      "title": "Multi-Bot Scrimmage Scoring",
-      "series": [
-        {
-          "title": "Player Score",
-          "topic": "/SmartDashboard/Simulation/Score",
-          "color": "#1E90FF"
-        },
-        {
-          "title": "Total Opponents Score",
-          "topic": "/SmartDashboard/Simulation/TotalOpponentScore",
-          "color": "#FF4500"
-        },
-        {
-          "title": "Bot 0 Score",
-          "topic": "/SmartDashboard/Simulation/Bot0/Score",
-          "color": "#FFA500"
-        },
-        {
-          "title": "Bot 1 Score",
-          "topic": "/SmartDashboard/Simulation/Bot1/Score",
-          "color": "#FF6347"
-        },
-        {
-          "title": "Bot 2 Score",
-          "topic": "/SmartDashboard/Simulation/Bot2/Score",
-          "color": "#DC143C"
-        }
-      ]
-    },
-    {
-      "type": "line-graph",
-      "title": "Fuel Inventory & Drive Dynamics",
-      "series": [
-        {
-          "title": "Bot 0 Held Fuel",
-          "topic": "/SmartDashboard/Simulation/Bot0/Fuel",
-          "color": "#FFA500"
-        },
-        {
-          "title": "Bot 1 Held Fuel",
-          "topic": "/SmartDashboard/Simulation/Bot1/Fuel",
-          "color": "#FF6347"
-        },
-        {
-          "title": "Bot 2 Held Fuel",
-          "topic": "/SmartDashboard/Simulation/Bot2/Fuel",
-          "color": "#DC143C"
-        },
-        {
-          "title": "Flywheel Actual RPM",
-          "topic": "/SmartDashboard/Driver/Flywheel Actual RPM",
-          "color": "#00FF7F"
-        },
-        {
-          "title": "Flywheel Target RPM",
-          "topic": "/SmartDashboard/Driver/Flywheel Target RPM",
-          "color": "#FFFF00"
-        }
-      ]
+      }
     }
-  ]
+  ],
+  "satellites": [],
+  "version": "26.0.0"
 }

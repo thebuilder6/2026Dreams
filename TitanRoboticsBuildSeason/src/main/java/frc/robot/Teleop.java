@@ -385,11 +385,12 @@ public class Teleop {
                 assistController.setRotationOverride(null);
             }
 
-            // Breakout detection (shared authority thresholds)
+            // Breakout detection (shared authority thresholds — owned by AutonomousTeleopAgent)
             double drvSpeed = Math.hypot(driverFieldForward, driverFieldStrafe);
             double normDriverMag = drvSpeed / Math.max(0.1, Constants.MAX_SPEED);
             double normRotMag = Math.abs(driverFieldRot) / Math.max(0.1, Constants.MAX_ROTATION_SPEED);
-            if (normDriverMag > 0.65 || normRotMag > 0.60) {
+            if (normDriverMag > AutonomousTeleopAgent.BREAKOUT_TRANSLATION
+                    || normRotMag > AutonomousTeleopAgent.BREAKOUT_ROTATION) {
                 coPilot.stopAssist();
                 wasGlideHeld = false;
                 triggerRumble(RumblePattern.OVERRIDE_DISENGAGED);
@@ -400,15 +401,19 @@ public class Teleop {
             ChassisSpeeds speeds = assistController.calculate(
                     currentPose, currentSpeeds, target, Constants.MAX_SPEED, stalled, true);
 
-            // Shared authority nudge blending (0.10 <= norm <= 0.65)
-            if (normDriverMag >= 0.10) {
-                double alpha = Math.min(1.0, Math.max(0.0, (normDriverMag - 0.10) / (0.65 - 0.10)));
+            // Shared authority nudge blending (BLEND_MIN <= norm <= BREAKOUT)
+            if (normDriverMag >= AutonomousTeleopAgent.BLEND_MIN) {
+                double alpha = Math.min(1.0, Math.max(0.0,
+                        (normDriverMag - AutonomousTeleopAgent.BLEND_MIN)
+                                / (AutonomousTeleopAgent.BREAKOUT_TRANSLATION - AutonomousTeleopAgent.BLEND_MIN)));
                 double blendedVx = (1.0 - 0.5 * alpha) * speeds.vxMetersPerSecond + alpha * driverFieldForward;
                 double blendedVy = (1.0 - 0.5 * alpha) * speeds.vyMetersPerSecond + alpha * driverFieldStrafe;
                 speeds = new ChassisSpeeds(blendedVx, blendedVy, speeds.omegaRadiansPerSecond);
             }
-            if (normRotMag >= 0.10) {
-                double alphaRot = Math.min(1.0, Math.max(0.0, (normRotMag - 0.10) / (0.60 - 0.10)));
+            if (normRotMag >= AutonomousTeleopAgent.BLEND_MIN) {
+                double alphaRot = Math.min(1.0, Math.max(0.0,
+                        (normRotMag - AutonomousTeleopAgent.BLEND_MIN)
+                                / (AutonomousTeleopAgent.BREAKOUT_ROTATION - AutonomousTeleopAgent.BLEND_MIN)));
                 double blendedOmega = (1.0 - alphaRot) * speeds.omegaRadiansPerSecond + alphaRot * driverFieldRot;
                 speeds = new ChassisSpeeds(speeds.vxMetersPerSecond, speeds.vyMetersPerSecond, blendedOmega);
             }

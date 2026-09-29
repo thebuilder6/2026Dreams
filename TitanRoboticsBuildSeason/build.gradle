@@ -93,8 +93,52 @@ test {
 }
 
 // Simulation configuration (e.g. environment variables).
-wpi.sim.addGui().defaultEnabled = true
-wpi.sim.addDriverstation()
+def guiExtension = wpi.sim.addGui()
+guiExtension.defaultEnabled = true
+// Headless AI-vs-AI training matches: -Pheadless runs with no SimGUI window
+// (HeadlessMatchDriver sequences the DS itself) plus headless system
+// properties on the sim JVM. The GradleRIO `simulateJava` task is an
+// aggregate DefaultTask; the real JavaExec tasks are simulateJavaDebug and
+// simulateJavaRelease (JavaSimulationTask), so both are configured here.
+//   .\gradlew simulateJavaRelease --offline -Pheadless [-Pseed=2026] [-PdurationSec=150]
+//   [-PautoSec=15] [-PdisabledGapSec=3] [-PbootWaitSec=8] [-PfieldFuelCount=108] [-PlogDir=logs] [-PreportDir=reports]
+// Replay the resulting .wpilog in AdvantageScope (File -> Open Log).
+if (project.hasProperty('headless')) {
+    guiExtension.defaultEnabled = false
+    for (String simTaskName : ['simulateJavaDebug', 'simulateJavaRelease']) {
+        tasks.matching { it.name == simTaskName }.configureEach {
+            systemProperty 'frc.headless', 'true'
+            // Opt-in Jev shift clock (frc.jev.realShiftClock). OFF by default:
+            // a real timeUntilHubShift lets STAGE_STANDOFF outrank
+            // VACUUM_MIDFIELD, and the measured result was Blue scoring ZERO
+            // in teleop. Enable with -PrealShiftClock together with the
+            // staging-priority fix, never on its own.
+            systemProperty 'frc.jev.realShiftClock',
+                    project.hasProperty('realShiftClock') ? 'true' : 'false'
+            for (String key : ['seed', 'durationSec', 'autoSec', 'disabledGapSec',
+                               'bootWaitSec', 'fieldFuelCount', 'logDir', 'reportDir',
+                               'resultJsonl', 'variant', 'replica']) {
+                if (project.hasProperty(key)) {
+                    systemProperty "frc.headless.${key}", "${project.property(key)}"
+                }
+            }
+            // Diagnostic only: pins every Jev agent to one objective so a headless
+            // match can be run twice to test whether non-reproducibility comes from
+            // the AI or from unseeded physics. See KNOWN_ISSUES.md section A.
+            if (project.hasProperty('freezeObjective')) {
+                systemProperty 'frc.jev.freezeObjective',
+                        "${project.property('freezeObjective')}"
+            }
+        }
+    }
+}
+def dsExt = wpi.sim.addDriverstation()
+// Opt-in real Driver Station (halsim_ds_socket, "Use Real DriverStation"):
+// .\gradlew simulateJava -PrealDs. Default off so plain runs keep SimGUI DS.
+// The VS Code "Pick extensions to run" popup toggles the same extension.
+if (project.hasProperty('realDs')) {
+    dsExt.defaultEnabled = true
+}
 
 // Setting up my Jar File. In this case, adding all libraries into the main jar ('fat jar')
 // in order to make them all available at runtime. Also adding the manifest so WPILib
@@ -112,6 +156,93 @@ jar {
 deployArtifact.jarTask = jar
 wpi.java.configureExecutableTasks(jar)
 wpi.java.configureTestTasks(test)
+
+// ---------------------------------------------------------------------------
+// Score measurement rig: dump the exact JVM launch recipe for a headless match.
+//
+// tools/score/sweep.ps1 runs N headless matches in parallel by spawning raw
+// `java` processes. Hand-assembling the classpath or hardcoding build/jni breaks
+// the moment GradleRIO changes either, and a missing -Djava.library.path fails
+// every worker with UnsatisfiedLinkError on wpiHaljni / wpimathjni / dyn4j.
+// Reflecting over the real simulateJavaRelease JavaExec makes the Gradle
+// definition the single source of truth, so the sweep can never drift from what
+// `./gradlew simulateJavaRelease` actually does. It also carries the
+// frc.headless.* system properties through, so new headless options stop needing
+// manual forwarding in two places.
+//
+//   .\gradlew dumpSimLaunch --offline
+//   -> build/simlaunch.properties
+// ---------------------------------------------------------------------------
+tasks.register('dumpSimLaunch') {
+    // Deliberately does NOT depend on simulateJavaRelease: that task *executes*
+    // the sim, and doing so just to read its configuration would launch a second
+    // sim JVM that fights the caller for CameraServer/phoenix ports 1181-1182
+    // and 1250. Reading a task's properties does not run it. `jar` (not `classes`)
+    // because the sim task's classpath is the fat jar, which must exist and be
+    // current on disk before the sweep spawns workers against it.
+    dependsOn 'jar'
+    doLast {
+        def simTask = tasks.getByName('simulateJavaRelease')
+        def out = new File(project.layout.buildDirectory.get().asFile, 'simlaunch.properties')
+        out.parentFile.mkdirs()
+
+        // GradleRIO passes the native library path lazily through
+        // jvmArgumentProviders, so plain `jvmArgs` reads empty. Resolve the
+        // providers, or a raw `java -cp` launch dies with UnsatisfiedLinkError on
+        // wpiHaljni / wpimathjni / dyn4j.
+        def jvmArgs = []
+        try { jvmArgs.addAll(simTask.jvmArgs.collect { it.toString() }) } catch (Exception ignored) { }
+        try {
+            simTask.jvmArgumentProviders.each { provider ->
+                provider.asArguments().each { jvmArgs << it.toString() }
+            }
+        } catch (Exception ignored) { }
+        if (!jvmArgs.any { it.contains('java.library.path') }) {
+            // Fallback for when the providers are not resolvable at this point.
+            // extractReleaseNative always lands here for the release sim task.
+            def jni = new File(project.layout.buildDirectory.get().asFile, 'jni/release')
+            if (jni.isDirectory()) {
+                jvmArgs << "-Djava.library.path=${jni.absolutePath}".toString()
+            }
+        }
+        // -Djava.library.path alone is NOT sufficient. WPILib's HAL_LoadExtension
+        // goes through the OS loader (LoadLibrary), which searches PATH, not the
+        // JVM's library path. Without this the raw launch dies at
+        // "Unable to find wpi driver binary" and then hard-crashes the JVM with
+        // EXCEPTION_UNCAUGHT_CXX_EXCEPTION, even though every native
+        // (wpiHal.dll, wpiHaljni.dll, halsim_*.dll) is sitting right there.
+        def jniDir = new File(project.layout.buildDirectory.get().asFile, 'jni/release')
+        def pathPrefix = jniDir.isDirectory() ? jniDir.absolutePath : ''
+
+        def sysProps = [:]
+        if (simTask.hasProperty('systemProperties')) {
+            simTask.systemProperties.each { k, v -> sysProps[k.toString()] = v.toString() }
+        }
+        def envVars = [:]
+        if (simTask.hasProperty('environmentVariables')) {
+            try { simTask.environmentVariables.each { k, v -> envVars[k.toString()] = v.toString() } }
+            catch (Exception ignored) { }
+        }
+        // GradleRIO populates mainClass lazily, so it has no value at
+        // configuration-read time. Fall back to the project's declared main.
+        def mainClassName = ROBOT_MAIN_CLASS
+        try {
+            if (simTask.hasProperty('mainClass')) { mainClassName = simTask.mainClass.get() }
+        } catch (Exception ignored) { }
+        def lines = [
+                "# Generated by :dumpSimLaunch - do not edit.",
+                "# Single source of truth: reflects the simulateJavaRelease JavaExec.",
+                "classpath=${simTask.classpath.asPath}",
+                "jvmArgs=" + jvmArgs.join(' '),
+                "pathPrefix=${pathPrefix}",
+                "mainClass=${mainClassName}",
+        ]
+        sysProps.each { k, v -> lines << "sysProp.${k}=${v}" }
+        envVars.each { k, v -> lines << "env.${k}=${v}" }
+        out.text = lines.join('\n') + '\n'
+        logger.lifecycle("dumpSimLaunch -> ${out}")
+    }
+}
 
 // Configure string concat to always inline compile
 tasks.withType(JavaCompile) {

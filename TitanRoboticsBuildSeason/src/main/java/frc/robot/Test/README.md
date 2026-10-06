@@ -128,6 +128,7 @@ The LED system provides visual feedback for test status:
 3. Verify roller speeds with Roller Testing
 4. Test hopper functionality
 5. Calibrate positions with Position Calibration
+6. **Physics & Feedforward Tooling**: Run `python tools/tune/calibrate_intake.py` for gravitational torque $k_G$ estimation, trapezoidal profile transit time, and jam current limits.
 
 ### Drive Characterization
 1. Enable Test Mode → Drive Characterization

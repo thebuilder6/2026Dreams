@@ -239,33 +239,38 @@ public class IntakeTesting {
         }
     }
 
+    private double jamEjectUntilTimestamp = 0.0;
+
     /**
      * Jam detection testing mode
      */
     private void handleJamDetection(Controller driverController, Controller operatorController) {
         Intake intake = Intake.getInstance();
+        double now = edu.wpi.first.wpilibj.Timer.getFPGATimestamp();
 
         // Run rollers and monitor for jams
         if (driverController.getRightTriggerAxis() > 0.5) {
-            intake.setRollerVoltage(rollerSpeed.get() * 6.0);
-
-            // Simulate jam detection (this would normally come from current monitoring)
-            double simulatedCurrent = Math.random() * 40; // 0-40 amps
-            maxCurrentDraw = Math.max(maxCurrentDraw, simulatedCurrent);
-
-            if (simulatedCurrent > Constants.IntakeConstants.STALL_CURRENT_LIMIT) {
-                jamEvents++;
-                System.out.println("[IntakeTesting] Jam detected! Current: " + simulatedCurrent + "A");
-
-                // Simulate jam response
+            // Check if currently executing an automated unjam sequence
+            if (now < jamEjectUntilTimestamp) {
                 intake.setRollerVoltage(-rollerSpeed.get() * 6.0);
-                edu.wpi.first.wpilibj.Timer.delay(Constants.IntakeConstants.EJECT_TIME);
+            } else {
                 intake.setRollerVoltage(rollerSpeed.get() * 6.0);
+
+                // Simulate jam detection (this would normally come from current monitoring)
+                double simulatedCurrent = Math.random() * 40; // 0-40 amps
+                maxCurrentDraw = Math.max(maxCurrentDraw, simulatedCurrent);
+
+                if (simulatedCurrent > Constants.IntakeConstants.STALL_CURRENT_LIMIT) {
+                    jamEvents++;
+                    System.out.println("[IntakeTesting] Jam detected! Current: " + simulatedCurrent + "A");
+                    jamEjectUntilTimestamp = now + Constants.IntakeConstants.EJECT_TIME;
+                    intake.setRollerVoltage(-rollerSpeed.get() * 6.0);
+                }
             }
 
             if (!testRunning) {
                 testRunning = true;
-                testStartTime = edu.wpi.first.wpilibj.Timer.getFPGATimestamp();
+                testStartTime = now;
             }
         } else {
             intake.setRollerVoltage(0);
@@ -343,7 +348,7 @@ public class IntakeTesting {
     public void updateDashboard() {
         SmartDashboard.putString("Test/Intake/Mode", currentTestMode.name());
         SmartDashboard.putBoolean("Test/Intake/Running", testRunning);
-        SmartDashboard.putNumber("Test/Intake/PositionError", Math.toDegrees(lastPositionError));
+        SmartDashboard.putNumber("Test/Intake/PositionError", lastPositionError);
         SmartDashboard.putNumber("Test/Intake/TimeToTarget", timeToTargetPosition);
         SmartDashboard.putNumber("Test/Intake/JamEvents", jamEvents);
         SmartDashboard.putNumber("Test/Intake/MaxCurrent", maxCurrentDraw);

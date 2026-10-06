@@ -132,7 +132,6 @@ public class AIRobotSim implements Subsystem {
     private Optional<Trajectory<SwerveSample>> trajectory = Optional.empty();
     private final Timer pathTimer = new Timer();
     private final PIDController headingController;
-    private final TrajectoryController aiTrajectoryController;
 
     private final XboxController defenseController;
 
@@ -191,9 +190,6 @@ public class AIRobotSim implements Subsystem {
         var config = SwerveBase.getInstance().getSwerveController().config;
         this.headingController = new PIDController(config.headingPIDF.p, config.headingPIDF.i, config.headingPIDF.d);
         this.headingController.enableContinuousInput(-Math.PI, Math.PI);
-
-        this.aiTrajectoryController = new TrajectoryController(
-                new PIDController(config.headingPIDF.p, config.headingPIDF.i, config.headingPIDF.d));
 
         this.defenseController = new XboxController(2);
 
@@ -255,7 +251,6 @@ public class AIRobotSim implements Subsystem {
         cyclerTimer.restart();
         cyclerPhase = CyclerPhase.HUNT_FUEL;
         aiScoreCount = 0;
-        aiTrajectoryController.reset();
         lastPoseTimestamp = -1.0;
         stallDuration = 0.0;
         lastCommandedSpeed = 0.0;
@@ -810,7 +805,7 @@ public class AIRobotSim implements Subsystem {
 
     public ChassisSpeeds computeDriveToPoseSpeeds(Pose2d currentPose, Pose2d targetPose, double maxSpeed) {
         boolean isStalled = isStalled(currentPose);
-        ChassisSpeeds speeds = aiTrajectoryController.calculate(
+        ChassisSpeeds speeds = bot0Instance.getTrajectoryController().calculate(
                 currentPose,
                 currentTargetSpeeds,
                 targetPose,

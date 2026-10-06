@@ -60,6 +60,19 @@ public final class WorldStateBuilder {
         ROSTER_UNAVAILABLE.set(false);
     }
 
+    /** Package-private for testing alert latching. */
+    static boolean isRosterUnavailableAlertActive() {
+        return ROSTER_UNAVAILABLE.isActive();
+    }
+
+    static void setRosterUnavailableAlertForTesting(boolean active) {
+        ROSTER_UNAVAILABLE.set(active);
+    }
+
+    static void reportDegradedForTesting(String context, Throwable t) {
+        reportDegraded(context, t);
+    }
+
     /**
      * Whether a bot is actually on the playing field, as opposed to parked in
      * the queuing lane. The queuing poses are hardcoded at
@@ -238,6 +251,7 @@ public final class WorldStateBuilder {
      * @return Populated, immutable match knowledge
      */
     public static MatchKnowledge buildMatchKnowledgeForSimBot(boolean botIsRed) {
+        boolean degraded = false;
         MatchScoreTracker tracker;
         try {
             tracker = MatchScoreTracker.getInstance();
@@ -263,6 +277,7 @@ public final class WorldStateBuilder {
             // A 0-0 fallback is not the same as "tied" -- it is "unknown", and
             // the policy reads it as a real differential.
             reportDegraded("scoreRead", e);
+            degraded = true;
             redTotal = 0;
             blueTotal = 0;
         }
@@ -292,6 +307,7 @@ public final class WorldStateBuilder {
             // assumption is that the player is a non-opponent (it is the robot
             // this code is running alongside), and the failure is reported.
             reportDegraded("playerPose", e);
+            degraded = true;
             playerIsRed = botIsRed;
         }
         // Resolve team membership ONCE. The previous code carried two booleans
@@ -391,10 +407,19 @@ public final class WorldStateBuilder {
             // context at all -- a silent wrong-tier failure that is
             // indistinguishable from correct behaviour. Alert instead.
             reportDegraded("roster", e);
+            degraded = true;
         }
-        reportHealthy();
 
         int[] zoneFuel = countZoneFuel(botIsRed);
+        if (zoneFuel == null) {
+            degraded = true;
+            zoneFuel = new int[] {0, 0, 0};
+        }
+
+        if (!degraded) {
+            reportHealthy();
+        }
+
         return new ClairvoyantKnowledge(scoreDifferential,
                 alliesHeld, opponentsHeld, alliesScored, opponentsScored,
                 List.copyOf(allyPoses), List.copyOf(opponentPoses),
@@ -454,7 +479,7 @@ public final class WorldStateBuilder {
             return new int[] {own, midfield, theirs};
         } catch (Exception e) {
             reportDegraded("zoneFuel", e);
-            return new int[] {0, 0, 0};
+            return null;
         }
     }
 }

@@ -22,6 +22,7 @@ import frc.robot.Intelligence.MatchKnowledge;
 import frc.robot.Intelligence.StrategicObjective;
 import frc.robot.Intelligence.WorldState;
 import frc.robot.Intelligence.WorldStateBuilder;
+import frc.robot.Navigation.FieldMap;
 
 /**
  * Two-tier information philosophy: the driver-assist tier knows only what the
@@ -194,5 +195,51 @@ public class TierKnowledgeTest {
         poses.clear();
         assertEquals(1, k.opponentPoses().size(), "Snapshot must not alias the caller's list");
         assertTrue(k.opponentObserved());
+    }
+
+    @Test
+    public void testRosterUnavailableAlertLatchesOnDegradedKnowledge() {
+        WorldStateBuilder.setRosterUnavailableAlertForTesting(false);
+        assertFalse(WorldStateBuilder.isRosterUnavailableAlertActive(), "Alert must start inactive");
+
+        WorldStateBuilder.reportDegradedForTesting("testFailure", new RuntimeException("Simulated failure"));
+        assertTrue(WorldStateBuilder.isRosterUnavailableAlertActive(), "Alert must latch active on failure");
+
+        // Normal successful build should clear the alert
+        MatchKnowledge knowledge = WorldStateBuilder.buildMatchKnowledgeForSimBot(false);
+        assertNotNull(knowledge);
+        assertFalse(WorldStateBuilder.isRosterUnavailableAlertActive(),
+                "A completely successful build with no exceptions must clear the alert");
+    }
+
+    @Test
+    public void testFuelTargetInZoneRespectsFieldMapAllianceZones() {
+        Pose2d midFieldPose = new Pose2d(8.0, 4.0, new Rotation2d());
+
+        // For Blue alliance:
+        // Home zone target must be inside Blue Alliance Zone
+        Pose2d blueHome = engine.findAllianceZoneFuelTarget(midFieldPose, false);
+        assertNotNull(blueHome);
+        assertTrue(FieldMap.AllianceZones.isInAllianceZone(blueHome.getTranslation(), false),
+                "Blue home fuel target must be inside Blue alliance zone");
+
+        // Opponent zone target must be inside Red Alliance Zone
+        Pose2d blueOpp = engine.findOpponentZoneFuelTarget(midFieldPose, false);
+        assertNotNull(blueOpp);
+        assertTrue(FieldMap.AllianceZones.isInAllianceZone(blueOpp.getTranslation(), true),
+                "Blue's opponent fuel target must be inside Red alliance zone");
+
+        // For Red alliance:
+        // Home zone target must be inside Red Alliance Zone
+        Pose2d redHome = engine.findAllianceZoneFuelTarget(midFieldPose, true);
+        assertNotNull(redHome);
+        assertTrue(FieldMap.AllianceZones.isInAllianceZone(redHome.getTranslation(), true),
+                "Red home fuel target must be inside Red alliance zone");
+
+        // Opponent zone target must be inside Blue Alliance Zone
+        Pose2d redOpp = engine.findOpponentZoneFuelTarget(midFieldPose, true);
+        assertNotNull(redOpp);
+        assertTrue(FieldMap.AllianceZones.isInAllianceZone(redOpp.getTranslation(), false),
+                "Red's opponent fuel target must be inside Blue alliance zone");
     }
 }

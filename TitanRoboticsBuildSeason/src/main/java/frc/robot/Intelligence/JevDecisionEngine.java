@@ -1264,26 +1264,26 @@ public class JevDecisionEngine {
      * Selects the densest reachable Fuel cluster strictly inside our alliance zone.
      */
     public Pose2d findAllianceZoneFuelTarget(Pose2d robotPose, boolean isRedAlliance) {
-        return findFuelTargetInZone(robotPose, isRedAlliance, false, null);
+        return findFuelTargetInZone(robotPose, isRedAlliance, null);
     }
 
     /** Zone-limited variant that skips caller-abandoned points. */
     public Pose2d findAllianceZoneFuelTarget(
             Pose2d robotPose, boolean isRedAlliance, Set<Translation2d> blockedFuel) {
-        return findFuelTargetInZone(robotPose, isRedAlliance, false, blockedFuel);
+        return findFuelTargetInZone(robotPose, isRedAlliance, blockedFuel);
     }
 
     /**
      * Selects the densest reachable Fuel cluster strictly inside the opponent zone.
      */
     public Pose2d findOpponentZoneFuelTarget(Pose2d robotPose, boolean isRedAlliance) {
-        return findFuelTargetInZone(robotPose, !isRedAlliance, true, null);
+        return findFuelTargetInZone(robotPose, !isRedAlliance, null);
     }
 
     /** Opponent-zone variant that skips caller-abandoned points. */
     public Pose2d findOpponentZoneFuelTarget(
             Pose2d robotPose, boolean isRedAlliance, Set<Translation2d> blockedFuel) {
-        return findFuelTargetInZone(robotPose, !isRedAlliance, true, blockedFuel);
+        return findFuelTargetInZone(robotPose, !isRedAlliance, blockedFuel);
     }
 
     /** True when {@code point} sits within the blocked radius of any entry. */
@@ -1300,7 +1300,7 @@ public class JevDecisionEngine {
         return false;
     }
 
-    private Pose2d findFuelTargetInZone(Pose2d robotPose, boolean zoneIsRed, boolean strictOpponentZone,
+    private Pose2d findFuelTargetInZone(Pose2d robotPose, boolean zoneIsRed,
             Set<Translation2d> blockedFuel) {
         SimulatedArena arena = SimulatedArena.getInstance();
         Translation2d best = null;
@@ -1317,8 +1317,6 @@ public class JevDecisionEngine {
                             continue;
                         Translation2d point = piece.getPoseOnField().getTranslation();
                         if (!FieldMap.AllianceZones.isInAllianceZone(point, zoneIsRed))
-                            continue;
-                        if (strictOpponentZone && (zoneIsRed ? point.getX() < 12.0 : point.getX() > 4.5))
                             continue;
                         if (StaticPathfinder.isPointInHardObstacle(point)
                                 || StaticPathfinder.isPointNearDynamicObstacle(point))
@@ -1414,7 +1412,7 @@ public class JevDecisionEngine {
         // so sweepUtility never collapses, ObjectiveCommitment's release rule
         // (incumbentUtility <= 0) never fires, and the latch holds all match. That
         // was the root cause of the seed-dependent teleop collapse.
-        return Math.max(0, available - countBlockedInZone(isRedZone, strictOpponentZone, blockedFuel));
+        return Math.max(0, available - countBlockedInZone(isRedZone, blockedFuel));
     }
 
     /**
@@ -1426,8 +1424,7 @@ public class JevDecisionEngine {
      * is correct &mdash; an {@link ObservedKnowledge} reports 0 total fuel anyway, so
      * the subtraction is never reached there.
      */
-    private int countBlockedInZone(boolean isRedZone, boolean strictOpponentZone,
-            Set<Translation2d> blockedFuel) {
+    int countBlockedInZone(boolean isRedZone, Set<Translation2d> blockedFuel) {
         if (blockedFuel == null || blockedFuel.isEmpty()) {
             return 0;
         }
@@ -1443,11 +1440,8 @@ public class JevDecisionEngine {
                     continue;
                 }
                 var at = piece.getPoseOnField().getTranslation();
-                // Same zone the raw count covered: our own alliance zone normally,
-                // the deep opponent band when counting for POACH.
-                boolean inZone = strictOpponentZone
-                        ? (isRedZone ? at.getX() >= 12.0 : at.getX() <= 4.5)
-                        : FieldMap.AllianceZones.isInAllianceZone(at, isRedZone);
+                // Same zone the raw count covered: single-owned by FieldMap.AllianceZones
+                boolean inZone = FieldMap.AllianceZones.isInAllianceZone(at, isRedZone);
                 if (inZone && isBlocked(blockedFuel, at)) {
                     blocked++;
                 }

@@ -27,10 +27,10 @@ $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 ./gradlew compileJava --offline
 ```
 
-### 2. Tests (JUnit 5 — 45 files / 452 tests as of 2026-10-06; green on clean re-run, see `KNOWN_ISSUES.md` §A)
+### 2. Tests (JUnit 5 — 45 files / 454 tests as of 2026-10-06; green on clean re-run, see `KNOWN_ISSUES.md` §A)
 ```powershell
 ./gradlew test --offline
-# Single class: ./gradlew test --offline --tests "frc.robot.Sim.JevDecisionEngineTest"
+# Single class: ./gradlew test --offline --tests "frc.robot.Intelligence.JevDecisionEngineTest"
 ```
 
 ### 6. Launching Desktop Physics Simulation

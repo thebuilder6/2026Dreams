@@ -18,7 +18,7 @@ Must use the WPILib 2026 JDK or builds fail (`Unsupported class file major versi
 $env:JAVA_HOME = "C:\Users\Public\wpilib\2026\jdk"
 $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 .\gradlew compileJava --offline   # fast compile
-.\gradlew test --offline --no-daemon   # JUnit 5 suite (45 test files, 452 tests as of 2026-10-06 — green on clean re-run, see KNOWN_ISSUES.md §A)
+.\gradlew test --offline --no-daemon   # JUnit 5 suite (45 test files, 454 tests as of 2026-10-06 — green on clean re-run, see KNOWN_ISSUES.md §A)
 .\gradlew simulateJava            # desktop SimGUI + IronMaple arena
 .\gradlew deploy                  # deploy to RoboRIO (same JAVA_HOME)
 ```
@@ -26,7 +26,7 @@ $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 - Always use the wrapper (`gradlew`/`gradlew.bat`), never system `gradle`.
 - `--offline` avoids slow/failing network fetches against `C:\Users\Public\wpilib\2026\maven`.
 - GradleRIO `2026.2.1`, Java 17 (`build.gradle`). `settings.gradle` resolves plugins from the local WPILib maven, not Maven Central.
-- Single test: `.\gradlew test --tests "frc.robot.Sim.JevDecisionEngineTest"` (`test { forkEvery = 1 }`, so full suite is slow — prefer `--tests`).
+- Single test: `.\gradlew test --tests "frc.robot.Intelligence.JevDecisionEngineTest"` (`test { forkEvery = 1 }`, so full suite is slow — prefer `--tests`).
 - Stale `java` processes lock `build/jni` DLLs and `build/test-results` binaries: if `extractReleaseNative` fails or the build complains about undeletable dirs, find the PID that actually holds the file and kill **that PID only**, then re-run. **Never `taskkill /IM java.exe` and never `gradlew --stop`** — on a shared tree those kill other agents' live test runs and sims, which is the failure this repo's locking exists to prevent (see §Resource coordination). Daemon-locked runs can also produce a phantom one-off test failure — clean re-run (`--rerun-tasks`) is the tiebreaker before chasing a regression.
 - Botched `generateBuildConstants` cannot corrupt the tree any more: it writes via a temp file plus an atomic move, and its up-to-date check requires the output to be structurally complete. A file truncated by a killed build now regenerates on the next build instead of persisting as a permanent compile error.
 

@@ -227,6 +227,9 @@ public class FieldMapTest {
         // Hub, trench-wall centerline and ramps already derive; assert the invariant.
         assertEquals(L - FieldMap.Hubs.BLUE_HUB_X, FieldMap.Hubs.RED_HUB_X, 1e-9);
         assertEquals(L - FieldMap.TrenchWalls.BLUE_CENTER_X, FieldMap.TrenchWalls.RED_CENTER_X, 1e-9);
+        assertEquals(L - FieldMap.AllianceZones.BLUE_ZONE_MAX_X, FieldMap.AllianceZones.RED_ZONE_MIN_X, 1e-9);
+        assertEquals(FieldMap.AllianceZones.BLUE_ZONE_MAX_X, FieldMap.AllianceZones.MIDFIELD_MIN_X, 1e-9);
+        assertEquals(FieldMap.AllianceZones.RED_ZONE_MIN_X, FieldMap.AllianceZones.MIDFIELD_MAX_X, 1e-9);
 
         // Climbing tower pole mirrors in both axes.
         assertEquals(L - FieldMap.ClimbingTowers.BLUE_TOWER_POLE.getX(),

@@ -340,38 +340,34 @@ public class JevDecisionEngine {
                 commitmentIn, null);
     }
 
+    public Map<StrategicObjective, Double> evaluateUtilityScores(WorldState world, Archetype archetype) {
+        return evaluateUtilityScores(world, Collections.emptySet(), ObservedKnowledge.selfOnly(), archetype);
+    }
+
+    public Map<StrategicObjective, Double> evaluateUtilityScores(
+            WorldState world, MatchKnowledge knowledge, Archetype archetype) {
+        return evaluateUtilityScores(world, Collections.emptySet(), knowledge, archetype);
+    }
+
     /**
-     * Full evaluation including both of the caller's per-agent latches.
+     * Evaluates the complete raw and adjusted utility map for all strategic objectives.
+     * Useful for diagnostic inspection, decision cards, and verifying policy calculations.
      *
-     * <p>{@code fuelTargetMemory} holds the fuel piece this agent is committed to
-     * collecting, so a heading swing cannot make the selector oscillate between
-     * two comparable pieces. Like {@code commitmentIn} it belongs to the agent,
-     * not to this engine; pass {@code null} for the legacy behaviour.
-     *
-     * @param commitmentIn     this agent's objective latch, or {@code null}
-     * @param fuelTargetMemory this agent's fuel-target latch, or {@code null}
+     * @param world       the observable or simulated world state
+     * @param blockedFuel dynamic set of fuel positions currently contested or blocked
+     * @param knowledge   match tier knowledge (clairvoyant sim vs observed real robot)
+     * @param archetype   tactical behavior archetype
+     * @return map of every StrategicObjective to its computed utility value [0.0, 1.0]
      */
-    public AIActionIntent evaluatePolicy(
-            WorldState world, MatchKnowledge knowledge, Archetype archetype, String cloudContext,
-            Set<Translation2d> blockedFuel, ObjectiveCommitment commitmentIn,
-            FuelTargetMemory fuelTargetMemory) {
+    public Map<StrategicObjective, Double> evaluateUtilityScores(
+            WorldState world, Set<Translation2d> blockedFuel, MatchKnowledge knowledge, Archetype archetype) {
         if (knowledge == null) {
-            // Null used to become legacyObserved(), i.e. "opponents seen". Default to
-            // the tier that claims the least, so a caller that forgets to pass
-            // knowledge degrades to sensor-only rather than acting on nothing.
             knowledge = ObservedKnowledge.selfOnly();
         }
-        boolean opponentObserved = knowledge.opponentObserved();
-        long startNanos = System.nanoTime();
-
-        DecisionMode activeDecisionMode = resolveDecisionMode();
-        TypeSafeJevClient cloudClient = TypeSafeJevClient.getInstance();
-        boolean cloudConfigured = activeDecisionMode != DecisionMode.LOCAL_HEURISTIC
-                && (archetype == Archetype.CO_PILOT || cloudContext != null)
-                && cloudClient.hasValidKey();
-        if (cloudConfigured) {
-            cloudClient.evaluateAsync(cloudContext, world, knowledge, archetype);
+        if (blockedFuel == null) {
+            blockedFuel = Collections.emptySet();
         }
+        boolean opponentObserved = knowledge.opponentObserved();
 
         Translation2d selfHub = FieldMap.Hubs.getHubLocation2d(world.isRedAlliance());
         double distToSelfHub = world.selfPose().getTranslation().getDistance(selfHub);
@@ -669,6 +665,50 @@ public class JevDecisionEngine {
         utilities.put(StrategicObjective.CHOKE_TRENCH, chokeUtility);
         utilities.put(StrategicObjective.SCREEN_FOR_ALLY, screenUtility);
 
+        return utilities;
+    }
+
+    /**
+     * Full evaluation including both of the caller's per-agent latches.
+     *
+     * <p>{@code fuelTargetMemory} holds the fuel piece this agent is committed to
+     * collecting, so a heading swing cannot make the selector oscillate between
+     * two comparable pieces. Like {@code commitmentIn} it belongs to the agent,
+     * not to this engine; pass {@code null} for the legacy behaviour.
+     *
+     * @param commitmentIn     this agent's objective latch, or {@code null}
+     * @param fuelTargetMemory this agent's fuel-target latch, or {@code null}
+     */
+    public AIActionIntent evaluatePolicy(
+            WorldState world, MatchKnowledge knowledge, Archetype archetype, String cloudContext,
+            Set<Translation2d> blockedFuel, ObjectiveCommitment commitmentIn,
+            FuelTargetMemory fuelTargetMemory) {
+        if (knowledge == null) {
+            // Null used to become legacyObserved(), i.e. "opponents seen". Default to
+            // the tier that claims the least, so a caller that forgets to pass
+            // knowledge degrades to sensor-only rather than acting on nothing.
+            knowledge = ObservedKnowledge.selfOnly();
+        }
+        boolean opponentObserved = knowledge.opponentObserved();
+        long startNanos = System.nanoTime();
+
+        DecisionMode activeDecisionMode = resolveDecisionMode();
+        TypeSafeJevClient cloudClient = TypeSafeJevClient.getInstance();
+        boolean cloudConfigured = activeDecisionMode != DecisionMode.LOCAL_HEURISTIC
+                && (archetype == Archetype.CO_PILOT || cloudContext != null)
+                && cloudClient.hasValidKey();
+        if (cloudConfigured) {
+            cloudClient.evaluateAsync(cloudContext, world, knowledge, archetype);
+        }
+
+        Translation2d selfHub = FieldMap.Hubs.getHubLocation2d(world.isRedAlliance());
+        double distToSelfHub = world.selfPose().getTranslation().getDistance(selfHub);
+        double transitTimeToHub = distToSelfHub / 3.2;
+        double timeLeftToHarvest = world.timeUntilHubShift() - transitTimeToHub;
+
+        // ── 1. Evaluate Utility Scores Across Objectives ─────────────────────
+        Map<StrategicObjective, Double> utilities = evaluateUtilityScores(world, blockedFuel, knowledge, archetype);
+
         // ── 2. Select Highest Utility Objective ──────────────────────────────
         StrategicObjective bestObjective = evaluateLocalUtilityMatrix(utilities, world, archetype);
 
@@ -802,7 +842,8 @@ public class JevDecisionEngine {
                     shooterCmd = ShooterState.PREPARING;
                     targetRPM = 3200.0;
                 }
-                rationale = String.format("Sweeping %d loose fuel pieces in the alliance zone.", homeFuelCount);
+                int currentHomeFuel = countFuelInZone(world.isRedAlliance(), false, blockedFuel, knowledge);
+                rationale = String.format("Sweeping %d loose fuel pieces in the alliance zone.", currentHomeFuel);
                 break;
 
             case LONG_RANGE_SNIPE:

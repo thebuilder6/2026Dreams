@@ -2,6 +2,7 @@ package frc.robot.Test;
 
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
+import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import frc.robot.Data.Constants;
 import frc.robot.Telemetry.TunableNumber;
@@ -112,6 +113,11 @@ public class ShooterTuning {
         double targetVelocity = testVelocity.get() * trigger;
         
         if (trigger > 0.1) {
+            if (operatorController.getRightBumperButton()) {
+                shooter.shoot();
+            } else {
+                shooter.prepareToShoot();
+            }
             shooter.setTargetRPM(targetVelocity);
             
             if (!testRunning) {
@@ -121,13 +127,6 @@ public class ShooterTuning {
         } else {
             shooter.stop();
             testRunning = false;
-        }
-        
-        // Manual kicker control with operator right bumper
-        if (operatorController.getRightBumperButton()) {
-            shooter.setKickerSpeed(Constants.ShooterConstants.FEED_SPEED);
-        } else {
-            shooter.setKickerSpeed(0);
         }
         
         // Quick velocity presets with D-pad
@@ -155,16 +154,15 @@ public class ShooterTuning {
         Shooter shooter = Shooter.getInstance();
         SwerveBase swerve = SwerveBase.getInstance();
         
-        // Create test pose at specified distance and angle
+        // Create test pose at specified distance and angle relative to the Hub inside the Alliance Zone
         double distance = testDistance.get();
         double angleDeg = testAngle.get();
         double angleRad = Math.toRadians(angleDeg);
-        
-        Pose2d testPose = new Pose2d(
-            distance * Math.cos(angleRad),
-            distance * Math.sin(angleRad),
-            new Rotation2d()
-        );
+
+        Translation2d hub = shooter.goalLocation().toTranslation2d();
+        Translation2d robotTranslation = hub.minus(new Translation2d(distance * Math.cos(angleRad), distance * Math.sin(angleRad)));
+        Rotation2d headingToHub = hub.minus(robotTranslation).getAngle();
+        Pose2d testPose = new Pose2d(robotTranslation, headingToHub);
         
         // Test shooting solution
         if (driverController.getRightTriggerAxis() > 0.5) {
@@ -175,14 +173,14 @@ public class ShooterTuning {
                 
                 // Check if ready to fire
                 if (shooter.isReadyToFire(solution.turretAngle())) {
-                    shooter.setKickerSpeed(Constants.ShooterConstants.FEED_SPEED);
+                    shooter.shoot();
                     shotsTaken++;
                     
                     if (Math.abs(shooter.getFlywheelLeftVelocityRPM() - solution.flywheelRPM()) < Constants.ShooterConstants.RPM_TOLERANCE) {
                         successfulShots++;
                     }
                 } else {
-                    shooter.setKickerSpeed(0);
+                    shooter.prepareToShoot();
                 }
                 
                 if (!testRunning) {
@@ -190,7 +188,6 @@ public class ShooterTuning {
                     testStartTime = edu.wpi.first.wpilibj.Timer.getFPGATimestamp();
                 }
             } else {
-                System.out.println("[ShooterTuning] No shooting solution available for test pose");
                 shooter.stop();
             }
         } else {
@@ -205,13 +202,15 @@ public class ShooterTuning {
     private void handlePIDTuning(Controller driverController, Controller operatorController) {
         Shooter shooter = Shooter.getInstance();
         
-        // PID gains are available via class fields kP, kI, kD, kS, kV, kA
-        
-        // Apply PID gains (this would need to be implemented in Shooter subsystem)
-        // shooter.updatePIDGains(kP.get(), kI.get(), kD.get(), kS.get(), kV.get(), kA.get());
+        // Live Tunable Gains Check
+        if (kP.hasChanged(hashCode()) || kI.hasChanged(hashCode()) || kD.hasChanged(hashCode())
+                || kS.hasChanged(hashCode()) || kV.hasChanged(hashCode()) || kA.hasChanged(hashCode())) {
+            shooter.updatePIDGains(kP.get(), kI.get(), kD.get(), kS.get(), kV.get(), kA.get());
+        }
         
         // Test step response
         if (driverController.getRightTriggerAxis() > 0.5) {
+            shooter.prepareToShoot();
             shooter.setTargetRPM(testVelocity.get());
             
             if (!testRunning) {

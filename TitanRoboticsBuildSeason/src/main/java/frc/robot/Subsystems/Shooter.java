@@ -337,6 +337,16 @@ public class Shooter implements Subsystem {
     }
 
     /**
+     * Programmatically updates flywheel PID feedback and feedforward gains.
+     */
+    public void updatePIDGains(double p, double i, double d, double s, double v, double a) {
+        flywheelPidLeft.setPID(p, i, d);
+        flywheelPidRight.setPID(p, i, d);
+        flywheelFeedForwardLeft = new SimpleMotorFeedforward(s, v, a);
+        flywheelFeedForwardRight = new SimpleMotorFeedforward(s, v, a);
+    }
+
+    /**
      * Legacy alias for {@link #updateFlywheelVoltages()}.
      */
     public void setFlyWheelVelocity() {
@@ -549,7 +559,10 @@ public class Shooter implements Subsystem {
 
     /**
      * Legacy alias for {@link #processShooterState()}.
+     *
+     * @deprecated Use canonical {@link #processShooterState()} instead.
      */
+    @Deprecated(since = "2026.2", forRemoval = false)
     public void ShooterStateProcessing() {
         processShooterState();
     }

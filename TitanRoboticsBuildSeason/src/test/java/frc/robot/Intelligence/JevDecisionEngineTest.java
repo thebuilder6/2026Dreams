@@ -5,7 +5,9 @@ import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
@@ -1324,6 +1326,60 @@ public class JevDecisionEngineTest {
                 "Co-pilot outside endgame must not select RUSH_CLIMB");
         assertEquals(StrategicObjective.STAGE_STANDOFF, coPilot.objective(),
                 "Full hopper while hub is inactive must stage standoff");
+    }
+
+    @Test
+    public void testEvaluateUtilityScoresAndPoachReachabilityAnalysis() {
+        Pose2d selfPose = new Pose2d(6.0, 4.0, new Rotation2d());
+        Pose2d placeholderOpp = new Pose2d(12.0, 4.0, new Rotation2d());
+
+        // 1. Verify utility evaluation for AUTONOMOUS_CYCLER with an approaching shift flip
+        // (SHIFT1/SHIFT3: our hub active now and going dark, opponent hub dark now and opening next)
+        WorldState flipApproaching = shiftState(true, false, false, true, 10, 4.0);
+        MatchKnowledge knowledgeWithFuel = fuel(0, 15, 20, true);
+
+        Map<StrategicObjective, Double> cyclerUtils =
+                engine.evaluateUtilityScores(flipApproaching, Collections.emptySet(), knowledgeWithFuel, Archetype.AUTONOMOUS_CYCLER);
+
+        assertNotNull(cyclerUtils);
+        assertTrue(cyclerUtils.containsKey(StrategicObjective.POACH_OPPONENT_ZONE));
+        assertTrue(cyclerUtils.containsKey(StrategicObjective.VACUUM_MIDFIELD));
+        assertTrue(cyclerUtils.containsKey(StrategicObjective.CYCLE_SCORE_HUB));
+        assertTrue(cyclerUtils.containsKey(StrategicObjective.STOCKPILE_DEPOT));
+
+        // In this state, POACH_OPPONENT_ZONE evaluates to 0.78
+        double poachScore = cyclerUtils.get(StrategicObjective.POACH_OPPONENT_ZONE);
+        assertEquals(0.78, poachScore, 0.001, "POACH utility should evaluate to 0.78 when eligible");
+
+        // Verify mathematical domination when our hub is active: CYCLE_SCORE_HUB (0.85) strictly beats POACH (0.78)
+        double scoreUtility = cyclerUtils.get(StrategicObjective.CYCLE_SCORE_HUB);
+        assertTrue(scoreUtility > poachScore,
+                "CYCLE_SCORE_HUB (" + scoreUtility + ") strictly beats POACH (" + poachScore + ") when hub is active");
+
+        // Verify mathematical domination when our hub is inactive: VACUUM_MIDFIELD (>= 0.88) and STOCKPILE_DEPOT (>= 0.86) beat POACH (0.78)
+        WorldState inactiveHub = shiftState(false, true, true, false, 10, 4.0);
+        Map<StrategicObjective, Double> inactiveUtils =
+                engine.evaluateUtilityScores(inactiveHub, Collections.emptySet(), knowledgeWithFuel, Archetype.AUTONOMOUS_CYCLER);
+        double vacuumInactive = inactiveUtils.get(StrategicObjective.VACUUM_MIDFIELD);
+        double stockpileInactive = inactiveUtils.get(StrategicObjective.STOCKPILE_DEPOT);
+        assertTrue(vacuumInactive > 0.78,
+                "VACUUM_MIDFIELD (" + vacuumInactive + ") strictly exceeds POACH (0.78) when hub is inactive");
+        assertTrue(stockpileInactive > 0.78,
+                "STOCKPILE_DEPOT (" + stockpileInactive + ") strictly exceeds POACH (0.78) when hub is inactive");
+
+        // 2. Verify utility evaluation for defensive archetypes: offensive scores must all be zero
+        Map<StrategicObjective, Double> defenderUtils =
+                engine.evaluateUtilityScores(flipApproaching, Collections.emptySet(), knowledgeWithFuel, Archetype.TACTICAL_DEFENDER);
+
+        assertEquals(0.0, defenderUtils.get(StrategicObjective.CYCLE_SCORE_HUB));
+        assertEquals(0.0, defenderUtils.get(StrategicObjective.STAGE_STANDOFF));
+        assertEquals(0.0, defenderUtils.get(StrategicObjective.VACUUM_MIDFIELD));
+        assertEquals(0.0, defenderUtils.get(StrategicObjective.STOCKPILE_DEPOT));
+        assertEquals(0.0, defenderUtils.get(StrategicObjective.SWEEP_ALLIANCE_ZONE));
+        assertEquals(0.0, defenderUtils.get(StrategicObjective.POACH_OPPONENT_ZONE));
+        assertEquals(0.0, defenderUtils.get(StrategicObjective.SHUTTLE_PASS));
+        assertEquals(0.0, defenderUtils.get(StrategicObjective.LONG_RANGE_SNIPE));
+        assertTrue(defenderUtils.get(StrategicObjective.SHADOW_MIDLINE) > 0.0);
     }
 }
 

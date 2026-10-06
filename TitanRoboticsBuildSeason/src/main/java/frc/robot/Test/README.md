@@ -2,7 +2,7 @@
 title: Test Mode
 audience: [human, ai]
 owner: test-owner
-last_verified: 2026-09-28
+last_verified: 2026-10-06
 status: authoritative
 ---
 
@@ -116,11 +116,11 @@ The LED system provides visual feedback for test status:
 ## Tuning Workflow
 
 ### Shooter Tuning
-1. Enable Test Mode → Shooter Tuning
-2. Use Manual Velocity mode to verify basic functionality
-3. Switch to Auto-Aim Test to validate shooting solutions
-4. Use PID Tuning mode to optimize gains
-5. Monitor performance metrics on dashboard
+1. Enable Test Mode → Shooter Tuning (`LB + Down` on driver controller or via dashboard).
+2. **Manual Velocity mode**: Use trigger or D-pad presets (1000, 2500, 3500, 4500 RPM) to verify flywheel response and dual-wheel 50 RPM differential.
+3. **Auto-Aim Test**: Simulates virtual distance inside the Blue Alliance Zone facing the Hub; tests solution interpolation and ready-to-fire gates.
+4. **PID Tuning mode**: Real-time gain updates via `/TunableNumbers/Shooter/*` (`kP`, `kI`, `kD`, `kS`, `kV`, `kA`) applied live to both flywheels via `Shooter.updatePIDGains(...)`.
+5. **Ballistics & Feedforward Tooling**: Run `python tools/tune/calibrate_shooter.py` for 2D trajectory verification, SysId gain theoretical estimates, and `InterpolatingDoubleTreeMap` code generation.
 
 ### Intake Testing
 1. Enable Test Mode → Intake Testing

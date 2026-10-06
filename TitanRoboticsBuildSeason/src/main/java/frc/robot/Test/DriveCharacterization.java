@@ -1,13 +1,6 @@
 package frc.robot.Test;
 
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
-import edu.wpi.first.wpilibj2.command.CommandScheduler;
-import edu.wpi.first.wpilibj2.command.sysid.SysIdRoutine;
-import edu.wpi.first.wpilibj2.command.sysid.SysIdRoutine.Direction;
-import edu.wpi.first.units.measure.Voltage;
-import static edu.wpi.first.units.Units.Volts;
-import static edu.wpi.first.units.Units.Meters;
-import static edu.wpi.first.units.Units.MetersPerSecond;
 import frc.robot.Hardware.Controller;
 import frc.robot.Subsystems.SwerveBase;
 import frc.robot.Telemetry.TunableNumber;
@@ -16,7 +9,7 @@ import frc.robot.Telemetry.TunableNumber;
  * Swerve drive characterization and testing system.
  * 
  * Features:
- * - SysID integration for drive system identification
+ * - SysID integration delegating to {@link SysIdManager} as single owner
  * - Module individual testing
  * - Kinematics validation
  * - Odometry accuracy testing
@@ -36,10 +29,6 @@ public class DriveCharacterization {
     private boolean testRunning = false;
     private double testStartTime = 0;
     
-    // SysID routines
-    private final SysIdRoutine driveRoutine;
-    private final SysIdRoutine steerRoutine;
-    
     // Tuning parameters
     private final TunableNumber testVoltage = new TunableNumber("Test/Drive/TestVoltage", 2.0);
     private final TunableNumber testDistance = new TunableNumber("Test/Drive/TestDistance", 2.0);
@@ -57,53 +46,6 @@ public class DriveCharacterization {
     private static final String[] MODULE_NAMES = {"FL", "FR", "BL", "BR"};
     
     public DriveCharacterization() {
-        SwerveBase swerve = SwerveBase.getInstance();
-        
-        // Drive SysID routine
-        driveRoutine = new SysIdRoutine(
-            new SysIdRoutine.Config(),
-            new SysIdRoutine.Mechanism(
-                (Voltage volts) -> swerve.setDriveVoltage(volts.in(Volts)),
-                (log) -> {
-                    var vels = swerve.getDriveMotorVelocities();
-                    var positions = swerve.getDriveMotorPositions();
-                    var voltages = swerve.getDriveMotorVoltages();
-
-                    // Log average of all 4 drive motors
-                    double avgVolts = voltages.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
-                    double avgPos = positions.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
-                    double avgVel = vels.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
-
-                    log.motor("drive-linear-avg")
-                        .voltage(Volts.of(avgVolts))
-                        .linearPosition(Meters.of(avgPos))
-                        .linearVelocity(MetersPerSecond.of(avgVel));
-                },
-                swerve
-            )
-        );
-        
-        // Steer SysID routine
-        steerRoutine = new SysIdRoutine(
-            new SysIdRoutine.Config(),
-            new SysIdRoutine.Mechanism(
-                (Voltage volts) -> swerve.setSteerVoltage(volts.in(Volts)),
-                (log) -> {
-                    var positions = swerve.getSteerMotorPositions();
-                    var voltages = swerve.getSteerMotorVoltages();
-
-                    // Log average of all 4 steer motors
-                    double avgVolts = voltages.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
-                    double avgPos = positions.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
-
-                    log.motor("steer-angle-avg")
-                        .voltage(Volts.of(avgVolts))
-                        .angularPosition(edu.wpi.first.units.Units.Radians.of(avgPos));
-                },
-                swerve
-            )
-        );
-        
         setupDashboard();
     }
     
@@ -166,65 +108,23 @@ public class DriveCharacterization {
     }
     
     /**
-     * SysID quasistatic test mode
+     * SysID quasistatic test mode - delegates to SysIdManager.
      */
     private void handleSysIdQuasistatic(Controller driverController, Controller operatorController) {
-        // Use face buttons for SysID commands
-        if (driverController.getAButtonPressed()) {
-            System.out.println("[DriveCharacterization] Starting quasistatic forward");
-            CommandScheduler.getInstance().schedule(driveRoutine.quasistatic(Direction.kForward));
-            testRunning = true;
-            testStartTime = edu.wpi.first.wpilibj.Timer.getFPGATimestamp();
-        } else if (driverController.getBButtonPressed()) {
-            System.out.println("[DriveCharacterization] Starting quasistatic reverse");
-            CommandScheduler.getInstance().schedule(driveRoutine.quasistatic(Direction.kReverse));
-            testRunning = true;
-            testStartTime = edu.wpi.first.wpilibj.Timer.getFPGATimestamp();
-        }
-        
-        // Steer testing with X/Y
-        if (driverController.getXButtonPressed()) {
-            System.out.println("[DriveCharacterization] Starting steer quasistatic forward");
-            CommandScheduler.getInstance().schedule(steerRoutine.quasistatic(Direction.kForward));
-            testRunning = true;
-            testStartTime = edu.wpi.first.wpilibj.Timer.getFPGATimestamp();
-        } else if (driverController.getYButtonPressed()) {
-            System.out.println("[DriveCharacterization] Starting steer quasistatic reverse");
-            CommandScheduler.getInstance().schedule(steerRoutine.quasistatic(Direction.kReverse));
-            testRunning = true;
-            testStartTime = edu.wpi.first.wpilibj.Timer.getFPGATimestamp();
-        }
+        SysIdManager sysId = SysIdManager.getInstance();
+        sysId.setActiveMechanism(SysIdManager.MechanismType.SWERVE_DRIVE_LINEAR);
+        sysId.updateController(driverController);
+        testRunning = sysId.isRunning();
     }
     
     /**
-     * SysID dynamic test mode
+     * SysID dynamic test mode - delegates to SysIdManager.
      */
     private void handleSysIdDynamic(Controller driverController, Controller operatorController) {
-        // Use face buttons for SysID commands
-        if (driverController.getAButtonPressed()) {
-            System.out.println("[DriveCharacterization] Starting dynamic forward");
-            CommandScheduler.getInstance().schedule(driveRoutine.dynamic(Direction.kForward));
-            testRunning = true;
-            testStartTime = edu.wpi.first.wpilibj.Timer.getFPGATimestamp();
-        } else if (driverController.getBButtonPressed()) {
-            System.out.println("[DriveCharacterization] Starting dynamic reverse");
-            CommandScheduler.getInstance().schedule(driveRoutine.dynamic(Direction.kReverse));
-            testRunning = true;
-            testStartTime = edu.wpi.first.wpilibj.Timer.getFPGATimestamp();
-        }
-        
-        // Steer testing with X/Y
-        if (driverController.getXButtonPressed()) {
-            System.out.println("[DriveCharacterization] Starting steer dynamic forward");
-            CommandScheduler.getInstance().schedule(steerRoutine.dynamic(Direction.kForward));
-            testRunning = true;
-            testStartTime = edu.wpi.first.wpilibj.Timer.getFPGATimestamp();
-        } else if (driverController.getYButtonPressed()) {
-            System.out.println("[DriveCharacterization] Starting steer dynamic reverse");
-            CommandScheduler.getInstance().schedule(steerRoutine.dynamic(Direction.kReverse));
-            testRunning = true;
-            testStartTime = edu.wpi.first.wpilibj.Timer.getFPGATimestamp();
-        }
+        SysIdManager sysId = SysIdManager.getInstance();
+        sysId.setActiveMechanism(SysIdManager.MechanismType.SWERVE_STEER);
+        sysId.updateController(driverController);
+        testRunning = sysId.isRunning();
     }
     
     /**
@@ -368,6 +268,7 @@ public class DriveCharacterization {
         totalDistance = 0;
         totalRotation = 0;
         startHeading = 0;
+        SysIdManager.getInstance().abort();
         SwerveBase.getInstance().stop();
     }
     

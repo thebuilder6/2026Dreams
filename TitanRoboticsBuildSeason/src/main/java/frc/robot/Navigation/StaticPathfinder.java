@@ -34,6 +34,7 @@ public class StaticPathfinder {
     // =========================================================================
     // Legacy Compatibility Interfaces and Classes
     // =========================================================================
+    @Deprecated(since = "2026.2", forRemoval = false)
     public interface Obstacle {
         boolean isBlocking(Translation2d p1, Translation2d p2);
 
@@ -42,6 +43,7 @@ public class StaticPathfinder {
         double getSafeRadius();
     }
 
+    @Deprecated(since = "2026.2", forRemoval = false)
     public static class CircularObstacle implements Obstacle {
         public final Translation2d center;
         public final double radius;
@@ -78,6 +80,7 @@ public class StaticPathfinder {
         }
     }
 
+    @Deprecated(since = "2026.2", forRemoval = false)
     public static class RectangularObstacle implements Obstacle {
         public final Translation2d center;
         public final double width;
@@ -111,6 +114,7 @@ public class StaticPathfinder {
     // =========================================================================
     // Accurate AABB (Axis-Aligned Bounding Box) Model
     // =========================================================================
+    @Deprecated(since = "2026.2", forRemoval = false)
     public static class AABB extends FieldMap.AABB {
         public AABB(String name, double minX, double maxX, double minY, double maxY) {
             super(name, minX, maxX, minY, maxY);

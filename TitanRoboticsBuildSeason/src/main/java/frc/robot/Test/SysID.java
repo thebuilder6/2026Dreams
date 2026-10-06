@@ -8,7 +8,12 @@ import frc.robot.Subsystems.SwerveBase;
 
 /**
  * Legacy wrapper for SysId routines, now delegating to the unified SysIdManager.
+ *
+ * @deprecated Use {@link SysIdManager} directly. {@link SysIdManager} is the single authoritative
+ * owner for all five SysId characterization routines (swerve linear, swerve angular, swerve steer,
+ * shooter flywheels, and intake arm pivot).
  */
+@Deprecated(since = "2026.2", forRemoval = false)
 public class SysID {
 
     private final SysIdManager sysIdManager;

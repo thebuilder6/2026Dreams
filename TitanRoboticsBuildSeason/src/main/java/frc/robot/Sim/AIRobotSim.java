@@ -52,6 +52,24 @@ import swervelib.simulation.ironmaple.simulation.gamepieces.GamePieceOnFieldSimu
 import swervelib.simulation.ironmaple.simulation.seasonspecific.rebuilt2026.Arena2026Rebuilt;
 import swervelib.simulation.ironmaple.simulation.seasonspecific.rebuilt2026.RebuiltFuelOnFly;
 
+/**
+ * Subsystem coordinator for multi-robot sparring simulation.
+ *
+ * <p><b>Architecture &amp; Ownership Boundaries:</b>
+ * <ul>
+ *   <li><b>{@link AIRobotSim}</b> (Subsystem Manager): Owns fleet lifecycle, simulated arena
+ *       coordination, sparring pools (opponents and allies), training scenario loading
+ *       ({@link TrainingMatchScenario}), driver station match state integration, dynamic obstacle
+ *       registration across all active bots, referee registration, and NetworkTables/Dashboard
+ *       choosers ({@link SendableChooser}).</li>
+ *   <li><b>{@link AIRobotInstance}</b> (Autonomous Agent): Encapsulates an individual robot's
+ *       physical swerve and intake simulation, pathfinding and trajectory tracking
+ *       ({@link TrajectoryController}), contact watchdogs ({@link ContactWatchdog}),
+ *       progress watchdogs ({@link TargetProgressWatchdog}), decision latches
+ *       ({@link frc.robot.Intelligence.ObjectiveCommitment}, {@link frc.robot.Intelligence.FuelTargetMemory}),
+ *       and policy evaluation loop ({@link frc.robot.Intelligence.JevDecisionEngine}).</li>
+ * </ul>
+ */
 public class AIRobotSim implements Subsystem {
 
     public enum AIMode {
@@ -113,15 +131,8 @@ public class AIRobotSim implements Subsystem {
 
     private Optional<Trajectory<SwerveSample>> trajectory = Optional.empty();
     private final Timer pathTimer = new Timer();
-    private final PIDController xController;
-    private final PIDController yController;
     private final PIDController headingController;
     private final TrajectoryController aiTrajectoryController;
-
-    // Legacy Bot-0 contact watchdogs (superseded by the shared pipeline inside
-    // AIRobotInstance; kept only so reset() stays symmetric until Phase 7 test moves).
-    @Deprecated
-    private final ContactWatchdog bot0ContactWatchdog = new ContactWatchdog();
 
     private final XboxController defenseController;
 
@@ -148,13 +159,6 @@ public class AIRobotSim implements Subsystem {
     private double lastCommandedSpeed = 0.0;
     private boolean lastStallResult = false;
     private double lastStallEvalTimestamp = -1.0;
-
-    // Legacy Bot-0 deadlock helper (superseded by AIRobotInstance pipeline; see above).
-    @Deprecated
-    private final ContactWatchdog bot0DeadlockContact = new ContactWatchdog();
-
-    // Immutable latched target during transit/staging
-    private Pose2d latchedShootTarget = null;
 
     // Periodic diagnostic console printer
     private double lastConsoleDumpTime = 0.0;
@@ -183,11 +187,6 @@ public class AIRobotSim implements Subsystem {
         this.bot0Instance = new AIRobotInstance(0, queuingPose, Archetype.AUTONOMOUS_CYCLER);
         this.driveSimulation = bot0Instance.getDriveSimulation();
         this.intakeSimulation = bot0Instance.getIntakeSimulation();
-
-        this.xController = new PIDController(AutonConstants.AUTO_DRIVE_KP, AutonConstants.AUTO_DRIVE_KI,
-                AutonConstants.AUTO_DRIVE_KD);
-        this.yController = new PIDController(AutonConstants.AUTO_DRIVE_KP, AutonConstants.AUTO_DRIVE_KI,
-                AutonConstants.AUTO_DRIVE_KD);
 
         var config = SwerveBase.getInstance().getSwerveController().config;
         this.headingController = new PIDController(config.headingPIDF.p, config.headingPIDF.i, config.headingPIDF.d);
@@ -257,7 +256,6 @@ public class AIRobotSim implements Subsystem {
         cyclerPhase = CyclerPhase.HUNT_FUEL;
         aiScoreCount = 0;
         aiTrajectoryController.reset();
-        bot0DeadlockContact.reset();
         lastPoseTimestamp = -1.0;
         stallDuration = 0.0;
         lastCommandedSpeed = 0.0;
@@ -266,10 +264,8 @@ public class AIRobotSim implements Subsystem {
         lastStallResult = false;
         lastStallEvalTimestamp = -1.0;
         lastShotTimestamp = 0.0;
-        bot0ContactWatchdog.reset();
         bot0Instance.reset();
         lastMarkByDefender.clear();
-        latchedShootTarget = null;
         try {
             var field = SwerveBase.getInstance().getField();
             field.getObject("OpponentBot0").setPoses(new ArrayList<>());
@@ -1152,9 +1148,11 @@ public class AIRobotSim implements Subsystem {
         Logger.recordOutput("AI_Telemetry/ScoreCount", bot0Score);
         Logger.recordOutput("AI_Telemetry/HeldFuel", bot0Fuel);
         Logger.recordOutput("AI_Telemetry/IsStalled", bot0Stalled);
-        Logger.recordOutput("AI_Telemetry/StallDurationSec", stallDuration);
-        Logger.recordOutput("AI_Telemetry/Waypoints", aiTrajectoryController.getWaypoints().toArray(new Pose2d[0]));
-        Logger.recordOutput("AI_Telemetry/CurrentWaypointIndex", aiTrajectoryController.getCurrentWaypointIndex());
+        Logger.recordOutput("AI_Telemetry/StallDurationSec", bot0Instance.getStallDuration());
+        Logger.recordOutput("AI_Telemetry/Waypoints",
+                bot0Instance.getTrajectoryController().getWaypoints().toArray(new Pose2d[0]));
+        Logger.recordOutput("AI_Telemetry/CurrentWaypointIndex",
+                bot0Instance.getTrajectoryController().getCurrentWaypointIndex());
 
         Logger.recordOutput("AI_Telemetry/CommandedVxField", currentTargetSpeeds.vxMetersPerSecond);
         Logger.recordOutput("AI_Telemetry/CommandedVyField", currentTargetSpeeds.vyMetersPerSecond);
@@ -1517,11 +1515,11 @@ public class AIRobotSim implements Subsystem {
     }
 
     public List<Pose2d> getCurrentPath() {
-        return aiTrajectoryController.getWaypoints();
+        return bot0Instance.getTrajectoryController().getWaypoints();
     }
 
     public int getCurrentPathIndex() {
-        return aiTrajectoryController.getCurrentWaypointIndex();
+        return bot0Instance.getTrajectoryController().getCurrentWaypointIndex();
     }
 
     public List<AIRobotInstance> getAdditionalBots() {

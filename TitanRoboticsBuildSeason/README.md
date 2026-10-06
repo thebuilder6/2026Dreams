@@ -27,7 +27,7 @@ $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 ./gradlew compileJava --offline
 ```
 
-### 2. Tests (JUnit 5 — 46 files / 459 tests as of 2026-10-06; green on clean re-run, see `KNOWN_ISSUES.md` §A)
+### 2. Tests (JUnit 5 — 47 files / 461 tests as of 2026-10-06; green on clean re-run, see `KNOWN_ISSUES.md` §A)
 ```powershell
 ./gradlew test --offline
 # Single class: ./gradlew test --offline --tests "frc.robot.Intelligence.JevDecisionEngineTest"
@@ -53,4 +53,5 @@ Launch the WPILib SimGUI with our full `IronMaple` arena, simulated game pieces,
 - 🕹️ [Simulation Setup & User Guide](SIMULATION_GUIDE.md): Step-by-step setup for SimGUI, Elastic Dashboard, AdvantageScope, and AI sparring.
 - 🧪 [Testing & Diagnostics Guide](src/main/java/frc/robot/Test/README.md): Pre-flight checks, SysId characterization, and tuning routines.
 - 🎯 [Shooter Calibration & Tuning Guide](docs/SHOOTER_TUNING_GUIDE.md): Step-by-step physical calibration, live PID tuning, SOTF, and ballistics automation tools.
+- 📥 [Intake Arm Calibration & Tuning Guide](docs/INTAKE_TUNING_GUIDE.md): Arm Profiled PID, gravity feedforward, jam detection, and trench safety.
 

@@ -1,8 +1,8 @@
-﻿---
+---
 title: Docs Index
 audience: [human, ai]
 owner: programming-leads
-last_verified: 2026-09-29
+last_verified: 2026-10-06
 status: authoritative
 ---
 
@@ -31,6 +31,7 @@ Single map for all durable human + AI knowledge. Code wins over prose on conflic
 | Headless sweep findings | `TitanRoboticsBuildSeason/docs/SWEEP_FINDINGS.md` | 56-match sweep: why the rig cannot measure a policy change (blind spots, ~23% CV, bimodal results) and the contested-target deadlock it exposed | leads |
 | Operator map | `TitanRoboticsBuildSeason/OPERATORS_GUIDE.md` | Dual-controller layout, haptics, Glide, dashboard tabs, drills | drive-team |
 | Test mode | `TitanRoboticsBuildSeason/src/main/java/frc/robot/Test/README.md` | TestMode categories, controller layout, tuning workflow, safety | test-owner |
+| Shooter tuning guide | `TitanRoboticsBuildSeason/docs/SHOOTER_TUNING_GUIDE.md` | Flywheel SysId characterization, PID feedback, empirical distance lookup tables, SOTF, and `calibrate_shooter.py` automation | leads |
 | External links | `TitanRoboticsBuildSeason/docs/RESOURCES.md` | Merged vendor doc URLs (Photon, Choreo, Limelight, MapleSim, WPILib, AdvantageKit, YAGSL, REV, Elastic) | leads |
 | Issues + roadmap | `KNOWN_ISSUES.md` (repo root) | §A–D resolved history, §E desired features, §F test roadmap, §G multi-robot | leads |
 | Agent rules | `AGENTS.md` (repo root) | Build env, generated-code ban, Blue-origin, Alert/LED, TunableNumber, timing quirks, resource-coordination protocol | leads |

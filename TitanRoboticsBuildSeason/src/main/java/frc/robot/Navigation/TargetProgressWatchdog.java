@@ -152,6 +152,24 @@ public final class TargetProgressWatchdog {
      * target-selection failure).
      */
     private int recentTargetChanges = 0;
+    /**
+     * Consecutive churn-rescue fires with no intervening progress or stable
+     * give-up. Escape-without-blacklist re-drives into the same trap on a
+     * ~10 s cycle (30-row set `nav-joint30`: max-consecutive 10-14 per 20 s,
+     * worst stall 143.8 s), so at {@link #STATIC_ESCALATION_COUNT} the rescue
+     * escalates to the stable path and blacklists the point: after that many
+     * failed escapes the area is guilty even though no single piece is.
+     * Survives target changes on purpose (that is the loop); cleared by real
+     * progress, by a stable give-up, or by {@link #reset}.
+     */
+    private int consecutiveStaticEscapes = 0;
+
+    /**
+     * Churn escapes before the rescue escalates to blacklisting. Three fires
+     * at ~2 s per escape/re-pin cycle lands escalation ~6-8 s into a loop,
+     * an order of magnitude inside the measured 60-140 s catastrophes.
+     */
+    public static final int STATIC_ESCALATION_COUNT = 3;
 
     /**
      * Advances the watchdog by one cycle.
@@ -256,6 +274,19 @@ public final class TargetProgressWatchdog {
         if (pinnedSec >= GIVEUP_SEC && recentTargetChanges > 0) {
             escapeFrom = target;
             escapeRemainingSec = ESCAPE_SEC;
+            consecutiveStaticEscapes++;
+            if (consecutiveStaticEscapes >= STATIC_ESCALATION_COUNT) {
+                // Loop-breaker: this many escapes with no progress means the
+                // area is guilty even though no single piece is. Take the
+                // stable path so the selector starves this point, then start
+                // the count over. Newly-blacklisted (not empty) is also how
+                // the rig tells an escalated escape from a plain churn escape.
+                blacklist(target, Timer.getFPGATimestamp());
+                List<Translation2d> blocked = List.of(target);
+                resetProgress();
+                consecutiveStaticEscapes = 0;
+                return new Result(true, escapeVector(pose), blocked, pinnedSec, ESCAPE_SEC);
+            }
             resetProgress();
             return new Result(true, escapeVector(pose), List.of(), pinnedSec, ESCAPE_SEC);
         }
@@ -266,6 +297,7 @@ public final class TargetProgressWatchdog {
             // measured bots stalled 16+ s within this radius (seed 7, variant
             // nav-phase0b) while the old unconditional idle let them sit.
             resetProgress();
+            consecutiveStaticEscapes = 0;
             return Result.IDLE;
         }
 
@@ -283,6 +315,7 @@ public final class TargetProgressWatchdog {
         if (distance < windowStartDistanceM - PROGRESS_MIN_M) {
             windowStartDistanceM = distance;
             noProgressSec = 0.0;
+            consecutiveStaticEscapes = 0;
             return Result.IDLE;
         }
         noProgressSec += dt;
@@ -297,6 +330,7 @@ public final class TargetProgressWatchdog {
         List<Translation2d> blocked = List.of(target);
         blacklist(target, Timer.getFPGATimestamp());
         resetProgress();
+        consecutiveStaticEscapes = 0;
         return new Result(true, escapeVector(pose), blocked, GIVEUP_SEC, ESCAPE_SEC);
     }
 
@@ -398,11 +432,18 @@ public final class TargetProgressWatchdog {
         resetProgress();
         escapeRemainingSec = 0.0;
         escapeFrom = new Translation2d();
+        consecutiveStaticEscapes = 0;
+        pinnedSec = 0.0;
     }
 
     /** No-progress window currently accumulated, in seconds. */
     public synchronized double getNoProgressSec() {
         return noProgressSec;
+    }
+
+    /** Consecutive churn escapes with no intervening progress (loop-breaker input). */
+    public synchronized int getConsecutiveStaticEscapes() {
+        return consecutiveStaticEscapes;
     }
 
     /**

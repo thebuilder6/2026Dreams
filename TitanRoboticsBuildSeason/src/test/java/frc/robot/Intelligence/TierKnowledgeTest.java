@@ -86,8 +86,10 @@ public class TierKnowledgeTest {
 
         assertNotEquals(StrategicObjective.LEAD_INTERCEPT, intent.objective());
         assertNotEquals(StrategicObjective.DENY_SHOOTING_LANE, intent.objective());
-        assertNotEquals(StrategicObjective.SHADOW_MIDLINE, intent.objective());
-        assertEquals(StrategicObjective.VACUUM_MIDFIELD, intent.objective());
+        assertNotEquals(StrategicObjective.VACUUM_MIDFIELD, intent.objective(),
+                "Unobserved defender must never abandon defense to harvest midfield");
+        assertEquals(StrategicObjective.SHADOW_MIDLINE, intent.objective(),
+                "Unobserved defender must degrade safely to midline zone defense");
     }
 
     @Test

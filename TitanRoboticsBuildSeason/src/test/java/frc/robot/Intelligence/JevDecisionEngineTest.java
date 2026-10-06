@@ -1209,11 +1209,59 @@ public class JevDecisionEngineTest {
     public void testEmptyKnowledgeDefendersDegradeSafelyWithoutClimbing() {
         Pose2d selfPose = new Pose2d(6.0, 4.0, new Rotation2d());
         Pose2d placeholderOpp = new Pose2d(0.0, 0.0, new Rotation2d());
-        // 30 held balls = full inventory, so all harvesting utilities collapse to 0.0.
-        // Hub inactive, so score utility is 0.0.
-        // Match time 90s (teleop, not endgame).
-        WorldState fullDefWorld = new WorldState(selfPose, ZERO_VEL, 30,
-                placeholderOpp, ZERO_VEL, 90.0, false, false, 20.0, false);
+        // Verify across all inventory levels (empty 0, partial 8, 15, and full 30)
+        // and across both active and inactive hub states.
+        int[] fuelLevels = {0, 8, 15, 30};
+        boolean[] hubStates = {false, true};
+
+        Archetype[] defenders = {
+                Archetype.TACTICAL_DEFENDER,
+                Archetype.DEFENSE_BULLY,
+                Archetype.LEAD_PURSUIT_INTERCEPTOR
+        };
+
+        for (int fuel : fuelLevels) {
+            for (boolean hubActive : hubStates) {
+                WorldState defWorld = new WorldState(selfPose, ZERO_VEL, fuel,
+                        placeholderOpp, ZERO_VEL, 90.0, hubActive, false, 0.0, false);
+
+                for (Archetype defender : defenders) {
+                    // Test both explicit ObservedKnowledge.selfOnly() and the 2-arg overload
+                    AIActionIntent explicitIntent = engine.evaluatePolicy(defWorld, ObservedKnowledge.selfOnly(), defender);
+                    AIActionIntent defaultIntent = engine.evaluatePolicy(defWorld, defender);
+
+                    for (AIActionIntent intent : new AIActionIntent[] { explicitIntent, defaultIntent }) {
+                        assertNotEquals(StrategicObjective.RUSH_CLIMB, intent.objective(),
+                                defender + " (fuel=" + fuel + ", hub=" + hubActive + ") with empty knowledge must never select RUSH_CLIMB");
+                        assertNotEquals(StrategicObjective.CYCLE_SCORE_HUB, intent.objective(),
+                                defender + " (fuel=" + fuel + ", hub=" + hubActive + ") with empty knowledge must not try to score at hub");
+                        assertNotEquals(StrategicObjective.VACUUM_MIDFIELD, intent.objective(),
+                                defender + " (fuel=" + fuel + ", hub=" + hubActive + ") with empty knowledge must not vacuum fuel");
+                        assertEquals(StrategicObjective.SHADOW_MIDLINE, intent.objective(),
+                                defender + " (fuel=" + fuel + ", hub=" + hubActive + ") with zero information must degrade safely to midline zone defense");
+
+                        // Target must be safely positioned at the midline center, not clamped to corner (0,0)
+                        Pose2d navTarget = intent.navigationTarget();
+                        assertEquals(FieldMap.FIELD_WIDTH / 2.0, navTarget.getY(), 1e-4,
+                                "Midline patrol Y must be centered on the field");
+                        assertEquals(FieldMap.CENTERLINE_X - 0.8, navTarget.getX(), 1e-4,
+                                "Blue defender must patrol 0.8m on its own side of the centerline");
+                        assertEquals(0.0, navTarget.getRotation().getDegrees(), 1e-4,
+                                "Blue defender must face toward opponent half");
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    public void testDefenderWithCowcatcherFuelNeverScoresAtActiveHub() {
+        Pose2d selfPose = new Pose2d(6.0, 4.0, new Rotation2d());
+        Pose2d oppPose = new Pose2d(3.0, 4.0, new Rotation2d());
+        // Hub active, shift timer 0.0 (timeLeftToHarvest <= 0.0), held fuel = 12 (>= 8 threshold).
+        // Opponent is observed near our hub.
+        WorldState loadedDefWorld = new WorldState(selfPose, ZERO_VEL, 12,
+                oppPose, ZERO_VEL, 90.0, true, false, 0.0, false);
 
         Archetype[] defenders = {
                 Archetype.TACTICAL_DEFENDER,
@@ -1222,27 +1270,11 @@ public class JevDecisionEngineTest {
         };
 
         for (Archetype defender : defenders) {
-            // Test both explicit ObservedKnowledge.selfOnly() and the 2-arg overload
-            AIActionIntent explicitIntent = engine.evaluatePolicy(fullDefWorld, ObservedKnowledge.selfOnly(), defender);
-            AIActionIntent defaultIntent = engine.evaluatePolicy(fullDefWorld, defender);
-
-            for (AIActionIntent intent : new AIActionIntent[] { explicitIntent, defaultIntent }) {
-                assertNotEquals(StrategicObjective.RUSH_CLIMB, intent.objective(),
-                        defender + " with empty knowledge must never select RUSH_CLIMB");
-                assertNotEquals(StrategicObjective.CYCLE_SCORE_HUB, intent.objective(),
-                        defender + " with empty knowledge must not try to score at hub");
-                assertEquals(StrategicObjective.SHADOW_MIDLINE, intent.objective(),
-                        defender + " with zero information must degrade safely to midline zone defense");
-
-                // Target must be safely positioned at the midline center, not clamped to corner (0,0)
-                Pose2d navTarget = intent.navigationTarget();
-                assertEquals(FieldMap.FIELD_WIDTH / 2.0, navTarget.getY(), 1e-4,
-                        "Midline patrol Y must be centered on the field");
-                assertEquals(FieldMap.CENTERLINE_X - 0.8, navTarget.getX(), 1e-4,
-                        "Blue defender must patrol 0.8m on its own side of the centerline");
-                assertEquals(0.0, navTarget.getRotation().getDegrees(), 1e-4,
-                        "Blue defender must face toward opponent half");
-            }
+            AIActionIntent intent = engine.evaluatePolicy(loadedDefWorld, fuel(0, 0, 0, true), defender);
+            assertNotEquals(StrategicObjective.CYCLE_SCORE_HUB, intent.objective(),
+                    defender + " holding cowcatcher fuel must never abandon defense to score at hub");
+            assertTrue(intent.objective().isDefensive(),
+                    defender + " holding cowcatcher fuel must pursue defensive objective, was: " + intent.objective());
         }
     }
 
@@ -1261,10 +1293,32 @@ public class JevDecisionEngineTest {
     @Test
     public void testZeroInformationOffensiveBotDegradesSafelyWithoutClimbing() {
         Pose2d selfPose = new Pose2d(6.0, 4.0, new Rotation2d());
-        // Teleop, match time 90s, full inventory (30 held), hub inactive
-        WorldState fullOffWorld = new WorldState(selfPose, ZERO_VEL, 30,
-                new Pose2d(0.0, 0.0, new Rotation2d()), ZERO_VEL, 90.0, false, false, 20.0, false);
+        Pose2d placeholderOpp = new Pose2d(0.0, 0.0, new Rotation2d());
 
+        // Empty hopper (0 held), teleop: cycler degrades to VACUUM_MIDFIELD
+        WorldState emptyCyclerWorld = new WorldState(selfPose, ZERO_VEL, 0,
+                placeholderOpp, ZERO_VEL, 90.0, false, false, 20.0, false);
+        AIActionIntent emptyCycler = engine.evaluatePolicy(emptyCyclerWorld, Archetype.AUTONOMOUS_CYCLER);
+        assertEquals(StrategicObjective.VACUUM_MIDFIELD, emptyCycler.objective(),
+                "Empty hopper cycler with zero information must harvest midfield");
+
+        // Partial hopper (10 held), hub inactive, shift not imminent (20s): keeps harvesting to fill batch
+        WorldState partialInactiveWorld = new WorldState(selfPose, ZERO_VEL, 10,
+                placeholderOpp, ZERO_VEL, 90.0, false, false, 20.0, false);
+        AIActionIntent partialInactive = engine.evaluatePolicy(partialInactiveWorld, Archetype.AUTONOMOUS_CYCLER);
+        assertEquals(StrategicObjective.VACUUM_MIDFIELD, partialInactive.objective(),
+                "Partial hopper cycler while hub is inactive and shift not imminent must keep stockpiling");
+
+        // Full inventory (30 held), hub inactive: all harvesting collapses, cycler stages standoff
+        WorldState fullCyclerWorld = new WorldState(selfPose, ZERO_VEL, 30,
+                placeholderOpp, ZERO_VEL, 90.0, false, false, 20.0, false);
+        AIActionIntent fullCycler = engine.evaluatePolicy(fullCyclerWorld, Archetype.AUTONOMOUS_CYCLER);
+        assertEquals(StrategicObjective.STAGE_STANDOFF, fullCycler.objective(),
+                "Full hopper cycler while hub is inactive must stage standoff");
+
+        // Full inventory (30 held), hub inactive, co-pilot: stages standoff, never climbs outside endgame
+        WorldState fullOffWorld = new WorldState(selfPose, ZERO_VEL, 30,
+                placeholderOpp, ZERO_VEL, 90.0, false, false, 20.0, false);
         AIActionIntent coPilot = engine.evaluatePolicy(fullOffWorld, Archetype.CO_PILOT);
         assertNotEquals(StrategicObjective.RUSH_CLIMB, coPilot.objective(),
                 "Co-pilot outside endgame must not select RUSH_CLIMB");

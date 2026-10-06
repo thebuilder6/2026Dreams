@@ -608,18 +608,34 @@ public class JevDecisionEngine {
         } else if (archetype == Archetype.TACTICAL_DEFENDER) {
             scoreUtility = 0.0;
             stageUtility = 0.0;
-            vacuumUtility *= 0.20;
-            stockpileUtility *= 0.20;
+            sweepUtility = 0.0;
+            vacuumUtility = 0.0;
+            stockpileUtility = 0.0;
+            opponentZoneUtility = 0.0;
+            shuttleUtility = 0.0;
+            longRangeUtility = 0.0;
             laneDenialUtility *= 1.15;
             shadowUtility *= 1.10;
         } else if (archetype == Archetype.LEAD_PURSUIT_INTERCEPTOR) {
             interceptUtility = 0.99;
             scoreUtility = 0.0;
+            stageUtility = 0.0;
+            sweepUtility = 0.0;
             vacuumUtility = 0.0;
             stockpileUtility = 0.0;
+            opponentZoneUtility = 0.0;
+            shuttleUtility = 0.0;
+            longRangeUtility = 0.0;
         } else if (archetype == Archetype.DEFENSE_BULLY) {
             interceptUtility = 0.99;
             scoreUtility = 0.0;
+            stageUtility = 0.0;
+            sweepUtility = 0.0;
+            vacuumUtility = 0.0;
+            stockpileUtility = 0.0;
+            opponentZoneUtility = 0.0;
+            shuttleUtility = 0.0;
+            longRangeUtility = 0.0;
         } else if (archetype == Archetype.CO_PILOT) {
             laneDenialUtility = 0.0;
             shadowUtility = 0.0;
@@ -630,7 +646,10 @@ public class JevDecisionEngine {
             }
         }
 
-        if (world.isAllianceHubActive() && timeLeftToHarvest <= 0.0 && world.heldFuelCount() >= 8) {
+        if ((archetype == null || !archetype.isDefensive())
+                && world.isAllianceHubActive()
+                && timeLeftToHarvest <= 0.0
+                && world.heldFuelCount() >= 8) {
             scoreUtility = 0.98;
             vacuumUtility = 0.0;
             sweepUtility = 0.0;
@@ -678,18 +697,15 @@ public class JevDecisionEngine {
 
         // Tier-1 safety net: opponent-chasing objectives require a tracked
         // opponent. If one ever wins without observation (e.g. a future
-        // utility change), fall back to harvesting if hopper has capacity,
-        // or safely degrade according to archetype when full.
+        // utility change), fall back to safe zone defense (SHADOW_MIDLINE)
+        // for defenders, or harvesting/staging for offensive bots.
         if (!opponentObserved && (bestObjective == StrategicObjective.LEAD_INTERCEPT
                 || bestObjective == StrategicObjective.DENY_SHOOTING_LANE
-                || bestObjective == StrategicObjective.SHADOW_MIDLINE
                 || bestObjective == StrategicObjective.CHOKE_TRENCH
                 || bestObjective == StrategicObjective.SCREEN_FOR_ALLY)) {
-            bestObjective = world.isInventoryFull()
-                    ? (archetype != null && archetype.isDefensive()
-                            ? StrategicObjective.SHADOW_MIDLINE
-                            : StrategicObjective.STAGE_STANDOFF)
-                    : StrategicObjective.VACUUM_MIDFIELD;
+            bestObjective = (archetype != null && archetype.isDefensive())
+                    ? StrategicObjective.SHADOW_MIDLINE
+                    : (world.isInventoryFull() ? StrategicObjective.STAGE_STANDOFF : StrategicObjective.VACUUM_MIDFIELD);
             maxUtility = utilities.getOrDefault(bestObjective, 0.0);
         }
 

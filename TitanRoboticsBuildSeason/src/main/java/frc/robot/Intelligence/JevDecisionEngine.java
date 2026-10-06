@@ -1186,18 +1186,28 @@ public class JevDecisionEngine {
             final double clusterRadius = 1.30;
             final double twoSigmaSq = 2.0 * 0.50 * 0.50; // sigma = 0.50m
 
-            for (int i = 0; i < candidates.size(); i++) {
-                Translation2d cand = candidates.get(i);
-                double density = 1.0;
+            int n = candidates.size();
+            double[] densities = new double[n];
+            for (int i = 0; i < n; i++) {
+                densities[i] = 1.0;
+            }
 
-                for (int j = 0; j < candidates.size(); j++) {
-                    if (i == j)
-                        continue;
-                    double d = cand.getDistance(candidates.get(j));
+            for (int i = 0; i < n; i++) {
+                Translation2d candI = candidates.get(i);
+                for (int j = i + 1; j < n; j++) {
+                    Translation2d candJ = candidates.get(j);
+                    double d = candI.getDistance(candJ);
                     if (d <= clusterRadius) {
-                        density += Math.exp(-(d * d) / twoSigmaSq);
+                        double addedDensity = Math.exp(-(d * d) / twoSigmaSq);
+                        densities[i] += addedDensity;
+                        densities[j] += addedDensity;
                     }
                 }
+            }
+
+            for (int i = 0; i < n; i++) {
+                Translation2d cand = candidates.get(i);
+                double density = densities[i];
 
                 double dist = robotPose.getTranslation().getDistance(cand);
                 Translation2d delta = cand.minus(robotPose.getTranslation());
@@ -1318,14 +1328,26 @@ public class JevDecisionEngine {
                         candidates.add(point);
                     }
                 }
-                for (Translation2d candidate : candidates) {
-                    double density = 1.0;
-                    for (Translation2d neighbor : candidates) {
-                        double distance = candidate.getDistance(neighbor);
+                int n = candidates.size();
+                double[] densities = new double[n];
+                for (int i = 0; i < n; i++) {
+                    densities[i] = 1.0;
+                }
+                for (int i = 0; i < n; i++) {
+                    Translation2d candI = candidates.get(i);
+                    for (int j = i + 1; j < n; j++) {
+                        Translation2d candJ = candidates.get(j);
+                        double distance = candI.getDistance(candJ);
                         if (distance > 1e-9 && distance <= 1.3) {
-                            density += Math.exp(-(distance * distance) / 0.5);
+                            double addedDensity = Math.exp(-(distance * distance) / 0.5);
+                            densities[i] += addedDensity;
+                            densities[j] += addedDensity;
                         }
                     }
+                }
+                for (int i = 0; i < n; i++) {
+                    Translation2d candidate = candidates.get(i);
+                    double density = densities[i];
                     double distance = robotPose.getTranslation().getDistance(candidate);
                     double score = Math.pow(density, 1.5) / (distance + 0.4);
                     if (score > bestScore) {

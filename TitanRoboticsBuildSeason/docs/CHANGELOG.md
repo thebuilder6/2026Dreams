@@ -2,7 +2,7 @@
 title: Changelog
 audience: [human, ai]
 owner: any-agent
-last_verified: 2026-09-29
+last_verified: 2026-10-06
 status: living
 ---
 
@@ -13,6 +13,8 @@ Newest first. One bullet per behavior-affecting change. Format:
 `- YYYY-MM-DD — <area>: <what changed> (<test evidence>) [docs touched]`
 
 ## Unreleased
+
+- 2026-10-06 — jev/decision: **zero-information degradation path — defenders and offensive bots degrade safely without climbing on all-zero utility ties.** When running under empty/sensor-only `ObservedKnowledge.selfOnly()` (or `evaluatePolicy` default), zone fuel counts evaluate to 0 and opponents are unobserved. Previously, `evaluateLocalUtilityMatrix` initialized `bestUtility = -1.0` and visited `RUSH_CLIMB` first, so an all-zero utility tie selected `RUSH_CLIMB` (even outside endgame, and even for sparring bots without climbers). Furthermore, tier-1 safety net assigned `VACUUM_MIDFIELD` to unobserved defenders even with a full hopper (30 held fuel). Fixed: (1) `evaluateLocalUtilityMatrix` requires strictly positive utility (`bestUtility = 0.0`), and on an all-zero tie falls back safely by role: defensive archetypes degrade to `SHADOW_MIDLINE` zone defense, offensive bots with fuel degrade to `STAGE_STANDOFF` (or `CYCLE_SCORE_HUB`), and empty-hopper bots degrade to `VACUUM_MIDFIELD`; (2) `SHADOW_MIDLINE` safely targets the centerline center `(CENTERLINE_X ± 0.8, FIELD_WIDTH / 2.0)` facing the opponent side when opponent is unobserved; (3) tier-1 safety net accounts for inventory capacity (`world.isInventoryFull()`) to ensure full-hopper bots degrade to `SHADOW_MIDLINE` / `STAGE_STANDOFF` rather than impossible intake tasks. (`JevDecisionEngineTest` +3: `testEmptyKnowledgeDefendersDegradeSafelyWithoutClimbing`, `testDefenderNeverSelectsRushClimbEvenInEndgame`, `testZeroInformationOffensiveBotDegradesSafelyWithoutClimbing`; `TierKnowledgeTest` 8/8 green; full suite 45 files / 447 tests green) [KNOWN_ISSUES.md §A, CHANGELOG.md]
 
 - 2026-09-30 — sim/nav: **loop-breaker — the third consecutive churn escape escalates to blacklisting.** The 30-row set showed the pinnedSec rescue firing 111–180 times per match with max-consecutive 10–14/20 s while worst stalls sat at 143.8 s: escape-without-blacklist re-drives into the same trap. `TargetProgressWatchdog` now counts consecutive churn fires (`STATIC_ESCALATION_COUNT = 3`, ~6–8 s into a loop) and the third takes the stable path (blacklist 1.0 m / 20 s via the existing `blockedFuel` channel); real progress, a stable give-up, or match reset restarts the count. No new cause: an escalated escape blacklisted and escaped, so the rig reads it as unreachable-target, which is what happened. Found while testing this: a helper that discarded adoption-tick results observed the post-fire escape latch instead of the fire — with hot pinnedSec the fire lands on the target-change tick itself, which is also why production re-fires every ~2 s. (`TargetProgressWatchdogEscalationTest` 2/2; neighbors green) [KNOWN_ISSUES.md §A, ARCHITECTURE.md §3A]
 

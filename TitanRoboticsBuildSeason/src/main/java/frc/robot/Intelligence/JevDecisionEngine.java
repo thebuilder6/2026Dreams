@@ -651,7 +651,7 @@ public class JevDecisionEngine {
         utilities.put(StrategicObjective.SCREEN_FOR_ALLY, screenUtility);
 
         // ── 2. Select Highest Utility Objective ──────────────────────────────
-        StrategicObjective bestObjective = evaluateLocalUtilityMatrix(utilities);
+        StrategicObjective bestObjective = evaluateLocalUtilityMatrix(utilities, world, archetype);
 
         // Diagnostic pin: frc.jev.freezeObjective=<NAME> forces every agent onto one
         // objective and bypasses the commitment latch entirely. Built to isolate
@@ -678,14 +678,18 @@ public class JevDecisionEngine {
 
         // Tier-1 safety net: opponent-chasing objectives require a tracked
         // opponent. If one ever wins without observation (e.g. a future
-        // utility change), fall back to harvesting instead of acting on a
-        // placeholder mark.
+        // utility change), fall back to harvesting if hopper has capacity,
+        // or safely degrade according to archetype when full.
         if (!opponentObserved && (bestObjective == StrategicObjective.LEAD_INTERCEPT
                 || bestObjective == StrategicObjective.DENY_SHOOTING_LANE
                 || bestObjective == StrategicObjective.SHADOW_MIDLINE
                 || bestObjective == StrategicObjective.CHOKE_TRENCH
                 || bestObjective == StrategicObjective.SCREEN_FOR_ALLY)) {
-            bestObjective = StrategicObjective.VACUUM_MIDFIELD;
+            bestObjective = world.isInventoryFull()
+                    ? (archetype != null && archetype.isDefensive()
+                            ? StrategicObjective.SHADOW_MIDLINE
+                            : StrategicObjective.STAGE_STANDOFF)
+                    : StrategicObjective.VACUUM_MIDFIELD;
             maxUtility = utilities.getOrDefault(bestObjective, 0.0);
         }
 
@@ -894,13 +898,22 @@ public class JevDecisionEngine {
 
             case SHADOW_MIDLINE:
                 double shadowX = world.isRedAlliance() ? (CENTERLINE_X + 0.8) : (CENTERLINE_X - 0.8);
-                double clampedY = Math.max(1.0, Math.min(FieldMap.FIELD_WIDTH - 1.0, world.opponentPose().getY()));
-                Rotation2d face = world.opponentPose().getTranslation().minus(new Translation2d(shadowX, clampedY))
-                        .getAngle();
+                double clampedY;
+                Rotation2d face;
+                if (opponentObserved) {
+                    clampedY = Math.max(1.0, Math.min(FieldMap.FIELD_WIDTH - 1.0, world.opponentPose().getY()));
+                    face = world.opponentPose().getTranslation().minus(new Translation2d(shadowX, clampedY))
+                            .getAngle();
+                } else {
+                    clampedY = FieldMap.FIELD_WIDTH / 2.0;
+                    face = Rotation2d.fromDegrees(world.isRedAlliance() ? 180.0 : 0.0);
+                }
                 navTarget = new Pose2d(shadowX, clampedY, face);
                 intakeCmd = IntakeState.STANDBY;
                 shooterCmd = ShooterState.STOPPED;
-                rationale = "Shadowing opponent across field midline.";
+                rationale = opponentObserved
+                        ? "Shadowing opponent across field midline."
+                        : "Defending field midline; opponent unobserved.";
                 break;
 
             case RUSH_CLIMB:
@@ -997,16 +1010,35 @@ public class JevDecisionEngine {
         return decisionMode;
     }
 
-    private static StrategicObjective evaluateLocalUtilityMatrix(Map<StrategicObjective, Double> utilities) {
-        StrategicObjective bestObjective = StrategicObjective.VACUUM_MIDFIELD;
-        double bestUtility = -1.0;
+    private static StrategicObjective evaluateLocalUtilityMatrix(
+            Map<StrategicObjective, Double> utilities,
+            WorldState world,
+            Archetype archetype) {
+        StrategicObjective bestObjective = null;
+        double bestUtility = 0.0;
         for (Map.Entry<StrategicObjective, Double> entry : utilities.entrySet()) {
             if (entry.getValue() > bestUtility) {
                 bestUtility = entry.getValue();
                 bestObjective = entry.getKey();
             }
         }
-        return bestObjective;
+        if (bestObjective != null) {
+            return bestObjective;
+        }
+
+        // Explicit no-information / zero-utility degradation path:
+        // When no objective has positive utility (> 0.0), degrade safely
+        // according to archetype and inventory state. Never fall through to
+        // RUSH_CLIMB outside endgame.
+        if (archetype != null && archetype.isDefensive()) {
+            return StrategicObjective.SHADOW_MIDLINE;
+        }
+        if (world != null && world.heldFuelCount() > 0) {
+            return world.isAllianceHubActive()
+                    ? StrategicObjective.CYCLE_SCORE_HUB
+                    : StrategicObjective.STAGE_STANDOFF;
+        }
+        return StrategicObjective.VACUUM_MIDFIELD;
     }
 
     static boolean isCloudObjectiveAdmissible(

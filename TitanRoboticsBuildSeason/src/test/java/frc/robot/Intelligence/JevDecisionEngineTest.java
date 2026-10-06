@@ -1204,4 +1204,72 @@ public class JevDecisionEngineTest {
                         Archetype.AUTONOMOUS_CYCLER).objective(),
                 "If poach ever becomes selectable, this characterization must be revisited with the guard");
     }
+
+    @Test
+    public void testEmptyKnowledgeDefendersDegradeSafelyWithoutClimbing() {
+        Pose2d selfPose = new Pose2d(6.0, 4.0, new Rotation2d());
+        Pose2d placeholderOpp = new Pose2d(0.0, 0.0, new Rotation2d());
+        // 30 held balls = full inventory, so all harvesting utilities collapse to 0.0.
+        // Hub inactive, so score utility is 0.0.
+        // Match time 90s (teleop, not endgame).
+        WorldState fullDefWorld = new WorldState(selfPose, ZERO_VEL, 30,
+                placeholderOpp, ZERO_VEL, 90.0, false, false, 20.0, false);
+
+        Archetype[] defenders = {
+                Archetype.TACTICAL_DEFENDER,
+                Archetype.DEFENSE_BULLY,
+                Archetype.LEAD_PURSUIT_INTERCEPTOR
+        };
+
+        for (Archetype defender : defenders) {
+            // Test both explicit ObservedKnowledge.selfOnly() and the 2-arg overload
+            AIActionIntent explicitIntent = engine.evaluatePolicy(fullDefWorld, ObservedKnowledge.selfOnly(), defender);
+            AIActionIntent defaultIntent = engine.evaluatePolicy(fullDefWorld, defender);
+
+            for (AIActionIntent intent : new AIActionIntent[] { explicitIntent, defaultIntent }) {
+                assertNotEquals(StrategicObjective.RUSH_CLIMB, intent.objective(),
+                        defender + " with empty knowledge must never select RUSH_CLIMB");
+                assertNotEquals(StrategicObjective.CYCLE_SCORE_HUB, intent.objective(),
+                        defender + " with empty knowledge must not try to score at hub");
+                assertEquals(StrategicObjective.SHADOW_MIDLINE, intent.objective(),
+                        defender + " with zero information must degrade safely to midline zone defense");
+
+                // Target must be safely positioned at the midline center, not clamped to corner (0,0)
+                Pose2d navTarget = intent.navigationTarget();
+                assertEquals(FieldMap.FIELD_WIDTH / 2.0, navTarget.getY(), 1e-4,
+                        "Midline patrol Y must be centered on the field");
+                assertEquals(FieldMap.CENTERLINE_X - 0.8, navTarget.getX(), 1e-4,
+                        "Blue defender must patrol 0.8m on its own side of the centerline");
+                assertEquals(0.0, navTarget.getRotation().getDegrees(), 1e-4,
+                        "Blue defender must face toward opponent half");
+            }
+        }
+    }
+
+    @Test
+    public void testDefenderNeverSelectsRushClimbEvenInEndgame() {
+        Pose2d selfPose = new Pose2d(6.0, 4.0, new Rotation2d());
+        // Match time = 5.0s (deep endgame). Simulated defenders have no climber fitted.
+        WorldState endgameWorld = new WorldState(selfPose, ZERO_VEL, 30,
+                new Pose2d(12.0, 4.0, new Rotation2d()), ZERO_VEL, 5.0, true, true, 0.0, false);
+
+        AIActionIntent intent = engine.evaluatePolicy(endgameWorld, Archetype.TACTICAL_DEFENDER);
+        assertNotEquals(StrategicObjective.RUSH_CLIMB, intent.objective(),
+                "Sparring defenders do not have climbers fitted and must not climb in endgame");
+    }
+
+    @Test
+    public void testZeroInformationOffensiveBotDegradesSafelyWithoutClimbing() {
+        Pose2d selfPose = new Pose2d(6.0, 4.0, new Rotation2d());
+        // Teleop, match time 90s, full inventory (30 held), hub inactive
+        WorldState fullOffWorld = new WorldState(selfPose, ZERO_VEL, 30,
+                new Pose2d(0.0, 0.0, new Rotation2d()), ZERO_VEL, 90.0, false, false, 20.0, false);
+
+        AIActionIntent coPilot = engine.evaluatePolicy(fullOffWorld, Archetype.CO_PILOT);
+        assertNotEquals(StrategicObjective.RUSH_CLIMB, coPilot.objective(),
+                "Co-pilot outside endgame must not select RUSH_CLIMB");
+        assertEquals(StrategicObjective.STAGE_STANDOFF, coPilot.objective(),
+                "Full hopper while hub is inactive must stage standoff");
+    }
 }
+

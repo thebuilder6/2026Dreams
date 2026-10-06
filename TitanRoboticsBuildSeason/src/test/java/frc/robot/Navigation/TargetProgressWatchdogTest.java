@@ -329,4 +329,22 @@ class TargetProgressWatchdogTest {
         assertTrue(last.recovering());
         return last;
     }
+
+    @Test
+    void explicitAbandonTargetBlacklistsAndEscapes() {
+        TargetProgressWatchdog.Result r = watchdog.abandonTarget(TARGET.getTranslation(), START);
+        assertTrue(r.recovering(), "explicit abandon must trigger recovery");
+        assertEquals(1, r.newlyBlacklisted().size(), "abandoned target must be blacklisted");
+        assertTrue(watchdog.isFuelBlocked(TARGET.getTranslation()), "target must be blocked");
+        assertTrue(watchdog.isRecovering(), "watchdog must be in recovering state");
+        assertTrue(r.escapeVector().getNorm() > 0.5, "escape vector must command motion");
+    }
+
+    @Test
+    void explicitAbandonTargetNullSafety() {
+        TargetProgressWatchdog.Result r1 = watchdog.abandonTarget(null, START);
+        assertFalse(r1.recovering());
+        TargetProgressWatchdog.Result r2 = watchdog.abandonTarget(TARGET.getTranslation(), null);
+        assertFalse(r2.recovering());
+    }
 }

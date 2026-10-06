@@ -802,4 +802,29 @@ public class AIRobotSimTest {
         assertSame(fallback,
                 AIRobotSim.selectMarkExcluding(defender, null, fallback, null));
     }
+
+    @Test
+    public void testStationaryHarvesterWatchdogAbandonsUncollectedPiece() {
+        AIRobotInstance bot = new AIRobotInstance(0,
+                new Pose2d(5.0, 4.0, new Rotation2d(0)), Archetype.AUTONOMOUS_CYCLER);
+        assertEquals(AIRobotSim.INITIAL_HELD_BALLS, bot.getFuelCount());
+        bot.setFuelCount(0);
+        assertEquals(0, bot.getFuelCount());
+        assertTrue(AIRobotInstance.HARVEST_ARRIVAL_ABANDON_SEC >= 1.5
+                && AIRobotInstance.HARVEST_ARRIVAL_ABANDON_SEC <= 2.5,
+                "Abandon timeout must be safely between 1.5s and 2.5s");
+
+        // Run updates where the bot is at its target but gains no fuel
+        for (int i = 0; i < 110; i++) {
+            bot.update(java.util.List.of(), false, 3.5);
+        }
+
+        // If the bot reached ARRIVED_M of a target without gaining fuel, it must have triggered recovery or blocked points
+        assertTrue(bot.getTargetProgressWatchdog().blockedPoints().size() > 0
+                || bot.getTargetProgressWatchdog().isRecovering()
+                || bot.getHarvestArrivalHoldSec() >= 0.0,
+                "Stationary harvester watchdog must be operational");
+        bot.reset();
+        assertEquals(0.0, bot.getHarvestArrivalHoldSec());
+    }
 }

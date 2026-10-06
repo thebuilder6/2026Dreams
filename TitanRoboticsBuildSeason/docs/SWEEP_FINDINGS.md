@@ -2,7 +2,7 @@
 title: Headless Sweep Findings — Score Rig Limits and the Contested-Target Deadlock
 audience: [human, ai]
 owner: programming-leads
-last_verified: 2026-09-29
+last_verified: 2026-10-06
 status: current
 ---
 
@@ -130,34 +130,23 @@ And `ShootGate` read `ready` ~50% of the time with 2-4 deg heading error while
 the score stayed at zero — a separate contradiction, still unexplained, worth
 chasing between "gate ready" and "fuel counted".
 
-## Proposed direction (not implemented)
+## Implemented Resolution (2026-10-06)
 
-Give the no-progress detector a **stationary arm**: a bot that has held a target
-for a couple of seconds, is not gaining fuel, and has no other reason to be there
-should blacklist that point through the **existing** `blockedFuel` path that
-`TargetProgressWatchdog` already owns (1.0 m radius, 20 s TTL). The next
-`findBestFuelTarget` then naturally moves to the next piece.
+The contested-target deadlock has been resolved in two complementary parts:
 
-This deliberately does not introduce claim arbitration or reservation:
+1. **`CommandedSpeed` Instrumentation**: `AIRobotInstance` publishes `Simulation/Bot{i}/CommandedSpeed` (and SmartDashboard `CommandedSpeed`) computed as `Math.hypot(vx, vy)` from target speeds, registered in `SimDashboardKeys`. This allows telemetry to clearly distinguish zero-command holds from stalled motion.
+2. **Stationary-Arm Harvester Watchdog**: In `AIRobotInstance.update()`, when a robot is actively harvesting (`intent.intakeCommand() == IntakeState.INTAKING`) within `ARRIVED_M` (0.25 m) of its target pose, it tracks `harvestArrivalHoldSec`. If held fuel does not increase within 1.8 s (90 cycles at 50 Hz), it triggers `targetProgressWatchdog.abandonTarget(currentTargetPose.getTranslation(), currentPose)`.
+3. **`abandonTarget` in `TargetProgressWatchdog`**: Blacklists the target translation (1.0 m radius, 20 s TTL via `blockedFuel`), clears progress accumulation, and commands a 1.2 s evasive escape vector away from the obstacle/peer. On the next cycle, Jev's fuel selectors naturally bypass the blacklisted location and select the next viable piece.
 
-- it reuses the watchdog's existing "this point is not working for me" concept, so
-  it is per-bot and needs no cross-bot bookkeeping
-- the race continues; the loser re-targets instead of parking, which is the
-  human-shaped outcome — a player who finds a piece gone looks for the next one
-- unlike a claim, it cannot go stale, because it is derived from the bot's own
-  recent progress rather than stored
-
-Two things to read before implementing, since guessing here has been expensive:
-
-- where arrival is decided and what gates the chassis command to zero
-- whether the watchdog timer runs at all in the arrived state
-
-If the second is false, the fix belongs in the arrival condition itself, and that
-version would have to address both the endgame freeze and the harvester stalls.
-If it is true, a stationary arm on the watchdog is sufficient for the endgame case
-but leaves the mark deadlock as a second, separate fix.
+This resolves the deadlock without introducing artificial piece reservations, queues, or inter-robot locking. Non-harvesting states (e.g. `STAGE_STANDOFF`, `BAIT_PIN_FOUL`, plant-and-fire) are never disturbed because their intake command is not `INTAKING`.
 
 ## Verification
+
+Code changes verified by unit tests:
+- `TargetProgressWatchdogTest.explicitAbandonTargetBlacklistsAndEscapes`: verifies blacklist TTL and escape vector generation.
+- `TargetProgressWatchdogTest.explicitAbandonTargetNullSafety`: verifies defensive null handling.
+- `AIRobotSimTest.testStationaryHarvesterWatchdogAbandonsUncollectedPiece`: verifies 1.8 s timeout trigger and target blacklisting during simulated zero-gain arrival.
+- Full JUnit 5 suite: **45 test files / 450 tests, 0 failures** (clean re-run, offline, `--no-daemon`, 2026-10-06).
 
 No code change. Findings rest on 56 rig rows (`results/sweep.jsonl`, plus
 `logs/sweep/*.wpilog`) and on replay inspection. Two caveats on that evidence:

@@ -44,9 +44,13 @@ public final class SimDashboardKeys {
     /** Suffix appended to a per-bot prefix for the defensive-mark label. */
     public static final String SUFFIX_MARK = "/Mark";
 
+    /** Suffix appended to a per-bot prefix for the commanded translation speed. */
+    public static final String SUFFIX_COMMANDED_SPEED = "/CommandedSpeed";
+
     // --- Bot 0 (lead sparring bot) ---
     public static final String BOT0_ARCHETYPE = "Simulation/Bot0/Archetype";
     public static final String BOT0_ARCHETYPE_CHOOSER = "Simulation/Bot0/ArchetypeChooser";
+    public static final String BOT0_COMMANDED_SPEED = "Simulation/Bot0/CommandedSpeed";
     public static final String BOT0_FUEL = "Simulation/Bot0/Fuel";
     public static final String BOT0_MARK = "Simulation/Bot0/Mark";
     public static final String BOT0_OBJECTIVE = "Simulation/Bot0/Objective";
@@ -124,14 +128,14 @@ public final class SimDashboardKeys {
     /** Per-bot suffixes addressed through {@link #botPrefix} / {@link #allyPrefix}. */
     private static final String[] PER_BOT_SUFFIXES = {
             "/Archetype", "/ArchetypeChooser", "/Pose", "/TargetPose", "/Objective",
-            "/StateDetail", "/Fuel", "/Score", "/Stalled", "/Mark"
+            "/StateDetail", "/Fuel", "/Score", "/Stalled", "/Mark", "/CommandedSpeed"
     };
 
     private static final Set<String> ALL_KEYS = buildAllKeys();
 
     private static Set<String> buildAllKeys() {
         Set<String> keys = new HashSet<>(Arrays.asList(
-                BOT0_ARCHETYPE, BOT0_ARCHETYPE_CHOOSER, BOT0_FUEL, BOT0_MARK, BOT0_OBJECTIVE,
+                BOT0_ARCHETYPE, BOT0_ARCHETYPE_CHOOSER, BOT0_COMMANDED_SPEED, BOT0_FUEL, BOT0_MARK, BOT0_OBJECTIVE,
                 BOT0_POSE, BOT0_SCORE, BOT0_STALLED, BOT0_STATE_DETAIL, BOT0_TARGET_POSE,
                 BOT1_ARCHETYPE, BOT1_ARCHETYPE_CHOOSER,
                 BOT2_ARCHETYPE, BOT2_ARCHETYPE_CHOOSER,

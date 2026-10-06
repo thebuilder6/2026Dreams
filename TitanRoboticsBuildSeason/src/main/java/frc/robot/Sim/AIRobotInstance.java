@@ -87,6 +87,12 @@ public class AIRobotInstance {
     private boolean lastStallResult = false;
     private double lastStallEvalTimestamp = -1.0;
 
+    // Stationary-arm harvester watchdog (prevents contested-target deadlock inside ARRIVED_M)
+    public static final double HARVEST_ARRIVAL_ABANDON_SEC = 1.8;
+    private double harvestArrivalHoldSec = 0.0;
+    private int lastHarvestFuelCount = 0;
+    private Translation2d lastHarvestTargetPos = null;
+
     // Score-rig instrumentation (read-only; no behaviour depends on it).
     private final BotMatchMetrics matchMetrics = new BotMatchMetrics();
 
@@ -241,6 +247,9 @@ public class AIRobotInstance {
         fuelTargetMemory.reset();
         trajectoryController.reset();
         matchMetrics.reset();
+        harvestArrivalHoldSec = 0.0;
+        lastHarvestFuelCount = preloadFuel;
+        lastHarvestTargetPos = null;
         try {
             String botName = isAlly ? ("AllyBot" + (botId - 100)) : ("OpponentBot" + botId);
             String targetName = isAlly ? ("AllyTarget" + (botId - 100)) : ("OpponentTarget" + botId);
@@ -463,6 +472,41 @@ public class AIRobotInstance {
         // made "no progress" depend entirely on the target holding still.
         TargetProgressWatchdog.Result progress = targetProgressWatchdog.update(
                 currentPose, currentTargetSpeeds, currentVel, currentTargetPose, 0.02);
+
+        // Stationary-arm harvester watchdog: if arrived inside ARRIVED_M while intaking,
+        // but no fuel is being collected (e.g. peer wedging, physical obstacle block),
+        // abandon the target after HARVEST_ARRIVAL_ABANDON_SEC so the bot escapes and retargets.
+        boolean isHarvesting = (intent.intakeCommand() == IntakeState.INTAKING);
+        double distToTarget = currentTargetPose != null
+                ? currentPose.getTranslation().getDistance(currentTargetPose.getTranslation())
+                : Double.MAX_VALUE;
+
+        if (isHarvesting && distToTarget < TargetProgressWatchdog.ARRIVED_M && !progress.recovering()) {
+            if (lastHarvestTargetPos == null
+                    || currentTargetPose.getTranslation().getDistance(lastHarvestTargetPos) > 0.5) {
+                lastHarvestTargetPos = currentTargetPose.getTranslation();
+                harvestArrivalHoldSec = 0.0;
+                lastHarvestFuelCount = heldPieces;
+            } else if (heldPieces > lastHarvestFuelCount) {
+                harvestArrivalHoldSec = 0.0;
+                lastHarvestFuelCount = heldPieces;
+            } else {
+                harvestArrivalHoldSec += 0.02;
+                if (harvestArrivalHoldSec >= HARVEST_ARRIVAL_ABANDON_SEC) {
+                    progress = targetProgressWatchdog.abandonTarget(
+                            currentTargetPose.getTranslation(), currentPose);
+                    harvestArrivalHoldSec = 0.0;
+                    lastHarvestFuelCount = heldPieces;
+                }
+            }
+        } else {
+            harvestArrivalHoldSec = 0.0;
+            lastHarvestFuelCount = heldPieces;
+            if (distToTarget >= TargetProgressWatchdog.ARRIVED_M) {
+                lastHarvestTargetPos = null;
+            }
+        }
+
         if (progress.recovering()) {
             currentTargetSpeeds.vxMetersPerSecond = progress.escapeVector().getX();
             currentTargetSpeeds.vyMetersPerSecond = progress.escapeVector().getY();
@@ -529,6 +573,9 @@ public class AIRobotInstance {
 
         // Telemetry logging (AdvantageKit & SmartDashboard)
         String prefix = (isAlly ? "AI_Telemetry/Ally" + (botId - 100) : "AI_Telemetry/Bot" + botId) + "/";
+        double commandedSpeed = Math.hypot(
+                currentTargetSpeeds.vxMetersPerSecond, currentTargetSpeeds.vyMetersPerSecond);
+        Logger.recordOutput(prefix + "CommandedSpeed", commandedSpeed);
         Logger.recordOutput(prefix + "ActualPose", currentPose);
         Logger.recordOutput(prefix + "TargetPose", currentTargetPose);
         Logger.recordOutput(prefix + "Objective", intent.objective().name());
@@ -547,6 +594,7 @@ public class AIRobotInstance {
         edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putNumber(dashPrefix + "Fuel", heldPieces);
         edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putNumber(dashPrefix + "Score", scoreCount);
         edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putBoolean(dashPrefix + "Stalled", stalled);
+        edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putNumber(dashPrefix + "CommandedSpeed", commandedSpeed);
         edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putString(dashPrefix + "Archetype", archetype.name());
 
         // 6. Score-rig instrumentation. Sampled last so it sees the settled state.
@@ -1019,5 +1067,13 @@ public class AIRobotInstance {
 
     public TrajectoryController getTrajectoryController() {
         return trajectoryController;
+    }
+
+    public TargetProgressWatchdog getTargetProgressWatchdog() {
+        return targetProgressWatchdog;
+    }
+
+    public double getHarvestArrivalHoldSec() {
+        return harvestArrivalHoldSec;
     }
 }

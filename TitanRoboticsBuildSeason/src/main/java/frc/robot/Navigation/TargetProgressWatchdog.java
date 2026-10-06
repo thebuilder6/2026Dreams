@@ -426,6 +426,30 @@ public final class TargetProgressWatchdog {
         blacklist.entrySet().removeIf(e -> e.getValue() <= nowSec);
     }
 
+    /**
+     * Abandons a target explicitly (e.g. when a harvester reaches a fuel target
+     * within {@link #ARRIVED_M} but cannot collect it due to a peer wedge or physical obstruction).
+     *
+     * <p>Blacklists the target point and latches an escape vector away from it for
+     * {@link #ESCAPE_SEC}, exactly as if the no-progress window had expired.
+     *
+     * @param target field position of the abandoned target
+     * @param pose   current robot pose for escape geometry
+     * @return recovery result commanding escape away from the blacklisted target
+     */
+    public synchronized Result abandonTarget(Translation2d target, Pose2d pose) {
+        if (target == null || pose == null) {
+            return Result.IDLE;
+        }
+        escapeFrom = target;
+        escapeRemainingSec = ESCAPE_SEC;
+        List<Translation2d> blocked = List.of(target);
+        blacklist(target, Timer.getFPGATimestamp());
+        resetProgress();
+        consecutiveStaticEscapes = 0;
+        return new Result(true, escapeVector(pose), blocked, GIVEUP_SEC, ESCAPE_SEC);
+    }
+
     /** Clears all state (match reset). */
     public synchronized void reset() {
         blacklist.clear();

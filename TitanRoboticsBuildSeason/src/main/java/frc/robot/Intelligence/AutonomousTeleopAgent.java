@@ -2,6 +2,7 @@ package frc.robot.Intelligence;
 
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
+import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import frc.robot.Subsystems.*;
 import org.littletonrobotics.junction.Logger;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
@@ -138,6 +139,45 @@ public class AutonomousTeleopAgent {
         }
 
         return true;
+    }
+
+    /**
+     * Blends trajectory-planned speeds with driver stick inputs during shared-authority assist.
+     *
+     * <p>When driver stick magnitude is between {@link #BLEND_MIN} and breakout thresholds,
+     * the driver's command smoothly nudges the planned path without breaking out.
+     *
+     * @param plannedSpeeds Speeds calculated by the trajectory controller
+     * @param driverForward Field-relative driver forward velocity command (m/s)
+     * @param driverStrafe Field-relative driver strafe velocity command (m/s)
+     * @param driverRotation Driver rotation rate command (rad/s)
+     * @return Blended ChassisSpeeds
+     */
+    public ChassisSpeeds blendSpeeds(ChassisSpeeds plannedSpeeds, double driverForward, double driverStrafe, double driverRotation) {
+        if (plannedSpeeds == null) {
+            return new ChassisSpeeds(driverForward, driverStrafe, driverRotation);
+        }
+        double drvSpeed = Math.hypot(driverForward, driverStrafe);
+        double maxSpeed = Math.max(0.1, frc.robot.Data.Constants.MAX_SPEED);
+        double normDriverMag = drvSpeed / maxSpeed;
+        double maxRotSpeed = Math.max(0.1, frc.robot.Data.Constants.MAX_ROTATION_SPEED);
+        double normRotMag = Math.abs(driverRotation) / maxRotSpeed;
+
+        ChassisSpeeds speeds = plannedSpeeds;
+        if (normDriverMag >= BLEND_MIN) {
+            double alpha = Math.min(1.0, Math.max(0.0,
+                    (normDriverMag - BLEND_MIN) / (BREAKOUT_TRANSLATION - BLEND_MIN)));
+            double blendedVx = (1.0 - 0.5 * alpha) * speeds.vxMetersPerSecond + alpha * driverForward;
+            double blendedVy = (1.0 - 0.5 * alpha) * speeds.vyMetersPerSecond + alpha * driverStrafe;
+            speeds = new ChassisSpeeds(blendedVx, blendedVy, speeds.omegaRadiansPerSecond);
+        }
+        if (normRotMag >= BLEND_MIN) {
+            double alphaRot = Math.min(1.0, Math.max(0.0,
+                    (normRotMag - BLEND_MIN) / (BREAKOUT_ROTATION - BLEND_MIN)));
+            double blendedOmega = (1.0 - alphaRot) * speeds.omegaRadiansPerSecond + alphaRot * driverRotation;
+            speeds = new ChassisSpeeds(speeds.vxMetersPerSecond, speeds.vyMetersPerSecond, blendedOmega);
+        }
+        return speeds;
     }
 
     private void manageSubsystems(AIActionIntent intent, WorldState world) {

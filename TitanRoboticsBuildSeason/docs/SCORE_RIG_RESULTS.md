@@ -201,11 +201,11 @@ eye. Do not go back to 1 as a ritual — it is slower and it hides the actual li
 
 ## Verification
 
-- Verified against: full suite **45 files / 450 tests, 0 failures** (clean re-run, offline,
+- Verified against: full suite **45 files / 452 tests, 0 failures** (clean re-run, offline,
   `--no-daemon`, 2026-10-06). The "4 failing" episode of 2026-09-28 is retained as history in
   `KNOWN_ISSUES.md` §A and `docs/CHANGELOG.md`: all four tests pass on the current binary (two were
   renamed in the rewrite), and the count discrepancy (360 vs 361) was a stale-report artifact —
-  450 `@Test` annotations are on disk and 450 execute.
+  452 `@Test` annotations are on disk and 452 execute.
   **Any "325 tests green" figure previously recorded here was wrong twice over** — wrong
   count, and the suite was red through the `MatchKnowledge` refactor until the Sep 29 clean re-run closed it.
 - Baseline artifacts: `results/baseline-12way-contaminated.jsonl` (16 rows — **quarantined,

@@ -370,7 +370,18 @@ public class Teleop {
             }
             wasGlideHeld = true;
 
-            AIActionIntent intent = coPilot.getCoPilotIntent(coPilot.resolveHeldBalls());
+            // If assist is inactive (e.g. broken out or arrived while button still held), stay in manual
+            if (!coPilot.isAssistActive()) {
+                return false;
+            }
+
+            // Periodic update: evaluate policy, run subsystem reflexes, check breakout & arrival
+            if (!coPilot.updateSmartAssist(driverFieldForward, driverFieldStrafe, driverFieldRot)) {
+                triggerRumble(RumblePattern.OVERRIDE_DISENGAGED);
+                return false;
+            }
+
+            AIActionIntent intent = coPilot.getLatestIntent();
             Pose2d currentPose = swerveBase.getPose();
             ChassisSpeeds currentSpeeds = swerveBase.getFieldVelocity();
             Pose2d target = intent != null ? intent.navigationTarget() : null;
@@ -385,38 +396,12 @@ public class Teleop {
                 assistController.setRotationOverride(null);
             }
 
-            // Breakout detection (shared authority thresholds — owned by AutonomousTeleopAgent)
-            double drvSpeed = Math.hypot(driverFieldForward, driverFieldStrafe);
-            double normDriverMag = drvSpeed / Math.max(0.1, Constants.MAX_SPEED);
-            double normRotMag = Math.abs(driverFieldRot) / Math.max(0.1, Constants.MAX_ROTATION_SPEED);
-            if (normDriverMag > AutonomousTeleopAgent.BREAKOUT_TRANSLATION
-                    || normRotMag > AutonomousTeleopAgent.BREAKOUT_ROTATION) {
-                coPilot.stopAssist();
-                wasGlideHeld = false;
-                triggerRumble(RumblePattern.OVERRIDE_DISENGAGED);
-                return false;
-            }
-
             boolean stalled = swerveBase.getContactWatchdog().isStalled();
             ChassisSpeeds speeds = assistController.calculate(
                     currentPose, currentSpeeds, target, Constants.MAX_SPEED, stalled, true);
 
-            // Shared authority nudge blending (BLEND_MIN <= norm <= BREAKOUT)
-            if (normDriverMag >= AutonomousTeleopAgent.BLEND_MIN) {
-                double alpha = Math.min(1.0, Math.max(0.0,
-                        (normDriverMag - AutonomousTeleopAgent.BLEND_MIN)
-                                / (AutonomousTeleopAgent.BREAKOUT_TRANSLATION - AutonomousTeleopAgent.BLEND_MIN)));
-                double blendedVx = (1.0 - 0.5 * alpha) * speeds.vxMetersPerSecond + alpha * driverFieldForward;
-                double blendedVy = (1.0 - 0.5 * alpha) * speeds.vyMetersPerSecond + alpha * driverFieldStrafe;
-                speeds = new ChassisSpeeds(blendedVx, blendedVy, speeds.omegaRadiansPerSecond);
-            }
-            if (normRotMag >= AutonomousTeleopAgent.BLEND_MIN) {
-                double alphaRot = Math.min(1.0, Math.max(0.0,
-                        (normRotMag - AutonomousTeleopAgent.BLEND_MIN)
-                                / (AutonomousTeleopAgent.BREAKOUT_ROTATION - AutonomousTeleopAgent.BLEND_MIN)));
-                double blendedOmega = (1.0 - alphaRot) * speeds.omegaRadiansPerSecond + alphaRot * driverFieldRot;
-                speeds = new ChassisSpeeds(speeds.vxMetersPerSecond, speeds.vyMetersPerSecond, blendedOmega);
-            }
+            // Shared authority nudge blending (owned by AutonomousTeleopAgent)
+            speeds = coPilot.blendSpeeds(speeds, driverFieldForward, driverFieldStrafe, driverFieldRot);
 
             speeds = ContactWatchdog.getInstance().arbitrate(speeds, currentPose, null);
             swerveBase.setPathVisualization(assistController.getWaypoints());

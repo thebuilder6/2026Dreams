@@ -93,6 +93,43 @@ public class DriverAssistTest {
     }
 
     @Test
+    public void testSharedAuthorityNudgeBlending() {
+        AutonomousTeleopAgent agent = AutonomousTeleopAgent.getInstance();
+        ChassisSpeeds planned = new ChassisSpeeds(2.0, 1.0, 0.5);
+
+        // Sub-deadband input (< BLEND_MIN): planned speeds completely preserved
+        double smallDriver = Constants.MAX_SPEED * 0.05;
+        ChassisSpeeds unblended = agent.blendSpeeds(planned, smallDriver, 0.0, 0.0);
+        assertEquals(2.0, unblended.vxMetersPerSecond, 1e-4);
+        assertEquals(1.0, unblended.vyMetersPerSecond, 1e-4);
+        assertEquals(0.5, unblended.omegaRadiansPerSecond, 1e-4);
+
+        // Mid-range driver nudge: exactly halfway between BLEND_MIN (0.10) and BREAKOUT (0.65)
+        // normDriverMag = 0.375 -> alpha = 0.50
+        double midDriverX = Constants.MAX_SPEED * 0.375;
+        ChassisSpeeds blended = agent.blendSpeeds(planned, midDriverX, 0.0, 0.0);
+        // blendedVx = (1.0 - 0.5 * 0.5) * 2.0 + 0.5 * midDriverX = 0.75 * 2.0 + 0.5 * midDriverX
+        double expectedVx = 1.5 + 0.5 * midDriverX;
+        assertEquals(expectedVx, blended.vxMetersPerSecond, 1e-4);
+        assertEquals(0.75 * 1.0, blended.vyMetersPerSecond, 1e-4);
+
+        // Rotational nudge: exactly halfway between BLEND_MIN (0.10) and BREAKOUT_ROTATION (0.60)
+        // normRotMag = 0.35 -> alphaRot = 0.50
+        double midRot = Constants.MAX_ROTATION_SPEED * 0.35;
+        ChassisSpeeds rotBlended = agent.blendSpeeds(planned, 0.0, 0.0, midRot);
+        // blendedOmega = (1.0 - 0.5) * 0.5 + 0.5 * midRot
+        double expectedOmega = 0.25 + 0.5 * midRot;
+        assertEquals(expectedOmega, rotBlended.omegaRadiansPerSecond, 1e-4);
+
+        // Null planned speeds fallback
+        ChassisSpeeds nullFallback = agent.blendSpeeds(null, 1.5, -0.5, 0.2);
+        assertNotNull(nullFallback);
+        assertEquals(1.5, nullFallback.vxMetersPerSecond, 1e-4);
+        assertEquals(-0.5, nullFallback.vyMetersPerSecond, 1e-4);
+        assertEquals(0.2, nullFallback.omegaRadiansPerSecond, 1e-4);
+    }
+
+    @Test
     public void testCoPilotEndgameParkingSelection() {
         // Create an endgame WorldState with 15s remaining
         WorldState endgameWorld = new WorldState(
@@ -164,6 +201,28 @@ public class DriverAssistTest {
         assertFalse(agent.isAssistActive(), "Assist must be deactivated after breakout");
         assertTrue(agent.checkAndClearBreakout(), "Breakout flag must be set and cleared");
         assertFalse(agent.checkAndClearBreakout(), "Breakout flag must now be false after clearing");
+    }
+
+    @Test
+    public void testRushClimbArrivalDeactivatesSmartAssist() {
+        edu.wpi.first.wpilibj.simulation.DriverStationSim.setMatchTime(10.0);
+        edu.wpi.first.wpilibj.simulation.DriverStationSim.notifyNewData();
+        AutonomousTeleopAgent agent = AutonomousTeleopAgent.getInstance();
+        agent.stopAssist();
+        agent.startSmartAssist();
+
+        AIActionIntent intent = agent.getLatestIntent();
+        assertNotNull(intent);
+        assertEquals(StrategicObjective.RUSH_CLIMB, intent.objective());
+        assertNotNull(intent.navigationTarget());
+
+        // Move robot to exactly the navigation target pose
+        frc.robot.Subsystems.SwerveBase.getInstance().resetOdometry(intent.navigationTarget());
+
+        // When arrived at the climb/park location (< 0.12m), assist finishes and releases control
+        boolean running = agent.updateSmartAssist(0.0, 0.0, 0.0);
+        assertFalse(running, "Arrival at climb/parking target must complete assist");
+        assertFalse(agent.isAssistActive(), "Assist must deactivate on arrival");
     }
 
     @Test

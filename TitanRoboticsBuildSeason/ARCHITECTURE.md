@@ -2,7 +2,7 @@
 title: Architecture Contracts
 audience: [human, ai]
 owner: programming-leads
-last_verified: 2026-09-30
+last_verified: 2026-10-06
 status: authoritative
 ---
 
@@ -214,7 +214,7 @@ Simulation sparring and the default co-pilot path use a deterministic, re-entran
      - The Driver Assist Co-Pilot on the real robot (`Archetype.CO_PILOT` via `AutonomousTeleopAgent`) with `ObservedKnowledge.selfOnly()` - opponents unobserved, no field-fuel countsed, lane left to the driver.
      - The Match Coach in the pit / driver station (`MatchCoach.java`).
     - **Co-Pilot shooting (Sep 28)**: the assist hold executes `SHOOTING` + `triggerFeedKicker` through the Shooter state machine — kicker gated on flywheel RPM error < 150 with the same zone/ceiling/solution/heading interlocks as manual fire; operator MANUAL states are never overridden; `CoPilot/AutoFeedActive` telemetry shows when auto-feed fires (`AutonomousTeleopAgent.java:132-179`). Shared shot envelope is single-owned: `FieldMap.Hubs.SHOOTING_MAX_DISTANCE` (4.20 m) feeds both the snipe utility and `AIRobotSim` validity.
-    - **Shared authority (Sep 28)**: breakout/nudge thresholds are single-owned in `AutonomousTeleopAgent` (`BREAKOUT_TRANSLATION=0.65`, `BREAKOUT_ROTATION=0.60`, `BLEND_MIN=0.10`) and consumed by `Teleop.java:392-419`; driver breakout/E-stop resumes `Teleop.shooterControl`.
+    - **Shared authority (Oct 06)**: breakout detection, arrival deactivation, and nudge blending calculations are single-owned in `AutonomousTeleopAgent` (`updateSmartAssist` and `blendSpeeds`), using single-owned thresholds (`BREAKOUT_TRANSLATION=0.65`, `BREAKOUT_ROTATION=0.60`, `BLEND_MIN=0.10`); `Teleop.java` delegates intent evaluation, breakout, and blending directly to `AutonomousTeleopAgent`, and suppresses assist re-arming chatter while the assist button remains held after breakout or arrival.
     - **Plant-and-fire (Sep 28)**: sim bots brake translation (`SETTLING_TO_SHOOT`) when aim + solution are ready but the chassis is moving, and `canShootNow` requires the settle gate (measured ≤ 0.80 m/s, ≤ 1.00 rad/s) so volleys no longer stream at transit speed (`AIRobotInstance.java:463-473,558-568,621-622`).
     - **Targeting fixes (Sep 28)**: `CHOKE_TRENCH` gates on the occupied trench itself (`isLowClearance(opponentPose)`, `JevDecisionEngine.java:526-529`) and stages at the midfield exit, never inside the ramp footprint; `DENY_SHOOTING_LANE` clamps outside the 2.05 m Hub safety shell (1.6 m shell + bumper, `JevDecisionEngine.java:855`) with a lateral sidestep when the shooter is already inside (`JevDecisionEngine.java:861-868`).
     - **Mark exclusion (Sep 28)**: the central `AIRobotSim` selector (`selectMarkExcluding`, threat = 3xheld + 1xscored − 0.25xdistance) assigns each defender a stable label and skips carriers held by peers last tick, degrading to the full list when carriers < defenders (`AIRobotSim.java:694-812`).

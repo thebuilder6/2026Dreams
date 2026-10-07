@@ -54,4 +54,5 @@ Launch the WPILib SimGUI with our full `IronMaple` arena, simulated game pieces,
 - 🧪 [Testing & Diagnostics Guide](src/main/java/frc/robot/Test/README.md): Pre-flight checks, SysId characterization, and tuning routines.
 - 🎯 [Shooter Calibration & Tuning Guide](docs/SHOOTER_TUNING_GUIDE.md): Step-by-step physical calibration, live PID tuning, SOTF, and ballistics automation tools.
 - 📥 [Intake Arm Calibration & Tuning Guide](docs/INTAKE_TUNING_GUIDE.md): Arm Profiled PID, gravity feedforward, jam detection, and trench safety.
+- 📋 [Pit Tuning & Pre-Match Checklist](docs/PIT_TUNING_CHECKLIST.md): 5-station rapid pit check, 15-second diagnostics scorecard, and carpet benchmarks.
 

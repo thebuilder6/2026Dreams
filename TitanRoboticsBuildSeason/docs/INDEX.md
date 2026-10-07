@@ -33,6 +33,7 @@ Single map for all durable human + AI knowledge. Code wins over prose on conflic
 | Test mode | `TitanRoboticsBuildSeason/src/main/java/frc/robot/Test/README.md` | TestMode categories, controller layout, tuning workflow, safety | test-owner |
 | Shooter tuning guide | `TitanRoboticsBuildSeason/docs/SHOOTER_TUNING_GUIDE.md` | Flywheel SysId characterization, PID feedback, empirical distance lookup tables, SOTF, and `calibrate_shooter.py` automation | leads |
 | Intake tuning guide | `TitanRoboticsBuildSeason/docs/INTAKE_TUNING_GUIDE.md` | Pivot arm Profiled PID, ArmFeedforward (kS, kG, kV), jam detection, trench geofence, and `calibrate_intake.py` | leads |
+| Pit calibration checklist | `TitanRoboticsBuildSeason/docs/PIT_TUNING_CHECKLIST.md` | Pre-match 5-station rapid check: mechanical clearance, automated pre-flight, sensor zeroes, 3-shot carpet benchmark | drive-team |
 | External links | `TitanRoboticsBuildSeason/docs/RESOURCES.md` | Merged vendor doc URLs (Photon, Choreo, Limelight, MapleSim, WPILib, AdvantageKit, YAGSL, REV, Elastic) | leads |
 | Issues + roadmap | `KNOWN_ISSUES.md` (repo root) | §A–D resolved history, §E desired features, §F test roadmap, §G multi-robot | leads |
 | Agent rules | `AGENTS.md` (repo root) | Build env, generated-code ban, Blue-origin, Alert/LED, TunableNumber, timing quirks, resource-coordination protocol | leads |

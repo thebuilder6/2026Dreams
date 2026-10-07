@@ -51,6 +51,10 @@ public class AutoMissionExecutor {
             mAutoMission.stop();
         }
 
+        if (mThread != null && mThread.isAlive()) {
+            mThread.interrupt();
+        }
+
         mThread = null;
     }
 

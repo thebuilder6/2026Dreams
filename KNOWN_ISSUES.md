@@ -220,7 +220,7 @@ Grouped by shared remediation and ranked by match safety, robot behavior, and va
 - [ ] AI-assisted robot/path/auto design. `[OPEN]`
 - [ ] Streamlined AdvantageScope setup. `[OPEN]`
 - [ ] Elastic UI cleanup across tabs; consider bespoke dashboard replacement. `[OPEN]`
-- [ ] Git details + robot name on Elastic. `[PARTIAL]` Already published (`Telemetry/Dashboard.java:91-97` → `Build/*` keys from generated `BuildConstants`); likely just needs layout wiring.
+- [x] `[RESOLVED Oct 06]` Git details + robot name on Elastic. **Fixed 2026-10-06: Added `Build & Git Metadata` (`/SmartDashboard/Build/Summary`) and `Git Commit SHA` (`/SmartDashboard/Build/GitSHA`) widgets to Tab 2 (`Pre-Flight Diagnostics`) and Tab 4 (`Simulation & Match Info`). Synchronized both `src/main/deploy/elastic-layout.json` (served via port 5800) and root `elastic-layout.json`.**
 - [ ] YAGSL feature review. `[OPEN]`
 - [ ] Next-year readiness (new game, Systemcore, hardware). `[OPEN]` (`ARCHITECTURE.md` §4 roadmap: Elastic primary, AdvantageScope 3D, Telemetry/Tunables APIs, Commands v3 coroutines.)
 - [ ] Competitor codebase survey for ideas. `[OPEN]`

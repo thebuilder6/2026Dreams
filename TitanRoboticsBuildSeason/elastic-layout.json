@@ -227,6 +227,31 @@
             }
           },
           {
+            "title": "Use TypeSafe Jev",
+            "x": 1664.0,
+            "y": 384.0,
+            "width": 192.0,
+            "height": 128.0,
+            "type": "Toggle Switch",
+            "properties": {
+              "topic": "/SmartDashboard/Features/Use TypeSafe Jev AI",
+              "period": 0.06
+            }
+          },
+          {
+            "title": "Jev Decision Mode",
+            "x": 1664.0,
+            "y": 512.0,
+            "width": 192.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/JevAI/DecisionMode",
+              "period": 0.06,
+              "show_submit_button": true
+            }
+          },
+          {
             "title": "Ball Hunt",
             "x": 1280.0,
             "y": 512.0,
@@ -901,6 +926,32 @@
               "topic": "/SmartDashboard/Diagnostics/Run Shooter/Flywheel Right",
               "period": 0.06
             }
+          },
+          {
+            "title": "Build & Git Metadata",
+            "x": 0.0,
+            "y": 640.0,
+            "width": 1024.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Build/Summary",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Git Commit SHA",
+            "x": 1024.0,
+            "y": 640.0,
+            "width": 512.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Build/GitSHA",
+              "period": 0.06,
+              "show_submit_button": false
+            }
           }
         ]
       }
@@ -1440,6 +1491,58 @@
             "type": "Text Display",
             "properties": {
               "topic": "/SmartDashboard/Simulation/TotalAllyFuel",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Ally 0 Archetype (Training)",
+            "x": 1024.0,
+            "y": 640.0,
+            "width": 320.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Simulation/Ally0/Archetype",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Ally 0 State & Objective",
+            "x": 1344.0,
+            "y": 640.0,
+            "width": 352.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Simulation/Ally0/StateDetail",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Ally 0 Score",
+            "x": 1696.0,
+            "y": 640.0,
+            "width": 224.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Simulation/Ally0/Score",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Build & Git Metadata",
+            "x": 0.0,
+            "y": 640.0,
+            "width": 1024.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Build/Summary",
               "period": 0.06,
               "show_submit_button": false
             }

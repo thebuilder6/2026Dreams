@@ -22,7 +22,7 @@ import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.Commands;
 import frc.robot.Data.Constants;
-import frc.robot.Data.Constants.ShooterConstants;
+import frc.robot.Subsystems.shooter.ShooterConstants;
 import frc.robot.Interfaces.Subsystem;
 import frc.robot.Subsystems.shooter.ShooterIO;
 import frc.robot.Subsystems.shooter.ShooterIOInputsAutoLogged;
@@ -384,7 +384,7 @@ public class Shooter implements Subsystem {
      */
     public boolean isReadyToFire(Rotation2d targetHeading) {
         double headingError = Math.abs(SwerveBase.getInstance().getHeading().minus(targetHeading).getDegrees());
-        return isAtCorrectSpeed() && headingError < Constants.ShooterConstants.ALIGNMENT_HEADING_TOLERANCE_DEG;
+        return isAtCorrectSpeed() && headingError < ShooterConstants.ALIGNMENT_HEADING_TOLERANCE_DEG;
     }
 
     /**
@@ -392,7 +392,7 @@ public class Shooter implements Subsystem {
      */
     public boolean isLinedUp() {
         Vision vision = Vision.getInstance();
-        return vision.hasTarget() && Math.abs(vision.getTX()) < Constants.ShooterConstants.LIMELIGHT_TX_TOLERANCE_DEG;
+        return vision.hasTarget() && Math.abs(vision.getTX()) < ShooterConstants.LIMELIGHT_TX_TOLERANCE_DEG;
     }
 
     public double getTargetVelocityRPM() {

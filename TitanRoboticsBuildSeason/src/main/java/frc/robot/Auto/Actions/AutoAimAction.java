@@ -11,8 +11,7 @@ import frc.robot.Telemetry.TelemetryKeys;
 import frc.robot.Interfaces.Actions;
 import frc.robot.Subsystems.Shooter;
 import frc.robot.Subsystems.SwerveBase;
-import frc.robot.Data.Constants;
-import frc.robot.Data.Constants.ShooterConstants;
+import frc.robot.Subsystems.shooter.ShooterConstants;
 import java.util.Optional;
 
 public class AutoAimAction implements Actions {
@@ -38,7 +37,7 @@ public class AutoAimAction implements Actions {
 
         if (path != null) {
             path.setRotationOverride(() -> {
-                double lookAhead = Constants.SHOOTER_PREDICTIVE_LOOK_AHEAD;
+                double lookAhead = ShooterConstants.SHOOTER_PREDICTIVE_LOOK_AHEAD;
                 Optional<SwerveSample> sample = path.getSampleAtRelativeTime(lookAhead);
 
                 if (sample.isPresent()) {
@@ -57,7 +56,7 @@ public class AutoAimAction implements Actions {
     @Override
     public void update() {
         double currentTime = Timer.getTimestamp();
-        double lookAhead = Constants.SHOOTER_PREDICTIVE_LOOK_AHEAD;
+        double lookAhead = ShooterConstants.SHOOTER_PREDICTIVE_LOOK_AHEAD;
         Optional<SwerveSample> sample = (path != null) ? path.getSampleAtRelativeTime(lookAhead) : Optional.empty();
 
         Pose2d pose;
@@ -122,7 +121,7 @@ public class AutoAimAction implements Actions {
         } else {
             // Shot Impossible (e.g. too close/far)
             shooter.prepareToShoot();
-            shooter.setTargetRPM(Constants.ShooterConstants.IDLE_RPM);
+            shooter.setTargetRPM(ShooterConstants.IDLE_RPM);
             SmartDashboard.putString(TelemetryKeys.AutoAim.STATUS, "Solution Impossible");
 
             // If path is done and we can't shoot, stop moving
@@ -146,7 +145,7 @@ public class AutoAimAction implements Actions {
         // Return shooter to PREPARING with IDLE speed so feeder is stopped,
         // but flywheels stay warm for subsequent actions
         shooter.prepareToShoot();
-        shooter.setTargetRPM(Constants.ShooterConstants.IDLE_RPM);
+        shooter.setTargetRPM(ShooterConstants.IDLE_RPM);
 
         timer.stop();
         if (path == null || path.isFinished()) {

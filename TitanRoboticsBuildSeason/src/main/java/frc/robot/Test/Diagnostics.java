@@ -19,6 +19,7 @@ import frc.robot.Subsystems.SwerveBase;
 import frc.robot.Subsystems.Vision;
 import frc.robot.Telemetry.Alert;
 import frc.robot.Telemetry.Alert.AlertType;
+import frc.robot.Telemetry.TelemetryKeys;
 
 /**
  * Diagnostics subsystem for safe hardware verification and automated Pre-Flight pit checks.
@@ -387,9 +388,9 @@ public class Diagnostics implements Subsystem {
 
         // Pre-Flight telemetry
         SmartDashboard.putBoolean("Diagnostics/PreFlight/Running", preFlightRunning);
-        SmartDashboard.putString("Diagnostics/PreFlight/Step", preFlightStep.displayName);
+        SmartDashboard.putString(TelemetryKeys.Diagnostics.PREFLIGHT_STEP, preFlightStep.displayName);
         double totalElapsed = preFlightRunning ? (Timer.getFPGATimestamp() - preFlightStartTime) : 0.0;
-        SmartDashboard.putNumber("Diagnostics/PreFlight/Progress", Math.min(1.0, totalElapsed / 15.0));
+        SmartDashboard.putNumber(TelemetryKeys.Diagnostics.PREFLIGHT_PROGRESS, Math.min(1.0, totalElapsed / 15.0));
 
         // Scorecard publication for Elastic Dashboard (only publish when changed or during pre-flight)
         if (preFlightRunning || scorecardDirty) {
@@ -400,8 +401,8 @@ public class Diagnostics implements Subsystem {
         }
 
         // Trigger automated pre-flight check from dashboard
-        if (SmartDashboard.getBoolean("Diagnostics/Run Pre-Flight Check", false)) {
-            SmartDashboard.putBoolean("Diagnostics/Run Pre-Flight Check", false);
+        if (SmartDashboard.getBoolean(TelemetryKeys.Diagnostics.RUN_PREFLIGHT, false)) {
+            SmartDashboard.putBoolean(TelemetryKeys.Diagnostics.RUN_PREFLIGHT, false);
             startPreFlightCheck();
         }
 

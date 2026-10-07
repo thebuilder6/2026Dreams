@@ -292,7 +292,15 @@ public class JevDecisionEngine {
      * @param archetype behavior archetype selecting utility weights
      */
     public AIActionIntent evaluatePolicy(WorldState world, MatchKnowledge knowledge, Archetype archetype) {
-        return evaluatePolicy(world, knowledge, archetype, null);
+        return evaluatePolicy(world, knowledge, archetype, (String) null);
+    }
+
+    /**
+     * Evaluation overload that accepts explicit PolicyWeights.
+     */
+    public AIActionIntent evaluatePolicy(
+            WorldState world, MatchKnowledge knowledge, Archetype archetype, PolicyWeights weights) {
+        return evaluatePolicy(world, knowledge, archetype, null, null, null, null, weights);
     }
 
     /**
@@ -359,6 +367,26 @@ public class JevDecisionEngine {
      */
     public Map<StrategicObjective, Double> evaluateUtilityScores(
             WorldState world, Set<Translation2d> blockedFuel, MatchKnowledge knowledge, Archetype archetype) {
+        return evaluateUtilityScores(world, blockedFuel, knowledge, archetype, PolicyWeights.getActive());
+    }
+
+    /**
+     * Evaluates the complete raw and adjusted utility map for all strategic objectives
+     * using explicit {@link PolicyWeights}.
+     *
+     * @param world       the observable or simulated world state
+     * @param blockedFuel dynamic set of fuel positions currently contested or blocked
+     * @param knowledge   match tier knowledge (clairvoyant sim vs observed real robot)
+     * @param archetype   tactical behavior archetype
+     * @param weights     parameterized utility weights and thresholds
+     * @return map of every StrategicObjective to its computed utility value [0.0, 1.0]
+     */
+    public Map<StrategicObjective, Double> evaluateUtilityScores(
+            WorldState world, Set<Translation2d> blockedFuel, MatchKnowledge knowledge, Archetype archetype,
+            PolicyWeights weights) {
+        if (weights == null) {
+            weights = PolicyWeights.getActive();
+        }
         if (knowledge == null) {
             knowledge = ObservedKnowledge.selfOnly();
         }
@@ -384,45 +412,42 @@ public class JevDecisionEngine {
                 && world.matchTimeRemaining() > 0.0 && world.matchTimeRemaining() <= 20.0) {
             if (world.matchTimeRemaining() <= 15.0) {
                 // Dominant endgame priority: strictly overrides cycling in final 15 seconds
-                climbUtility = 0.99 + (0.01 * (1.0 - world.matchTimeRemaining() / 15.0));
+                climbUtility = weights.climbBase15() + (weights.climbScale15() * (1.0 - world.matchTimeRemaining() / 15.0));
             } else {
-                climbUtility = 0.85 + (0.13 * (1.0 - (world.matchTimeRemaining() - 15.0) / 5.0));
+                climbUtility = weights.climbBase20() + (weights.climbScale20() * (1.0 - (world.matchTimeRemaining() - 15.0) / 5.0));
             }
         }
         utilities.put(StrategicObjective.RUSH_CLIMB, climbUtility);
 
         // Cycle Score Hub
-        // If already in shooting range (dist <= 4.0m) or Co-Pilot assist, keep firing
-        // down to the very last ball!
-        // If out in midfield, require a solid batch (>=16) unless the active shift is
-        // about to end (<=4.5s)
-        boolean inShootingRange = distToSelfHub <= 4.0;
-        boolean shiftEndingSoon = world.timeUntilHubShift() <= 4.5 && world.timeUntilHubShift() > 0.0;
-        int minFuelToScore = (archetype == Archetype.CO_PILOT || inShootingRange) ? 1 : (shiftEndingSoon ? 4 : 16);
+        // If already in shooting range or Co-Pilot assist, keep firing down to the very last ball!
+        // If out in midfield, require a solid batch unless the active shift is about to end
+        boolean inShootingRange = distToSelfHub <= weights.scoreHubShootingRangeMeters();
+        boolean shiftEndingSoon = world.timeUntilHubShift() <= weights.scoreHubShiftEndingWindowSec() && world.timeUntilHubShift() > 0.0;
+        int minFuelToScore = (archetype == Archetype.CO_PILOT || inShootingRange) ? 1 : (shiftEndingSoon ? weights.scoreHubMinFuelShiftEnding() : weights.scoreHubMinFuelNormal());
 
         double scoreUtility = 0.0;
         if (world.isAllianceHubActive() && world.heldFuelCount() >= minFuelToScore) {
             double loadRatio = (archetype == Archetype.CO_PILOT || inShootingRange)
                     ? 1.0
-                    : Math.min(1.0, world.heldFuelCount() / 20.0);
-            scoreUtility = 0.72 + (0.26 * loadRatio); // 0.72 to 0.98
+                    : Math.min(1.0, world.heldFuelCount() / weights.scoreHubCapacityDivisor());
+            scoreUtility = weights.scoreHubBase() + (weights.scoreHubScale() * loadRatio); // 0.72 to 0.98
             // Tier-2 score awareness: chase when behind on the scoreboard.
             // Bounded (+0.03) so it biases close calls without overriding
             // geometry (range, batch, hub phase).
             if (knowledge.scoreDifferential() < 0) {
-                scoreUtility = Math.min(0.99, scoreUtility + 0.03);
+                scoreUtility = Math.min(weights.scoreHubBehindMax(), scoreUtility + weights.scoreHubBehindBonus());
             }
         }
         utilities.put(StrategicObjective.CYCLE_SCORE_HUB, scoreUtility);
 
-        // Stage Standoff (Hub is inactive; wait at standoff arc once hopper is well
-        // stocked)
+        // Stage Standoff (Hub is inactive; wait at standoff arc once hopper is well stocked)
         double stageUtility = 0.0;
-        int minFuelToStage = (archetype == Archetype.CO_PILOT) ? 1 : 18;
+        int minFuelToStage = (archetype == Archetype.CO_PILOT) ? 1 : weights.stageMinFuelNormal();
         if (!world.isAllianceHubActive() && world.heldFuelCount() >= minFuelToStage) {
-            stageUtility = 0.80;
-            if (world.timeUntilHubShift() <= 3.5 && world.timeUntilHubShift() > 0.0) {
-                stageUtility = (archetype == Archetype.CO_PILOT) ? 0.99 : 0.95; // Anticipate imminent shift
+            stageUtility = weights.stageStandoffBase();
+            if (world.timeUntilHubShift() <= weights.stageShiftWindowSec() && world.timeUntilHubShift() > 0.0) {
+                stageUtility = (archetype == Archetype.CO_PILOT) ? weights.stageShiftImminentCoPilot() : weights.stageShiftImminentNormal(); // Anticipate imminent shift
             }
         }
         utilities.put(StrategicObjective.STAGE_STANDOFF, stageUtility);
@@ -432,13 +457,13 @@ public class JevDecisionEngine {
         if (!world.isInventoryFull()) {
             if (!world.isAllianceHubActive()) {
                 // Stockpile full 20-30 ball capacity while hub is locked
-                vacuumUtility = 0.88 + (0.10 * (1.0 - world.heldFuelCount() / 30.0));
+                vacuumUtility = weights.vacuumInactiveBase() + (weights.vacuumInactiveScale() * (1.0 - world.heldFuelCount() / 30.0));
             } else {
-                int targetBatch = shiftEndingSoon ? 6 : 18;
+                int targetBatch = shiftEndingSoon ? weights.vacuumActiveShiftEndingBatch() : weights.vacuumActiveNormalBatch();
                 if (world.heldFuelCount() < targetBatch) {
-                    vacuumUtility = 0.82 + (0.14 * (1.0 - (double) world.heldFuelCount() / targetBatch));
+                    vacuumUtility = weights.vacuumActiveBase() + (weights.vacuumActiveScale() * (1.0 - (double) world.heldFuelCount() / targetBatch));
                 } else {
-                    vacuumUtility = 0.35;
+                    vacuumUtility = weights.vacuumActiveFullCap();
                 }
             }
         }
@@ -447,7 +472,7 @@ public class JevDecisionEngine {
         // Stockpile Depot (Feeder station restock: collect full payloads)
         double stockpileUtility = 0.0;
         if (!world.isInventoryFull() && !world.isAllianceHubActive()) {
-            stockpileUtility = 0.86 + (0.10 * (1.0 - world.heldFuelCount() / 30.0));
+            stockpileUtility = weights.stockpileDepotBase() + (weights.stockpileDepotScale() * (1.0 - world.heldFuelCount() / 30.0));
         }
         utilities.put(StrategicObjective.STOCKPILE_DEPOT, stockpileUtility);
 
@@ -455,61 +480,37 @@ public class JevDecisionEngine {
         double sweepUtility = 0.0;
         if (homeFuelCount > 0 && !world.isInventoryFull()) {
             sweepUtility = world.isAllianceHubActive()
-                    ? 0.96
-                    : 0.90 + 0.08 * (1.0 - world.heldFuelCount() / 30.0);
+                    ? weights.sweepAllianceZoneActive()
+                    : weights.sweepAllianceZoneInactiveBase() + weights.sweepAllianceZoneInactiveScale() * (1.0 - world.heldFuelCount() / 30.0);
         }
         utilities.put(StrategicObjective.SWEEP_ALLIANCE_ZONE, sweepUtility);
 
         // Poach only while a shift flip is genuinely approaching.
-        //
-        // The `> 0.0` floor is load-bearing and was missing. `HubSchedule
-        // .timeUntilShiftEnd()` returns 0.0 by design during AUTO, TRANSITION,
-        // ENDGAME and DONE, where no flip is coming - so a bare `<= 6.0` test
-        // stayed true for the entire endgame. It was masked while the sim ran on
-        // the frozen shift clock, because that clock is pinned at exactly 0.0
-        // and the guard was therefore true everywhere; fixing the clock without
-        // this bound would have shifted poach behaviour during shift phases and
-        // read as "fixed" while the endgame case stayed wrong.
         double opponentZoneUtility = 0.0;
         double timeUntilShiftForPoach = world.timeUntilHubShift();
         if (!world.isAutonomous() && !world.isInventoryFull()
-                && timeUntilShiftForPoach > 0.0 && timeUntilShiftForPoach <= 6.0
-                // Only poach when the OPPONENT's hub is the one coming back on. In
-                // SHIFT2/SHIFT4 our own hub is about to open and theirs is about to
-                // close; sprinting across for their loose fuel then abandons our own
-                // scoring window. This is a behaviour change on a strategy judgement,
-                // not a proven defect -- same class as the STAGE_STANDOFF question.
+                && timeUntilShiftForPoach > 0.0 && timeUntilShiftForPoach <= weights.poachOpponentZoneWindowSec()
                 && world.isOpponentHubActiveAfterShift()
-                && world.heldFuelCount() < 20
+                && world.heldFuelCount() < weights.poachOpponentZoneMaxHeld()
                 && countFuelInZone(!world.isRedAlliance(), true, blockedFuel, knowledge) > 0) {
-            opponentZoneUtility = 0.78;
+            opponentZoneUtility = weights.poachOpponentZoneUtility();
         }
         utilities.put(StrategicObjective.POACH_OPPONENT_ZONE, opponentZoneUtility);
 
-        // G407 and the robot's shooter safety policy allow launches only from our
-        // alliance zone. Do not turn a midfield pass into an illegal launch.
-        //
-        // NOTE: the explicit opponent-hub check below is a NO-OP today, and is kept
-        // deliberately rather than as a claimed fix. Both hubs are never dark at the
-        // same time -- SHIFT1-4 have exactly one live, and AUTO/TRANSITION/ENDGAME
-        // have both -- so `!isAllianceHubActive()` already implies the opponent's hub
-        // is scoring. An earlier version of this comment claimed it prevented
-        // "lobbing into a dead hub"; that scenario is unreachable. It becomes
-        // load-bearing only if the schedule ever allows two dark hubs (DONE), so it
-        // documents the invariant at the point where the aim target is chosen.
+        // G407 and the robot's shooter safety policy allow launches only from our alliance zone.
         double shuttleUtility = !world.isAutonomous() && !world.isAllianceHubActive()
                 && (world.isOpponentHubActive() || world.isOpponentHubActiveAfterShift())
                 && FieldMap.AllianceZones.isInAllianceZone(world.selfPose(), world.isRedAlliance())
-                && !FieldMap.Trenches.isLowClearance(world.selfPose()) && distToSelfHub > 6.0
-                && world.heldFuelCount() >= 16 ? 0.87 : 0.0;
+                && !FieldMap.Trenches.isLowClearance(world.selfPose()) && distToSelfHub > weights.shuttlePassMinDistMeters()
+                && world.heldFuelCount() >= weights.shuttlePassMinHeld() ? weights.shuttlePassUtility() : 0.0;
         utilities.put(StrategicObjective.SHUTTLE_PASS, shuttleUtility);
 
         double longRangeUtility = 0.0;
-        if (world.isAllianceHubActive() && world.heldFuelCount() >= 6
+        if (world.isAllianceHubActive() && world.heldFuelCount() >= weights.snipeMinHeld()
                 && FieldMap.AllianceZones.isInAllianceZone(world.selfPose(), world.isRedAlliance())
-                && distToSelfHub >= 3.6 && distToSelfHub <= FieldMap.Hubs.SHOOTING_MAX_DISTANCE) {
+                && distToSelfHub >= weights.snipeMinDistMeters() && distToSelfHub <= FieldMap.Hubs.SHOOTING_MAX_DISTANCE) {
             longRangeUtility = opponentObserved
-                    && world.opponentPose().getTranslation().getDistance(selfHub) <= 2.4 ? 0.94 : 0.86;
+                    && world.opponentPose().getTranslation().getDistance(selfHub) <= 2.4 ? weights.snipeCloseUtility() : weights.snipeFarUtility();
         }
         utilities.put(StrategicObjective.LONG_RANGE_SNIPE, longRangeUtility);
 
@@ -523,22 +524,19 @@ public class JevDecisionEngine {
             Translation2d oppHub = FieldMap.Hubs.getHubLocation2d(!world.isRedAlliance());
             double oppDistToHub = world.opponentPose().getTranslation().getDistance(oppHub);
 
-            if (world.isOpponentHubActive() && oppDistToHub < 6.5) {
-                laneDenialUtility = 0.86;
+            if (world.isOpponentHubActive() && oppDistToHub < weights.laneDenialMaxDistMeters()) {
+                laneDenialUtility = weights.laneDenialActiveUtility();
             }
-            shadowUtility = 0.65;
-            interceptUtility = 0.75;
+            shadowUtility = weights.shadowMidlineBaseUtility();
+            interceptUtility = weights.interceptBaseUtility();
         }
 
         boolean defensiveArchetype = archetype == Archetype.TACTICAL_DEFENDER
                 || archetype == Archetype.DEFENSE_BULLY || archetype == Archetype.ADAPTIVE_COMPETITOR;
         double chokeUtility = 0.0;
-        // Gate on the occupied trench itself (X band AND low-clearance Y), not
-        // the X band alone — an opponent driving midfield at trench X must not
-        // pull a defender to a trench mouth.
         if (defensiveArchetype && opponentObserved && !world.isAutonomous()
                 && FieldMap.Trenches.isLowClearance(world.opponentPose())) {
-            chokeUtility = 0.91;
+            chokeUtility = weights.chokeTrenchUtility();
         }
         utilities.put(StrategicObjective.CHOKE_TRENCH, chokeUtility);
 
@@ -547,7 +545,7 @@ public class JevDecisionEngine {
             outer: for (Pose2d ally : knowledge.allyPoses()) {
                 for (Pose2d opponent : knowledge.opponentPoses()) {
                     if (ally.getTranslation().getDistance(opponent.getTranslation()) <= 2.2) {
-                        screenUtility = 0.89;
+                        screenUtility = weights.screenForAllyUtility();
                         break outer;
                     }
                 }
@@ -555,13 +553,10 @@ public class JevDecisionEngine {
         }
         utilities.put(StrategicObjective.SCREEN_FOR_ALLY, screenUtility);
 
-        // Pin duration is not present in WorldState/MatchKnowledge yet; keep this
-        // objective unavailable until the simulator supplies an explicit referee
-        // signal.
+        // Pin duration is not present in WorldState/MatchKnowledge yet
         utilities.put(StrategicObjective.BAIT_PIN_FOUL, 0.0);
 
-        // Tier-1 driver assist: with no vision-tracked opponent, opponent-
-        // chasing objectives are unavailable regardless of archetype.
+        // Tier-1 driver assist: with no vision-tracked opponent, opponent-chasing objectives are unavailable
         if (!opponentObserved) {
             laneDenialUtility = 0.0;
             shadowUtility = 0.0;
@@ -570,30 +565,19 @@ public class JevDecisionEngine {
 
         // Apply Archetype Multipliers
         if (world.isAutonomous()) {
-            // FRC G201 centerline rule: in autonomous mode, robots must stay on their
-            // alliance half.
-            // Opponent interception, lane denial, and cross-field pinning are illegal in
-            // auto.
             laneDenialUtility = 0.0;
             shadowUtility = 0.0;
             interceptUtility = 0.0;
-            // Fill-then-volley: harvest until a full batch before committing to a
-            // scoring trip. (Prevents one-ball-at-a-time auto: previously any held
-            // fuel > 0 sent the bot straight to the hub.) Exceptions: already in
-            // shooting range (finish the volley instead of driving away), or auto
-            // clock nearly out (dump the hopper rather than carrying balls home).
             boolean batchReady = world.heldFuelCount() >= AUTO_BATCH_MIN_FUEL;
             boolean autoClockLow = world.matchTimeRemaining() >= 0.0
                     && world.matchTimeRemaining() <= AUTO_DUMP_SECONDS_LEFT;
             if (world.heldFuelCount() > 0 && (batchReady || inShootingRange || autoClockLow)) {
-                scoreUtility = 0.95;
+                scoreUtility = weights.autoBatchDumpScoreUtility();
                 vacuumUtility = 0.0;
-                // Do not let the newly added home-zone sweep outrank the
-                // established auto batch/clock dump decision.
                 sweepUtility = 0.0;
             } else {
                 scoreUtility = 0.0;
-                vacuumUtility = 0.85;
+                vacuumUtility = weights.autoHarvestVacuumUtility();
             }
         } else if (archetype == Archetype.AUTONOMOUS_CYCLER) {
             laneDenialUtility = 0.0;
@@ -608,10 +592,10 @@ public class JevDecisionEngine {
             opponentZoneUtility = 0.0;
             shuttleUtility = 0.0;
             longRangeUtility = 0.0;
-            laneDenialUtility *= 1.15;
-            shadowUtility *= 1.10;
+            laneDenialUtility *= weights.tacticalDefenderLaneMultiplier();
+            shadowUtility *= weights.tacticalDefenderShadowMultiplier();
         } else if (archetype == Archetype.LEAD_PURSUIT_INTERCEPTOR) {
-            interceptUtility = 0.99;
+            interceptUtility = weights.bullyInterceptUtility();
             scoreUtility = 0.0;
             stageUtility = 0.0;
             sweepUtility = 0.0;
@@ -621,7 +605,7 @@ public class JevDecisionEngine {
             shuttleUtility = 0.0;
             longRangeUtility = 0.0;
         } else if (archetype == Archetype.DEFENSE_BULLY) {
-            interceptUtility = 0.99;
+            interceptUtility = weights.bullyInterceptUtility();
             scoreUtility = 0.0;
             stageUtility = 0.0;
             sweepUtility = 0.0;
@@ -635,7 +619,7 @@ public class JevDecisionEngine {
             shadowUtility = 0.0;
             interceptUtility = 0.0;
             if (world.heldFuelCount() > 0 && world.isAllianceHubActive()) {
-                scoreUtility = 0.98;
+                scoreUtility = weights.coPilotActiveScoreUtility();
                 vacuumUtility = 0.0;
             }
         }
@@ -644,7 +628,7 @@ public class JevDecisionEngine {
                 && world.isAllianceHubActive()
                 && timeLeftToHarvest <= 0.0
                 && world.heldFuelCount() >= 8) {
-            scoreUtility = 0.98;
+            scoreUtility = weights.harvestDeadlineForceUtility();
             vacuumUtility = 0.0;
             sweepUtility = 0.0;
         }
@@ -681,6 +665,20 @@ public class JevDecisionEngine {
             WorldState world, MatchKnowledge knowledge, Archetype archetype, String cloudContext,
             Set<Translation2d> blockedFuel, ObjectiveCommitment commitmentIn,
             FuelTargetMemory fuelTargetMemory) {
+        return evaluatePolicy(world, knowledge, archetype, cloudContext, blockedFuel,
+                commitmentIn, fuelTargetMemory, PolicyWeights.getActive());
+    }
+
+    /**
+     * Full evaluation overload including per-agent latches and explicit {@link PolicyWeights}.
+     */
+    public AIActionIntent evaluatePolicy(
+            WorldState world, MatchKnowledge knowledge, Archetype archetype, String cloudContext,
+            Set<Translation2d> blockedFuel, ObjectiveCommitment commitmentIn,
+            FuelTargetMemory fuelTargetMemory, PolicyWeights weights) {
+        if (weights == null) {
+            weights = PolicyWeights.getActive();
+        }
         if (knowledge == null) {
             // Null used to become legacyObserved(), i.e. "opponents seen". Default to
             // the tier that claims the least, so a caller that forgets to pass
@@ -705,7 +703,7 @@ public class JevDecisionEngine {
         double timeLeftToHarvest = world.timeUntilHubShift() - transitTimeToHub;
 
         // ── 1. Evaluate Utility Scores Across Objectives ─────────────────────
-        Map<StrategicObjective, Double> utilities = evaluateUtilityScores(world, blockedFuel, knowledge, archetype);
+        Map<StrategicObjective, Double> utilities = evaluateUtilityScores(world, blockedFuel, knowledge, archetype, weights);
 
         // ── 2. Select Highest Utility Objective ──────────────────────────────
         StrategicObjective bestObjective = evaluateLocalUtilityMatrix(utilities, world, archetype);

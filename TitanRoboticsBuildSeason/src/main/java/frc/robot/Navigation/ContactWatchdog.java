@@ -101,6 +101,7 @@ public class ContactWatchdog {
     private double backoffTimer = 0.0;
     private boolean forcedBackoffActive = false;
     private Pose2d pinContactPose = new Pose2d();
+    private Pose2d lastPose = new Pose2d();
 
     // Deadlock state
     private final java.util.Random random;
@@ -170,6 +171,7 @@ public class ContactWatchdog {
             Pose2d opponentPose,
             double dt) {
         if (currentPose == null) currentPose = new Pose2d();
+        this.lastPose = currentPose;
         if (actualVel == null) actualVel = new ChassisSpeeds();
         if (commandedVel == null) commandedVel = new ChassisSpeeds();
         if (dt <= 1e-6) dt = 0.02;
@@ -365,6 +367,49 @@ public class ContactWatchdog {
             double escapeAngle = (unstickAttempts * Math.PI / 3.0);
             unstickVector = new Translation2d(Math.cos(escapeAngle), Math.sin(escapeAngle)).times(2.2);
         }
+
+        if (lastPose != null && lastPose.getTranslation().getNorm() > 1e-4) {
+            unstickVector = ensureWallSafe(lastPose, unstickVector);
+        }
+    }
+
+    private static final double WALL_MARGIN_M = 0.50;
+
+    /**
+     * Deflects unstick vector if it points directly into a field perimeter wall,
+     * sliding along the wall toward the center rather than pinning the chassis further.
+     */
+    static Translation2d ensureWallSafe(Pose2d pose, Translation2d vector) {
+        if (pose == null || vector == null || vector.getNorm() < 1e-4) {
+            return vector;
+        }
+        double x = pose.getX();
+        double y = pose.getY();
+        double vx = vector.getX();
+        double vy = vector.getY();
+        double speed = vector.getNorm();
+
+        boolean hitWall = false;
+        if ((x < WALL_MARGIN_M && vx < 0) || (x > FieldMap.FIELD_LENGTH - WALL_MARGIN_M && vx > 0)) {
+            vx = 0.0;
+            hitWall = true;
+        }
+        if ((y < WALL_MARGIN_M && vy < 0) || (y > FieldMap.FIELD_WIDTH - WALL_MARGIN_M && vy > 0)) {
+            vy = 0.0;
+            hitWall = true;
+        }
+        if (hitWall) {
+            Translation2d toCenter = new Translation2d(
+                    FieldMap.FIELD_LENGTH / 2.0 - x,
+                    FieldMap.FIELD_WIDTH / 2.0 - y);
+            if (Math.abs(vx) < 1e-4 && Math.abs(vy) < 1e-4) {
+                Translation2d unitToCenter = toCenter.div(Math.max(1e-4, toCenter.getNorm()));
+                return unitToCenter.times(speed);
+            }
+            Translation2d deflected = new Translation2d(vx, vy);
+            return deflected.div(deflected.getNorm()).times(speed);
+        }
+        return vector;
     }
 
     /**
@@ -532,6 +577,22 @@ public class ContactWatchdog {
         return recoveryTimeSec > 0.0;
     }
 
+    /** Returns the active deadlock resolution without re-ticking the state. */
+    public synchronized Resolution getDeadlockResolution() {
+        if (recoveryTimeSec > 0.0) {
+            return new Resolution(true, recoveryForwardScale, recoveryLateralJink);
+        }
+        return idleResolution();
+    }
+
+    /**
+     * True when ANY high-priority contact recovery (pin forced backoff,
+     * pirouette unstick, or deadlock recovery) is actively commanding the robot.
+     */
+    public synchronized boolean isAnyContactRecoveryActive() {
+        return isForcedBackoffActive() || isPirouetteActive() || isDeadlockRecovering();
+    }
+
     /** True while a deadlock recovery cooldown is suppressing re-trigger. */
     public synchronized boolean isDeadlockCooling() {
         return cooldownTimeSec > 0.0;
@@ -616,6 +677,7 @@ public class ContactWatchdog {
         unstickVector = new Translation2d();
         unstickAttempts = 0;
         lastUnstickStartTime = -1.0;
+        lastPose = new Pose2d();
     }
 
     private void publishTelemetry(boolean isImpact, Resolution deadlock) {

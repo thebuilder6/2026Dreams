@@ -23,7 +23,7 @@ import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.Commands;
 import frc.robot.Data.Constants;
-import frc.robot.Data.Constants.IntakeConstants;
+import frc.robot.Subsystems.intake.IntakeConstants;
 import frc.robot.Navigation.FieldMap;
 import frc.robot.Interfaces.Subsystem;
 import frc.robot.Subsystems.intake.IntakeIO;
@@ -155,23 +155,23 @@ public class Intake implements Subsystem {
      */
     private void updateArmController() {
         // Live Tunable Gains Check
-        if (Constants.IntakeConstants.ARM_KP.hasChanged(hashCode())
-                || Constants.IntakeConstants.ARM_KI.hasChanged(hashCode())
-                || Constants.IntakeConstants.ARM_KD.hasChanged(hashCode())) {
+        if (IntakeConstants.ARM_KP.hasChanged(hashCode())
+                || IntakeConstants.ARM_KI.hasChanged(hashCode())
+                || IntakeConstants.ARM_KD.hasChanged(hashCode())) {
             pivotProfiledPIDController.setPID(
-                    Constants.IntakeConstants.ARM_KP.get(),
-                    Constants.IntakeConstants.ARM_KI.get(),
-                    Constants.IntakeConstants.ARM_KD.get());
+                    IntakeConstants.ARM_KP.get(),
+                    IntakeConstants.ARM_KI.get(),
+                    IntakeConstants.ARM_KD.get());
         }
-        if (Constants.IntakeConstants.ARM_KS.hasChanged(hashCode())
-                || Constants.IntakeConstants.ARM_KG.hasChanged(hashCode())
-                || Constants.IntakeConstants.ARM_KV.hasChanged(hashCode())
-                || Constants.IntakeConstants.ARM_KA.hasChanged(hashCode())) {
+        if (IntakeConstants.ARM_KS.hasChanged(hashCode())
+                || IntakeConstants.ARM_KG.hasChanged(hashCode())
+                || IntakeConstants.ARM_KV.hasChanged(hashCode())
+                || IntakeConstants.ARM_KA.hasChanged(hashCode())) {
             feedforward = new ArmFeedforward(
-                    Constants.IntakeConstants.ARM_KS.get(),
-                    Constants.IntakeConstants.ARM_KG.get(),
-                    Constants.IntakeConstants.ARM_KV.get(),
-                    Constants.IntakeConstants.ARM_KA.get());
+                    IntakeConstants.ARM_KS.get(),
+                    IntakeConstants.ARM_KG.get(),
+                    IntakeConstants.ARM_KV.get(),
+                    IntakeConstants.ARM_KA.get());
         }
 
         // Geofenced Low-Ceiling Intake Arm Protection (Trench Auto-Stow)
@@ -490,14 +490,14 @@ public class Intake implements Subsystem {
                 goal = upPosition;
                 updateArmController();
                 io.setRollerSpeed(power);
-                io.setHopperSpeed(Constants.IntakeConstants.HOPPER_SPEED);
+                io.setHopperSpeed(IntakeConstants.HOPPER_SPEED);
                 break;
 
             case STANDBY_REVERSED:
                 goal = upPosition;
                 updateArmController();
                 io.setRollerSpeed(-power);
-                io.setHopperSpeed(-Constants.IntakeConstants.HOPPER_SPEED);
+                io.setHopperSpeed(-IntakeConstants.HOPPER_SPEED);
                 break;
 
             case INTAKING:
@@ -505,7 +505,7 @@ public class Intake implements Subsystem {
                 goal = downPosition;
                 updateArmController();
                 io.setRollerSpeed(isEjectingJam ? -power : power);
-                io.setHopperSpeed(isEjectingJam ? -Constants.IntakeConstants.HOPPER_SPEED : Constants.IntakeConstants.HOPPER_SPEED);
+                io.setHopperSpeed(isEjectingJam ? -IntakeConstants.HOPPER_SPEED : IntakeConstants.HOPPER_SPEED);
                 break;
 
             case DOWN:
@@ -520,7 +520,7 @@ public class Intake implements Subsystem {
                 goal = downPosition;
                 updateArmController();
                 io.setRollerSpeed(-power);
-                io.setHopperSpeed(-Constants.IntakeConstants.HOPPER_SPEED);
+                io.setHopperSpeed(-IntakeConstants.HOPPER_SPEED);
                 break;
 
             case MANUAL:

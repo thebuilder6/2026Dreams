@@ -16,6 +16,7 @@ import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import edu.wpi.first.wpilibj.Timer;
 import frc.robot.Navigation.ContactWatchdog;
 import frc.robot.Navigation.DynamicRouter;
+import frc.robot.Navigation.StuckRecoveryArbiter;
 import frc.robot.Navigation.TrajectoryController;
 import frc.robot.Navigation.TargetProgressWatchdog;
 import frc.robot.Data.Constants;
@@ -27,6 +28,7 @@ import frc.robot.Intelligence.WorldState;
 import frc.robot.Intelligence.WorldStateBuilder;
 import frc.robot.Navigation.FieldMap;
 import frc.robot.Subsystems.Intake.IntakeState;
+import frc.robot.Subsystems.intake.IntakeConstants;
 import frc.robot.Subsystems.SwerveBase;
 import org.littletonrobotics.junction.Logger;
 import swervelib.simulation.ironmaple.simulation.IntakeSimulation;
@@ -87,11 +89,8 @@ public class AIRobotInstance {
     private boolean lastStallResult = false;
     private double lastStallEvalTimestamp = -1.0;
 
-    // Stationary-arm harvester watchdog (prevents contested-target deadlock inside ARRIVED_M)
-    public static final double HARVEST_ARRIVAL_ABANDON_SEC = 1.8;
-    private double harvestArrivalHoldSec = 0.0;
-    private int lastHarvestFuelCount = 0;
-    private Translation2d lastHarvestTargetPos = null;
+    // Stationary-arm harvester watchdog (delegated to TargetProgressWatchdog)
+    public static final double HARVEST_ARRIVAL_ABANDON_SEC = TargetProgressWatchdog.HARVEST_ARRIVAL_ABANDON_SEC;
 
     // Score-rig instrumentation (read-only; no behaviour depends on it).
     private final BotMatchMetrics matchMetrics = new BotMatchMetrics();
@@ -135,7 +134,7 @@ public class AIRobotInstance {
                     Meters.of(0.70),
                     Meters.of(0.30),
                     IntakeSimulation.IntakeSide.FRONT,
-                    Constants.IntakeConstants.MAX_HELD_BALLS
+                    IntakeConstants.MAX_HELD_BALLS
             );
             if (this.intakeSimulation != null) {
                 this.intakeSimulation.setGamePiecesCount(AIRobotSim.INITIAL_HELD_BALLS);
@@ -217,7 +216,7 @@ public class AIRobotInstance {
     }
 
     public void setFuelCount(int fuelCount) {
-        if (fuelCount < 0 || fuelCount > Constants.IntakeConstants.MAX_HELD_BALLS) {
+        if (fuelCount < 0 || fuelCount > IntakeConstants.MAX_HELD_BALLS) {
             throw new IllegalArgumentException("fuelCount is outside the robot hopper capacity");
         }
         if (intakeSimulation != null) {
@@ -230,7 +229,7 @@ public class AIRobotInstance {
         if (startingPose == null) {
             throw new IllegalArgumentException("startingPose must not be null");
         }
-        if (preloadFuel < 0 || preloadFuel > Constants.IntakeConstants.MAX_HELD_BALLS) {
+        if (preloadFuel < 0 || preloadFuel > IntakeConstants.MAX_HELD_BALLS) {
             throw new IllegalArgumentException("preloadFuel is outside the robot hopper capacity");
         }
         setRobotPose(startingPose);
@@ -247,9 +246,6 @@ public class AIRobotInstance {
         fuelTargetMemory.reset();
         trajectoryController.reset();
         matchMetrics.reset();
-        harvestArrivalHoldSec = 0.0;
-        lastHarvestFuelCount = preloadFuel;
-        lastHarvestTargetPos = null;
         try {
             String botName = isAlly ? ("AllyBot" + (botId - 100)) : ("OpponentBot" + botId);
             String targetName = isAlly ? ("AllyTarget" + (botId - 100)) : ("OpponentTarget" + botId);
@@ -406,21 +402,8 @@ public class AIRobotInstance {
                     nearestForPin,
                     pinReference,
                     0.02);
-
-            if (contactWatchdog.isForcedBackoffActive() && archetype.isDefensive() && pinReference != null) {
-                Pose2d backoff = contactWatchdog.getBackOffTarget(currentPose, pinReference);
-                currentTargetPose = backoff;
-                currentTargetSpeeds = trajectoryController.calculate(
-                        currentPose, currentTargetSpeeds, currentTargetPose, maxSpeed, false, false);
-                currentAIStateDetail = String.format("PIN_RULE_BACKOFF (%.1fs)", contactWatchdog.getBackoffRemainingSec());
-            }
         }
 
-        // Single-owner drive arbitration (Phase 1): the trajectory speeds get
-        // exactly one peer correction per tick — deadlock recovery, trench
-        // yield, or soft separation — never a sum. Previously the separation
-        // nudge was added first and then scaled again by the deadlock recovery,
-        // so two corrections fought over one command. See resolvePreProgressCommand.
         boolean inTrenchCorridor = FieldMap.Trenches.isLowClearance(currentPose.getTranslation());
         double nearestPeerDist = Double.MAX_VALUE;
         if (peerRobotPoses != null) {
@@ -430,93 +413,48 @@ public class AIRobotInstance {
                 if (d > 0.05 && d < nearestPeerDist) nearestPeerDist = d;
             }
         }
-        ContactWatchdog.Resolution deadlock = contactWatchdog.updateDeadlockOnly(
-                stalled, nearestPeerDist, 0.02, inTrenchCorridor);
-
+        contactWatchdog.updateDeadlockOnly(stalled, nearestPeerDist, 0.02, inTrenchCorridor);
         boolean trenchCoolingYield = inTrenchCorridor
                 && contactWatchdog.isDeadlockCooling()
                 && nearestPeerDist < ContactWatchdog.PROXIMITY_M;
-        ResolvedDrive resolved = resolvePreProgressCommand(
-                currentTargetSpeeds, currentPose, peerRobotPoses,
-                deadlock, trenchCoolingYield);
-        currentTargetSpeeds = resolved.speeds();
-        if (resolved.detail() != null) {
-            currentAIStateDetail = resolved.detail();
-        }
 
-        // Peer-independent geometry escape, applied after the peer corrections so
-        // it is a true single-owner override rather than a second correction
-        // summed onto this tick. Deadlock cannot cover this case: it only
-        // accumulates when a peer is within PROXIMITY_M, so a bot wedged alone
-        // against a hub core, ramp, trench wall, or tower post has no peer path
-        // to be rescued by. Allies previously skipped the whole watchdog update,
-        // so they never even armed this.
-        //
-        // Priority order, highest first: rule-mandated G418 backoff (inside
-        // contactWatchdog.update) > this geometry escape > peer deadlock/yield/
-        // separation > raw trajectory. The target-unreachable escape below is
-        // peer-independent too and keeps its existing later position in the
-        // pipeline; it needs the nav target rather than just a stall signal.
-        if (contactWatchdog.isPirouetteActive()) {
-            currentTargetSpeeds = contactWatchdog.applyUnstickOnly(currentTargetSpeeds);
-            currentAIStateDetail = "STATIC_UNSTICK";
-        }
-
-        // Unreachable-target recovery (peer-independent). ContactWatchdog only
-        // fires near a peer, so a bot that drives alone into an unreachable
-        // fuel target used to hold position for the rest of the match.
-        String progressPrefix = (isAlly ? "AI_Telemetry/Ally" + (botId - 100) : "AI_Telemetry/Bot" + botId) + "/";
-        // currentVel is the measured chassis velocity, which is what lets the
-        // watchdog recognise a physically pinned robot even while the Jev
-        // selector churns between fuel pieces. Passing only the commanded speeds
-        // made "no progress" depend entirely on the target holding still.
+        // Suppress target progress timeouts while higher-priority contact recoveries are active
+        boolean inContactRecovery = contactWatchdog.isAnyContactRecoveryActive();
         TargetProgressWatchdog.Result progress = targetProgressWatchdog.update(
-                currentPose, currentTargetSpeeds, currentVel, currentTargetPose, 0.02);
+                currentPose, currentTargetSpeeds, currentVel, currentTargetPose, inContactRecovery, 0.02);
 
-        // Stationary-arm harvester watchdog: if arrived inside ARRIVED_M while intaking,
-        // but no fuel is being collected (e.g. peer wedging, physical obstacle block),
-        // abandon the target after HARVEST_ARRIVAL_ABANDON_SEC so the bot escapes and retargets.
+        // Stationary-arm harvester watchdog (encapsulated in TargetProgressWatchdog)
         boolean isHarvesting = (intent.intakeCommand() == IntakeState.INTAKING);
-        double distToTarget = currentTargetPose != null
-                ? currentPose.getTranslation().getDistance(currentTargetPose.getTranslation())
-                : Double.MAX_VALUE;
-
-        if (isHarvesting && distToTarget < TargetProgressWatchdog.ARRIVED_M && !progress.recovering()) {
-            if (lastHarvestTargetPos == null
-                    || currentTargetPose.getTranslation().getDistance(lastHarvestTargetPos) > 0.5) {
-                lastHarvestTargetPos = currentTargetPose.getTranslation();
-                harvestArrivalHoldSec = 0.0;
-                lastHarvestFuelCount = heldPieces;
-            } else if (heldPieces > lastHarvestFuelCount) {
-                harvestArrivalHoldSec = 0.0;
-                lastHarvestFuelCount = heldPieces;
-            } else {
-                harvestArrivalHoldSec += 0.02;
-                if (harvestArrivalHoldSec >= HARVEST_ARRIVAL_ABANDON_SEC) {
-                    progress = targetProgressWatchdog.abandonTarget(
-                            currentTargetPose.getTranslation(), currentPose);
-                    harvestArrivalHoldSec = 0.0;
-                    lastHarvestFuelCount = heldPieces;
-                }
-            }
-        } else {
-            harvestArrivalHoldSec = 0.0;
-            lastHarvestFuelCount = heldPieces;
-            if (distToTarget >= TargetProgressWatchdog.ARRIVED_M) {
-                lastHarvestTargetPos = null;
-            }
+        TargetProgressWatchdog.Result harvestProgress = targetProgressWatchdog.updateHarvestArrivalWatchdog(
+                currentPose, currentTargetPose, isHarvesting, heldPieces, 0.02);
+        if (harvestProgress.recovering()) {
+            progress = harvestProgress;
         }
 
-        if (progress.recovering()) {
-            currentTargetSpeeds.vxMetersPerSecond = progress.escapeVector().getX();
-            currentTargetSpeeds.vyMetersPerSecond = progress.escapeVector().getY();
-            currentTargetSpeeds.omegaRadiansPerSecond = 0.0;
-            currentAIStateDetail = String.format("TARGET_UNREACHABLE (%.1fs)", progress.escapeRemainingSec());
-            Logger.recordOutput(progressPrefix + "UnreachableRecovering", true);
-        } else {
-            Logger.recordOutput(progressPrefix + "UnreachableRecovering", false);
+        // Single-owner drive arbitration across all safety, stall, and progress tiers
+        StuckRecoveryArbiter.RecoveryResult recovery = StuckRecoveryArbiter.arbitrate(
+                currentTargetSpeeds,
+                currentPose,
+                contactWatchdog,
+                targetProgressWatchdog,
+                progress,
+                pinReference,
+                peerRobotPoses,
+                archetype.isDefensive(),
+                inTrenchCorridor);
+
+        currentTargetSpeeds = recovery.speeds();
+        if (recovery.stateDetail() != null) {
+            currentAIStateDetail = recovery.stateDetail();
         }
+        if (recovery.activeTier() == StuckRecoveryArbiter.RecoveryTier.PIN_RULE_BACKOFF && pinReference != null) {
+            currentTargetPose = contactWatchdog.getBackOffTarget(currentPose, pinReference);
+        }
+
+        String progressPrefix = (isAlly ? "AI_Telemetry/Ally" + (botId - 100) : "AI_Telemetry/Bot" + botId) + "/";
+        Logger.recordOutput(progressPrefix + "UnreachableRecovering", progress.recovering());
         Logger.recordOutput(progressPrefix + "UnreachableNoProgressSec", progress.noProgressSec());
+        Logger.recordOutput(progressPrefix + "StuckRecoveryTier", recovery.activeTier().name());
 
         // Plant-and-fire: aiming + solution ready but still moving means the
         // 80 ms volley would stream shots at transit speed (the dominant sim
@@ -647,7 +585,7 @@ public class AIRobotInstance {
                 new RecoveryState(
                         contactWatchdog.isPirouetteActive(),
                         progress.recovering(),
-                        deadlock.recovering(),
+                        contactWatchdog.isDeadlockRecovering(),
                         inTrenchCorridor,
                         trenchCoolingYield,
                         stalled),
@@ -663,7 +601,7 @@ public class AIRobotInstance {
                 edu.wpi.first.wpilibj.Timer.getFPGATimestamp(), stallCause);
         Logger.recordOutput(prefix + "StallCause",
                 stallCause == null ? "flowing" : stallCause.name());
-        Logger.recordOutput(prefix + "DriveCorrection", resolved.correction().name());
+        Logger.recordOutput(prefix + "DriveCorrection", recovery.activeTier().name());
     }
 
     /**
@@ -996,7 +934,7 @@ public class AIRobotInstance {
 
     public void checkProximityPickup(Pose2d robotPose) {
         if (intakeSimulation == null || !intakeSimulation.isRunning()) return;
-        if (intakeSimulation.getGamePiecesAmount() >= Constants.IntakeConstants.MAX_HELD_BALLS) return;
+        if (intakeSimulation.getGamePiecesAmount() >= IntakeConstants.MAX_HELD_BALLS) return;
 
         SimulatedArena arena = SimulatedArena.getInstance();
         if (arena == null) return;
@@ -1027,7 +965,7 @@ public class AIRobotInstance {
                     intakeSimulation.addGamePieceToIntake();
                     collectedThisTick++;
 
-                    if (intakeSimulation.getGamePiecesAmount() >= Constants.IntakeConstants.MAX_HELD_BALLS
+                    if (intakeSimulation.getGamePiecesAmount() >= IntakeConstants.MAX_HELD_BALLS
                             || collectedThisTick >= 10) {
                         break;
                     }
@@ -1107,6 +1045,6 @@ public class AIRobotInstance {
     }
 
     public double getHarvestArrivalHoldSec() {
-        return harvestArrivalHoldSec;
+        return targetProgressWatchdog.getHarvestArrivalHoldSec();
     }
 }

@@ -122,7 +122,7 @@ Please pay close attention to these rules. They are strictly enforced across the
 ### 4. Daily Developer Workflow
 
 #### A. Running Unit Tests
-We maintain an extensive automated JUnit 5 test suite (57 files, 525 tests):
+We maintain an extensive automated JUnit 5 test suite (59 files, 539 tests):
 ```powershell
 # Run the entire test suite
 .\gradlew test --offline --no-daemon
@@ -171,7 +171,7 @@ If a build fails complaining that a `.dll` or `.jar` is locked by another proces
 ## Verification
 
 - **Prerequisites verified**: WPILib 2026.2.1 JDK compiles cleanly offline.
-- **Test Suite**: 57 files / 525 tests pass cleanly (`0 FAILURES`, 2026-10-07).
+- **Test Suite**: 59 files / 539 tests pass cleanly (`0 FAILURES`, 2026-10-07).
 - **Next review due**: 2026-11-06.
 
 ---

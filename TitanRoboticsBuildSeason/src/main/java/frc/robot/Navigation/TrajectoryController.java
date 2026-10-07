@@ -34,6 +34,19 @@ public class TrajectoryController {
     private double lastPlanTimestamp = -1.0;
     private Translation2d pathStartTranslation = new Translation2d();
     private boolean isExplicitPath = false;
+    /**
+     * Status of the active waypoint plan. The planner reports it via
+     * {@link StaticPathfinder#findPathWithStatus}; this controller must not
+     * discard it. A consumed LOCAL_RECOVERY plan is a shake-loose step, not
+     * arrival at the goal (see the replan trigger in {@link #calculate}).
+     */
+    private StaticPathfinder.PathStatus lastPathStatus = null;
+    /**
+     * A consumed LOCAL_RECOVERY plan must be replaced, not held. Set when the
+     * recovery step is executed with the goal still far; consumed by the
+     * replan branch on the next tick.
+     */
+    private boolean recoveryReplanDue = false;
 
     // Kinematics & Speed profile
     private double currentCommandedSpeed = 0.0;
@@ -70,6 +83,20 @@ public class TrajectoryController {
      */
     public static final double REPLAN_RETRY_SEC = 0.25;
 
+    /**
+     * Goal distance above which a consumed LOCAL_RECOVERY plan triggers a
+     * replan instead of a hold. At or below this the step's endpoint counts as
+     * arrived and the §9 turn-in-place stance owns the tick.
+     */
+    public static final double RECOVERY_REPLAN_GOAL_MIN_M = 0.30;
+
+    /**
+     * Path-remaining radius below which a LOCAL_RECOVERY plan counts as
+     * consumed. Matches the §9 turn-in-place stance so the trigger and the
+     * zeroing branch agree on what "executed" means.
+     */
+    public static final double RECOVERY_CONSUMED_M = 0.05;
+
     // Rotation override (e.g. SOTF auto-aiming at Hub while moving)
     private Supplier<Rotation2d> rotationOverride = null;
 
@@ -92,6 +119,8 @@ public class TrajectoryController {
         lastCalculationTime = -1.0;
         currentCommandedSpeed = 0.0;
         isExplicitPath = false;
+        lastPathStatus = null;
+        recoveryReplanDue = false;
         rotationOverride = null;
         // A new path must not inherit derivative kick / integral from the old
         // path's heading history. Without this, the first calculate() after a
@@ -110,6 +139,8 @@ public class TrajectoryController {
         currentWaypointIndex = 0;
         lastPlanTimestamp = Timer.getTimestamp();
         isExplicitPath = true;
+        lastPathStatus = null;
+        recoveryReplanDue = false;
         if (!path.isEmpty()) {
             lastPathTarget = path.get(path.size() - 1);
             pathStartTranslation = path.get(0).getTranslation();
@@ -159,6 +190,7 @@ public class TrajectoryController {
         // ── 2. Automatic Path Generation & Re-planning ──────────────────────
         double distTargetMoved = targetPose.getTranslation().getDistance(lastPathTarget.getTranslation());
         boolean needReplan = !isExplicitPath && (waypoints.isEmpty()
+                || recoveryReplanDue
                 || (distTargetMoved > 0.85)
                 || (now - lastPlanTimestamp > 0.50 && distTargetMoved > 0.30)
                 // Stuck off-segment (e.g. APF shove past the 0.45 m cross-track
@@ -169,11 +201,17 @@ public class TrajectoryController {
 
         if (needReplan) {
             waypoints.clear();
-            waypoints.addAll(StaticPathfinder.findPath(currentPose, targetPose));
+            StaticPathfinder.PathResult plan =
+                    StaticPathfinder.findPathWithStatus(currentPose, targetPose);
+            waypoints.addAll(plan.waypoints());
+            lastPathStatus = plan.status();
+            recoveryReplanDue = false;
             currentWaypointIndex = 0;
             lastPathTarget = targetPose;
             lastPlanTimestamp = now;
             pathStartTranslation = currentPose.getTranslation();
+            Logger.recordOutput("Trajectory/PathStatus",
+                    lastPathStatus == null ? "NONE" : lastPathStatus.name());
             if (waypoints.isEmpty()) {
                 // No valid route. Sep 26 made this a deliberate stop rather than a
                 // straight-line command through an obstacle, which is still the right
@@ -251,6 +289,24 @@ public class TrajectoryController {
             if (StaticPathfinder.isLineOfSightClear(currentPose.getTranslation(), targetPose.getTranslation())) {
                 remainingDist = Math.min(remainingDist, distToGoal);
             }
+        }
+
+        // A consumed LOCAL_RECOVERY plan is a shake-loose, not arrival: the
+        // waypoint list holds only the recovery step, so reaching the end of
+        // it with the goal still far means the shake is done and the route is
+        // still open, not that the robot is done. Holding here parks with a
+        // static target (no replan trigger, NoRoute false, stall detectors
+        // blind below their command floor) — measured as a 62 s zero-command
+        // sit in the seed-2026 headless match. Replan from the new vantage on
+        // the next tick instead: it either routes, or steps again. Either way
+        // the command stays nonzero, so the progress watchdog (3 s give-up)
+        // owns genuinely unreachable goals instead of silence.
+        if (!isExplicitPath
+                && !recoveryReplanDue
+                && lastPathStatus == StaticPathfinder.PathStatus.LOCAL_RECOVERY
+                && remainingDist < RECOVERY_CONSUMED_M
+                && distToGoal > RECOVERY_REPLAN_GOAL_MIN_M) {
+            recoveryReplanDue = true;
         }
 
         // ── 5. Kinematic Speed Profiling with Acceleration Ramping ──────────

@@ -5,6 +5,7 @@ import frc.robot.Data.Constants;
 import frc.robot.Telemetry.TunableNumber;
 import frc.robot.Hardware.Controller;
 import frc.robot.Subsystems.Intake;
+import frc.robot.Subsystems.intake.IntakeConstants;
 
 /**
  * Intake system testing and calibration.
@@ -135,10 +136,10 @@ public class IntakeTesting {
         int pov = operatorController.getPOV();
         switch (pov) {
             case 0: // Up - Intake position
-                targetArmPosition.setDefault(Constants.IntakeConstants.ARM_INTAKE_POS);
+                targetArmPosition.setDefault(IntakeConstants.ARM_INTAKE_POS);
                 break;
             case 180: // Down - Idle position
-                targetArmPosition.setDefault(Constants.IntakeConstants.ARM_IDLE_POS);
+                targetArmPosition.setDefault(IntakeConstants.ARM_IDLE_POS);
                 break;
             case 90: // Right - Mid position
                 targetArmPosition.setDefault(45.0);
@@ -260,10 +261,10 @@ public class IntakeTesting {
                 double simulatedCurrent = Math.random() * 40; // 0-40 amps
                 maxCurrentDraw = Math.max(maxCurrentDraw, simulatedCurrent);
 
-                if (simulatedCurrent > Constants.IntakeConstants.STALL_CURRENT_LIMIT) {
+                if (simulatedCurrent > IntakeConstants.STALL_CURRENT_LIMIT) {
                     jamEvents++;
                     System.out.println("[IntakeTesting] Jam detected! Current: " + simulatedCurrent + "A");
-                    jamEjectUntilTimestamp = now + Constants.IntakeConstants.EJECT_TIME;
+                    jamEjectUntilTimestamp = now + IntakeConstants.EJECT_TIME;
                     intake.setRollerVoltage(-rollerSpeed.get() * 6.0);
                 }
             }

@@ -8,6 +8,7 @@ import edu.wpi.first.math.geometry.Rotation2d;
 import frc.robot.Data.Constants;
 import frc.robot.Intelligence.Archetype;
 import frc.robot.Navigation.FieldMap;
+import frc.robot.Subsystems.intake.IntakeConstants;
 
 /**
  * Immutable inputs for a reproducible AI-vs-AI training match.
@@ -113,7 +114,7 @@ public record TrainingMatchScenario(
                     || y < 0.0 || y > FieldMap.FIELD_WIDTH) {
                 throw new IllegalArgumentException("startingPose must be finite and inside the field");
             }
-            if (preloadFuel < 0 || preloadFuel > Constants.IntakeConstants.MAX_HELD_BALLS) {
+            if (preloadFuel < 0 || preloadFuel > IntakeConstants.MAX_HELD_BALLS) {
                 throw new IllegalArgumentException("preloadFuel is outside the robot hopper capacity");
             }
         }

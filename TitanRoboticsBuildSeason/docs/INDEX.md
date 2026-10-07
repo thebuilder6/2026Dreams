@@ -65,7 +65,8 @@ Single map for all durable human + AI knowledge. Code wins over prose on conflic
 ## Where things live (so nobody re-discovers)
 
 - Gradle project root: `TitanRoboticsBuildSeason/` — all `./gradlew` runs from here.
-- Inter-agent locks: `tools/lock/` (`Lock.psm1` + `acquire.ps1` / `release.ps1` / `status.ps1`), state in the gitignored `TitanRoboticsBuildSeason/.locks/`. Guards `gradle-build`, `sim-gui`, `sweep`, `deploy`; see [Resource Coordination](COORDINATION.md) and `AGENTS.md` §Resource coordination.
+- Inter-agent locks: `tools/lock/` (`Lock.psm1` + `acquire.ps1` / `release.ps1` / `status.ps1` + `with-lock.ps1` for one command under a lock), state in the gitignored `TitanRoboticsBuildSeason/.locks/`. Guards `gradle-build`, `sim-gui`, `sweep`, `deploy`; see [Resource Coordination](COORDINATION.md) and `AGENTS.md` §Resource coordination.
+- Dev gates (no lock needed): `tools/dev/check.ps1` (pre-flight: JDK + dirty-tree stamp + dashboard + lock probe; `-ForSweep` is strict), `tools/dev/verify.ps1` (single automated verifier: roadmap + counts + docs-contract, optional rig-schema), `tools/dev/sync-test-counts.ps1` (suite numbers from measured XML; refuses partial results dirs), `tools/dev/check-docs.ps1` (Docs-Contract gate: CHANGELOG touch, INDEX row, frontmatter).
 - Deploy dir: `TitanRoboticsBuildSeason/src/main/deploy/` (`example.txt` explains RoboRIO deploy semantics).
 - Elastic layout source: `TitanRoboticsBuildSeason/src/main/deploy/elastic-layout.json` (served on port 5800).
 - Coaching tool: `TitanRoboticsBuildSeason/tools/coaching/jev_coach.py` (`--live` / `--report`).

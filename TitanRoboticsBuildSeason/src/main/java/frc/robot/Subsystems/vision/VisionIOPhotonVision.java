@@ -86,7 +86,8 @@ public class VisionIOPhotonVision implements VisionIO {
         // 1. Check PhotonLib native pipeline result
         boolean readFromPhotonLib = false;
         try {
-            PhotonPipelineResult result = photonCamera.getLatestResult();
+            List<PhotonPipelineResult> unreadResults = photonCamera.getAllUnreadResults();
+            PhotonPipelineResult result = unreadResults.isEmpty() ? null : unreadResults.get(unreadResults.size() - 1);
             if (result != null && result.hasTargets()) {
                 readFromPhotonLib = true;
                 inputs.hasTarget = true;

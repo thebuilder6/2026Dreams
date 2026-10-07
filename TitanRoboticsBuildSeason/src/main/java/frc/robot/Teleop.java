@@ -24,6 +24,7 @@ import frc.robot.Subsystems.Intake;
 import frc.robot.Subsystems.Intake.IntakeState;
 import frc.robot.Subsystems.Shooter;
 import frc.robot.Subsystems.Shooter.ShootingSolution;
+import frc.robot.Subsystems.shooter.ShooterConstants;
 import frc.robot.Subsystems.SwerveBase;
 import frc.robot.Telemetry.AlertManager;
 import frc.robot.Utils.AllianceFlipUtil;
@@ -645,7 +646,7 @@ public class Teleop {
             shooter.setTargetRPM(solution.flywheelRpmLeft(), solution.flywheelRpmRight());
 
             double headingError = Math.abs(solution.shootingAngle().minus(swerveBase.getHeading()).getDegrees());
-            boolean headingAligned = headingError <= Constants.ShooterConstants.ALIGNMENT_HEADING_TOLERANCE_DEG;
+            boolean headingAligned = headingError <= ShooterConstants.ALIGNMENT_HEADING_TOLERANCE_DEG;
             boolean flywheelsReady = shooter.isAtCorrectSpeed();
             boolean hubActive = Dashboard.getInstance().isHubActive();
             boolean targetLocked = headingAligned && flywheelsReady && hubActive;

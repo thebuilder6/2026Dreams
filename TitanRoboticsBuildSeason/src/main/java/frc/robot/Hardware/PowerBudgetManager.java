@@ -45,9 +45,9 @@ public class PowerBudgetManager {
     private final BreakerModel breakerModel = new BreakerModel();
 
     private final Alert breakerThermalAlert =
-            new Alert("Electrical", "Main breaker thermal load elevated (>50%)", AlertType.WARNING);
+            new Alert("Power", "Main breaker thermal load elevated (>50%)", AlertType.WARNING);
     private final Alert brownoutRiskAlert =
-            new Alert("Electrical", "Battery voltage critical: brownout throttle active", AlertType.WARNING);
+            new Alert("Power", "Battery voltage critical: brownout throttle active", AlertType.WARNING);
 
     private double lastTimestampSeconds = -1.0;
     private double currentBatteryVoltage = 12.5;
@@ -108,7 +108,9 @@ public class PowerBudgetManager {
     }
 
     /**
-     * Periodic update hook for real hardware and default simulation execution.
+     * Periodic update hook for standalone execution when SwerveBase is not active.
+     * <p>Note: When SwerveBase is running, {@link SwerveBase#update()} directly drives
+     * {@link #update(double, double, double)} with measured PDH total bus current.
      */
     public void periodic() {
         double now = Timer.getTimestamp();

@@ -27,7 +27,7 @@ $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 ./gradlew compileJava --offline
 ```
 
-### 2. Tests (JUnit 5 — 48 files / 464 tests as of 2026-10-06; green on clean re-run, see `KNOWN_ISSUES.md` §A)
+### 2. Tests (JUnit 5 — 49 files / 467 tests as of 2026-10-06; green on clean re-run, see `KNOWN_ISSUES.md` §A)
 ```powershell
 ./gradlew test --offline
 # Single class: ./gradlew test --offline --tests "frc.robot.Intelligence.JevDecisionEngineTest"

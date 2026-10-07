@@ -46,7 +46,7 @@ public class Teleop {
     private Controller operatorController;
     private Joystick joystickController;
 
-    public static boolean joystickEnabled = false;
+    private boolean joystickEnabled = false;
 
     // Slew Rate Limiters (True 2D vector for translation, 1D scalar for rotation)
     private frc.robot.Utils.Vector2dSlewRateLimiter translationLimiter = new frc.robot.Utils.Vector2dSlewRateLimiter(
@@ -698,4 +698,6 @@ public class Teleop {
     public double getDriverForward() { return driverForward; }
     public double getDriverStrafe() { return driverStrafe; }
     public double getDriverRotation() { return driverRotation; }
+    public boolean isJoystickEnabled() { return joystickEnabled; }
+    public void setJoystickEnabled(boolean enabled) { this.joystickEnabled = enabled; }
 }

@@ -3,9 +3,11 @@ package frc.robot.Auto;
 import frc.robot.Auto.Missions.*;
 
 import java.io.File;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Supplier;
 
 import edu.wpi.first.wpilibj.DriverStation;
@@ -24,10 +26,17 @@ import org.littletonrobotics.junction.networktables.LoggedDashboardChooser;
 public class AutoMissionChooser {
     private final LoggedDashboardChooser<String> missionChooser;
     private final Map<String, Supplier<MissionBase>> missionRegistry = new HashMap<>();
-
-    public static double delay;
+    private static double delay = 0.0;
     private String cachedSelected = "Do Nothing";
     private Optional<MissionBase> autoMission = Optional.empty();
+
+    public static double getDelay() {
+        return delay;
+    }
+
+    public static void setDelay(double newDelay) {
+        delay = Math.max(0.0, newDelay);
+    }
 
     public AutoMissionChooser() {
         missionChooser = new LoggedDashboardChooser<>("Auto Mission");
@@ -87,7 +96,7 @@ public class AutoMissionChooser {
     }
 
     public void updateMissionCreator() {
-        delay = SmartDashboard.getNumber("Auto Delay (seconds)", SmartDashboard.getNumber("Auto Delay", 0));
+        setDelay(SmartDashboard.getNumber("Auto Delay (seconds)", SmartDashboard.getNumber("Auto Delay", 0)));
         String selected = missionChooser.get();
 
         if (selected == null) {
@@ -112,6 +121,10 @@ public class AutoMissionChooser {
         }
 
         return Optional.empty();
+    }
+
+    public Set<String> getRegisteredMissionNames() {
+        return Collections.unmodifiableSet(missionRegistry.keySet());
     }
 
     public void reset() {

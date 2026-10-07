@@ -43,7 +43,7 @@ public class ShooterTuningTest {
         shooter.prepareToShoot();
         shooter.update();
 
-        assertTrue(shooter.leftShooterVoltageCalc > 0.0, "Calculated voltage should be positive with new gains");
+        assertTrue(shooter.getLeftShooterVoltageCalc() > 0.0, "Calculated voltage should be positive with new gains");
         shooter.stop();
     }
 

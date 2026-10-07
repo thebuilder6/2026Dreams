@@ -73,8 +73,8 @@ public class Shooter implements Subsystem {
     private final PIDController flywheelPidRight;
 
     // Target RPMs and State
-    public double targetRpmLeft = 0;
-    public double targetRpmRight = 0;
+    private double targetRpmLeft = 0;
+    private double targetRpmRight = 0;
     private boolean wasAtSpeed = false;
     private ShooterState state = ShooterState.STOPPED;
 
@@ -83,9 +83,9 @@ public class Shooter implements Subsystem {
     private final InterpolatingDoubleTreeMap rightRpmTable = new InterpolatingDoubleTreeMap();
 
     // Diagnostics / telemetry
-    public double normalDistanceToHub = 0;
-    public double leftShooterVoltageCalc = 0;
-    public double rightShooterVoltageCalc = 0;
+    private double normalDistanceToHub = 0;
+    private double leftShooterVoltageCalc = 0;
+    private double rightShooterVoltageCalc = 0;
     private ShootingSolution latestShootingSolution = new ShootingSolution(new Rotation2d(), 0, 0, false);
 
     // Simulation state lives in ShooterIOSim (sole owner of ShooterSim).
@@ -441,6 +441,26 @@ public class Shooter implements Subsystem {
      */
     public AngularVelocity getActualVelocityMeasure() {
         return Units.RPM.of(getActualRPM());
+    }
+
+    public double getTargetRpmLeft() {
+        return targetRpmLeft;
+    }
+
+    public double getTargetRpmRight() {
+        return targetRpmRight;
+    }
+
+    public double getNormalDistanceToHub() {
+        return normalDistanceToHub;
+    }
+
+    public double getLeftShooterVoltageCalc() {
+        return leftShooterVoltageCalc;
+    }
+
+    public double getRightShooterVoltageCalc() {
+        return rightShooterVoltageCalc;
     }
 
     /**

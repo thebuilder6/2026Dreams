@@ -28,8 +28,8 @@ public abstract class MissionBase {
         mActive = true;
 
         try {
-            if (AutoMissionChooser.delay > 0.05) {
-                runAction(new frc.robot.Auto.Actions.WaitAction(AutoMissionChooser.delay));
+            if (AutoMissionChooser.getDelay() > 0.05) {
+                runAction(new frc.robot.Auto.Actions.WaitAction(AutoMissionChooser.getDelay()));
             }
             routine();
         } 

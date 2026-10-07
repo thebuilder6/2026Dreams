@@ -42,6 +42,35 @@ class PolicyWeightsTest {
         assertEquals(0.89, def.screenForAllyUtility(), 1e-9);
         assertEquals(1.15, def.tacticalDefenderLaneMultiplier(), 1e-9);
         assertEquals(0.99, def.bullyInterceptUtility(), 1e-9);
+
+        // Dynamic Action Inertia
+        assertEquals(0.06, def.commitmentMargin(), 1e-9);
+        assertEquals(0.20, def.commitmentDecisiveMargin(), 1e-9);
+        assertEquals(1.5, def.commitmentMinHoldSec(), 1e-9);
+        assertEquals(0.20, def.inertiaInitialBoost(), 1e-9);
+        assertEquals(1.0, def.inertiaTimeConstantSec(), 1e-9);
+        assertEquals(0.04, def.inertiaResidualMargin(), 1e-9);
+
+        // Spatial Fuel Scent / Clustering
+        assertEquals(1.30, def.clusterNeighborhoodRadius(), 1e-9);
+        assertEquals(0.50, def.clusterKernelSigma(), 1e-9);
+        assertEquals(1.50, def.clusterDensityExponent(), 1e-9);
+        assertEquals(0.40, def.clusterDistanceFloor(), 1e-9);
+        assertEquals(0.30, def.harvestHeadingAlignScale(), 1e-9);
+        assertEquals(0.35, def.harvestReturnVectorBonus(), 1e-9);
+    }
+
+    @Test
+    void testActionInertiaAndHarvestScentOverrides() {
+        PolicyWeights custom = PolicyWeights.fromString(
+                "commitmentMargin=0.08, inertiaTimeConstantSec=1.5, clusterNeighborhoodRadius=1.60, clusterKernelSigma=0.65");
+        assertEquals(0.08, custom.commitmentMargin(), 1e-9);
+        assertEquals(1.5, custom.inertiaTimeConstantSec(), 1e-9);
+        assertEquals(1.60, custom.clusterNeighborhoodRadius(), 1e-9);
+        assertEquals(0.65, custom.clusterKernelSigma(), 1e-9);
+        // Unmodified retain default
+        assertEquals(PolicyWeights.DEFAULT.commitmentDecisiveMargin(), custom.commitmentDecisiveMargin(), 1e-9);
+        assertEquals(PolicyWeights.DEFAULT.clusterDensityExponent(), custom.clusterDensityExponent(), 1e-9);
     }
 
     @Test

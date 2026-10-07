@@ -61,9 +61,14 @@ Does NOT cover (link, don't copy):
   Any new distance/utility must first move `tools/score/decision_cards.tsv`
   expectations and survive a paired `compare.py` sweep; frozen params in
   `tools/score/compare.py:72-80` stay out.
-- **P3 — Continuous tour execution.** PROPOSED, NOT IMPLEMENTED. Pass
-  `FuelTourOptimizer` waypoints as explicit paths; A/B vs greedy scent on the
-  rig before making it default.
+- **P3 — Continuous tour execution.** IMPLEMENTED IN SIMULATION (Oct 07).
+  Passes `FuelTourOptimizer` multi-piece waypoints into `TrajectoryController.setExplicitWaypoints`
+  with start translation heading vectors, maintaining high-speed profiling through
+  intermediate waypoints. Latching in `AIRobotInstance` prevents 50 Hz path recreation
+  thrashing, with watchdog and capacity (held >= 30) abort semantics.
+  Strict boundary: strictly bounded to `ClairvoyantKnowledge` in sim; real robot
+  retains `ObservedKnowledge.selfOnly()` single-target visual pursuit due to camera
+  FOV, depth jitter, and single-target IO constraints (see `docs/VISION_GUIDE.md`).
 - **P4 — Fleet partitioning.** PROPOSED, NOT IMPLEMENTED. No
   `partitionFuelCandidates` exists in `src/`; design a Voronoi / market
   assignment behind a flag and measure stalls + teleop share, not just score.

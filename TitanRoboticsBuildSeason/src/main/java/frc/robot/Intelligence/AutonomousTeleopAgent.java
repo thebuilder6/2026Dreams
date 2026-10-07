@@ -54,6 +54,22 @@ public class AutonomousTeleopAgent {
     public static final double BREAKOUT_ROTATION = 0.60;
     public static final double BLEND_MIN = 0.10;
 
+    private boolean hasShooter = WorldState.DEFAULT_HAS_SHOOTER;
+    private int ballCapacity = WorldState.DEFAULT_MAX_CAPACITY;
+    private boolean hasClimber = WorldState.DEFAULT_HAS_CLIMBER;
+
+    public void setHardwareCapabilities(boolean hasShooter, int ballCapacity, boolean hasClimber) {
+        this.hasShooter = hasShooter;
+        this.ballCapacity = ballCapacity;
+        this.hasClimber = hasClimber;
+    }
+
+    public void resetHardwareCapabilities() {
+        this.hasShooter = WorldState.DEFAULT_HAS_SHOOTER;
+        this.ballCapacity = WorldState.DEFAULT_MAX_CAPACITY;
+        this.hasClimber = WorldState.DEFAULT_HAS_CLIMBER;
+    }
+
     /**
      * Evaluates the Co-Pilot policy for the player robot and caches the result.
      *
@@ -61,7 +77,7 @@ public class AutonomousTeleopAgent {
      * @return concrete intent (navigation target, aim override, subsystem commands)
      */
     public AIActionIntent getCoPilotIntent(int heldBalls) {
-        WorldState world = WorldStateBuilder.buildForPlayerRobot(heldBalls);
+        WorldState world = WorldStateBuilder.buildForPlayerRobot(heldBalls, hasShooter, ballCapacity, hasClimber);
         latestIntent = JevDecisionEngine.getInstance().evaluatePolicy(
                 world, ObservedKnowledge.selfOnly(), Archetype.CO_PILOT, null, null,
                 objectiveCommitment, fuelTargetMemory);

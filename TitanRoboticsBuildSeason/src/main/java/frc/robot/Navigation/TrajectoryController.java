@@ -130,10 +130,17 @@ public class TrajectoryController {
     }
 
     /**
-     * Sets an explicit, pre-planned sequence of waypoints (e.g. Tunnel Route).
+     * Sets an explicit, pre-planned sequence of waypoints (e.g. Tunnel Route or Fuel Tour).
      * Disables automatic re-planning from overwriting these waypoints.
      */
     public void setExplicitWaypoints(List<Pose2d> path) {
+        setExplicitWaypoints(path, null);
+    }
+
+    /**
+     * Sets an explicit, pre-planned sequence of waypoints anchored to an initial start translation.
+     */
+    public void setExplicitWaypoints(List<Pose2d> path, Translation2d startTranslation) {
         waypoints.clear();
         waypoints.addAll(path);
         currentWaypointIndex = 0;
@@ -143,8 +150,26 @@ public class TrajectoryController {
         recoveryReplanDue = false;
         if (!path.isEmpty()) {
             lastPathTarget = path.get(path.size() - 1);
-            pathStartTranslation = path.get(0).getTranslation();
+            pathStartTranslation = (startTranslation != null)
+                    ? startTranslation
+                    : path.get(0).getTranslation();
         }
+    }
+
+    /**
+     * Clears explicit waypoints and returns the controller to dynamic pathfinding mode.
+     */
+    public void clearExplicitPath() {
+        if (isExplicitPath) {
+            isExplicitPath = false;
+            waypoints.clear();
+            currentWaypointIndex = 0;
+            lastPlanTimestamp = -1.0;
+        }
+    }
+
+    public boolean isExplicitPath() {
+        return isExplicitPath;
     }
 
     /**

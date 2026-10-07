@@ -191,6 +191,30 @@ $$d = \frac{h_{\text{camera}} - h_{\text{target}}}{\tan(\theta_{\text{camera}} +
 
 A 5-sample median filter (`gamePieceDistFilter`) rejects transient false-positive frames.
 
+### Optical & Hardware Boundaries in Ball Detection
+
+Understanding the physical limitations of the object detection pipeline is critical when designing autonomous and assisted harvesting behaviors:
+
+1. **Monocular Depth Sensitivity**:
+   The monocular trigonometric distance estimate has a steep derivative with respect to elevation pitch:
+   $$\frac{\partial d}{\partial \theta} \approx -\frac{h_{\text{camera}} - h_{\text{target}}}{\sin^2(\theta_{\text{camera}} + \theta_{\text{target}})}$$
+   At a range of $3.0\text{ m}$, $\frac{\partial d}{\partial \theta} \approx -0.44\text{ m/degree}$. A dynamic chassis pitch deflection of only $\pm 0.5^\circ$ during swerve acceleration or deceleration induces depth jumping of $\pm 0.22\text{ to }0.44\text{ m}$.
+2. **Single-Target Pipeline Bottleneck**:
+   The hardware abstraction layer ([`VisionIO.VisionIOInputs`](../src/main/java/frc/robot/Subsystems/vision/VisionIO.java)) provides only a single target set (`hasGamePiece`, `gamePieceYaw`, `gamePiecePitch`, `gamePieceArea`). Neither PhotonVision nor Limelight emits a persistent multi-target point cloud to the RoboRIO over NetworkTables; AdvantageKit and `Vision.java` collapse detections into the single best candidate.
+3. **Bumper Ingestion Blind Spot**:
+   Target pieces closer than $\approx 0.65\text{ m}$ pass beneath the downward camera field of view ($60^\circ$ vertical cone) into the robot's front bumper. Visual tracking is lost before the intake rollers physically contact the ball.
+4. **Rotational Blur & Narrow Frustum**:
+   Chassis yaw rates exceeding $120^\circ/\text{s}$ induce severe motion blur and optical tracking loss. Furthermore, turning toward Ball A instantly sweeps Ball B outside the camera's $60^\circ$ horizontal cone. The coprocessor lacks visual SLAM/EKF persistence to track off-camera pieces.
+
+### Architectural Boundary: Real-Robot Pursuit vs. Sim Clairvoyant Tours
+
+Because of these optical and pipeline constraints, global multi-piece Traveling Salesperson Problem (TSP) tours **cannot and do not run on the real robot**:
+
+- **Real Robot (Hardware)**:
+  `WorldStateBuilder.buildForPlayerRobot()` populates `ObservedKnowledge.selfOnly()`, where `fieldFuel()` is `List.of()`. `JevDecisionEngine` evaluates no global tour (`TourResult.EMPTY`). Harvesting is executed via `Teleop.java`'s single-target visual pursuit state machine (`LOCKED_PURSUIT` $\rightarrow$ `BLINDSPOT_INGESTION` coasting $\rightarrow$ `AUTO_SWEEP`).
+- **Simulation AI Bots**:
+  Sim bots receive `ClairvoyantKnowledge` populated with ground-truth coordinates of all fuel pieces on the field. `FuelTourOptimizer` computes multi-piece harvesting tours, which are executed through `TrajectoryController.setExplicitWaypoints` with continuous velocity profiling in `AIRobotInstance`.
+
 ---
 
 ## Network Configuration & Port Forwarding
@@ -224,7 +248,7 @@ USB Tether port forwarding in [`Robot.java`](../src/main/java/frc/robot/Robot.ja
     - `StdDev`: Live dynamic translation standard deviation in meters.
 - **Unit Tests**:
   - Dedicated suite [`VisionTest.java`](../src/test/java/frc/robot/Subsystems/VisionTest.java): 7/7 tests passing (configuration, presets, multi-camera, rejection matrix, dynamic std-dev, neural tracking, per-camera enable toggle).
-  - Full suite passes: 57 test files / 525 tests green (2026-10-07).
+  - Full suite passes: 63 test files / 563 tests green (2026-10-07).
 - **Next review due**: 2026-11-06.
 
 ---

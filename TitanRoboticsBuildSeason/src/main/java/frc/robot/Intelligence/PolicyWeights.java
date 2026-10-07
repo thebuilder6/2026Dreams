@@ -87,8 +87,67 @@ public record PolicyWeights(
         double coPilotActiveScoreUtility,
         double harvestDeadlineForceUtility,
         double autoBatchDumpScoreUtility,
-        double autoHarvestVacuumUtility
+        double autoHarvestVacuumUtility,
+
+        // Action Inertia & Commitment (Dave Mark)
+        double commitmentMargin,
+        double commitmentDecisiveMargin,
+        double commitmentMinHoldSec,
+        double inertiaInitialBoost,
+        double inertiaTimeConstantSec,
+        double inertiaResidualMargin,
+
+        // Spatial Fuel Clustering & Scent (EQS)
+        double clusterNeighborhoodRadius,
+        double clusterKernelSigma,
+        double clusterDensityExponent,
+        double clusterDistanceFloor,
+        double harvestHeadingAlignScale,
+        double harvestReturnVectorBonus
 ) {
+
+    /**
+     * Backward-compatible 53-parameter constructor defaulting action inertia and scent parameters.
+     */
+    public PolicyWeights(
+            double climbBase15, double climbScale15, double climbBase20, double climbScale20,
+            double scoreHubBase, double scoreHubScale, double scoreHubBehindBonus, double scoreHubBehindMax,
+            double scoreHubCapacityDivisor, int scoreHubMinFuelNormal, int scoreHubMinFuelShiftEnding,
+            double scoreHubShootingRangeMeters, double scoreHubShiftEndingWindowSec,
+            double stageStandoffBase, double stageShiftImminentCoPilot, double stageShiftImminentNormal,
+            double stageShiftWindowSec, int stageMinFuelNormal,
+            double vacuumInactiveBase, double vacuumInactiveScale, double vacuumActiveBase, double vacuumActiveScale,
+            int vacuumActiveNormalBatch, int vacuumActiveShiftEndingBatch, double vacuumActiveFullCap,
+            double stockpileDepotBase, double stockpileDepotScale,
+            double sweepAllianceZoneActive, double sweepAllianceZoneInactiveBase, double sweepAllianceZoneInactiveScale,
+            double poachOpponentZoneUtility, double poachOpponentZoneWindowSec, int poachOpponentZoneMaxHeld,
+            double shuttlePassUtility, double shuttlePassMinDistMeters, int shuttlePassMinHeld,
+            double snipeCloseUtility, double snipeFarUtility, double snipeMinDistMeters, int snipeMinHeld,
+            double laneDenialActiveUtility, double laneDenialMaxDistMeters, double shadowMidlineBaseUtility,
+            double interceptBaseUtility, double chokeTrenchUtility, double screenForAllyUtility,
+            double tacticalDefenderLaneMultiplier, double tacticalDefenderShadowMultiplier, double bullyInterceptUtility,
+            double coPilotActiveScoreUtility, double harvestDeadlineForceUtility, double autoBatchDumpScoreUtility,
+            double autoHarvestVacuumUtility) {
+        this(
+                climbBase15, climbScale15, climbBase20, climbScale20,
+                scoreHubBase, scoreHubScale, scoreHubBehindBonus, scoreHubBehindMax, scoreHubCapacityDivisor,
+                scoreHubMinFuelNormal, scoreHubMinFuelShiftEnding, scoreHubShootingRangeMeters, scoreHubShiftEndingWindowSec,
+                stageStandoffBase, stageShiftImminentCoPilot, stageShiftImminentNormal, stageShiftWindowSec, stageMinFuelNormal,
+                vacuumInactiveBase, vacuumInactiveScale, vacuumActiveBase, vacuumActiveScale,
+                vacuumActiveNormalBatch, vacuumActiveShiftEndingBatch, vacuumActiveFullCap,
+                stockpileDepotBase, stockpileDepotScale,
+                sweepAllianceZoneActive, sweepAllianceZoneInactiveBase, sweepAllianceZoneInactiveScale,
+                poachOpponentZoneUtility, poachOpponentZoneWindowSec, poachOpponentZoneMaxHeld,
+                shuttlePassUtility, shuttlePassMinDistMeters, shuttlePassMinHeld,
+                snipeCloseUtility, snipeFarUtility, snipeMinDistMeters, snipeMinHeld,
+                laneDenialActiveUtility, laneDenialMaxDistMeters, shadowMidlineBaseUtility,
+                interceptBaseUtility, chokeTrenchUtility, screenForAllyUtility,
+                tacticalDefenderLaneMultiplier, tacticalDefenderShadowMultiplier, bullyInterceptUtility,
+                coPilotActiveScoreUtility, harvestDeadlineForceUtility, autoBatchDumpScoreUtility, autoHarvestVacuumUtility,
+                0.06, 0.20, 1.5, 0.20, 1.0, 0.04,
+                1.30, 0.50, 1.50, 0.40, 0.30, 0.35
+        );
+    }
 
     /**
      * Bit-identical default weights matching existing production Jev AI policy.
@@ -115,8 +174,13 @@ public record PolicyWeights(
             // Defense
             0.86, 6.5, 0.65, 0.75, 0.91, 0.89,
             // Archetype Overrides
-            1.15, 1.10, 0.99, 0.98, 0.98, 0.95, 0.85
+            1.15, 1.10, 0.99, 0.98, 0.98, 0.95, 0.85,
+            // Action Inertia
+            0.06, 0.20, 1.5, 0.20, 1.0, 0.04,
+            // Scent & Clustering
+            1.30, 0.50, 1.50, 0.40, 0.30, 0.35
     );
+
 
     private static volatile PolicyWeights activeWeights = loadFromSystemProperties();
 
@@ -254,6 +318,18 @@ public record PolicyWeights(
         private double harvestDeadlineForceUtility;
         private double autoBatchDumpScoreUtility;
         private double autoHarvestVacuumUtility;
+        private double commitmentMargin;
+        private double commitmentDecisiveMargin;
+        private double commitmentMinHoldSec;
+        private double inertiaInitialBoost;
+        private double inertiaTimeConstantSec;
+        private double inertiaResidualMargin;
+        private double clusterNeighborhoodRadius;
+        private double clusterKernelSigma;
+        private double clusterDensityExponent;
+        private double clusterDistanceFloor;
+        private double harvestHeadingAlignScale;
+        private double harvestReturnVectorBonus;
 
         public Builder(PolicyWeights base) {
             this.climbBase15 = base.climbBase15;
@@ -309,6 +385,18 @@ public record PolicyWeights(
             this.harvestDeadlineForceUtility = base.harvestDeadlineForceUtility;
             this.autoBatchDumpScoreUtility = base.autoBatchDumpScoreUtility;
             this.autoHarvestVacuumUtility = base.autoHarvestVacuumUtility;
+            this.commitmentMargin = base.commitmentMargin;
+            this.commitmentDecisiveMargin = base.commitmentDecisiveMargin;
+            this.commitmentMinHoldSec = base.commitmentMinHoldSec;
+            this.inertiaInitialBoost = base.inertiaInitialBoost;
+            this.inertiaTimeConstantSec = base.inertiaTimeConstantSec;
+            this.inertiaResidualMargin = base.inertiaResidualMargin;
+            this.clusterNeighborhoodRadius = base.clusterNeighborhoodRadius;
+            this.clusterKernelSigma = base.clusterKernelSigma;
+            this.clusterDensityExponent = base.clusterDensityExponent;
+            this.clusterDistanceFloor = base.clusterDistanceFloor;
+            this.harvestHeadingAlignScale = base.harvestHeadingAlignScale;
+            this.harvestReturnVectorBonus = base.harvestReturnVectorBonus;
         }
 
         public void setField(String key, String valStr) {
@@ -367,6 +455,18 @@ public record PolicyWeights(
                     case "harvestDeadlineForceUtility" -> this.harvestDeadlineForceUtility = Double.parseDouble(valStr);
                     case "autoBatchDumpScoreUtility" -> this.autoBatchDumpScoreUtility = Double.parseDouble(valStr);
                     case "autoHarvestVacuumUtility" -> this.autoHarvestVacuumUtility = Double.parseDouble(valStr);
+                    case "commitmentMargin" -> this.commitmentMargin = Double.parseDouble(valStr);
+                    case "commitmentDecisiveMargin" -> this.commitmentDecisiveMargin = Double.parseDouble(valStr);
+                    case "commitmentMinHoldSec" -> this.commitmentMinHoldSec = Double.parseDouble(valStr);
+                    case "inertiaInitialBoost" -> this.inertiaInitialBoost = Double.parseDouble(valStr);
+                    case "inertiaTimeConstantSec" -> this.inertiaTimeConstantSec = Double.parseDouble(valStr);
+                    case "inertiaResidualMargin" -> this.inertiaResidualMargin = Double.parseDouble(valStr);
+                    case "clusterNeighborhoodRadius" -> this.clusterNeighborhoodRadius = Double.parseDouble(valStr);
+                    case "clusterKernelSigma" -> this.clusterKernelSigma = Double.parseDouble(valStr);
+                    case "clusterDensityExponent" -> this.clusterDensityExponent = Double.parseDouble(valStr);
+                    case "clusterDistanceFloor" -> this.clusterDistanceFloor = Double.parseDouble(valStr);
+                    case "harvestHeadingAlignScale" -> this.harvestHeadingAlignScale = Double.parseDouble(valStr);
+                    case "harvestReturnVectorBonus" -> this.harvestReturnVectorBonus = Double.parseDouble(valStr);
                     default -> throw new IllegalArgumentException("Unknown policy weight key: '" + key + "'");
                 }
             } catch (NumberFormatException e) {
@@ -379,6 +479,18 @@ public record PolicyWeights(
         public Builder vacuumActiveBase(double val) { this.vacuumActiveBase = val; return this; }
         public Builder stageStandoffBase(double val) { this.stageStandoffBase = val; return this; }
         public Builder poachOpponentZoneUtility(double val) { this.poachOpponentZoneUtility = val; return this; }
+        public Builder commitmentMargin(double val) { this.commitmentMargin = val; return this; }
+        public Builder commitmentDecisiveMargin(double val) { this.commitmentDecisiveMargin = val; return this; }
+        public Builder commitmentMinHoldSec(double val) { this.commitmentMinHoldSec = val; return this; }
+        public Builder inertiaInitialBoost(double val) { this.inertiaInitialBoost = val; return this; }
+        public Builder inertiaTimeConstantSec(double val) { this.inertiaTimeConstantSec = val; return this; }
+        public Builder inertiaResidualMargin(double val) { this.inertiaResidualMargin = val; return this; }
+        public Builder clusterNeighborhoodRadius(double val) { this.clusterNeighborhoodRadius = val; return this; }
+        public Builder clusterKernelSigma(double val) { this.clusterKernelSigma = val; return this; }
+        public Builder clusterDensityExponent(double val) { this.clusterDensityExponent = val; return this; }
+        public Builder clusterDistanceFloor(double val) { this.clusterDistanceFloor = val; return this; }
+        public Builder harvestHeadingAlignScale(double val) { this.harvestHeadingAlignScale = val; return this; }
+        public Builder harvestReturnVectorBonus(double val) { this.harvestReturnVectorBonus = val; return this; }
 
         public PolicyWeights build() {
             return new PolicyWeights(
@@ -396,8 +508,13 @@ public record PolicyWeights(
                     laneDenialActiveUtility, laneDenialMaxDistMeters, shadowMidlineBaseUtility, interceptBaseUtility,
                     chokeTrenchUtility, screenForAllyUtility,
                     tacticalDefenderLaneMultiplier, tacticalDefenderShadowMultiplier, bullyInterceptUtility,
-                    coPilotActiveScoreUtility, harvestDeadlineForceUtility, autoBatchDumpScoreUtility, autoHarvestVacuumUtility
+                    coPilotActiveScoreUtility, harvestDeadlineForceUtility, autoBatchDumpScoreUtility, autoHarvestVacuumUtility,
+                    commitmentMargin, commitmentDecisiveMargin, commitmentMinHoldSec,
+                    inertiaInitialBoost, inertiaTimeConstantSec, inertiaResidualMargin,
+                    clusterNeighborhoodRadius, clusterKernelSigma, clusterDensityExponent, clusterDistanceFloor,
+                    harvestHeadingAlignScale, harvestReturnVectorBonus
             );
         }
+
     }
 }

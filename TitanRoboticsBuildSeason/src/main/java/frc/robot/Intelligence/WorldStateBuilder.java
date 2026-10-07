@@ -102,6 +102,24 @@ public final class WorldStateBuilder {
      * @return Immutable WorldState snapshot
      */
     public static WorldState buildForPlayerRobot(int heldFuelCount) {
+        return buildForPlayerRobot(heldFuelCount, WorldState.DEFAULT_HAS_SHOOTER,
+                WorldState.DEFAULT_MAX_CAPACITY, WorldState.DEFAULT_HAS_CLIMBER);
+    }
+
+    /**
+     * Builds a WorldState snapshot for the primary player robot with explicit hardware capabilities.
+     *
+     * @param heldFuelCount Estimated or sensor-confirmed fuel/game pieces held in hopper
+     * @param hasShooter True if robot is equipped with a functional shooter
+     * @param ballCapacity Maximum hopper capacity
+     * @param hasClimber True if robot is equipped with a functional climber
+     * @return Immutable WorldState snapshot
+     */
+    public static WorldState buildForPlayerRobot(
+            int heldFuelCount,
+            boolean hasShooter,
+            int ballCapacity,
+            boolean hasClimber) {
         Pose2d playerPose = SwerveBase.getInstance().getPose();
         ChassisSpeeds playerVel = SwerveBase.getInstance().getFieldVelocity();
 
@@ -149,7 +167,10 @@ public final class WorldStateBuilder {
                 isPlayerRed,
                 DriverStation.isAutonomous(),
                 mineAfter,
-                theirsAfter
+                theirsAfter,
+                hasShooter,
+                ballCapacity,
+                hasClimber
         );
     }
 
@@ -189,6 +210,26 @@ public final class WorldStateBuilder {
             boolean isSelfHubActive,
             Pose2d markPose,
             ChassisSpeeds markVelocity) {
+        return buildForSimBot(selfPose, selfVelocity, heldFuelCount, isBotRed,
+                isSelfHubActive, markPose, markVelocity,
+                WorldState.DEFAULT_HAS_SHOOTER, WorldState.DEFAULT_MAX_CAPACITY,
+                WorldState.DEFAULT_HAS_CLIMBER);
+    }
+
+    /**
+     * Builds a WorldState snapshot for a simulated AI sparring robot with explicit hardware capabilities.
+     */
+    public static WorldState buildForSimBot(
+            Pose2d selfPose,
+            ChassisSpeeds selfVelocity,
+            int heldFuelCount,
+            boolean isBotRed,
+            boolean isSelfHubActive,
+            Pose2d markPose,
+            ChassisSpeeds markVelocity,
+            boolean hasShooter,
+            int ballCapacity,
+            boolean hasClimber) {
 
         // Shift-aware decisions read the schedule's own clock. The DS clock is
         // -1 under simulation, so Dashboard.getTimeUntilSwitch() stays pinned at
@@ -203,7 +244,7 @@ public final class WorldStateBuilder {
         // Full reasoning, and why the flag is still off, live in
         // KNOWN_ISSUES.md section A. Do not re-document it here.
         HubSchedule.refreshFromMatchState();
-        boolean useRealShiftClock = Boolean.getBoolean("frc.jev.realShiftClock");
+        boolean useRealShiftClock = !"false".equalsIgnoreCase(System.getProperty("frc.jev.realShiftClock"));
         double matchTime = useRealShiftClock ? HubSchedule.lastMatchTimeRemaining() : 135.0;
         if (matchTime < 0.0) matchTime = 135.0;
 
@@ -239,7 +280,10 @@ public final class WorldStateBuilder {
                 isBotRed,
                 DriverStation.isAutonomous(),
                 mineAfter,
-                theirsAfter
+                theirsAfter,
+                hasShooter,
+                ballCapacity,
+                hasClimber
         );
     }
 

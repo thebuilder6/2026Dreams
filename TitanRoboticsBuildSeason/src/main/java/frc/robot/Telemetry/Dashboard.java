@@ -175,6 +175,7 @@ public class Dashboard implements Subsystem {
         double timeRemainingSec = DriverStation.getMatchTime();
         updateHubStatus(timeRemainingSec);
         updateFieldVisuals();
+        PolicyWeightsDashboardAdapter.update();
 
         // Update the auto mission chooser and delay
         autoMissionChooser.updateMissionCreator();

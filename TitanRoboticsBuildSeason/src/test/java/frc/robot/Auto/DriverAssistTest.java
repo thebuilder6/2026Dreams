@@ -145,7 +145,8 @@ public class DriverAssistTest {
                 false // Blue alliance
         );
 
-        AIActionIntent intent = JevDecisionEngine.getInstance().evaluatePolicy(endgameWorld, Archetype.CO_PILOT);
+        AIActionIntent intent = JevDecisionEngine.getInstance().evaluatePolicy(
+                endgameWorld.withHardware(true, 30, true), Archetype.CO_PILOT);
         assertEquals(StrategicObjective.RUSH_CLIMB, intent.objective(), 
                 "Endgame with 15s remaining must prioritize RUSH_CLIMB / Alliance Parking");
         
@@ -172,7 +173,8 @@ public class DriverAssistTest {
                 true // Red alliance
         );
 
-        AIActionIntent intent = JevDecisionEngine.getInstance().evaluatePolicy(redEndgameWorld, Archetype.CO_PILOT);
+        AIActionIntent intent = JevDecisionEngine.getInstance().evaluatePolicy(
+                redEndgameWorld.withHardware(true, 30, true), Archetype.CO_PILOT);
         assertEquals(StrategicObjective.RUSH_CLIMB, intent.objective());
 
         Pose2d target = intent.navigationTarget();
@@ -208,21 +210,26 @@ public class DriverAssistTest {
         edu.wpi.first.wpilibj.simulation.DriverStationSim.setMatchTime(10.0);
         edu.wpi.first.wpilibj.simulation.DriverStationSim.notifyNewData();
         AutonomousTeleopAgent agent = AutonomousTeleopAgent.getInstance();
-        agent.stopAssist();
-        agent.startSmartAssist();
+        agent.setHardwareCapabilities(true, 30, true);
+        try {
+            agent.stopAssist();
+            agent.startSmartAssist();
 
-        AIActionIntent intent = agent.getLatestIntent();
-        assertNotNull(intent);
-        assertEquals(StrategicObjective.RUSH_CLIMB, intent.objective());
-        assertNotNull(intent.navigationTarget());
+            AIActionIntent intent = agent.getLatestIntent();
+            assertNotNull(intent);
+            assertEquals(StrategicObjective.RUSH_CLIMB, intent.objective());
+            assertNotNull(intent.navigationTarget());
 
-        // Move robot to exactly the navigation target pose
-        frc.robot.Subsystems.SwerveBase.getInstance().resetOdometry(intent.navigationTarget());
+            // Move robot to exactly the navigation target pose
+            frc.robot.Subsystems.SwerveBase.getInstance().resetOdometry(intent.navigationTarget());
 
-        // When arrived at the climb/park location (< 0.12m), assist finishes and releases control
-        boolean running = agent.updateSmartAssist(0.0, 0.0, 0.0);
-        assertFalse(running, "Arrival at climb/parking target must complete assist");
-        assertFalse(agent.isAssistActive(), "Assist must deactivate on arrival");
+            // When arrived at the climb/park location (< 0.12m), assist finishes and releases control
+            boolean running = agent.updateSmartAssist(0.0, 0.0, 0.0);
+            assertFalse(running, "Arrival at climb/parking target must complete assist");
+            assertFalse(agent.isAssistActive(), "Assist must deactivate on arrival");
+        } finally {
+            agent.resetHardwareCapabilities();
+        }
     }
 
     @Test
@@ -287,9 +294,32 @@ public class DriverAssistTest {
                 false
         );
 
-        AIActionIntent intent = JevDecisionEngine.getInstance().evaluatePolicy(endgameFullHopper, Archetype.CO_PILOT);
+        AIActionIntent intent = JevDecisionEngine.getInstance().evaluatePolicy(
+                endgameFullHopper.withHardware(true, 30, true), Archetype.CO_PILOT);
         assertEquals(StrategicObjective.RUSH_CLIMB, intent.objective(),
                 "In final 15s, RUSH_CLIMB must override CYCLE_SCORE_HUB even when holding full 14 fuel pieces");
+    }
+
+    @Test
+    public void testCoPilotWithoutClimberKeepsPlayingInEndgame() {
+        // Without a climber fitted (default false), robot does not climb in endgame
+        WorldState endgameWithoutClimber = new WorldState(
+                new Pose2d(5.0, 4.0, new Rotation2d()),
+                new ChassisSpeeds(),
+                10,
+                new Pose2d(10.0, 4.0, new Rotation2d()),
+                new ChassisSpeeds(),
+                12.0, // 12s remaining <= 15s
+                true, // Hub Active
+                false,
+                10.0,
+                false
+        );
+        AIActionIntent intent = JevDecisionEngine.getInstance().evaluatePolicy(endgameWithoutClimber, Archetype.CO_PILOT);
+        assertNotEquals(StrategicObjective.RUSH_CLIMB, intent.objective(),
+                "Without a climber fitted, co-pilot must not select RUSH_CLIMB");
+        assertEquals(StrategicObjective.CYCLE_SCORE_HUB, intent.objective(),
+                "Robot without climber with fuel and active hub must keep cycling");
     }
 
     private static TrajectoryController newTestController() {

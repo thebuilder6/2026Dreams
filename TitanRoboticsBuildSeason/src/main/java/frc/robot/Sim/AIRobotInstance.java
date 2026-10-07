@@ -4,6 +4,8 @@ import static edu.wpi.first.units.Units.Meters;
 import static edu.wpi.first.units.Units.MetersPerSecond;
 import static edu.wpi.first.units.Units.Radians;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 
@@ -22,6 +24,7 @@ import frc.robot.Navigation.TargetProgressWatchdog;
 import frc.robot.Data.Constants;
 import frc.robot.Intelligence.AIActionIntent;
 import frc.robot.Intelligence.Archetype;
+import frc.robot.Intelligence.StrategicObjective;
 import frc.robot.Intelligence.JevDecisionEngine;
 import frc.robot.Intelligence.MatchKnowledge;
 import frc.robot.Intelligence.WorldState;
@@ -94,6 +97,10 @@ public class AIRobotInstance {
 
     // Score-rig instrumentation (read-only; no behaviour depends on it).
     private final BotMatchMetrics matchMetrics = new BotMatchMetrics();
+
+    // Tour Continuity Latch for continuous multi-piece harvesting tours
+    private List<Translation2d> activeTourWaypoints = null;
+    private Pose2d activeTourExitPose = null;
 
     public AIRobotInstance(int botId, Pose2d queuingPose, Archetype defaultArchetype) {
         this(botId, queuingPose, defaultArchetype, false);
@@ -245,6 +252,8 @@ public class AIRobotInstance {
         objectiveCommitment.reset();
         fuelTargetMemory.reset();
         trajectoryController.reset();
+        activeTourWaypoints = null;
+        activeTourExitPose = null;
         matchMetrics.reset();
         try {
             String botName = isAlly ? ("AllyBot" + (botId - 100)) : ("OpponentBot" + botId);
@@ -370,11 +379,23 @@ public class AIRobotInstance {
                 intentPrefix + "/TimeToTransitionSec", intent.plan().timeToTransitionSec());
 
         // 3. Compute drive trajectory speeds
-        currentTargetPose = intent.navigationTarget();
+        updateTourContinuity(intent, currentPose, heldPieces);
+
+        Pose2d driveTargetPose;
+        if (trajectoryController.isExplicitPath() && activeTourWaypoints != null && !activeTourWaypoints.isEmpty()) {
+            driveTargetPose = (activeTourExitPose != null) ? activeTourExitPose : intent.navigationTarget();
+            int currWpIdx = trajectoryController.getCurrentWaypointIndex();
+            List<Pose2d> wps = trajectoryController.getWaypoints();
+            currentTargetPose = (currWpIdx < wps.size()) ? wps.get(currWpIdx) : driveTargetPose;
+        } else {
+            currentTargetPose = intent.navigationTarget();
+            driveTargetPose = currentTargetPose;
+        }
+
         currentAIStateDetail = intent.objective().name() + " (" + intent.rationale() + ")";
         boolean stalled = isStalled();
         currentTargetSpeeds = trajectoryController.calculate(
-                currentPose, currentTargetSpeeds, currentTargetPose, maxSpeed, stalled, true);
+                currentPose, currentTargetSpeeds, driveTargetPose, maxSpeed, stalled, true);
 
         // Track pinning against the assigned mark (or the player by default) -
         // only for opponent bots. RefereeSim scores the actual foul; this drives
@@ -429,6 +450,10 @@ public class AIRobotInstance {
                 currentPose, currentTargetPose, isHarvesting, heldPieces, 0.02);
         if (harvestProgress.recovering()) {
             progress = harvestProgress;
+        }
+
+        if (progress.recovering() || inContactRecovery) {
+            abortTour();
         }
 
         // Single-owner drive arbitration across all safety, stall, and progress tiers
@@ -505,10 +530,19 @@ public class AIRobotInstance {
         String botObjName = isAlly ? ("AllyBot" + (botId - 100)) : ("OpponentBot" + botId);
         String targetObjName = isAlly ? ("AllyTarget" + (botId - 100)) : ("OpponentTarget" + botId);
         String tourObjName = isAlly ? ("AllyTour" + (botId - 100)) : ("OpponentTour" + botId);
-        boolean hasTour = intent.tour() != null && intent.tour().isValid() && !intent.tour().waypoints().isEmpty();
+        boolean hasTour = (activeTourWaypoints != null && trajectoryController.isExplicitPath())
+                || (intent.tour() != null && intent.tour().isValid() && !intent.tour().waypoints().isEmpty());
         Pose2d[] tourPoses;
         double[] flatTour;
-        if (hasTour) {
+        if (activeTourWaypoints != null && trajectoryController.isExplicitPath()) {
+            List<Pose2d> wps = trajectoryController.getWaypoints();
+            tourPoses = wps.toArray(new Pose2d[0]);
+            flatTour = new double[wps.size() * 2];
+            for (int i = 0; i < wps.size(); i++) {
+                flatTour[i * 2] = wps.get(i).getX();
+                flatTour[i * 2 + 1] = wps.get(i).getY();
+            }
+        } else if (hasTour) {
             java.util.List<Translation2d> wps = intent.tour().waypoints();
             tourPoses = new Pose2d[wps.size()];
             flatTour = new double[wps.size() * 2];
@@ -1046,5 +1080,87 @@ public class AIRobotInstance {
 
     public double getHarvestArrivalHoldSec() {
         return targetProgressWatchdog.getHarvestArrivalHoldSec();
+    }
+
+    /**
+     * Aborts any currently executing explicit tour and restores dynamic pathfinding.
+     */
+    public void abortTour() {
+        if (activeTourWaypoints != null || trajectoryController.isExplicitPath()) {
+            activeTourWaypoints = null;
+            activeTourExitPose = null;
+            trajectoryController.clearExplicitPath();
+        }
+    }
+
+    /**
+     * Manages multi-piece tour continuity across 50Hz cycles.
+     * Prevents thrashing explicit waypoint state while a tour is in progress,
+     * while aborting cleanly when pieces are completed, blocked, or full.
+     */
+    private void updateTourContinuity(AIActionIntent intent, Pose2d currentPose, int heldPieces) {
+        boolean hasTourIntent = intent.tour() != null
+                && intent.tour().isValid()
+                && intent.tour().pieceCount() > 1
+                && !intent.tour().waypoints().isEmpty();
+        boolean isHarvestingObjective = intent.objective() == StrategicObjective.VACUUM_MIDFIELD
+                || intent.objective() == StrategicObjective.SWEEP_ALLIANCE_ZONE;
+
+        if (!isHarvestingObjective || heldPieces >= WorldState.DEFAULT_MAX_CAPACITY) {
+            abortTour();
+            return;
+        }
+
+        // Check if an existing active tour was completed
+        if (activeTourWaypoints != null) {
+            int lastIndex = activeTourWaypoints.size() - 1;
+            boolean atOrPastLast = trajectoryController.getCurrentWaypointIndex() >= lastIndex;
+            double distToFinal = currentPose.getTranslation().getDistance(activeTourWaypoints.get(lastIndex));
+            if (atOrPastLast && distToFinal < 0.35) {
+                abortTour();
+            }
+        }
+
+        // Check if remaining waypoints are blocked by watchdog
+        if (activeTourWaypoints != null && !targetProgressWatchdog.blockedPoints().isEmpty()) {
+            int currIdx = trajectoryController.getCurrentWaypointIndex();
+            boolean tourBlocked = false;
+            for (int i = currIdx; i < activeTourWaypoints.size(); i++) {
+                Translation2d wp = activeTourWaypoints.get(i);
+                for (Translation2d blocked : targetProgressWatchdog.blockedPoints()) {
+                    if (blocked.getDistance(wp) < 0.8) {
+                        tourBlocked = true;
+                        break;
+                    }
+                }
+                if (tourBlocked) break;
+            }
+            if (tourBlocked) {
+                abortTour();
+            }
+        }
+
+        // Start new tour if none is currently active and intent provides a valid multi-piece tour
+        if (activeTourWaypoints == null && hasTourIntent) {
+            List<Translation2d> wps = intent.tour().waypoints();
+            List<Pose2d> tourPoses = new ArrayList<>(wps.size());
+            for (int i = 0; i < wps.size(); i++) {
+                Rotation2d heading = (i < wps.size() - 1)
+                        ? wps.get(i + 1).minus(wps.get(i)).getAngle()
+                        : intent.tour().finalExitPose().getRotation();
+                tourPoses.add(new Pose2d(wps.get(i), heading));
+            }
+            trajectoryController.setExplicitWaypoints(tourPoses, currentPose.getTranslation());
+            activeTourWaypoints = new ArrayList<>(wps);
+            activeTourExitPose = intent.tour().finalExitPose();
+        }
+    }
+
+    public boolean hasActiveTour() {
+        return activeTourWaypoints != null && trajectoryController.isExplicitPath();
+    }
+
+    public List<Translation2d> getActiveTourWaypoints() {
+        return activeTourWaypoints != null ? Collections.unmodifiableList(activeTourWaypoints) : Collections.emptyList();
     }
 }

@@ -53,11 +53,40 @@ public final class ObjectiveCommitment {
     }
 
     /**
+     * Calculates the active dynamic action inertia bonus at {@code nowSeconds}.
+     * Returns 0.0 when no objective is currently committed.
+     */
+    public double activeInertia(double nowSeconds) {
+        return activeInertia(nowSeconds, PolicyWeights.getActive());
+    }
+
+    /**
+     * Calculates the active dynamic action inertia bonus at {@code nowSeconds} using explicit weights.
+     */
+    public double activeInertia(double nowSeconds, PolicyWeights weights) {
+        if (committed == null) {
+            return 0.0;
+        }
+        PolicyWeights w = (weights != null) ? weights : PolicyWeights.getActive();
+        double elapsed = Math.max(0.0, nowSeconds - sinceSeconds);
+        return w.inertiaInitialBoost() * Math.exp(-elapsed / w.inertiaTimeConstantSec());
+    }
+
+    /**
      * Latches {@code candidate} against the current commitment and returns the
      * objective to pursue. Mutates only this agent's latch.
      */
     public StrategicObjective apply(StrategicObjective candidate,
             Map<StrategicObjective, Double> utilities) {
+        return apply(candidate, utilities, PolicyWeights.getActive());
+    }
+
+    /**
+     * Latches {@code candidate} against the current commitment using explicit {@link PolicyWeights}.
+     */
+    public StrategicObjective apply(StrategicObjective candidate,
+            Map<StrategicObjective, Double> utilities,
+            PolicyWeights weights) {
         if (candidate == null) {
             return committed;
         }
@@ -69,7 +98,7 @@ public final class ObjectiveCommitment {
         }
 
         StrategicObjective resolved = JevDecisionEngine.resolveCommittedObjective(
-                candidate, utilities, committed, sinceSeconds, now);
+                candidate, utilities, committed, sinceSeconds, now, weights);
         if (resolved != committed) {
             committed = resolved;
             sinceSeconds = now;
@@ -77,3 +106,4 @@ public final class ObjectiveCommitment {
         return committed;
     }
 }
+

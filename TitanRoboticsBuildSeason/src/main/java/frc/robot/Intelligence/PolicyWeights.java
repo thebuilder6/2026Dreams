@@ -107,9 +107,9 @@ public record PolicyWeights(
             // Sweep Alliance Zone
             0.96, 0.90, 0.08,
             // Poach Opponent Zone
-            0.92, 6.0, 20,
+            0.78, 6.0, 20,
             // Shuttle Pass
-            0.87, 3.8, 16,
+            0.87, 6.0, 16,
             // Long Range Snipe
             0.94, 0.86, 3.6, 6,
             // Defense

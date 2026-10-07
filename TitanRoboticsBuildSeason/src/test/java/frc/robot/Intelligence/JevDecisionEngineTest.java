@@ -1191,30 +1191,20 @@ public class JevDecisionEngineTest {
     }
 
     @Test
-    public void testPoachUtilityIsReachableDuringShiftWindow() {
-        // Post-P2 retune: POACH_OPPONENT_ZONE utility raised from 0.78 to 0.92,
-        // and the guard is now `0 < t <= 6.0` (HubSchedule returns 0.0 through
-        // AUTO/TRANSITION/ENDGAME/DONE, so the floor matters). With 8 held balls,
-        // an inactive alliance hub that will stay dark, an opponent hub that is
-        // dark now but live next shift, and 5 s until the flip, poach must win.
-        WorldState poachWorld = new WorldState(
-                new Pose2d(6.0, 4.04, new Rotation2d()), ZERO_VEL, 8,
-                new Pose2d(12.0, 4.04, new Rotation2d()), ZERO_VEL,
-                90.0, false, true, 5.0, false, false, false, true);
-        AIActionIntent intent = engine.evaluatePolicy(poachWorld, fuel(0, 2, 10, true),
-                Archetype.AUTONOMOUS_CYCLER);
-        assertEquals(StrategicObjective.POACH_OPPONENT_ZONE, intent.objective(),
-                "Poach should win the argmax when the shift flip makes opponent-zone fuel live");
-
-        // Tripwire: outside the shift window (no upcoming flip), poach must not
-        // be selected.
-        WorldState noFlip = new WorldState(
-                new Pose2d(6.0, 4.04, new Rotation2d()), ZERO_VEL, 8,
-                new Pose2d(12.0, 4.04, new Rotation2d()), ZERO_VEL,
-                90.0, false, true, 0.0, false, false, false, true);
+    public void testPoachUtilityIsCurrentlyUnreachable() {
+        // Characterization, and the reason the guard fix above has no behavioural
+        // effect today: POACH scores a flat 0.78, but whenever poach is eligible
+        // (!autonomous, !inventory-full) VACUUM_MIDFIELD is at least 0.82 and
+        // STOCKPILE_DEPOT at least 0.86, so poach can never win the argmax. The
+        // `0 < t <= 6` guard is a latent-defect fix that matters the moment poach
+        // is ever worth more than ~0.88 -- this test is the tripwire for that.
         assertNotEquals(StrategicObjective.POACH_OPPONENT_ZONE,
-                engine.evaluatePolicy(noFlip, fuel(0, 2, 10, true), Archetype.AUTONOMOUS_CYCLER).objective(),
-                "Poach must not be selected when no shift flip is pending");
+                engine.evaluatePolicy(
+                        new WorldState(new Pose2d(6.0, 4.04, new Rotation2d()), ZERO_VEL, 8,
+                                new Pose2d(12.0, 4.04, new Rotation2d()), ZERO_VEL,
+                                90.0, true, false, 5.0, false),
+                        Archetype.AUTONOMOUS_CYCLER).objective(),
+                "If poach ever becomes selectable, this characterization must be revisited with the guard");
     }
 
     @Test

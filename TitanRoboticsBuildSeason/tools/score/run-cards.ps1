@@ -25,8 +25,11 @@ Push-Location $root
 try {
   if (-not (Test-Path $jar)) {
     Write-Output "=== building project jar (DecisionCards links against it) ==="
-    & ".\gradlew" jar --offline -q 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "gradlew jar failed" }
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    & ".\gradlew" jar --offline -q
+    $ErrorActionPreference = $prevEap
+    if ($LASTEXITCODE -ne 0) { throw "gradlew jar failed with exit code $LASTEXITCODE" }
   }
   if (-not (Test-Path $jar)) { throw "no jar at $jar" }
 

@@ -1,4 +1,4 @@
-# Jev decision cards — hand-reviewable probe of the decision layer.
+﻿# Jev decision cards — hand-reviewable probe of the decision layer.
 # Generated once by tools/score/DecisionCards.java; edit freely after that.
 # Tab-separated. One card per line. Fill in the 'expected' column with the
 # objective you think is correct; the tool then reports PASS/MISMATCH.
@@ -27,47 +27,45 @@
 #   oppZonePieces synthetic opponent poses in the opponent zone, so POACH and
 #                 zone-scoring objectives are reachable at all (0 = none).
 #   alliesHeldFuel feeds SCREEN_FOR_ALLY; >0 also places one ally at (3,2).
-#   expected      YOUR ANSWER, judged against the BLUE pass. Blank = UNREVIEWED.
+#   expected      YOUR ANSWER, judged against the BLUE pass.
 #   notes         why this card matters (shown in the report).
-id	archetype	selfX	selfY	heldFuel	matchTime	hubActive	oppHubActive	timeToShift	oppX	oppY	auto	oppObserved	scoreDiff	oppZonePieces	alliesHeldFuel	allianceZoneFuel	midfieldFuel	opponentZoneFuel	situation	expected	notes
-Z99	AUTONOMOUS_CYCLER	2.0	4.03	10	130.0	false	true	0.0	12.0	4.0	false	true	0	0	0	CANARY. SHIFT1 clock but our hub declared dark with no countdown.		Must be reported INVALID STATE. If it is not, the checker is broken.
-A1	AUTONOMOUS_CYCLER	2.0	4.03	0	140.0	true	true	0.0	12.0	4.0	false	true	0	0	0	TRANSITION, both hubs live, EMPTY.		The floor of the policy: hub live but nothing to score, so harvest.
-A2	AUTONOMOUS_CYCLER	2.0	4.03	8	140.0	true	true	0.0	12.0	4.0	false	true	0	0	0	TRANSITION, both hubs live, 8 fuel.		The ratchet: at 8 fuel it commits to scoring, not topping up.
-A3	AUTONOMOUS_CYCLER	2.0	4.03	30	140.0	true	true	0.0	12.0	4.0	false	true	0	0	0	TRANSITION, both hubs live, hopper FULL (30).		isInventoryFull should suppress VACUUM/STOCKPILE/SWEEP outright.
-A4	AUTONOMOUS_CYCLER	2.0	4.03	20	20.0	true	true	0.0	12.0	4.0	false	true	0	0	0	ENDGAME, 20 s left, both hubs live, 20 fuel.		The other both-live phase, at the other end of the match.
-A5	AUTONOMOUS_CYCLER	2.0	4.03	7	150.0	true	true	0.0	12.0	4.0	false	true	0	0	0	AUTO, 7 fuel — one short of AUTO_BATCH_MIN_FUEL.		Probes the autonomous batch gate from below.
-A6	AUTONOMOUS_CYCLER	2.0	4.03	8	150.0	true	true	0.0	12.0	4.0	false	true	0	0	0	AUTO, exactly 8 fuel — the batch threshold.		Should flip to committing to score at exactly 8.
-A7	AUTONOMOUS_CYCLER	3.0	4.03	8	140.0	true	true	0.0	5.2	4.03	false	true	0	0	0	In range (1.6 m from hub), 8 fuel, but an opponent parked 0.6 m in the lane.		isShootingLaneBlocked: opponent within 1.60 m and under 25 deg of the hub bearing. Should suppress firing but not change the objective.
-B1	AUTONOMOUS_CYCLER	0.4	4.03	7	140.0	true	true	0.0	12.0	4.0	false	true	0	0	0	Out of the 4.0 m radius (4.23 m), hub live, 7 fuel.		minFuelToScore says 16 here. 7 must not justify a scoring trip.
-B2	AUTONOMOUS_CYCLER	0.4	4.03	8	140.0	true	true	0.0	12.0	4.0	false	true	0	0	0	Same spot, exactly 8 fuel.		THE measured threshold. The code says 16; the engine flips here.
-B3	AUTONOMOUS_CYCLER	0.4	4.03	15	140.0	true	true	0.0	12.0	4.0	false	true	0	0	0	Same spot, 15 fuel.		Between the measured 8 and the coded 16. Expect no change from B2.
-B4	AUTONOMOUS_CYCLER	0.4	4.03	16	140.0	true	true	0.0	12.0	4.0	false	true	0	0	0	Same spot, 16 fuel — the value minFuelToScore actually specifies.		If B2 and B4 behave identically the 16 rung is dead code.
-B5	AUTONOMOUS_CYCLER	9.5	4.03	8	140.0	true	true	0.0	12.0	4.0	false	true	0	0	0	4.87 m from hub — past the centerline into the opponent half, 8 fuel.		Same out-of-range condition as B2 but a long trip home. Distance is not in the utility at all; does the bot care?
-B6	AUTONOMOUS_CYCLER	2.0	4.03	1	140.0	true	true	0.0	12.0	4.0	false	true	0	0	0	In range (2.63 m), hub live, 1 fuel.		minFuelToScore is 1 in range, so this should commit on one ball.
-C1	AUTONOMOUS_CYCLER	2.0	4.03	0	108.0	true	false	3.0	12.0	4.0	false	true	0	0	0	SHIFT1, LAST WINDOW, empty, 3 s to the flip.		Baseline of the closing quadrant with nothing in hand.
-C2	AUTONOMOUS_CYCLER	2.0	4.03	8	108.0	true	false	3.0	12.0	4.0	false	true	0	0	0	SHIFT1, LAST WINDOW, 8 fuel, 3 s to the flip.		Exactly the harvest-force threshold, with the hub about to die.
-C3	AUTONOMOUS_CYCLER	2.0	4.03	20	108.0	true	false	3.0	12.0	4.0	false	true	0	0	0	SHIFT1, LAST WINDOW, 20 fuel, 3 s to the flip.		THE open question. Staging at the arc is the intuitive play with a full hopper 3 s from losing the hub; the engine currently cycles. willOwnHubDeactivate() exists but nothing reads it.
-C4	ADAPTIVE_COMPETITOR	2.0	4.03	20	108.0	true	false	3.0	12.0	4.0	false	true	0	0	0	Same as C3 but ADAPTIVE_COMPETITOR (no archetype modifier).		Isolates archetype handling from hub state.
-C5	TACTICAL_DEFENDER	2.0	4.03	20	108.0	true	false	3.0	12.0	4.0	false	true	0	0	0	Same as C3 but TACTICAL_DEFENDER.		Defender in its own scoring window, 3 s from losing it. Does the 0.99 defensive utility still beat the harvest force's 0.98?
-C6	AUTONOMOUS_CYCLER	2.0	4.03	20	83.0	false	true	3.0	12.0	4.0	false	true	0	0	0	SHIFT2, OUR hub dark and about to OPEN, 20 fuel, 3 s to the flip.		CONTROL for C3: same hopper, same countdown, opposite hub state. If this stages and C3 does not, the last-window gap is proven.
-D1	ADAPTIVE_COMPETITOR	2.0	4.03	20	90.0	false	true	10.0	12.0	4.0	false	true	0	0	0	SHIFT2, hub dark, 10 s until it opens, 20 fuel.		STAGE_STANDOFF is 0.80 but VACUUM is 0.88-0.98 and STOCKPILE 0.86-0.96, so harvesting wins. Observed: vacuums to 30 before staging.
-D2	ADAPTIVE_COMPETITOR	2.0	4.03	20	83.0	false	true	3.0	12.0	4.0	false	true	0	0	0	Same, but 3 s until the hub opens.		STAGE should jump 0.80 -> 0.95 to anticipate. Does it beat VACUUM?
-D3	ADAPTIVE_COMPETITOR	2.0	4.03	30	90.0	false	true	10.0	12.0	4.0	false	true	0	0	0	SHIFT2, hub dark, 10 s to open, hopper FULL.		Boundary: 30 is where D1 finally starts staging.
-D4	ADAPTIVE_COMPETITOR	2.0	4.03	18	90.0	false	true	10.0	12.0	4.0	false	true	0	0	0	Same, holding exactly minFuelToStage (18).		Should make STAGE eligible even though VACUUM still outranks it.
-D5	ADAPTIVE_COMPETITOR	2.0	4.03	17	90.0	false	true	10.0	12.0	4.0	false	true	0	0	0	Same, one below minFuelToStage (17).		Control for D4 — STAGE should be ineligible here.
-E1	CO_PILOT	2.0	4.03	12	20.0	true	true	0.0	12.0	4.0	false	true	0	0	0	ENDGAME, 20 s left, CO_PILOT holding 12 fuel.		Lowest point of the climb ramp (0.85). Cycle should win.
-E2	CO_PILOT	2.0	4.03	12	16.0	true	true	0.0	12.0	4.0	false	true	0	0	0	ENDGAME, 16 s left, same state.		Ramp gives 0.954, still under CYCLE's 0.98. One second later it flips.
-E3	CO_PILOT	2.0	4.03	12	15.0	true	true	0.0	12.0	4.0	false	true	0	0	0	ENDGAME, 15 s left, same state.		Ramp jumps to 0.99 and overtakes CYCLE. E2 vs E3 is the step.
-E4	CO_PILOT	2.0	4.03	12	10.0	true	true	0.0	12.0	4.0	false	true	0	0	0	ENDGAME, 10 s left, same state.		Should be climbing by now. Abandoning 12 points of fuel — right call?
-E5	CO_PILOT	2.0	4.03	0	15.0	true	true	0.0	12.0	4.0	false	true	0	0	0	ENDGAME, 15 s left, empty-handed.		Control for E3: climbing with nothing in the hopper is free.
-E6	AUTONOMOUS_CYCLER	2.0	4.03	12	15.0	true	true	0.0	12.0	4.0	false	true	0	0	0	ENDGAME, 15 s left, AUTONOMOUS_CYCLER with 12 fuel.		Control for E3: the climb gate is CO_PILOT-only, so this must NOT climb.
-F1	TACTICAL_DEFENDER	2.5	4.03	20	120.0	true	false	15.0	12.0	4.0	false	true	0	0	0	SHIFT1, our hub live, defender holding 20 fuel, opponent hub dark.		DENY/LEAD beat the harvest force by ~0.01. Pin the behaviour.
-F2	DEFENSE_BULLY	2.5	4.03	20	120.0	true	false	15.0	12.0	4.0	false	true	0	0	0	Same but DEFENSE_BULLY.		Second defender, same margin question. LEAD_INTERCEPT is 0.99.
-F3	TACTICAL_DEFENDER	2.5	4.03	20	100.0	false	true	20.0	12.0	4.0	false	true	0	0	0	SHIFT2, our hub dark, defender holding 20 fuel, opponent hub live.		Opposite quadrant. With our hub dark the harvest force cannot fire for them, so this should be a comfortable defensive pick.
-F4	TACTICAL_DEFENDER	2.5	4.03	0	120.0	true	false	15.0	12.0	4.0	false	true	0	0	0	SHIFT1, defender EMPTY.		Control: with no fuel the harvest force is inert, so this isolates the archetype modifier from the :551 interaction.
-G1	AUTONOMOUS_CYCLER	0.4	4.03	8	140.0	true	true	0.0	12.0	4.0	false	true	0	0	0	x=0.40, 4.23 m from the hub — OUTSIDE the 4.0 m radius.		Geometry anchor for the far edge of the home zone.
-G2	AUTONOMOUS_CYCLER	4.0	4.03	8	140.0	true	true	0.0	12.0	4.0	false	true	0	0	0	x=4.00, 0.63 m from the hub — deep in range, on the standoff arc.		Geometry anchor for the near edge.
-G3	AUTONOMOUS_CYCLER	8.0	4.03	8	140.0	true	true	0.0	12.0	4.0	false	true	0	0	0	x=8.00, 3.37 m from the hub — STILL in range, near the centerline.		This is the finding: 3.37 m < 4.0 m, so minFuelToScore is 1 essentially everywhere a bot can legally be in its own half.
-G4	AUTONOMOUS_CYCLER	9.5	4.03	8	140.0	true	true	0.0	12.0	4.0	false	true	0	0	0	x=9.50, 4.87 m from the hub — outside the radius, in the opponent half.		Only here does the 16 rung of minFuelToScore become reachable.
-P1	AUTONOMOUS_CYCLER	6.0	4.03	8	125.0	false	true	5.0	12.0	4.0	false	true	0	0	0	SHIFT2, our hub dark, opponent hub live now & after, 5 s to flip, 8 fuel, opp-zone pieces present.		After P2 poach utility rose to 0.92; this asserts POACH_OPPONENT_ZONE now wins the argmax.	POACH_OPPONENT_ZONE	Retune gate: poach now beats VACUUM(0.88-0.96).
-P2	AUTONOMOUS_CYCLER	4.0	4.03	8	140.0	true	false	6.0	12.0	4.0	false	true	0	0	0	SHIFT1, our hub live, opponent hub dark now & after the flip, 6 s to flip, 0.63 m from hub.		After P2 shuttle gate lowered to 3.8 m (was 6.0); 0.63 m is now inside lob range so SHUTTLE_PASS should win when opponent hub goes active next.	SHUTTLE_PASS	P2: 6.0->3.8 m lowers the distance floor into lob range.
+id	archetype	selfX	selfY	heldFuel	matchTime	hubActive	oppHubActive	timeToShift	oppX	oppY	auto	oppObserved	scoreDiff	oppZonePieces	alliesHeldFuel	situation	expected	notes
+Z99	AUTONOMOUS_CYCLER	2.0	4.03	10	130.0	false	true	0.0	12.0	4.0	false	true	0	0	0	CANARY. SHIFT1 clock but our hub declared dark with no countdown.	CYCLE_SCORE_HUB	Must be reported INVALID STATE. If it is not, the checker is broken.
+A1	AUTONOMOUS_CYCLER	2.0	4.03	0	140.0	true	true	0.0	12.0	4.0	false	true	0	0	0	TRANSITION, both hubs live, EMPTY.	VACUUM_MIDFIELD	The floor of the policy: hub live but nothing to score, so harvest.
+A2	AUTONOMOUS_CYCLER	2.0	4.03	8	140.0	true	true	0.0	12.0	4.0	false	true	0	0	0	TRANSITION, both hubs live, 8 fuel.	CYCLE_SCORE_HUB	The ratchet: at 8 fuel it commits to scoring, not topping up.
+A3	AUTONOMOUS_CYCLER	2.0	4.03	30	140.0	true	true	0.0	12.0	4.0	false	true	0	0	0	TRANSITION, both hubs live, hopper FULL (30).	CYCLE_SCORE_HUB	isInventoryFull should suppress VACUUM/STOCKPILE/SWEEP outright.
+A4	AUTONOMOUS_CYCLER	2.0	4.03	20	20.0	true	true	0.0	12.0	4.0	false	true	0	0	0	ENDGAME, 20 s left, both hubs live, 20 fuel.	CYCLE_SCORE_HUB	The other both-live phase, at the other end of the match.
+A5	AUTONOMOUS_CYCLER	2.0	4.03	7	150.0	true	true	0.0	12.0	4.0	false	true	0	0	0	AUTO, 7 fuel — one short of AUTO_BATCH_MIN_FUEL.	CYCLE_SCORE_HUB	Probes the autonomous batch gate from below.
+A6	AUTONOMOUS_CYCLER	2.0	4.03	8	150.0	true	true	0.0	12.0	4.0	false	true	0	0	0	AUTO, exactly 8 fuel — the batch threshold.	CYCLE_SCORE_HUB	Should flip to committing to score at exactly 8.
+A7	AUTONOMOUS_CYCLER	3.0	4.03	8	140.0	true	true	0.0	5.2	4.03	false	true	0	0	0	In range (1.6 m from hub), 8 fuel, but an opponent parked 0.6 m in the lane.	CYCLE_SCORE_HUB	isShootingLaneBlocked: opponent within 1.60 m and under 25 deg of the hub bearing. Should suppress firing but not change the objective.
+B1	AUTONOMOUS_CYCLER	0.4	4.03	7	140.0	true	true	0.0	12.0	4.0	false	true	0	0	0	Out of the 4.0 m radius (4.23 m), hub live, 7 fuel.	VACUUM_MIDFIELD	minFuelToScore says 16 here. 7 must not justify a scoring trip.
+B2	AUTONOMOUS_CYCLER	0.4	4.03	8	140.0	true	true	0.0	12.0	4.0	false	true	0	0	0	Same spot, exactly 8 fuel.	CYCLE_SCORE_HUB	THE measured threshold. The code says 16; the engine flips here.
+B3	AUTONOMOUS_CYCLER	0.4	4.03	15	140.0	true	true	0.0	12.0	4.0	false	true	0	0	0	Same spot, 15 fuel.	CYCLE_SCORE_HUB	Between the measured 8 and the coded 16. Expect no change from B2.
+B4	AUTONOMOUS_CYCLER	0.4	4.03	16	140.0	true	true	0.0	12.0	4.0	false	true	0	0	0	Same spot, 16 fuel — the value minFuelToScore actually specifies.	CYCLE_SCORE_HUB	If B2 and B4 behave identically the 16 rung is dead code.
+B5	AUTONOMOUS_CYCLER	9.5	4.03	8	140.0	true	true	0.0	12.0	4.0	false	true	0	0	0	4.87 m from hub — past the centerline into the opponent half, 8 fuel.	CYCLE_SCORE_HUB	Same out-of-range condition as B2 but a long trip home. Distance is not in the utility at all; does the bot care?
+B6	AUTONOMOUS_CYCLER	2.0	4.03	1	140.0	true	true	0.0	12.0	4.0	false	true	0	0	0	In range (2.63 m), hub live, 1 fuel.	CYCLE_SCORE_HUB	minFuelToScore is 1 in range, so this should commit on one ball.
+C1	AUTONOMOUS_CYCLER	2.0	4.03	0	108.0	true	false	3.0	12.0	4.0	false	true	0	0	0	SHIFT1, LAST WINDOW, empty, 3 s to the flip.	VACUUM_MIDFIELD	Baseline of the closing quadrant with nothing in hand.
+C2	AUTONOMOUS_CYCLER	2.0	4.03	8	108.0	true	false	3.0	12.0	4.0	false	true	0	0	0	SHIFT1, LAST WINDOW, 8 fuel, 3 s to the flip.	CYCLE_SCORE_HUB	Exactly the harvest-force threshold, with the hub about to die.
+C3	AUTONOMOUS_CYCLER	2.0	4.03	20	108.0	true	false	3.0	12.0	4.0	false	true	0	0	0	SHIFT1, LAST WINDOW, 20 fuel, 3 s to the flip.	CYCLE_SCORE_HUB	THE open question. Staging at the arc is the intuitive play with a full hopper 3 s from losing the hub; the engine currently cycles. willOwnHubDeactivate() exists but nothing reads it.
+C4	ADAPTIVE_COMPETITOR	2.0	4.03	20	108.0	true	false	3.0	12.0	4.0	false	true	0	0	0	Same as C3 but ADAPTIVE_COMPETITOR (no archetype modifier).	CYCLE_SCORE_HUB	Isolates archetype handling from hub state.
+C5	TACTICAL_DEFENDER	2.0	4.03	20	108.0	true	false	3.0	12.0	4.0	false	true	0	0	0	Same as C3 but TACTICAL_DEFENDER.	LEAD_INTERCEPT	Defender in its own scoring window, 3 s from losing it. Does the 0.99 defensive utility still beat the harvest force's 0.98?
+C6	AUTONOMOUS_CYCLER	2.0	4.03	20	83.0	false	true	3.0	12.0	4.0	false	true	0	0	0	SHIFT2, OUR hub dark and about to OPEN, 20 fuel, 3 s to the flip.	STAGE_STANDOFF	CONTROL for C3: same hopper, same countdown, opposite hub state. If this stages and C3 does not, the last-window gap is proven.
+D1	ADAPTIVE_COMPETITOR	2.0	4.03	20	90.0	false	true	10.0	12.0	4.0	false	true	0	0	0	SHIFT2, hub dark, 10 s until it opens, 20 fuel.	VACUUM_MIDFIELD	STAGE_STANDOFF is 0.80 but VACUUM is 0.88-0.98 and STOCKPILE 0.86-0.96, so harvesting wins. Observed: vacuums to 30 before staging.
+D2	ADAPTIVE_COMPETITOR	2.0	4.03	20	83.0	false	true	3.0	12.0	4.0	false	true	0	0	0	Same, but 3 s until the hub opens.	STAGE_STANDOFF	STAGE should jump 0.80 -> 0.95 to anticipate. Does it beat VACUUM?
+D3	ADAPTIVE_COMPETITOR	2.0	4.03	30	90.0	false	true	10.0	12.0	4.0	false	true	0	0	0	SHIFT2, hub dark, 10 s to open, hopper FULL.	DENY_SHOOTING_LANE	Boundary: 30 is where D1 finally starts staging.
+D4	ADAPTIVE_COMPETITOR	2.0	4.03	18	90.0	false	true	10.0	12.0	4.0	false	true	0	0	0	Same, holding exactly minFuelToStage (18).	VACUUM_MIDFIELD	Should make STAGE eligible even though VACUUM still outranks it.
+D5	ADAPTIVE_COMPETITOR	2.0	4.03	17	90.0	false	true	10.0	12.0	4.0	false	true	0	0	0	Same, one below minFuelToStage (17).	VACUUM_MIDFIELD	Control for D4 — STAGE should be ineligible here.
+E1	CO_PILOT	2.0	4.03	12	20.0	true	true	0.0	12.0	4.0	false	true	0	0	0	ENDGAME, 20 s left, CO_PILOT holding 12 fuel.	CYCLE_SCORE_HUB	Lowest point of the climb ramp (0.85). Cycle should win.
+E2	CO_PILOT	2.0	4.03	12	16.0	true	true	0.0	12.0	4.0	false	true	0	0	0	ENDGAME, 16 s left, same state.	CYCLE_SCORE_HUB	Ramp gives 0.954, still under CYCLE's 0.98. One second later it flips.
+E3	CO_PILOT	2.0	4.03	12	15.0	true	true	0.0	12.0	4.0	false	true	0	0	0	ENDGAME, 15 s left, same state.	RUSH_CLIMB	Ramp jumps to 0.99 and overtakes CYCLE. E2 vs E3 is the step.
+E4	CO_PILOT	2.0	4.03	12	10.0	true	true	0.0	12.0	4.0	false	true	0	0	0	ENDGAME, 10 s left, same state.	RUSH_CLIMB	Should be climbing by now. Abandoning 12 points of fuel — right call?
+E5	CO_PILOT	2.0	4.03	0	15.0	true	true	0.0	12.0	4.0	false	true	0	0	0	ENDGAME, 15 s left, empty-handed.	RUSH_CLIMB	Control for E3: climbing with nothing in the hopper is free.
+E6	AUTONOMOUS_CYCLER	2.0	4.03	12	15.0	true	true	0.0	12.0	4.0	false	true	0	0	0	ENDGAME, 15 s left, AUTONOMOUS_CYCLER with 12 fuel.	CYCLE_SCORE_HUB	Control for E3: the climb gate is CO_PILOT-only, so this must NOT climb.
+F1	TACTICAL_DEFENDER	2.5	4.03	20	120.0	true	false	15.0	12.0	4.0	false	true	0	0	0	SHIFT1, our hub live, defender holding 20 fuel, opponent hub dark.	LEAD_INTERCEPT	DENY/LEAD beat the harvest force by ~0.01. Pin the behaviour.
+F2	DEFENSE_BULLY	2.5	4.03	20	120.0	true	false	15.0	12.0	4.0	false	true	0	0	0	Same but DEFENSE_BULLY.	LEAD_INTERCEPT	Second defender, same margin question. LEAD_INTERCEPT is 0.99.
+F3	TACTICAL_DEFENDER	2.5	4.03	20	100.0	false	true	20.0	12.0	4.0	false	true	0	0	0	SHIFT2, our hub dark, defender holding 20 fuel, opponent hub live.	DENY_SHOOTING_LANE	Opposite quadrant. With our hub dark the harvest force cannot fire for them, so this should be a comfortable defensive pick.
+F4	TACTICAL_DEFENDER	2.5	4.03	0	120.0	true	false	15.0	12.0	4.0	false	true	0	0	0	SHIFT1, defender EMPTY.	LEAD_INTERCEPT	Control: with no fuel the harvest force is inert, so this isolates the archetype modifier from the :551 interaction.
+G1	AUTONOMOUS_CYCLER	0.4	4.03	8	140.0	true	true	0.0	12.0	4.0	false	true	0	0	0	x=0.40, 4.23 m from the hub — OUTSIDE the 4.0 m radius.	CYCLE_SCORE_HUB	Geometry anchor for the far edge of the home zone.
+G2	AUTONOMOUS_CYCLER	4.0	4.03	8	140.0	true	true	0.0	12.0	4.0	false	true	0	0	0	x=4.00, 0.63 m from the hub — deep in range, on the standoff arc.	CYCLE_SCORE_HUB	Geometry anchor for the near edge.
+G3	AUTONOMOUS_CYCLER	8.0	4.03	8	140.0	true	true	0.0	12.0	4.0	false	true	0	0	0	x=8.00, 3.37 m from the hub — STILL in range, near the centerline.	CYCLE_SCORE_HUB	This is the finding: 3.37 m < 4.0 m, so minFuelToScore is 1 essentially everywhere a bot can legally be in its own half.
+G4	AUTONOMOUS_CYCLER	9.5	4.03	8	140.0	true	true	0.0	12.0	4.0	false	true	0	0	0	x=9.50, 4.87 m from the hub — outside the radius, in the opponent half.	CYCLE_SCORE_HUB	Only here does the 16 rung of minFuelToScore become reachable.

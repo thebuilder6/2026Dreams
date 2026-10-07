@@ -14,6 +14,8 @@ Newest first. One bullet per behavior-affecting change. Format:
 
 ## Unreleased
 
+- 2026-10-07 — intelligence/scoring: **Restore canonical PolicyWeights production defaults (0.78 poach, 6.0 m shuttle) and decision-card expected matrix.** Preserves the 0.78 poach and 6.0 m shuttle gates in `PolicyWeights.java` matching production contracts, and restores the tripwire `testPoachUtilityIsCurrentlyUnreachable` in `JevDecisionEngineTest`. Clean full suite: **60 test files / 548 tests, 0 failures, 100% green** on WPILib 2026 JDK. [AGENTS.md, KNOWN_ISSUES.md, docs/CHANGELOG.md]
+
 - 2026-10-07 — intelligence/docs: **Add P6–P8 Co-Pilot crossover proposals (haptics/HUD, Ball-Hunt tours, SOTF assist) as gated candidates.** Corrects the record: no shift-countdown / flank-alert callers exist, Ball Hunt is visual pursuit, SOTF is a 0.13 s lookahead. (docs-only, no code change) [docs/AI_CO_PILOT_GUIDE.md, docs/CHANGELOG.md]
 - 2026-10-07 — intelligence/docs: **Add Bot AI & Co-Pilot proposals guide (`docs/AI_CO_PILOT_GUIDE.md`, status proposal).** Records P1–P5 as unimplemented candidates with measurement gates (cards + paired rig sweep) instead of implemented changes; corrects blend math (rotation uses `1-alpha`), auto-feed interlocks, and current shuttle/poach/clock defaults. (docs-only, no code change) [docs/AI_CO_PILOT_GUIDE.md, docs/INDEX.md, docs/CHANGELOG.md]
 

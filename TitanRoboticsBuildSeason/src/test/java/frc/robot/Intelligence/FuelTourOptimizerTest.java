@@ -14,6 +14,8 @@ import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
 import frc.robot.Navigation.FieldMap;
+import swervelib.simulation.ironmaple.simulation.SimulatedArena;
+import swervelib.simulation.ironmaple.simulation.seasonspecific.rebuilt2026.RebuiltFuelOnField;
 
 class FuelTourOptimizerTest {
 
@@ -21,6 +23,7 @@ class FuelTourOptimizerTest {
     void setup() {
         edu.wpi.first.hal.HAL.initialize(500, 0);
         frc.robot.Navigation.DynamicRouter.clearObstacles();
+        SimulatedArena.getInstance().clearGamePieces();
     }
 
     @Test
@@ -178,5 +181,40 @@ class FuelTourOptimizerTest {
 
         var result = engine.planFuelHarvestTour(robotPose, false, false, 3, Collections.emptySet());
         assertNotNull(result);
+    }
+
+    @Test
+    void testHarvestTourIntegrationInDecisionEngine() {
+        SimulatedArena arena = SimulatedArena.getInstance();
+        arena.clearGamePieces();
+        // Add 3 reachable fuel pieces in open midfield ahead of robot
+        arena.addGamePiece(new RebuiltFuelOnField(new Translation2d(9.6, 4.0)));
+        arena.addGamePiece(new RebuiltFuelOnField(new Translation2d(10.2, 4.0)));
+        arena.addGamePiece(new RebuiltFuelOnField(new Translation2d(10.8, 4.0)));
+
+        // Robot at (9.2, 4.0) is > 4.0m from Blue Hub (4.6256, 4.035), so not in shooting range
+        Pose2d robotPose = new Pose2d(9.2, 4.0, Rotation2d.fromDegrees(0));
+        WorldState world = new WorldState(
+                robotPose,
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                5, // 5 held -> capacity for up to 25 more pieces (< 16 minFuelToScore)
+                new Pose2d(14.0, 4.0, new Rotation2d()),
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                90.0,
+                true,
+                false,
+                10.0,
+                false // Blue alliance
+        );
+
+        JevDecisionEngine engine = JevDecisionEngine.getInstance();
+        AIActionIntent intent = engine.evaluatePolicy(world, Archetype.AUTONOMOUS_CYCLER);
+
+        assertEquals(StrategicObjective.VACUUM_MIDFIELD, intent.objective());
+        assertTrue(intent.tour().isValid(), "Intent must contain a valid multi-piece tour");
+        assertTrue(intent.tour().pieceCount() >= 2, "Tour must contain multiple pieces");
+        assertEquals(intent.tour().immediateTargetPose(), intent.navigationTarget(),
+                "Navigation target must match tour immediate target pose");
+        assertTrue(intent.rationale().contains("tour"), "Rationale must reflect tour execution");
     }
 }

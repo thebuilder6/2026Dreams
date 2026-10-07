@@ -95,4 +95,30 @@ public class AutoMissionChooserTest {
         assertTrue(chooser.getAutoMission().isEmpty());
         assertDoesNotThrow(chooser::outputToSmartDashboard);
     }
+
+    @Test
+    public void testTrenchSweepTrajectoryAndMissions() {
+        var trajOpt = frc.robot.Auto.Actions.FollowChoreoPath.getTrajectory("TrenchSweep");
+        assertTrue(trajOpt.isPresent(), "TrenchSweep.traj must be present and parseable by Choreo");
+        var traj = trajOpt.get();
+
+        var initialPoseOpt = traj.getInitialPose(false);
+        assertTrue(initialPoseOpt.isPresent(), "TrenchSweep must provide an initial pose for Blue alliance");
+        edu.wpi.first.math.geometry.Pose2d initialPose = initialPoseOpt.get();
+
+        // 1. Initial pose must be legally inside Blue Alliance Zone (X <= BLUE_ZONE_MAX_X)
+        assertTrue(frc.robot.Navigation.FieldMap.AllianceZones.isInAllianceZone(initialPose, false),
+                "Initial pose must be strictly inside Blue Alliance Zone");
+        assertEquals(3.40, initialPose.getX(), 0.05);
+        assertEquals(0.65, initialPose.getY(), 0.05);
+
+        // 2. Final pose must be inside neutral carpet before centerline (FRC G201)
+        var finalPoseOpt = traj.getFinalPose(false);
+        assertTrue(finalPoseOpt.isPresent(), "TrenchSweep must provide a final pose for Blue alliance");
+        edu.wpi.first.math.geometry.Pose2d finalPose = finalPoseOpt.get();
+        assertTrue(finalPose.getX() < frc.robot.Navigation.FieldMap.CENTERLINE_X - 0.15,
+                "Final pose must respect autonomous centerline boundary G201");
+        assertEquals(7.60, finalPose.getX(), 0.05);
+        assertEquals(0.65, finalPose.getY(), 0.05);
+    }
 }

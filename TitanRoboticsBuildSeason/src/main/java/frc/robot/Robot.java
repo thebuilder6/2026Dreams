@@ -341,6 +341,7 @@ public class Robot extends LoggedRobot {
   /** This function is called once when test mode is enabled. */
   @Override
   public void testInit() {
+    mAutoMissionExecutor.stop();
     CommandScheduler.getInstance().cancelAll();
     if (testMode != null) {
       testMode.setEnabled(true);

@@ -773,6 +773,7 @@ public class JevDecisionEngine {
         double targetRPM = 0.0;
         boolean triggerKicker = false;
         String rationale;
+        FuelTourOptimizer.TourResult tourResult = FuelTourOptimizer.TourResult.EMPTY;
         StrategicObjective nextObjective = resolveNextObjective(bestObjective, world);
         double timeToTransitionSec = world.isAllianceHubActive() && world.heldFuelCount() >= 8
                 ? Math.max(0.0, timeLeftToHarvest)
@@ -827,23 +828,60 @@ public class JevDecisionEngine {
                 break;
 
             case VACUUM_MIDFIELD:
-                navTarget = findClusterWeightedFuelTarget(world.selfPose(), world.isRedAlliance(),
-                        world.isAutonomous(), blockedFuel, fuelTargetMemory);
+                int piecesNeeded = Math.min(5, WorldState.DEFAULT_MAX_CAPACITY - world.heldFuelCount());
+                FuelTourOptimizer.TourResult tour = (piecesNeeded > 1)
+                        ? planFuelHarvestTour(world.selfPose(), world.isRedAlliance(), world.isAutonomous(),
+                                piecesNeeded, blockedFuel)
+                        : FuelTourOptimizer.TourResult.EMPTY;
+
+                if (tour.isValid() && tour.pieceCount() > 1) {
+                    Translation2d immediateTarget = tour.immediateTargetPose().getTranslation();
+                    if (fuelTargetMemory != null && fuelTargetMemory.latched() != null) {
+                        boolean latchedStillPresent = tour.waypoints().stream()
+                                .anyMatch(p -> p.getDistance(fuelTargetMemory.latched()) <= FuelTargetMemory.STICK_RADIUS_M);
+                        if (!latchedStillPresent) {
+                            fuelTargetMemory.resolve(List.of(new FuelTargetMemory.ScoredTarget(immediateTarget, 100.0)));
+                        }
+                    } else if (fuelTargetMemory != null) {
+                        fuelTargetMemory.resolve(List.of(new FuelTargetMemory.ScoredTarget(immediateTarget, 100.0)));
+                    }
+                    navTarget = tour.immediateTargetPose();
+                    tourResult = tour;
+                    rationale = String.format("Harvesting multi-piece tour (%d pieces, %.1fm, %d/30 held).",
+                            tour.pieceCount(), tour.totalDistanceMeters(), world.heldFuelCount());
+                } else {
+                    navTarget = findClusterWeightedFuelTarget(world.selfPose(), world.isRedAlliance(),
+                            world.isAutonomous(), blockedFuel, fuelTargetMemory);
+                    rationale = String.format("Hunting fuel (%d/30). Hopper capacity available.", world.heldFuelCount());
+                }
                 intakeCmd = IntakeState.INTAKING;
                 shooterCmd = ShooterState.STOPPED;
-                rationale = String.format("Hunting fuel (%d/30). Hopper capacity available.", world.heldFuelCount());
                 break;
 
             case SWEEP_ALLIANCE_ZONE:
-                navTarget = findAllianceZoneFuelTarget(world.selfPose(), world.isRedAlliance(),
-                        blockedFuel);
+                int piecesNeededZone = Math.min(5, WorldState.DEFAULT_MAX_CAPACITY - world.heldFuelCount());
+                List<Translation2d> zoneCandidates = findAllianceZoneFuelCandidates(world.isRedAlliance(), blockedFuel);
+                Translation2d selfHubPos = FieldMap.Hubs.getHubLocation2d(world.isRedAlliance());
+                FuelTourOptimizer.TourResult zoneTour = (zoneCandidates.size() >= 2 && piecesNeededZone > 1)
+                        ? FuelTourOptimizer.optimizeTour(world.selfPose(), zoneCandidates, piecesNeededZone, selfHubPos)
+                        : FuelTourOptimizer.TourResult.EMPTY;
+
+                if (zoneTour.isValid() && zoneTour.pieceCount() > 1) {
+                    navTarget = zoneTour.immediateTargetPose();
+                    tourResult = zoneTour;
+                    int currentHomeFuel = countFuelInZone(world.isRedAlliance(), false, blockedFuel, knowledge);
+                    rationale = String.format("Executing alliance zone tour (%d pieces, %.1fm, %d loose total).",
+                            zoneTour.pieceCount(), zoneTour.totalDistanceMeters(), currentHomeFuel);
+                } else {
+                    navTarget = findAllianceZoneFuelTarget(world.selfPose(), world.isRedAlliance(), blockedFuel);
+                    int currentHomeFuel = countFuelInZone(world.isRedAlliance(), false, blockedFuel, knowledge);
+                    rationale = String.format("Sweeping %d loose fuel pieces in the alliance zone.", currentHomeFuel);
+                }
                 intakeCmd = IntakeState.INTAKING;
                 if (world.isAllianceHubActive()) {
                     shooterCmd = ShooterState.PREPARING;
                     targetRPM = 3200.0;
                 }
-                int currentHomeFuel = countFuelInZone(world.isRedAlliance(), false, blockedFuel, knowledge);
-                rationale = String.format("Sweeping %d loose fuel pieces in the alliance zone.", currentHomeFuel);
                 break;
 
             case LONG_RANGE_SNIPE:
@@ -1050,7 +1088,7 @@ public class JevDecisionEngine {
         StrategicPlan plan = new StrategicPlan(bestObjective, nextObjective, timeToTransitionSec);
         return new AIActionIntent(
                 bestObjective, navTarget, aimOverride, intakeCmd, shooterCmd, targetRPM, triggerKicker, maxUtility,
-                rationale, plan);
+                rationale, plan, tourResult);
     }
 
     private DecisionMode resolveDecisionMode() {
@@ -1351,6 +1389,42 @@ public class JevDecisionEngine {
     public Pose2d findAllianceZoneFuelTarget(
             Pose2d robotPose, boolean isRedAlliance, Set<Translation2d> blockedFuel) {
         return findFuelTargetInZone(robotPose, isRedAlliance, blockedFuel);
+    }
+
+    /**
+     * Collects reachable fuel pieces located strictly within the specified alliance zone.
+     */
+    public List<Translation2d> findAllianceZoneFuelCandidates(
+            boolean isRedAlliance, Set<Translation2d> blockedFuel) {
+        List<Translation2d> candidates = new ArrayList<>();
+        SimulatedArena arena = SimulatedArena.getInstance();
+        if (arena == null) {
+            return candidates;
+        }
+        try {
+            var pieces = frc.robot.Sim.MatchDeterminism.fuelOnFieldSorted();
+            if (pieces != null) {
+                for (GamePieceOnFieldSimulation piece : pieces) {
+                    if (piece == null || !"Fuel".equals(piece.getType())) {
+                        continue;
+                    }
+                    Translation2d point = piece.getPoseOnField().getTranslation();
+                    if (!FieldMap.AllianceZones.isInAllianceZone(point, isRedAlliance)) {
+                        continue;
+                    }
+                    if (StaticPathfinder.isPointInHardObstacle(point)
+                            || StaticPathfinder.isPointNearDynamicObstacle(point)) {
+                        continue;
+                    }
+                    if (isBlocked(blockedFuel, point)) {
+                        continue;
+                    }
+                    candidates.add(point);
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return candidates;
     }
 
     /**

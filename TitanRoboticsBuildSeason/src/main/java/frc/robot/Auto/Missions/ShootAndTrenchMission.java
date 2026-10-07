@@ -15,7 +15,7 @@ import frc.robot.Subsystems.SwerveBase;
  * High-value combination autonomous mission:
  * 1. Immediately scores 8 preloaded fuel pieces into the Hub.
  * 2. Powers down shooter flywheels.
- * 3. Traverses through the low-clearance trench corridor via OpponentPath while intaking
+ * 3. Traverses through the low-clearance trench corridor via TrenchSweep while intaking
  *    neutral field fuel to starve opponent intake cycles.
  * 4. Stows intake and cleanly stops.
  */
@@ -29,9 +29,9 @@ public class ShootAndTrenchMission extends MissionBase {
         // 2. Shut down shooter flywheels
         runAction(new LambdaAction(() -> Shooter.getInstance().stop()));
 
-        // 3. Drive through trench corridor while intaking field fuel
+        // 3. Drive through trench corridor while intaking field fuel without mid-auto odometry reset
         runAction(new ParallelRaceAction(
-            new FollowChoreoPath("OpponentPath", true),
+            new FollowChoreoPath("TrenchSweep", false),
             new IntakeAction(999, Intake.IntakeState.INTAKING)
         ));
 

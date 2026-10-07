@@ -40,7 +40,7 @@ Team 8334 does not use WPILib `Command` / `Subsystem` structures. Autonomous rou
 ┌────────────────────────────────────────────────────────┐
 │                   Robot.java Lifecycle                 │
 │  autonomousInit() ───► AutoMissionExecutor.start()     │
-│  teleopInit() / disabledInit() ───► executor.stop()    │
+│  teleopInit() / disabledInit() / testInit() ──► stop() │
 └───────────────────────────┬────────────────────────────┘
                             │ Spawns Thread
                             ▼
@@ -191,12 +191,12 @@ If you export a trajectory `.traj` to `deploy/choreo/` and do *not* write a cust
 | Fast Depot Cycle | `DepotPath`, `DepotToShootPath` | Intake at depot, wait ≤1.5 s for ball, return, shoot |
 | Adaptive Depot Sweep | `DepotPath`, `DepotToShootPath` | Same, but `BranchAction` on `hasGamePiece()`: shoot if ball acquired, else stow and stop |
 | Delayed Partner Shoot | `ShootPath` | Wait 4 s (yield Hub to partner), drive, shoot |
-| Shoot & Trench Disruption | `OpponentPath` | Shoot preloads, then run the trench/neutral-zone path intaking |
-| Trench Midfield Disruptor | `OpponentPath` | Trench/neutral-zone path with intake down, no shooting |
+| Shoot & Trench Disruption | `TrenchSweep` | Shoot preloads from Blue zone, then traverse South trench to midfield intaking without mid-auto odometry reset |
+| Trench Midfield Disruptor | `TrenchSweep` | Traverse South trench from legal Blue alliance line (X=3.40 m, Y=0.65 m) to midfield with intake down |
 | Centerline Sweep & Leave | `MoveForward` | Taxi with intake down |
 | DepotShootMission, ShooterMission, ExampleMission, Advanced Choreo Shot | — | Original missions (names unchanged) |
 
-All paths are Blue-origin and mirrored for Red by Choreo/`AllianceFlipUtil`. `OpponentPath` starts deep in the Red half (X≈13.9 m) and is run with an odometry reset, so treat the two trench missions as sim/testing routines until a legal-start trench path is authored.
+All paths are Blue-origin and mirrored for Red by Choreo/`AllianceFlipUtil`. `TrenchSweep` begins legally in the Blue Alliance Zone (X=3.40 m, Y=0.65 m) and sweeps east through the South trench corridor to neutral midfield (X=7.60 m) safely before the FRC G201 centerline boundary, eliminating the illegal cross-field odometry reset previously inherited from `OpponentPath`.
 
 ### 5. Driver Dashboard Controls & Tuning
 
@@ -216,7 +216,7 @@ On the Elastic Dashboard (and SmartDashboard):
 - **Simulation Validation**:
   - Run `.\gradlew simulateJava` from `TitanRoboticsBuildSeason/`.
   - In SimGUI, set Autonomous Mode and observe the virtual robot execute the selected Choreo trajectory on the AdvantageScope 2D/3D field.
-- **Verified against**: JUnit 5 full test suite clean with `--rerun-tasks` (53 result files / 500 tests, 0 failures, 2026-10-07). Mission behaviour itself is only SimGUI-validated, not unit-tested.
+- **Verified against**: JUnit 5 full test suite clean with `--rerun-tasks` (53 result files / 503 tests, 0 failures, 2026-10-07). Mission behaviour itself is only SimGUI-validated, not unit-tested.
 - **Next review due**: 2026-11-06.
 
 ---

@@ -33,13 +33,13 @@ public abstract class MissionBase {
                 runAction(new frc.robot.Auto.Actions.WaitAction(AutoMissionChooser.getDelay()));
             }
             routine();
+            done();
         } 
         catch (AutoMissionEndedException e) {
             DriverStation.reportError("AUTO MISSION DONE!!!! ENDED EARLY!!!!", false);
-            return;
+        } finally {
+            mActive = false;
         }
-
-        done();
     }
 
     public void done() {

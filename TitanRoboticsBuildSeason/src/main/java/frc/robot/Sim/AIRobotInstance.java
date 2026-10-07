@@ -566,9 +566,31 @@ public class AIRobotInstance {
         // Publish to Field2d
         String botObjName = isAlly ? ("AllyBot" + (botId - 100)) : ("OpponentBot" + botId);
         String targetObjName = isAlly ? ("AllyTarget" + (botId - 100)) : ("OpponentTarget" + botId);
+        String tourObjName = isAlly ? ("AllyTour" + (botId - 100)) : ("OpponentTour" + botId);
+        boolean hasTour = intent.tour() != null && intent.tour().isValid() && !intent.tour().waypoints().isEmpty();
+        Pose2d[] tourPoses;
+        double[] flatTour;
+        if (hasTour) {
+            java.util.List<Translation2d> wps = intent.tour().waypoints();
+            tourPoses = new Pose2d[wps.size()];
+            flatTour = new double[wps.size() * 2];
+            for (int i = 0; i < wps.size(); i++) {
+                Rotation2d heading = (i < wps.size() - 1)
+                        ? wps.get(i + 1).minus(wps.get(i)).getAngle()
+                        : intent.tour().finalExitPose().getRotation();
+                tourPoses[i] = new Pose2d(wps.get(i), heading);
+                flatTour[i * 2] = wps.get(i).getX();
+                flatTour[i * 2 + 1] = wps.get(i).getY();
+            }
+        } else {
+            tourPoses = new Pose2d[0];
+            flatTour = new double[0];
+        }
+
         try {
             SwerveBase.getInstance().getField().getObject(botObjName).setPose(currentPose);
             SwerveBase.getInstance().getField().getObject(targetObjName).setPose(currentTargetPose);
+            SwerveBase.getInstance().getField().getObject(tourObjName).setPoses(tourPoses);
         } catch (Exception ignored) {}
 
         // Telemetry logging (AdvantageKit & SmartDashboard)
@@ -584,6 +606,11 @@ public class AIRobotInstance {
         Logger.recordOutput(prefix + "Score", scoreCount);
         Logger.recordOutput(prefix + "Confidence", intent.confidence());
         Logger.recordOutput(prefix + "Archetype", archetype.name());
+        Logger.recordOutput(prefix + "TourWaypoints", tourPoses);
+        Logger.recordOutput(prefix + "HasActiveTour", hasTour);
+        Logger.recordOutput(prefix + "TourPieces", hasTour ? intent.tour().pieceCount() : 0);
+        Logger.recordOutput(prefix + "TourDistanceMeters", hasTour ? intent.tour().totalDistanceMeters() : 0.0);
+        Logger.recordOutput(intentPrefix + "/TourWaypoints", tourPoses);
 
         String dashPrefix = (isAlly ? SimDashboardKeys.allyPrefix(botId - 100)
                 : SimDashboardKeys.botPrefix(botId)) + "/";
@@ -596,6 +623,12 @@ public class AIRobotInstance {
         edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putBoolean(dashPrefix + "Stalled", stalled);
         edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putNumber(dashPrefix + "CommandedSpeed", commandedSpeed);
         edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putString(dashPrefix + "Archetype", archetype.name());
+        edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putNumberArray(dashPrefix + "TourWaypoints", flatTour);
+        edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putBoolean(dashPrefix + "HasActiveTour", hasTour);
+        edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putNumber(dashPrefix + "TourPieces", hasTour ? intent.tour().pieceCount() : 0);
+        edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putNumber(dashPrefix + "TourDistanceMeters", hasTour ? intent.tour().totalDistanceMeters() : 0.0);
+        edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putNumberArray(intentPrefix + "/TourWaypoints", flatTour);
+        edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putBoolean(intentPrefix + "/HasActiveTour", hasTour);
 
         // 6. Score-rig instrumentation. Sampled last so it sees the settled state.
         // Uses the same `stalled` flag that drives the production watchdogs, so the

@@ -96,4 +96,33 @@ public class AutoMissionExecutorTest {
         assertTrue(mission.actionDone, "action.done() must be invoked on stop");
         assertFalse(executor.isStarted());
     }
+
+    private static class QuickMission extends MissionBase {
+        private volatile boolean doneCalled = false;
+
+        @Override
+        protected void routine() throws AutoMissionEndedException {
+            // Completes immediately
+        }
+
+        @Override
+        public void done() {
+            super.done();
+            doneCalled = true;
+        }
+    }
+
+    @Test
+    public void testMissionNaturalCompletionClearsActive() throws InterruptedException {
+        AutoMissionExecutor executor = new AutoMissionExecutor();
+        QuickMission mission = new QuickMission();
+
+        executor.setAutoMission(mission);
+        executor.start();
+        Thread.sleep(50);
+
+        assertTrue(mission.doneCalled, "done() must be called when routine finishes naturally");
+        assertFalse(mission.isActive(), "isActive() must be false after routine completes");
+        assertFalse(executor.isStarted(), "executor.isStarted() must be false after routine completes");
+    }
 }

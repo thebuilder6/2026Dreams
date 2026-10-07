@@ -20,8 +20,8 @@ public class AutoMissionExecutor {
                 if (mAutoMission != null) {
                     try {
                         mAutoMission.run();
-                    } catch (Exception e) {
-                        edu.wpi.first.wpilibj.DriverStation.reportError("AUTO MISSION CRASHED: " + e.getMessage(), e.getStackTrace());
+                    } catch (Throwable t) {
+                        edu.wpi.first.wpilibj.DriverStation.reportError("AUTO MISSION CRASHED: " + t.getMessage(), t.getStackTrace());
                     }
                 }
             }

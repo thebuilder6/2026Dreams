@@ -11,16 +11,16 @@ import frc.robot.Subsystems.SwerveBase;
 
 /**
  * Defensive & midfield disruption autonomous mission:
- * Traverses the trench and neutral zone boundary along OpponentPath while intaking
+ * Traverses the trench and neutral zone boundary along TrenchSweep while intaking
  * floor pieces to starve opponent autonomous cycles and collect neutral game pieces.
  */
 @AutoMission(name = "Trench Midfield Disruptor")
 public class TrenchDisruptorMission extends MissionBase {
     @Override
     protected void routine() throws AutoMissionEndedException {
-        // 1. Follow trench trajectory while actively intaking fuel
+        // 1. Follow trench trajectory starting from legal Blue alliance line while actively intaking fuel
         runAction(new ParallelRaceAction(
-            new FollowChoreoPath("OpponentPath", true),
+            new FollowChoreoPath("TrenchSweep", true),
             new IntakeAction(999, Intake.IntakeState.INTAKING)
         ));
 

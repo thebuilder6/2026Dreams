@@ -14,6 +14,8 @@ Newest first. One bullet per behavior-affecting change. Format:
 
 ## Unreleased
 
+- 2026-10-07 — scoring/tools: **Fix decision cards column transposition & build script error handling; 39/39 cards pass.** (1) Fixed column 18/19 inversion in `decision_cards.tsv` across cards B1–G4 where expected enums and note prose were swapped, and aligned B5 expectation with distance-invariant scoring commitment. (2) Fixed `NativeCommandError` in `run-cards.ps1` during offline `gradlew jar` builds. (3) Added `fitness.py` 4-component composite match fitness evaluator and `compare.py` paired $\delta$-Fitness CI gating. (Decision cards 39/39 PASS; full suite 60 files / 548 tests green; `verify.ps1` 3/3 PASS) [tools/score/decision_cards.tsv, tools/score/run-cards.ps1, tools/tune/fitness.py, tools/score/compare.py, docs/CHANGELOG.md]
+
 - 2026-10-07 — intelligence/scoring: **Restore canonical PolicyWeights production defaults (0.78 poach, 6.0 m shuttle) and decision-card expected matrix.** Preserves the 0.78 poach and 6.0 m shuttle gates in `PolicyWeights.java` matching production contracts, and restores the tripwire `testPoachUtilityIsCurrentlyUnreachable` in `JevDecisionEngineTest`. Clean full suite: **60 test files / 548 tests, 0 failures, 100% green** on WPILib 2026 JDK. [AGENTS.md, KNOWN_ISSUES.md, docs/CHANGELOG.md]
 
 - 2026-10-07 — intelligence/docs: **Add P6–P8 Co-Pilot crossover proposals (haptics/HUD, Ball-Hunt tours, SOTF assist) as gated candidates.** Corrects the record: no shift-countdown / flank-alert callers exist, Ball Hunt is visual pursuit, SOTF is a 0.13 s lookahead. (docs-only, no code change) [docs/AI_CO_PILOT_GUIDE.md, docs/CHANGELOG.md]

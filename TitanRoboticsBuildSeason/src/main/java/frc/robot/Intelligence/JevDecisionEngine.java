@@ -1318,6 +1318,29 @@ public class JevDecisionEngine {
     }
 
     /**
+     * Plans an optimized sequential multi-piece fuel harvesting tour using
+     * {@link FuelTourOptimizer}.
+     *
+     * @param robotPose        current robot pose
+     * @param isRedAlliance    alliance orientation
+     * @param isAutonomous     autonomous state (enforces G201)
+     * @param maxPieces        maximum number of pieces to gather in this tour
+     * @param blockedFuel      watchdog-abandoned pieces to skip
+     * @return optimized TourResult with waypoints and immediate approach pose
+     */
+    public FuelTourOptimizer.TourResult planFuelHarvestTour(
+            Pose2d robotPose,
+            boolean isRedAlliance,
+            boolean isAutonomous,
+            int maxPieces,
+            Set<Translation2d> blockedFuel) {
+        Translation2d hubTarget = FieldMap.Hubs.getHubLocation2d(isRedAlliance);
+        List<Translation2d> candidates = FuelTourOptimizer.findFieldFuelCandidates(
+                robotPose, isRedAlliance, isAutonomous, blockedFuel);
+        return FuelTourOptimizer.optimizeTour(robotPose, candidates, maxPieces, hubTarget);
+    }
+
+    /**
      * Selects the densest reachable Fuel cluster strictly inside our alliance zone.
      */
     public Pose2d findAllianceZoneFuelTarget(Pose2d robotPose, boolean isRedAlliance) {

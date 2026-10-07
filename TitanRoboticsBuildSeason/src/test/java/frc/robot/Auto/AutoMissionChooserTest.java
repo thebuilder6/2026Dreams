@@ -33,6 +33,14 @@ public class AutoMissionChooserTest {
         assertTrue(registered.contains("ShooterMission"));
         assertTrue(registered.contains("ExampleMission"));
         assertTrue(registered.contains("Advanced Choreo Shot"));
+        assertTrue(registered.contains("Mobility (Drive Forward)"));
+        assertTrue(registered.contains("Subwoofer Shoot & Leave"));
+        assertTrue(registered.contains("Fast Depot Cycle"));
+        assertTrue(registered.contains("Adaptive Depot Sweep"));
+        assertTrue(registered.contains("Delayed Partner Shoot"));
+        assertTrue(registered.contains("Shoot & Trench Disruption"));
+        assertTrue(registered.contains("Trench Midfield Disruptor"));
+        assertTrue(registered.contains("Centerline Sweep & Leave"));
     }
 
     @Test
@@ -62,9 +70,26 @@ public class AutoMissionChooserTest {
         assertTrue(chooser.getAutoMissionForParams(null).isEmpty());
         assertTrue(chooser.getAutoMissionForParams("ImaginaryMission").isEmpty());
 
-        Optional<MissionBase> example = chooser.getAutoMissionForParams("ExampleMission");
-        assertTrue(example.isPresent());
-        assertNotNull(example.get());
+        String[] expectedMissions = {
+            "ExampleMission",
+            "DepotShootMission",
+            "ShooterMission",
+            "Advanced Choreo Shot",
+            "Mobility (Drive Forward)",
+            "Subwoofer Shoot & Leave",
+            "Fast Depot Cycle",
+            "Adaptive Depot Sweep",
+            "Delayed Partner Shoot",
+            "Shoot & Trench Disruption",
+            "Trench Midfield Disruptor",
+            "Centerline Sweep & Leave"
+        };
+
+        for (String missionName : expectedMissions) {
+            Optional<MissionBase> mission = chooser.getAutoMissionForParams(missionName);
+            assertTrue(mission.isPresent(), "Expected mission to resolve: " + missionName);
+            assertNotNull(mission.get());
+        }
 
         assertDoesNotThrow(chooser::reset);
         assertTrue(chooser.getAutoMission().isEmpty());

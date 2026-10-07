@@ -2,7 +2,7 @@
 title: Swerve Drive Calibration & Tuning Guide
 audience: [human, ai, programming-leads]
 owner: programming-leads
-last_verified: 2026-10-06
+last_verified: 2026-10-07
 status: authoritative
 ---
 
@@ -206,7 +206,7 @@ All routines are consolidated under [`Test/SysIdManager.java`](../src/main/java/
   - Pushing left stick straight forward drives the robot forward without crab-walking or turning.
 - **Unit Tests**:
   - [`SysIdManagerTest.java`](../src/test/java/frc/robot/Test/SysIdManagerTest.java) pins characterization lifecycle and safety aborts (7/7 tests pass).
-  - Full suite green: 49 test files / 467 tests pass (2026-10-06).
+  - Full suite green: 53 test files / 499 tests pass (2026-10-07).
 - **Next review due**: 2026-11-06.
 
 ---

@@ -99,6 +99,7 @@ public class SwerveBase implements Subsystem {
     // Power Distribution & Brownout Sag Protection
     private PowerDistribution powerDistribution;
     private double brownoutSpeedScale = 1.0;
+    private double lastPowerBudgetTimestamp = -1.0;
     private double simBatteryVoltage = -1.0;
     private double simTotalCurrent = -1.0;
     private final Alert brownoutAlert = new Alert("Power", "Brownout Protection Active: Throttling Drive",
@@ -739,6 +740,15 @@ public class SwerveBase implements Subsystem {
                 iScale = MathUtil.clamp(1.0 - ((totalCurrentAmps - 180.0) / (240.0 - 180.0)) * 0.5, 0.5, 1.0);
             }
             targetScale = Math.min(vScale, iScale);
+            // Main-breaker thermal budget (I^2t / Miner's rule, see Hardware/BreakerModel):
+            // short bursts above 120 A are free, sustained overload derates drive before trip.
+            double nowTs = Timer.getTimestamp();
+            double powerDt = (lastPowerBudgetTimestamp > 0.0)
+                    ? MathUtil.clamp(nowTs - lastPowerBudgetTimestamp, 0.0, 0.1)
+                    : 0.020;
+            lastPowerBudgetTimestamp = nowTs;
+            targetScale = Math.min(targetScale,
+                    frc.robot.Hardware.PowerBudgetManager.getInstance().update(totalCurrentAmps, batteryVoltage, powerDt));
         }
 
         // Fast-cut on brownout hazard, responsive recovery (+5% per 20ms loop = full

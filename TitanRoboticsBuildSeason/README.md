@@ -2,7 +2,7 @@
 title: Platform README
 audience: [human, ai]
 owner: programming-leads
-last_verified: 2026-10-06
+last_verified: 2026-10-07
 status: authoritative
 ---
 
@@ -27,7 +27,7 @@ $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 ./gradlew compileJava --offline
 ```
 
-### 2. Tests (JUnit 5 — 49 files / 467 tests as of 2026-10-06; green on clean re-run, see `KNOWN_ISSUES.md` §A)
+### 2. Tests (JUnit 5 — 53 files / 499 tests as of 2026-10-07; green on clean re-run, see `KNOWN_ISSUES.md` §A)
 ```powershell
 ./gradlew test --offline
 # Single class: ./gradlew test --offline --tests "frc.robot.Intelligence.JevDecisionEngineTest"

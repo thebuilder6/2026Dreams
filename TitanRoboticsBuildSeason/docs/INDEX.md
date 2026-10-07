@@ -2,7 +2,7 @@
 title: Docs Index
 audience: [human, ai]
 owner: programming-leads
-last_verified: 2026-10-06
+last_verified: 2026-10-07
 status: authoritative
 ---
 

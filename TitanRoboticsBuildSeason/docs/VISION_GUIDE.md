@@ -2,7 +2,7 @@
 title: Dual-Vision Platform & Calibration Guide
 audience: [human, ai, programming-leads]
 owner: programming-leads
-last_verified: 2026-10-06
+last_verified: 2026-10-07
 status: authoritative
 ---
 
@@ -188,7 +188,7 @@ In simulation (`.\gradlew simulateJava`), physical camera IO is replaced by [`Vi
     - `/Vision/Primary/AvgTagDist`: Filtered distance in meters.
     - `/Vision/Secondary/HasGamePiece`: True when Fuel piece is detected by YOLOv8.
 - **Unit Tests**:
-  - Full suite passes: 49 test files / 467 tests green (2026-10-06).
+  - Full suite passes: 53 test files / 499 tests green (2026-10-07).
 - **Next review due**: 2026-11-06.
 
 ---

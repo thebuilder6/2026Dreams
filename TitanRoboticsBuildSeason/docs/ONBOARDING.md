@@ -2,7 +2,7 @@
 title: Software Developer & Student Onboarding Guide
 audience: [human, programmers, students, ai]
 owner: programming-leads
-last_verified: 2026-10-06
+last_verified: 2026-10-07
 status: authoritative
 ---
 
@@ -122,7 +122,7 @@ Please pay close attention to these rules. They are strictly enforced across the
 ### 4. Daily Developer Workflow
 
 #### A. Running Unit Tests
-We maintain an extensive automated JUnit 5 test suite (49 files, 467 tests):
+We maintain an extensive automated JUnit 5 test suite (53 files, 499 tests):
 ```powershell
 # Run the entire test suite
 .\gradlew test --offline --no-daemon
@@ -171,7 +171,7 @@ If a build fails complaining that a `.dll` or `.jar` is locked by another proces
 ## Verification
 
 - **Prerequisites verified**: WPILib 2026.2.1 JDK compiles cleanly offline.
-- **Test Suite**: 49 files / 467 tests pass cleanly (`0 FAILURES`, 2026-10-06).
+- **Test Suite**: 53 files / 499 tests pass cleanly (`0 FAILURES`, 2026-10-07).
 - **Next review due**: 2026-11-06.
 
 ---

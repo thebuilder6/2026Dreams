@@ -46,6 +46,14 @@ public class AutoMissionChooser {
         registerMission(ShooterMission.class);
         registerMission(ExampleMission.class);
         registerMission(AdvancedChoreoMission.class);
+        registerMission(MobilityMission.class);
+        registerMission(SubwooferShootAndLeaveMission.class);
+        registerMission(FastDepotCycleMission.class);
+        registerMission(AdaptiveDepotMission.class);
+        registerMission(DelayedPartnerShootMission.class);
+        registerMission(ShootAndTrenchMission.class);
+        registerMission(TrenchDisruptorMission.class);
+        registerMission(CenterlineSweepMission.class);
 
         // 2. Automatically register Choreo trajectories from the deploy directory
         registerChoreoMissions();

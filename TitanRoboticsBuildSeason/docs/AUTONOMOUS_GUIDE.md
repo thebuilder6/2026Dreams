@@ -2,7 +2,7 @@
 title: Autonomous & Trajectory Pipeline Guide
 audience: [human, ai, programming-leads]
 owner: programming-leads
-last_verified: 2026-10-06
+last_verified: 2026-10-07
 status: authoritative
 ---
 
@@ -63,14 +63,18 @@ Team 8334 does not use WPILib `Command` / `Subsystem` structures. Autonomous rou
 
 #### Why Custom Actions?
 1. **Deterministic Sequential Logic**: Standard commands often obscure sequential step ordering behind nested decorator compositions. Custom `MissionBase.runAction(...)` reads strictly sequentially top-to-bottom.
-2. **Explicit Concurrency**: [`ParallelAction`](../src/main/java/frc/robot/Auto/Actions/ParallelAction.java) and [`SeriesAction`](../src/main/java/frc/robot/Auto/Actions/SeriesAction.java) provide unambiguous branching.
-3. **Clean Interruption**: Mode transitions ([`AutoMissionExecutor.stop()`](../src/main/java/frc/robot/Auto/AutoMissionExecutor.java)) immediately invoke `mThread.interrupt()`, unblocking any sleeping actions ([`Thread.sleep(20)`](../src/main/java/frc/robot/Auto/Missions/MissionBase.java)) with zero hang.
+2. **Explicit Concurrency & Resource Conflict Protection**: [`ParallelAction`](../src/main/java/frc/robot/Auto/Actions/ParallelAction.java) and [`ParallelRaceAction`](../src/main/java/frc/robot/Auto/Actions/ParallelRaceAction.java) validate subsystem requirements contracts (`Actions.getSubsystemRequirements()`). If two parallel branches attempt to command the same subsystem (e.g., two actions commanding `"Intake"` simultaneously), the runner emits an immediate `DriverStation.reportWarning(...)` warning to catch race conditions during testing.
+3. **50.0 Hz Microsecond Loop Pacing**: `MissionBase.runAction` paces action updates using monotonic FPGA hardware timestamps (`Timer.getFPGATimestamp()`) targeting exact $20.0\text{ ms}$ intervals, eliminating 15–30 ms operating system thread sleep jitter.
+4. **Clean Interruption**: Mode transitions ([`AutoMissionExecutor.stop()`](../src/main/java/frc/robot/Auto/AutoMissionExecutor.java)) immediately invoke `mThread.interrupt()`, restoring thread interrupt flags and evaluating `isActiveWithThrow()` immediately after `action.done()` to ensure zero thread hang into teleop.
 
 ---
 
 ### 2. Choreo Trajectory Pipeline
 
 Trajectories are designed in **[Choreo](https://choreo.autos)**, an open-source time-optimal trajectory generator for swerve robots.
+
+#### Static Trajectory Pre-Caching
+Disk I/O and JSON parsing during the first tick of autonomous cause loop overruns. [`AutoMissionChooser.registerChoreoMissions()`](../src/main/java/frc/robot/Auto/AutoMissionChooser.java) warms the trajectory cache (`FollowChoreoPath.warmCache`) during robot boot, guaranteeing trajectories are pre-deserialized in memory before the match starts.
 
 #### Exporting & File Structure
 - Save your Choreo project file (`ChoreoPlanner.chor` / `AutoMissions.chor`) in `src/main/deploy/choreo/`.
@@ -178,6 +182,22 @@ If you export a trajectory `.traj` to `deploy/choreo/` and do *not* write a cust
 
 ---
 
+#### Mission Catalog
+
+| Dashboard name | Trajectories | Behavior |
+|---|---|---|
+| Mobility (Drive Forward) | `MoveForward` | Taxi across the auto line only |
+| Subwoofer Shoot & Leave | `MoveForward` | Shoot preloads (3.5 s), then taxi |
+| Fast Depot Cycle | `DepotPath`, `DepotToShootPath` | Intake at depot, wait ≤1.5 s for ball, return, shoot |
+| Adaptive Depot Sweep | `DepotPath`, `DepotToShootPath` | Same, but `BranchAction` on `hasGamePiece()`: shoot if ball acquired, else stow and stop |
+| Delayed Partner Shoot | `ShootPath` | Wait 4 s (yield Hub to partner), drive, shoot |
+| Shoot & Trench Disruption | `OpponentPath` | Shoot preloads, then run the trench/neutral-zone path intaking |
+| Trench Midfield Disruptor | `OpponentPath` | Trench/neutral-zone path with intake down, no shooting |
+| Centerline Sweep & Leave | `MoveForward` | Taxi with intake down |
+| DepotShootMission, ShooterMission, ExampleMission, Advanced Choreo Shot | — | Original missions (names unchanged) |
+
+All paths are Blue-origin and mirrored for Red by Choreo/`AllianceFlipUtil`. `OpponentPath` starts deep in the Red half (X≈13.9 m) and is run with an odometry reset, so treat the two trench missions as sim/testing routines until a legal-start trench path is authored.
+
 ### 5. Driver Dashboard Controls & Tuning
 
 On the Elastic Dashboard (and SmartDashboard):
@@ -196,7 +216,7 @@ On the Elastic Dashboard (and SmartDashboard):
 - **Simulation Validation**:
   - Run `.\gradlew simulateJava` from `TitanRoboticsBuildSeason/`.
   - In SimGUI, set Autonomous Mode and observe the virtual robot execute the selected Choreo trajectory on the AdvantageScope 2D/3D field.
-- **Verified against**: JUnit 5 full test suite clean (50 files / 475 tests green, 2026-10-06).
+- **Verified against**: JUnit 5 full test suite clean with `--rerun-tasks` (53 result files / 499 tests, 0 failures, 2026-10-07). Mission behaviour itself is only SimGUI-validated, not unit-tested.
 - **Next review due**: 2026-11-06.
 
 ---

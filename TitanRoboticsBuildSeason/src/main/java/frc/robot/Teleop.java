@@ -20,6 +20,7 @@ import frc.robot.Hardware.Controller.RumblePattern;
 import frc.robot.Intelligence.StrategicObjective;
 import frc.robot.Telemetry.Dashboard;
 import frc.robot.Subsystems.Intake;
+import frc.robot.Subsystems.Intake.IntakeState;
 import frc.robot.Subsystems.Shooter;
 import frc.robot.Subsystems.Shooter.ShootingSolution;
 import frc.robot.Subsystems.SwerveBase;
@@ -146,7 +147,7 @@ public class Teleop {
         lastDashboardSlowMode = false;
         Dashboard.setSlowModeEnabled(false);
         snapTargetHeading = null;
-        intake.setState("Disabled");
+        intake.setState(IntakeState.DISABLED);
         shooter.stop();
         coPilot.stopAssist();
         assistController.reset();
@@ -197,7 +198,7 @@ public class Teleop {
 
         // E-Stop / Abort: Back or Start pressed
         if (backButton || startButton) {
-            intake.setState("Disabled");
+            intake.setState(IntakeState.DISABLED);
             shooter.stop();
             swerveBase.stop();
             coPilot.stopAssist();
@@ -615,19 +616,19 @@ public class Teleop {
 
         if (ejectHeld) {
             // Eject / unjam mode: reverse rollers & hopper
-            intake.setState(armDeployed ? "Reversed" : "StandbyReversed");
+            intake.setState(armDeployed ? IntakeState.REVERSED : IntakeState.STANDBY_REVERSED);
         } else if (feedHeld) {
             // Standby feed / pass mode
-            intake.setState("StandbyIntaking");
+            intake.setState(IntakeState.STANDBY_INTAKING);
         } else if (intakeTriggerHeld) {
             // Ground intake: automatically deploy arm down and spin rollers & hopper
-            intake.setState("Intaking");
+            intake.setState(IntakeState.INTAKING);
         } else if (armDeployed) {
             // Arm deployed down but idle
-            intake.setState("Down");
+            intake.setState(IntakeState.DOWN);
         } else {
             // Retracted standby idle
-            intake.setState("Standby");
+            intake.setState(IntakeState.STANDBY);
         }
     }
 

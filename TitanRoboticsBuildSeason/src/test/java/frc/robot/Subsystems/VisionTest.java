@@ -270,4 +270,42 @@ public class VisionTest {
         Translation2d rel = vision.getGamePieceRobotRelativeTranslation();
         assertTrue(rel.getX() > 0.5, "Game piece translation should be in front of robot");
     }
+
+    @Test
+    public void testPerCameraDashboardEnableToggle() {
+        CameraConfig cfg = CameraConfig.limelight("cam-toggle-test");
+        VisionIO mockIO = new VisionIO() {
+            @Override
+            public void updateInputs(VisionIOInputs in) {
+                in.isConnected = true;
+                in.hasTarget = true;
+                in.tagCount = 2;
+                in.avgTagDist = 2.0;
+                in.latencyMs = 20.0;
+                in.estimatedPose = new Pose2d(4.0, 4.0, new Rotation2d());
+            }
+        };
+
+        Vision vision = new Vision(Arrays.asList(cfg), Arrays.asList(mockIO));
+        vision.update();
+        assertEquals(RejectionReason.ACCEPTED, vision.getRejectionReason("cam-toggle-test"));
+        assertTrue(vision.isAccepted());
+        assertTrue(vision.isCameraEnabled("cam-toggle-test"));
+
+        // Disable camera via API
+        vision.setCameraEnabled("cam-toggle-test", false);
+        assertFalse(vision.isCameraEnabled("cam-toggle-test"));
+        vision.update();
+
+        assertEquals(RejectionReason.VISION_DISABLED, vision.getRejectionReason("cam-toggle-test"));
+        assertFalse(vision.isAccepted());
+
+        // Re-enable camera
+        vision.setCameraEnabled("cam-toggle-test", true);
+        assertTrue(vision.isCameraEnabled("cam-toggle-test"));
+        vision.update();
+
+        assertEquals(RejectionReason.ACCEPTED, vision.getRejectionReason("cam-toggle-test"));
+        assertTrue(vision.isAccepted());
+    }
 }

@@ -3,6 +3,7 @@ package frc.robot.Intelligence;
 import java.util.List;
 
 import edu.wpi.first.math.geometry.Pose2d;
+import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.math.kinematics.ChassisSpeeds;
 
 /**
@@ -44,7 +45,8 @@ public record ClairvoyantKnowledge(
         List<ChassisSpeeds> opponentVelocities,
         int allianceZoneFuel,
         int midfieldFuel,
-        int opponentZoneFuel) implements MatchKnowledge {
+        int opponentZoneFuel,
+        List<Translation2d> fieldFuel) implements MatchKnowledge {
 
     /** Defensive copy so a caller cannot mutate the snapshot after construction. */
     public ClairvoyantKnowledge {
@@ -52,11 +54,33 @@ public record ClairvoyantKnowledge(
         opponentPoses = List.copyOf(opponentPoses);
         allyVelocities = List.copyOf(allyVelocities);
         opponentVelocities = List.copyOf(opponentVelocities);
+        fieldFuel = (fieldFuel == null) ? List.of() : List.copyOf(fieldFuel);
         if (allianceZoneFuel < 0 || midfieldFuel < 0 || opponentZoneFuel < 0) {
             throw new IllegalArgumentException(
                     "zone fuel counts cannot be negative: alliance=" + allianceZoneFuel
                             + " midfield=" + midfieldFuel + " opponent=" + opponentZoneFuel);
         }
+    }
+
+    /**
+     * Backward-compatible 12-parameter constructor defaulting fieldFuel to an empty list.
+     */
+    public ClairvoyantKnowledge(
+            int scoreDifferential,
+            int alliesHeldFuel,
+            int opponentsHeldFuel,
+            int alliesScoredFuel,
+            int opponentsScoredFuel,
+            List<Pose2d> allyPoses,
+            List<Pose2d> opponentPoses,
+            List<ChassisSpeeds> allyVelocities,
+            List<ChassisSpeeds> opponentVelocities,
+            int allianceZoneFuel,
+            int midfieldFuel,
+            int opponentZoneFuel) {
+        this(scoreDifferential, alliesHeldFuel, opponentsHeldFuel, alliesScoredFuel, opponentsScoredFuel,
+                allyPoses, opponentPoses, allyVelocities, opponentVelocities,
+                allianceZoneFuel, midfieldFuel, opponentZoneFuel, List.of());
     }
 
     /**

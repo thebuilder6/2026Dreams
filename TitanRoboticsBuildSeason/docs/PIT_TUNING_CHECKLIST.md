@@ -2,7 +2,7 @@
 title: Pit Tuning & Pre-Match Checklist
 audience: [human, ai]
 owner: drive-team
-last_verified: 2026-10-06
+last_verified: 2026-10-07
 status: authoritative
 ---
 
@@ -70,7 +70,24 @@ Hold [LB] + D-Pad on Driver Controller (Port 0):
 
 ---
 
-### Station 4: Practice Carpet Benchmark (3 Quick Shots)
+### Station 4: Camera Verification & Field Alignment (30-Second Check)
+Open Elastic Dashboard tab **Vision & Cameras**:
+- [ ] **Hardware Heartbeat:** Confirm both `Limelight Connected` and `Photon Connected` display **GREEN (TRUE)**.
+- [ ] **AprilTag 2.0m Carpet Benchmark:** Place robot $2.00\text{ m}$ from a field AprilTag.
+  - Confirm `Limelight Tag Count` $\ge 1$ and `Limelight Filtered Dist` reads $2.00\text{ m} \pm 0.05\text{ m}$.
+  - Confirm `Limelight Accepted` is **GREEN** and `RejectionReason` displays `ACCEPTED`.
+- [ ] **Quick Pitch / Scale Calibration (if drift detected):**
+  ```powershell
+  python tools/tune/tune.py vision
+  ```
+  Follow prompts to recompute mounting pitch angle or AprilTag distance scale factor in under 60 seconds.
+- [ ] **Hardware Defect Isolation:** If a camera cable is compromised, toggle that camera's `Enabled` switch to **OFF**; verify robot pose estimator continues seamlessly on remaining cameras without code restarts.
+- [ ] **Ball Hunt Neural Check:** Place Fuel piece in front of bumper; verify `Ball Detected: TRUE` and `Ball Distance` reads reasonable value.
+- [ ] **Lens Hygiene:** Wipe camera lenses and LED rings with clean microfiber cloth.
+
+---
+
+### Station 5: Practice Carpet Benchmark (3 Quick Shots)
 Run the unified solver or use Test Mode presets:
 ```powershell
 python tools/tune/tune.py shooter 3.0
@@ -81,7 +98,7 @@ python tools/tune/tune.py shooter 3.0
 
 ---
 
-### Station 5: Match Readiness Sign-Off
+### Station 6: Match Readiness Sign-Off
 - [ ] **Battery Condition:** Resting voltage $\ge 12.6\text{ V}$, internal resistance $\le 0.015\,\Omega$.
 - [ ] **Driver Controller Haptics:** Verify crisp rumble confirmation on ball acquire and target lock.
 - [ ] **Autonomous Routine:** Set chosen auto mission on Elastic Dashboard `Driver Dashboard` tab.
@@ -90,10 +107,10 @@ python tools/tune/tune.py shooter 3.0
 
 ## Verification
 
-- **Verified against:** Commit `e52c6dd` (2026-10-06).
-- **Test Suite Status:** 47 test files / 461 tests green.
-- **Tooling:** Integrated with `python tools/tune/tune.py checklist`.
-- **Next Review Due:** 2026-11-05.
+- **Verified against:** Vision subsystem overhaul & Elastic layout update (2026-10-07).
+- **Test Suite Status:** 54 test files / 513 tests green.
+- **Tooling:** Integrated with `python tools/tune/tune.py checklist` and `python tools/tune/tune.py vision`.
+- **Next Review Due:** 2026-11-06.
 
 ---
 

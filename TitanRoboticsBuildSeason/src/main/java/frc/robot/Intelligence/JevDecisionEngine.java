@@ -11,8 +11,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
-import swervelib.simulation.ironmaple.simulation.SimulatedArena;
-import swervelib.simulation.ironmaple.simulation.gamepieces.GamePieceOnFieldSimulation;
 import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
@@ -851,7 +849,7 @@ public class JevDecisionEngine {
                             tour.pieceCount(), tour.totalDistanceMeters(), world.heldFuelCount());
                 } else {
                     navTarget = findClusterWeightedFuelTarget(world.selfPose(), world.isRedAlliance(),
-                            world.isAutonomous(), blockedFuel, fuelTargetMemory);
+                            world.isAutonomous(), blockedFuel, fuelTargetMemory, knowledge.fieldFuel());
                     rationale = String.format("Hunting fuel (%d/30). Hopper capacity available.", world.heldFuelCount());
                 }
                 intakeCmd = IntakeState.INTAKING;
@@ -860,7 +858,7 @@ public class JevDecisionEngine {
 
             case SWEEP_ALLIANCE_ZONE:
                 int piecesNeededZone = Math.min(5, WorldState.DEFAULT_MAX_CAPACITY - world.heldFuelCount());
-                List<Translation2d> zoneCandidates = findAllianceZoneFuelCandidates(world.isRedAlliance(), blockedFuel);
+                List<Translation2d> zoneCandidates = findAllianceZoneFuelCandidates(world.isRedAlliance(), blockedFuel, knowledge.fieldFuel());
                 Translation2d selfHubPos = FieldMap.Hubs.getHubLocation2d(world.isRedAlliance());
                 FuelTourOptimizer.TourResult zoneTour = (zoneCandidates.size() >= 2 && piecesNeededZone > 1)
                         ? FuelTourOptimizer.optimizeTour(world.selfPose(), zoneCandidates, piecesNeededZone, selfHubPos)
@@ -873,7 +871,7 @@ public class JevDecisionEngine {
                     rationale = String.format("Executing alliance zone tour (%d pieces, %.1fm, %d loose total).",
                             zoneTour.pieceCount(), zoneTour.totalDistanceMeters(), currentHomeFuel);
                 } else {
-                    navTarget = findAllianceZoneFuelTarget(world.selfPose(), world.isRedAlliance(), blockedFuel);
+                    navTarget = findAllianceZoneFuelTarget(world.selfPose(), world.isRedAlliance(), blockedFuel, knowledge.fieldFuel());
                     int currentHomeFuel = countFuelInZone(world.isRedAlliance(), false, blockedFuel, knowledge);
                     rationale = String.format("Sweeping %d loose fuel pieces in the alliance zone.", currentHomeFuel);
                 }
@@ -906,7 +904,7 @@ public class JevDecisionEngine {
 
             case POACH_OPPONENT_ZONE:
                 navTarget = findOpponentZoneFuelTarget(world.selfPose(), world.isRedAlliance(),
-                        blockedFuel);
+                        blockedFuel, knowledge.fieldFuel());
                 intakeCmd = IntakeState.INTAKING;
                 rationale = "Harvesting opponent-zone fuel before the next Hub shift.";
                 break;
@@ -1226,54 +1224,53 @@ public class JevDecisionEngine {
     public Pose2d findClusterWeightedFuelTarget(Pose2d robotPose, boolean isRedAlliance,
             boolean isAutonomous, Set<Translation2d> blockedFuel,
             FuelTargetMemory memory) {
-        SimulatedArena arena = SimulatedArena.getInstance();
+        return findClusterWeightedFuelTarget(robotPose, isRedAlliance, isAutonomous, blockedFuel, memory, null);
+    }
+
+    /**
+     * Parameterized cluster-weighted fuel selector accepting an explicit candidate list.
+     * When {@code candidatePieces} is null, falls back to {@link WorldStateBuilder#getFieldFuel()}.
+     */
+    public Pose2d findClusterWeightedFuelTarget(Pose2d robotPose, boolean isRedAlliance,
+            boolean isAutonomous, Set<Translation2d> blockedFuel,
+            FuelTargetMemory memory, List<Translation2d> candidatePieces) {
         Translation2d bestTarget = null;
         double highestScent = -1.0;
 
         List<Translation2d> candidates = new ArrayList<>();
         List<FuelTargetMemory.ScoredTarget> scored = new ArrayList<>();
 
-        if (arena != null) {
-            try {
-                // Sorted snapshot: the arena returns a HashSet whose order is
-                // identity-hash based, and equal-scoring candidates resolve by
-                // strict '>', so unsorted iteration picked a different target
-                // every JVM run.
-                var pieces = frc.robot.Sim.MatchDeterminism.fuelOnFieldSorted();
-                if (pieces != null && !pieces.isEmpty()) {
-                    for (var piece : pieces) {
-                        if (piece == null || !"Fuel".equals(piece.getType()))
-                            continue;
-                        Translation2d pos = piece.getPoseOnField().getTranslation();
+        List<Translation2d> pieces = (candidatePieces != null) ? candidatePieces : WorldStateBuilder.getFieldFuel();
+        if (pieces != null && !pieces.isEmpty()) {
+            for (Translation2d pos : pieces) {
+                if (pos == null)
+                    continue;
 
-                        // Field boundaries & obstacle avoidance (wall-band balls stay
-                        // eligible: the wall-normal approach below reaches them)
-                        if (pos.getX() < 0.05 || pos.getX() > 16.48 || pos.getY() < 0.05 || pos.getY() > 8.00)
-                            continue;
-                        if (StaticPathfinder.isPointInHardObstacle(pos)
-                                || StaticPathfinder.isPointNearDynamicObstacle(pos))
-                            continue;
-                        if (isBlocked(blockedFuel, pos))
-                            continue;
+                // Field boundaries & obstacle avoidance (wall-band balls stay
+                // eligible: the wall-normal approach below reaches them)
+                if (pos.getX() < 0.05 || pos.getX() > 16.48 || pos.getY() < 0.05 || pos.getY() > 8.00)
+                    continue;
+                if (StaticPathfinder.isPointInHardObstacle(pos)
+                        || StaticPathfinder.isPointNearDynamicObstacle(pos))
+                    continue;
+                if (isBlocked(blockedFuel, pos))
+                    continue;
 
-                        // Restrict opposing driver wall zone (and centerline in autonomous under FRC
-                        // G201)
-                        if (isAutonomous) {
-                            if (isRedAlliance && pos.getX() < FieldMap.CENTERLINE_X + 0.15)
-                                continue;
-                            if (!isRedAlliance && pos.getX() > FieldMap.CENTERLINE_X - 0.15)
-                                continue;
-                        } else {
-                            if (isRedAlliance && pos.getX() < 3.5)
-                                continue;
-                            if (!isRedAlliance && pos.getX() > 13.0)
-                                continue;
-                        }
-
-                        candidates.add(pos);
-                    }
+                // Restrict opposing driver wall zone (and centerline in autonomous under FRC
+                // G201)
+                if (isAutonomous) {
+                    if (isRedAlliance && pos.getX() < FieldMap.CENTERLINE_X + 0.15)
+                        continue;
+                    if (!isRedAlliance && pos.getX() > FieldMap.CENTERLINE_X - 0.15)
+                        continue;
+                } else {
+                    if (isRedAlliance && pos.getX() < 3.5)
+                        continue;
+                    if (!isRedAlliance && pos.getX() > 13.0)
+                        continue;
                 }
-            } catch (Exception ignored) {
+
+                candidates.add(pos);
             }
         }
 
@@ -1382,13 +1379,18 @@ public class JevDecisionEngine {
      * Selects the densest reachable Fuel cluster strictly inside our alliance zone.
      */
     public Pose2d findAllianceZoneFuelTarget(Pose2d robotPose, boolean isRedAlliance) {
-        return findFuelTargetInZone(robotPose, isRedAlliance, null);
+        return findFuelTargetInZone(robotPose, isRedAlliance, null, null);
     }
 
     /** Zone-limited variant that skips caller-abandoned points. */
     public Pose2d findAllianceZoneFuelTarget(
             Pose2d robotPose, boolean isRedAlliance, Set<Translation2d> blockedFuel) {
-        return findFuelTargetInZone(robotPose, isRedAlliance, blockedFuel);
+        return findFuelTargetInZone(robotPose, isRedAlliance, blockedFuel, null);
+    }
+
+    public Pose2d findAllianceZoneFuelTarget(
+            Pose2d robotPose, boolean isRedAlliance, Set<Translation2d> blockedFuel, List<Translation2d> fieldFuel) {
+        return findFuelTargetInZone(robotPose, isRedAlliance, blockedFuel, fieldFuel);
     }
 
     /**
@@ -1396,33 +1398,30 @@ public class JevDecisionEngine {
      */
     public List<Translation2d> findAllianceZoneFuelCandidates(
             boolean isRedAlliance, Set<Translation2d> blockedFuel) {
+        return findAllianceZoneFuelCandidates(isRedAlliance, blockedFuel, null);
+    }
+
+    public List<Translation2d> findAllianceZoneFuelCandidates(
+            boolean isRedAlliance, Set<Translation2d> blockedFuel, List<Translation2d> fieldFuel) {
         List<Translation2d> candidates = new ArrayList<>();
-        SimulatedArena arena = SimulatedArena.getInstance();
-        if (arena == null) {
-            return candidates;
-        }
-        try {
-            var pieces = frc.robot.Sim.MatchDeterminism.fuelOnFieldSorted();
-            if (pieces != null) {
-                for (GamePieceOnFieldSimulation piece : pieces) {
-                    if (piece == null || !"Fuel".equals(piece.getType())) {
-                        continue;
-                    }
-                    Translation2d point = piece.getPoseOnField().getTranslation();
-                    if (!FieldMap.AllianceZones.isInAllianceZone(point, isRedAlliance)) {
-                        continue;
-                    }
-                    if (StaticPathfinder.isPointInHardObstacle(point)
-                            || StaticPathfinder.isPointNearDynamicObstacle(point)) {
-                        continue;
-                    }
-                    if (isBlocked(blockedFuel, point)) {
-                        continue;
-                    }
-                    candidates.add(point);
+        List<Translation2d> pieces = (fieldFuel != null) ? fieldFuel : WorldStateBuilder.getFieldFuel();
+        if (pieces != null) {
+            for (Translation2d point : pieces) {
+                if (point == null) {
+                    continue;
                 }
+                if (!FieldMap.AllianceZones.isInAllianceZone(point, isRedAlliance)) {
+                    continue;
+                }
+                if (StaticPathfinder.isPointInHardObstacle(point)
+                        || StaticPathfinder.isPointNearDynamicObstacle(point)) {
+                    continue;
+                }
+                if (isBlocked(blockedFuel, point)) {
+                    continue;
+                }
+                candidates.add(point);
             }
-        } catch (Exception ignored) {
         }
         return candidates;
     }
@@ -1431,13 +1430,18 @@ public class JevDecisionEngine {
      * Selects the densest reachable Fuel cluster strictly inside the opponent zone.
      */
     public Pose2d findOpponentZoneFuelTarget(Pose2d robotPose, boolean isRedAlliance) {
-        return findFuelTargetInZone(robotPose, !isRedAlliance, null);
+        return findFuelTargetInZone(robotPose, !isRedAlliance, null, null);
     }
 
     /** Opponent-zone variant that skips caller-abandoned points. */
     public Pose2d findOpponentZoneFuelTarget(
             Pose2d robotPose, boolean isRedAlliance, Set<Translation2d> blockedFuel) {
-        return findFuelTargetInZone(robotPose, !isRedAlliance, blockedFuel);
+        return findFuelTargetInZone(robotPose, !isRedAlliance, blockedFuel, null);
+    }
+
+    public Pose2d findOpponentZoneFuelTarget(
+            Pose2d robotPose, boolean isRedAlliance, Set<Translation2d> blockedFuel, List<Translation2d> fieldFuel) {
+        return findFuelTargetInZone(robotPose, !isRedAlliance, blockedFuel, fieldFuel);
     }
 
     /** True when {@code point} sits within the blocked radius of any entry. */
@@ -1455,61 +1459,50 @@ public class JevDecisionEngine {
     }
 
     private Pose2d findFuelTargetInZone(Pose2d robotPose, boolean zoneIsRed,
-            Set<Translation2d> blockedFuel) {
-        SimulatedArena arena = SimulatedArena.getInstance();
+            Set<Translation2d> blockedFuel, List<Translation2d> fieldFuel) {
         Translation2d best = null;
         double bestScore = -1.0;
-        if (arena != null) {
-            try {
-                List<Translation2d> candidates = new ArrayList<>();
-                // Sorted snapshot: equal-scoring candidates resolve by strict
-                // '>', so the arena's HashSet order decided the target.
-                var pieces = frc.robot.Sim.MatchDeterminism.fuelOnFieldSorted();
-                if (pieces != null) {
-                    for (GamePieceOnFieldSimulation piece : pieces) {
-                        if (piece == null || !"Fuel".equals(piece.getType()))
-                            continue;
-                        Translation2d point = piece.getPoseOnField().getTranslation();
-                        if (!FieldMap.AllianceZones.isInAllianceZone(point, zoneIsRed))
-                            continue;
-                        if (StaticPathfinder.isPointInHardObstacle(point)
-                                || StaticPathfinder.isPointNearDynamicObstacle(point))
-                            continue;
-                        if (isBlocked(blockedFuel, point))
-                            continue;
-                        candidates.add(point);
+        List<Translation2d> pieces = (fieldFuel != null) ? fieldFuel : WorldStateBuilder.getFieldFuel();
+        if (pieces != null && !pieces.isEmpty()) {
+            List<Translation2d> candidates = new ArrayList<>();
+            for (Translation2d point : pieces) {
+                if (point == null)
+                    continue;
+                if (!FieldMap.AllianceZones.isInAllianceZone(point, zoneIsRed))
+                    continue;
+                if (StaticPathfinder.isPointInHardObstacle(point)
+                        || StaticPathfinder.isPointNearDynamicObstacle(point))
+                    continue;
+                if (isBlocked(blockedFuel, point))
+                    continue;
+                candidates.add(point);
+            }
+            int n = candidates.size();
+            double[] densities = new double[n];
+            for (int i = 0; i < n; i++) {
+                densities[i] = 1.0;
+            }
+            for (int i = 0; i < n; i++) {
+                Translation2d candI = candidates.get(i);
+                for (int j = i + 1; j < n; j++) {
+                    Translation2d candJ = candidates.get(j);
+                    double distance = candI.getDistance(candJ);
+                    if (distance > 1e-9 && distance <= 1.3) {
+                        double addedDensity = Math.exp(-(distance * distance) / 0.5);
+                        densities[i] += addedDensity;
+                        densities[j] += addedDensity;
                     }
                 }
-                int n = candidates.size();
-                double[] densities = new double[n];
-                for (int i = 0; i < n; i++) {
-                    densities[i] = 1.0;
+            }
+            for (int i = 0; i < n; i++) {
+                Translation2d candidate = candidates.get(i);
+                double density = densities[i];
+                double distance = robotPose.getTranslation().getDistance(candidate);
+                double score = Math.pow(density, 1.5) / (distance + 0.4);
+                if (score > bestScore) {
+                    bestScore = score;
+                    best = candidate;
                 }
-                for (int i = 0; i < n; i++) {
-                    Translation2d candI = candidates.get(i);
-                    for (int j = i + 1; j < n; j++) {
-                        Translation2d candJ = candidates.get(j);
-                        double distance = candI.getDistance(candJ);
-                        if (distance > 1e-9 && distance <= 1.3) {
-                            double addedDensity = Math.exp(-(distance * distance) / 0.5);
-                            densities[i] += addedDensity;
-                            densities[j] += addedDensity;
-                        }
-                    }
-                }
-                for (int i = 0; i < n; i++) {
-                    Translation2d candidate = candidates.get(i);
-                    double density = densities[i];
-                    double distance = robotPose.getTranslation().getDistance(candidate);
-                    double score = Math.pow(density, 1.5) / (distance + 0.4);
-                    if (score > bestScore) {
-                        bestScore = score;
-                        best = candidate;
-                    }
-                }
-            } catch (Exception ignored) {
-                // The real robot has no SimulatedArena; callers receive the safe fallback
-                // below.
             }
         }
         if (best != null) {
@@ -1566,46 +1559,36 @@ public class JevDecisionEngine {
         // so sweepUtility never collapses, ObjectiveCommitment's release rule
         // (incumbentUtility <= 0) never fires, and the latch holds all match. That
         // was the root cause of the seed-dependent teleop collapse.
-        return Math.max(0, available - countBlockedInZone(isRedZone, blockedFuel));
+        return Math.max(0, available - countBlockedInZone(isRedZone, blockedFuel, knowledge.fieldFuel()));
     }
 
     /**
      * How many pieces the watchdog has abandoned in the zone being counted.
-     *
-     * <p>Still reads the arena, deliberately: the blocked set is a list of points
-     * and the total is a count, but the only place that knows a piece's zone is the
-     * piece list itself. Returns 0 when no arena is available (real hardware), which
-     * is correct &mdash; an {@link ObservedKnowledge} reports 0 total fuel anyway, so
-     * the subtraction is never reached there.
      */
     int countBlockedInZone(boolean isRedZone, Set<Translation2d> blockedFuel) {
+        return countBlockedInZone(isRedZone, blockedFuel, null);
+    }
+
+    int countBlockedInZone(boolean isRedZone, Set<Translation2d> blockedFuel, List<Translation2d> fieldFuel) {
         if (blockedFuel == null || blockedFuel.isEmpty()) {
             return 0;
         }
-        SimulatedArena arena = SimulatedArena.getInstance();
-        if (arena == null) {
+        List<Translation2d> pieces = (fieldFuel != null) ? fieldFuel : WorldStateBuilder.getFieldFuel();
+        if (pieces == null || pieces.isEmpty()) {
             return 0;
         }
-        try {
-            int blocked = 0;
-            for (GamePieceOnFieldSimulation piece :
-                    frc.robot.Sim.MatchDeterminism.fuelOnFieldSorted()) {
-                if (piece == null || blockedFuel.isEmpty() || !"Fuel".equals(piece.getType())) {
-                    continue;
-                }
-                var at = piece.getPoseOnField().getTranslation();
-                // Same zone the raw count covered: single-owned by FieldMap.AllianceZones
-                boolean inZone = FieldMap.AllianceZones.isInAllianceZone(at, isRedZone);
-                if (inZone && isBlocked(blockedFuel, at)) {
-                    blocked++;
-                }
+        int blocked = 0;
+        for (Translation2d at : pieces) {
+            if (at == null) {
+                continue;
             }
-            return blocked;
-        } catch (Exception e) {
-            // Over-reporting blocked fuel would suppress a viable objective, so on
-            // failure subtract nothing and keep the raw count.
-            return 0;
+            // Same zone the raw count covered: single-owned by FieldMap.AllianceZones
+            boolean inZone = FieldMap.AllianceZones.isInAllianceZone(at, isRedZone);
+            if (inZone && isBlocked(blockedFuel, at)) {
+                blocked++;
+            }
         }
+        return blocked;
     }
 
     private StrategicObjective resolveNextObjective(StrategicObjective current, WorldState world) {

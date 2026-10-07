@@ -68,6 +68,20 @@ except ImportError:
         MAX_ACCEL_DEG_S2
     )
 
+try:
+    from calibrate_vision import (
+        solve_camera_pitch,
+        verify_apriltag_distance,
+        generate_camera_config_java
+    )
+except ImportError:
+    sys.path.append(os.path.join(os.path.dirname(__file__)))
+    from calibrate_vision import (
+        solve_camera_pitch,
+        verify_apriltag_distance,
+        generate_camera_config_java
+    )
+
 BLUE_ALLIANCE_MAX_X = 4.6256
 RED_ALLIANCE_MIN_X = 11.9154
 
@@ -209,12 +223,13 @@ def interactive_menu():
         print("  [4] Intake: Arm Motion Profile & Transit Time Solver")
         print("  [5] Intake: Gravitational Feedforward (kG, kV) Estimates")
         print("  [6] Swerve: Wheel Radius Carpet Roll Calibration")
-        print("  [7] Controller Cheat Sheet & TestMode Mapping")
-        print("  [8] Pre-Match Pit Calibration Checklist")
+        print("  [7] Vision: Camera Pitch, AprilTag & Mount Calibration")
+        print("  [8] Controller Cheat Sheet & TestMode Mapping")
+        print("  [9] Pre-Match Pit Calibration Checklist")
         print("  [0] Exit")
         print("=" * 60)
         
-        choice = input("Select an option [0-8]: ").strip()
+        choice = input("Select an option [0-9]: ").strip()
         
         if choice == "1":
             val = input("\nEnter distance to Hub center in meters (e.g., 2.5): ").strip()
@@ -249,14 +264,55 @@ def interactive_menu():
             except ValueError:
                 print("[ERROR] Invalid input.")
         elif choice == "7":
-            print(CONTROLLER_CHEAT_SHEET)
+            print("\n" + "-" * 50)
+            print("  VISION CALIBRATION & ALIGNMENT SUBMENU")
+            print("-" * 50)
+            print("  [1] Solve Camera Downward Pitch from Tape Distance")
+            print("  [2] Verify AprilTag Distance vs Measured Ground Truth")
+            print("  [3] Generate CameraConfig Java Code")
+            v_choice = input("Select vision tool [1-3]: ").strip()
+            if v_choice == "1":
+                h_str = input("Camera height off carpet in meters [default 0.45]: ").strip()
+                d_str = input("Tape ground distance to target center in meters (e.g. 2.0): ").strip()
+                p_str = input("Camera measured target pitch in degrees [default 0.0]: ").strip()
+                try:
+                    h = float(h_str) if h_str else 0.45
+                    d = float(d_str)
+                    p = float(p_str) if p_str else 0.0
+                    solve_camera_pitch(h, d, p)
+                except ValueError:
+                    print("[ERROR] Invalid numeric input.")
+            elif v_choice == "2":
+                t_str = input("True physical distance to AprilTag in meters (e.g. 2.50): ").strip()
+                v_str = input("Vision measured distance in meters (e.g. 2.54): ").strip()
+                try:
+                    t = float(t_str)
+                    v = float(v_str)
+                    verify_apriltag_distance(t, v)
+                except ValueError:
+                    print("[ERROR] Invalid numeric input.")
+            elif v_choice == "3":
+                name = input("Camera name [default limelight-front]: ").strip() or "limelight-front"
+                ctype = input("Camera type (LIMELIGHT or PHOTONVISION) [default LIMELIGHT]: ").strip() or "LIMELIGHT"
+                f_str = input("Forward offset in meters [default 0.25]: ").strip()
+                h_str = input("Mount height in meters [default 0.45]: ").strip()
+                p_str = input("Pitch angle in degrees [default 15.0]: ").strip()
+                try:
+                    f = float(f_str) if f_str else 0.25
+                    h = float(h_str) if h_str else 0.45
+                    p = float(p_str) if p_str else 15.0
+                    generate_camera_config_java(name=name, cam_type=ctype, forward_m=f, height_m=h, pitch_deg=p)
+                except ValueError:
+                    print("[ERROR] Invalid numeric input.")
         elif choice == "8":
+            print(CONTROLLER_CHEAT_SHEET)
+        elif choice == "9":
             print(PIT_CHECKLIST)
         elif choice == "0":
             print("\nExiting tuning suite. Good luck in your match!")
             break
         else:
-            print("\n[ERROR] Unknown option. Please choose [0-8].")
+            print("\n[ERROR] Unknown option. Please choose [0-9].")
 
 def main():
     parser = argparse.ArgumentParser(description="Team 8334 Subsystem Tuning & Calibration Suite")
@@ -280,6 +336,19 @@ def main():
     p_swerve.add_argument("distance", type=float, help="Measured carpet distance in meters")
     p_swerve.add_argument("motor_rotations", type=float, help="Measured drive motor rotations")
     p_swerve.add_argument("--gear-ratio", type=float, default=6.75, help="Drive gearing (default: 6.75:1)")
+
+    # Vision subcommand
+    p_vision = subparsers.add_parser("vision", help="Camera calibration, pitch alignment, and mount generation")
+    p_vision.add_argument("--solve-pitch", nargs=3, type=float, metavar=("CAM_HEIGHT", "GROUND_DIST", "MEASURED_PITCH"),
+                          help="Solve downward camera tilt from height, measured distance, and target pitch")
+    p_vision.add_argument("--tag-verify", nargs=2, type=float, metavar=("TRUE_DIST", "VISION_DIST"),
+                          help="Compare measured AprilTag distance vs true distance")
+    p_vision.add_argument("--generate", action="store_true", help="Generate CameraConfig Java snippet")
+    p_vision.add_argument("--name", type=str, default="limelight-front", help="Camera name")
+    p_vision.add_argument("--type", type=str, default="LIMELIGHT", choices=["LIMELIGHT", "PHOTONVISION"], help="Camera type")
+    p_vision.add_argument("--forward", type=float, default=0.25, help="Forward offset in meters")
+    p_vision.add_argument("--height", type=float, default=0.45, help="Mount height in meters")
+    p_vision.add_argument("--pitch", type=float, default=15.0, help="Pitch in degrees")
     
     # Controls & Checklist
     subparsers.add_parser("controls", help="Display controller bindings for Test Mode")
@@ -305,6 +374,21 @@ def main():
             intake_profile(args.start_angle, args.end_angle)
     elif args.command == "swerve":
         calculate_wheel_radius(args.distance, args.motor_rotations, args.gear_ratio)
+    elif args.command == "vision":
+        if args.solve_pitch:
+            solve_camera_pitch(args.solve_pitch[0], args.solve_pitch[1], args.solve_pitch[2])
+        elif args.tag_verify:
+            verify_apriltag_distance(args.tag_verify[0], args.tag_verify[1])
+        elif args.generate:
+            generate_camera_config_java(
+                name=args.name,
+                cam_type=args.type,
+                forward_m=args.forward,
+                height_m=args.height,
+                pitch_deg=args.pitch
+            )
+        else:
+            solve_camera_pitch(0.45, 2.0, 0.0)
     elif args.command == "controls":
         print(CONTROLLER_CHEAT_SHEET)
     elif args.command == "checklist":

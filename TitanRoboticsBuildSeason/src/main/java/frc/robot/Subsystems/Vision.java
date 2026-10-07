@@ -13,6 +13,8 @@ import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.math.numbers.N1;
 import edu.wpi.first.math.numbers.N3;
 import edu.wpi.first.math.util.Units;
+import edu.wpi.first.networktables.BooleanEntry;
+import edu.wpi.first.networktables.NetworkTableInstance;
 import edu.wpi.first.wpilibj.RobotBase;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
@@ -72,11 +74,35 @@ public class Vision implements Subsystem {
         private double lastFrameTimestamp = 0.0;
         private boolean isConnected = RobotBase.isSimulation();
         private final Alert disconnectAlert;
+        private final BooleanEntry enableEntry;
 
         public ManagedCamera(CameraConfig config, VisionIO io) {
             this.config = config;
             this.io = io;
             this.disconnectAlert = new Alert("Vision", "Camera [" + config.getName() + "] is offline", AlertType.WARNING);
+            var nt = NetworkTableInstance.getDefault();
+            this.enableEntry = nt.getTable("SmartDashboard")
+                    .getSubTable("Vision")
+                    .getSubTable(config.getName())
+                    .getBooleanTopic("Enabled")
+                    .getEntry(config.isEnabled());
+            this.enableEntry.setDefault(config.isEnabled());
+        }
+
+        public void setEnabled(boolean enabled) {
+            config.setEnabled(enabled);
+            enableEntry.set(enabled);
+        }
+
+        public boolean isEnabled() {
+            return config.isEnabled();
+        }
+
+        public void updateEnabledFromDashboard() {
+            boolean dashboardVal = enableEntry.get(config.isEnabled());
+            if (dashboardVal != config.isEnabled()) {
+                config.setEnabled(dashboardVal);
+            }
         }
 
         public CameraConfig getConfig() {
@@ -207,6 +233,8 @@ public class Vision implements Subsystem {
         double now = Timer.getFPGATimestamp();
 
         for (ManagedCamera camera : managedCameras) {
+            camera.updateEnabledFromDashboard();
+
             // Feed gyro orientation to MegaTag2 Limelights
             if (camera.config.getType() == CameraType.LIMELIGHT && camera.config.isMegaTag2()) {
                 camera.io.setRobotOrientation(headingDeg, yawRateDegPerSec, pitchDeg, 0.0);
@@ -317,6 +345,18 @@ public class Vision implements Subsystem {
             }
         }
         return true;
+    }
+
+    public void setCameraEnabled(String name, boolean enabled) {
+        ManagedCamera cam = getCamera(name);
+        if (cam != null) {
+            cam.setEnabled(enabled);
+        }
+    }
+
+    public boolean isCameraEnabled(String name) {
+        ManagedCamera cam = getCamera(name);
+        return cam != null && cam.isEnabled();
     }
 
     public RejectionReason getRejectionReason(String name) {

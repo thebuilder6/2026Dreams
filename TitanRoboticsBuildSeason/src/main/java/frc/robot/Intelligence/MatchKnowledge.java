@@ -89,4 +89,13 @@ public sealed interface MatchKnowledge
 
     /** Fuel in the opponent zone. {@code 0} for {@link ObservedKnowledge}. */
     int opponentZoneFuel();
+
+    /**
+     * Fuel piece coordinates known on the field.
+     *
+     * <p>For {@link ClairvoyantKnowledge}, this carries all active, eligible
+     * fuel positions on the field. For {@link ObservedKnowledge}, this is empty
+     * (or vision-detected coordinates when available).
+     */
+    List<edu.wpi.first.math.geometry.Translation2d> fieldFuel();
 }

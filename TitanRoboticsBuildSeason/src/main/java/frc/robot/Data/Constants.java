@@ -178,20 +178,42 @@ public class Constants {
     public static final Translation3d RED_HUB_LOCATION = FieldMap.Hubs.RED_HUB_3D;
     public static final Translation3d BLUE_HUB_LOCATION = FieldMap.Hubs.BLUE_HUB_3D;
 
+    // =========================================================================
+    // 5. SUBSYSTEM DELEGATES (Deprecated Aliases -> Canonical Subsystem Constants)
+    // =========================================================================
+    // Canonical shooter configuration lives in frc.robot.Subsystems.shooter.ShooterConstants
+    // Canonical intake configuration lives in frc.robot.Subsystems.intake.IntakeConstants
+
     // Shooter Delegates -> frc.robot.Subsystems.shooter.ShooterConstants
+    @Deprecated(since = "2026.2", forRemoval = false)
     public static final double SHOOTER_PREDICTIVE_LOOK_AHEAD = frc.robot.Subsystems.shooter.ShooterConstants.SHOOTER_PREDICTIVE_LOOK_AHEAD;
+    @Deprecated(since = "2026.2", forRemoval = false)
     public static final double SHOOTER_OFFSET = frc.robot.Subsystems.shooter.ShooterConstants.SHOOTER_OFFSET;
+    @Deprecated(since = "2026.2", forRemoval = false)
     public static final double FIRING_ANGLE = frc.robot.Subsystems.shooter.ShooterConstants.FIRING_ANGLE;
+    @Deprecated(since = "2026.2", forRemoval = false)
     public static final double HEIGHT_DIFFERENCE = frc.robot.Subsystems.shooter.ShooterConstants.HEIGHT_DIFFERENCE;
+    @Deprecated(since = "2026.2", forRemoval = false)
     public static final double FLYWHEEL_KS = frc.robot.Subsystems.shooter.ShooterConstants.FLYWHEEL_KS_VAL;
+    @Deprecated(since = "2026.2", forRemoval = false)
     public static final double FLYWHEEL_KV = frc.robot.Subsystems.shooter.ShooterConstants.FLYWHEEL_KV_VAL;
+    @Deprecated(since = "2026.2", forRemoval = false)
     public static final double FLYWHEEL_KA = frc.robot.Subsystems.shooter.ShooterConstants.FLYWHEEL_KA_VAL;
+    @Deprecated(since = "2026.2", forRemoval = false)
     public static final double FLYWHEEL_KP = frc.robot.Subsystems.shooter.ShooterConstants.FLYWHEEL_KP_VAL;
+    @Deprecated(since = "2026.2", forRemoval = false)
     public static final double FLYWHEEL_KI = frc.robot.Subsystems.shooter.ShooterConstants.FLYWHEEL_KI_VAL;
+    @Deprecated(since = "2026.2", forRemoval = false)
     public static final double FLYWHEEL_KD = frc.robot.Subsystems.shooter.ShooterConstants.FLYWHEEL_KD_VAL;
+    @Deprecated(since = "2026.2", forRemoval = false)
     public static final double KICKER_VOLTAGE = frc.robot.Subsystems.shooter.ShooterConstants.KICKER_VOLTAGE;
+    @Deprecated(since = "2026.2", forRemoval = false)
     public static final Voltage KICKER_VOLTAGE_MEASURE = frc.robot.Subsystems.shooter.ShooterConstants.KICKER_VOLTAGE_MEASURE;
 
+    /**
+     * @deprecated Use {@link frc.robot.Subsystems.shooter.ShooterConstants} directly.
+     */
+    @Deprecated(since = "2026.2", forRemoval = false)
     public static final class ShooterConstants {
         public static final double FEED_SPEED = frc.robot.Subsystems.shooter.ShooterConstants.FEED_SPEED;
         public static final double SHOOTER_ANGLE_RAD = frc.robot.Subsystems.shooter.ShooterConstants.SHOOTER_ANGLE_RAD;
@@ -220,25 +242,47 @@ public class Constants {
     }
 
     // Intake Delegates -> frc.robot.Subsystems.intake.IntakeConstants
+    @Deprecated(since = "2026.2", forRemoval = false)
     public static final double INTAKE_ARM_KP = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_ARM_KP_VAL;
+    @Deprecated(since = "2026.2", forRemoval = false)
     public static final double INTAKE_ARM_KI = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_ARM_KI_VAL;
+    @Deprecated(since = "2026.2", forRemoval = false)
     public static final double INTAKE_ARM_KD = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_ARM_KD_VAL;
+    @Deprecated(since = "2026.2", forRemoval = false)
     public static final double INTAKE_ARM_KS = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_ARM_KS_VAL;
+    @Deprecated(since = "2026.2", forRemoval = false)
     public static final double INTAKE_ARM_KG = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_ARM_KG_VAL;
+    @Deprecated(since = "2026.2", forRemoval = false)
     public static final double INTAKE_ARM_KV = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_ARM_KV_VAL;
+    @Deprecated(since = "2026.2", forRemoval = false)
     public static final double INTAKE_ARM_KA = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_ARM_KA_VAL;
+    @Deprecated(since = "2026.2", forRemoval = false)
     public static final double MAX_ARM_VELOCITY = frc.robot.Subsystems.intake.IntakeConstants.MAX_ARM_VELOCITY;
+    @Deprecated(since = "2026.2", forRemoval = false)
     public static final double MAX_ARM_ACCELERATION = frc.robot.Subsystems.intake.IntakeConstants.MAX_ARM_ACCELERATION;
+    @Deprecated(since = "2026.2", forRemoval = false)
     public static final double INTAKE_UP_POSITION = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_UP_POSITION;
+    @Deprecated(since = "2026.2", forRemoval = false)
     public static final double INTAKE_DOWN_POSITION = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_DOWN_POSITION;
+    @Deprecated(since = "2026.2", forRemoval = false)
     public static final double INTAKE_HORIZONTAL_POSITION = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_HORIZONTAL_POSITION;
+    @Deprecated(since = "2026.2", forRemoval = false)
     public static final Angle INTAKE_UP_POSITION_MEASURE = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_UP_POSITION_MEASURE;
+    @Deprecated(since = "2026.2", forRemoval = false)
     public static final Angle INTAKE_DOWN_POSITION_MEASURE = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_DOWN_POSITION_MEASURE;
+    @Deprecated(since = "2026.2", forRemoval = false)
     public static final Angle INTAKE_HORIZONTAL_POSITION_MEASURE = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_HORIZONTAL_POSITION_MEASURE;
+    @Deprecated(since = "2026.2", forRemoval = false)
     public static final boolean INTAKE_ARM_INVERTED = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_ARM_INVERTED;
+    @Deprecated(since = "2026.2", forRemoval = false)
     public static final boolean INTAKE_WHEELS_INVERTED = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_WHEELS_INVERTED;
+    @Deprecated(since = "2026.2", forRemoval = false)
     public static final double INTAKE_POSITION_OFFSET = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_POSITION_OFFSET;
 
+    /**
+     * @deprecated Use {@link frc.robot.Subsystems.intake.IntakeConstants} directly.
+     */
+    @Deprecated(since = "2026.2", forRemoval = false)
     public static final class IntakeConstants {
         public static final boolean INTAKE_ARM_INVERTED = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_ARM_INVERTED;
         public static final boolean INTAKE_WHEELS_INVERTED = frc.robot.Subsystems.intake.IntakeConstants.INTAKE_WHEELS_INVERTED;

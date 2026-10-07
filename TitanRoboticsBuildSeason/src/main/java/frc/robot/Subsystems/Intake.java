@@ -202,7 +202,10 @@ public class Intake implements Subsystem {
 
     /**
      * Sets the state using a string identifier.
+     *
+     * @deprecated Use canonical {@link #setState(IntakeState)} instead for type safety.
      */
+    @Deprecated(since = "2026.2", forRemoval = false)
     public void setState(String stateName) {
         setState(IntakeState.fromString(stateName));
     }

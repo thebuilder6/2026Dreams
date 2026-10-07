@@ -11,8 +11,6 @@ import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
 import frc.robot.Navigation.FieldMap;
 import frc.robot.Navigation.StaticPathfinder;
-import swervelib.simulation.ironmaple.simulation.SimulatedArena;
-import swervelib.simulation.ironmaple.simulation.seasonspecific.rebuilt2026.RebuiltFuelOnField;
 
 /**
  * FuelTourOptimizer: Sequential Traveling Salesperson Problem (TSP) solver for
@@ -346,7 +344,7 @@ public final class FuelTourOptimizer {
     }
 
     /**
-     * Gathers eligible fuel piece locations from SimulatedArena, respecting boundaries and blockers.
+     * Gathers eligible fuel piece locations respecting boundaries and blockers.
      *
      * @param robotPose     Current robot pose
      * @param isRedAlliance True if on Red Alliance
@@ -359,36 +357,38 @@ public final class FuelTourOptimizer {
             boolean isRedAlliance,
             boolean isAutonomous,
             Set<Translation2d> blockedFuel) {
+        return findFieldFuelCandidates(robotPose, isRedAlliance, isAutonomous, blockedFuel, null);
+    }
+
+    public static List<Translation2d> findFieldFuelCandidates(
+            Pose2d robotPose,
+            boolean isRedAlliance,
+            boolean isAutonomous,
+            Set<Translation2d> blockedFuel,
+            List<Translation2d> fieldFuel) {
 
         List<Translation2d> candidates = new ArrayList<>();
-        SimulatedArena arena = SimulatedArena.getInstance();
-        if (arena == null) return candidates;
+        List<Translation2d> pieces = (fieldFuel != null) ? fieldFuel : WorldStateBuilder.getFieldFuel();
+        if (pieces == null || pieces.isEmpty()) return candidates;
 
-        try {
-            var pieces = frc.robot.Sim.MatchDeterminism.fuelOnFieldSorted();
-            if (pieces == null || pieces.isEmpty()) return candidates;
+        for (Translation2d pos : pieces) {
+            if (pos == null) continue;
 
-            for (var piece : pieces) {
-                if (piece == null || !"Fuel".equals(piece.getType())) continue;
-                Translation2d pos = piece.getPoseOnField().getTranslation();
+            // Field boundaries
+            if (pos.getX() < 0.05 || pos.getX() > 16.48 || pos.getY() < 0.05 || pos.getY() > 8.00) continue;
+            if (StaticPathfinder.isPointInHardObstacle(pos) || StaticPathfinder.isPointNearDynamicObstacle(pos)) continue;
+            if (blockedFuel != null && isBlocked(blockedFuel, pos)) continue;
 
-                // Field boundaries
-                if (pos.getX() < 0.05 || pos.getX() > 16.48 || pos.getY() < 0.05 || pos.getY() > 8.00) continue;
-                if (StaticPathfinder.isPointInHardObstacle(pos) || StaticPathfinder.isPointNearDynamicObstacle(pos)) continue;
-                if (blockedFuel != null && isBlocked(blockedFuel, pos)) continue;
-
-                // Autonomous centerline boundary rule (FRC G201)
-                if (isAutonomous) {
-                    if (isRedAlliance && pos.getX() < FieldMap.CENTERLINE_X + 0.15) continue;
-                    if (!isRedAlliance && pos.getX() > FieldMap.CENTERLINE_X - 0.15) continue;
-                } else {
-                    if (isRedAlliance && pos.getX() < 3.5) continue;
-                    if (!isRedAlliance && pos.getX() > 13.0) continue;
-                }
-
-                candidates.add(pos);
+            // Autonomous centerline boundary rule (FRC G201)
+            if (isAutonomous) {
+                if (isRedAlliance && pos.getX() < FieldMap.CENTERLINE_X + 0.15) continue;
+                if (!isRedAlliance && pos.getX() > FieldMap.CENTERLINE_X - 0.15) continue;
+            } else {
+                if (isRedAlliance && pos.getX() < 3.5) continue;
+                if (!isRedAlliance && pos.getX() > 13.0) continue;
             }
-        } catch (Exception ignored) {
+
+            candidates.add(pos);
         }
 
         return candidates;

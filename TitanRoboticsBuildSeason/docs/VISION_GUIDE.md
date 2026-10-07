@@ -136,21 +136,46 @@ In [`Vision.java`](../src/main/java/frc/robot/Subsystems/Vision.java#L225-L236) 
 
 ---
 
-## Live Dashboard Tuning (Pit & Practice Field)
+## Live Dashboard Tuning & Elastic "Vision & Cameras" Tab
+
+A dedicated **Vision & Cameras** tab is provided in Elastic Dashboard (`elastic-layout.json`) giving pit crew and programmers complete real-time visibility:
+- **Per-Camera Status Cards**: Live `Enabled` toggle switch, `Connected` & `Accepted` indicators, text rejection reason, tag count, filtered distance bar, latency, and dynamic standard deviation.
+- **Hardware Defect Isolation**: If a camera or USB cable fails at an event, flip its dashboard `Enabled` toggle switch to **OFF**. The vision pipeline immediately drops the camera, updates the watchdog to ignore it, and continues fusing remaining cameras into odometry without code restarts or redeployments.
+- **Neural "Ball Hunt" Tracking Card**: Real-time target acquisition boolean, filtered distance to game piece, area, and yaw/pitch error bars.
+- **Field Map View**: Live 2D arena overlay displaying fused robot pose alongside detected game pieces and AprilTag visual benchmarks.
+
+### Tunable Parameters (NetworkTables)
 
 All rejection gates and weighting parameters can be tuned in real-time from Elastic Dashboard or SmartDashboard without rebuilding code:
 
 | NetworkTables Key | Default | Function |
 |---|---|---|
-| `/SmartDashboard/Vision/Config/MasterEnabled` | `1.0` | Master enable/disable toggle for all vision pose updates |
-| `/SmartDashboard/Vision/Config/MaxTagDistMeters` | `4.0 m` | Maximum tag distance for multi-tag measurements |
-| `/SmartDashboard/Vision/Config/SingleTagMaxDistMeters` | `3.0 m` | Maximum tag distance when only 1 tag is visible |
-| `/SmartDashboard/Vision/Config/MaxAmbiguity` | `0.40` | Maximum ambiguity ratio for single-tag estimates |
-| `/SmartDashboard/Vision/Config/MaxYawRateDegPerSec` | `360.0°/s` | Maximum chassis spin rate permitted during vision capture |
-| `/SmartDashboard/Vision/Config/MaxLatencyMs` | `150.0 ms` | Maximum frame latency accepted |
-| `/SmartDashboard/Vision/Config/BaseStdDev` | `0.08 m` | Base translation standard deviation |
-| `/SmartDashboard/Vision/Config/SingleTagPenalty` | `0.15 m` | Additional standard deviation penalty for single tags |
-| `/SmartDashboard/Vision/Config/DistPenaltyDivisor` | `25.0` | Divisor governing distance quadratic penalty |
+| `/TunableNumbers/Vision/Config/MasterEnabled` | `1.0` | Master enable/disable toggle for all vision pose updates |
+| `/TunableNumbers/Vision/Config/MaxTagDistMeters` | `4.0 m` | Maximum tag distance for multi-tag measurements |
+| `/TunableNumbers/Vision/Config/SingleTagMaxDistMeters` | `3.0 m` | Maximum tag distance when only 1 tag is visible |
+| `/TunableNumbers/Vision/Config/MaxAmbiguity` | `0.40` | Maximum ambiguity ratio for single-tag estimates |
+| `/TunableNumbers/Vision/Config/MaxYawRateDegPerSec` | `360.0°/s` | Maximum chassis spin rate permitted during vision capture |
+| `/TunableNumbers/Vision/Config/MaxLatencyMs` | `150.0 ms` | Maximum frame latency accepted |
+| `/TunableNumbers/Vision/Config/BaseStdDev` | `0.08 m` | Base translation standard deviation |
+| `/TunableNumbers/Vision/Config/SingleTagPenalty` | `0.15 m` | Additional standard deviation penalty for single tags |
+| `/TunableNumbers/Vision/Config/DistPenaltyDivisor` | `25.0` | Divisor governing distance quadratic penalty |
+
+---
+
+## Pit & Field Calibration CLI
+
+For rapid carpet calibration of camera mounting pitch and AprilTag distance scaling:
+```powershell
+python tools/tune/tune.py vision
+```
+Or directly:
+```powershell
+python tools/tune/calibrate_vision.py --interactive
+```
+The CLI wizard provides:
+1. **Camera Mounting Pitch Calibration**: Places robot at measured carpet distances (e.g. 1.5m, 2.5m, 3.5m) and analytically solves for the exact mounting pitch angle $\theta_c$, accounting for camera height $h_c$ and target height $h_t$.
+2. **AprilTag Distance Validation**: Compares NetworkTables measured distances against carpet tape benchmarks and outputs linear scaling corrections.
+3. **Java Code Generation**: Generates ready-to-paste `CameraConfig` Java snippets with solved transforms.
 
 ---
 
@@ -192,13 +217,14 @@ USB Tether port forwarding in [`Robot.java`](../src/main/java/frc/robot/Robot.ja
   - Run Pre-Flight Diagnostics from Elastic Dashboard. Station 6 inspects live connection heartbeats across all configured cameras via `vision.isAllCamerasConnected()` (`Diagnostics.java:314`).
 - **Telemetry Verification**:
   - Check NetworkTables keys under `/Vision/<CameraName>/`:
+    - `Enabled`: Boolean toggle input/output.
     - `Connected`: Boolean reporting frame freshness.
     - `IsAccepted`: Boolean indicating admission into SwerveBase.
-    - `RejectionReason`: String (`ACCEPTED`, `HIGH_DISTANCE`, etc.).
+    - `RejectionReason`: String (`ACCEPTED`, `HIGH_DISTANCE`, `VISION_DISABLED`, etc.).
     - `StdDev`: Live dynamic translation standard deviation in meters.
 - **Unit Tests**:
-  - Dedicated suite [`VisionTest.java`](../src/test/java/frc/robot/Subsystems/VisionTest.java): 6/6 tests passing (configuration, presets, multi-camera, rejection matrix, dynamic std-dev, neural tracking).
-  - Full suite passes: 54 test files / 512 tests green (2026-10-07).
+  - Dedicated suite [`VisionTest.java`](../src/test/java/frc/robot/Subsystems/VisionTest.java): 7/7 tests passing (configuration, presets, multi-camera, rejection matrix, dynamic std-dev, neural tracking, per-camera enable toggle).
+  - Full suite passes: 54 test files / 513 tests green (2026-10-07).
 - **Next review due**: 2026-11-06.
 
 ---

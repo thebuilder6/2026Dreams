@@ -80,6 +80,9 @@ Single map for all durable human + AI knowledge. Code wins over prose on conflic
 - Mechanism calibration scripts: `TitanRoboticsBuildSeason/tools/tune/calibrate_shooter.py` (2D trajectory ballistics solver + lookup table generator) and `TitanRoboticsBuildSeason/tools/tune/calibrate_intake.py` (arm kinematics, gravity feedforward $kG$, trapezoid profile transit times).
 - System identification: `Test/SysIdManager.java` (consolidated authoritative 5-mechanism SysId manager for Swerve Linear/Angular/Steer, Shooter Flywheels, and Intake Arm Pivot; see `src/main/java/frc/robot/Test/README.md`).
 - Navigation seed sweep: `TitanRoboticsBuildSeason/tools/nav/sweep-seeds.ps1` (multi-seed navigation repeatability and freeze sweep).
+- Electrical thermal & power budget: `Hardware/BreakerModel.java` (120 A main-breaker I²t thermal accumulation and cooling) and `Hardware/PowerBudgetManager.java` (authoritative electrical throttling and brownout derating manager).
+- Fuel tour optimization: `Intelligence/FuelTourOptimizer.java` (kinematic Traveling Salesperson fuel tour solver with 2-opt search).
+- Autonomous missions catalog: `Auto/Missions/` (8 standard match routines registered in `AutoMissionChooser.java`; see [`AUTONOMOUS_GUIDE.md`](AUTONOMOUS_GUIDE.md)).
 
 ## Doc health
 

@@ -89,4 +89,22 @@ public class AlertManagerTest {
         err1.set(false);
         err2.set(false);
     }
+
+    @Test
+    public void testAlertManagerResetAllPublishesNominalState() {
+        Alert err = new Alert("Subsystem", "Test Error", AlertType.ERROR);
+        err.set(true);
+        AlertManager.update();
+
+        assertTrue(edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.getBoolean("Alerts/HasErrors", false));
+        assertEquals(1, edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.getStringArray("Alerts/Errors", new String[0]).length);
+
+        // Calling resetAll() must immediately synchronize SmartDashboard
+        AlertManager.resetAll();
+
+        assertFalse(err.isActive());
+        assertFalse(edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.getBoolean("Alerts/HasErrors", true));
+        assertEquals(0, edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.getStringArray("Alerts/Errors", new String[1]).length);
+        assertEquals("[NOMINAL] Systems Operational", edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.getString("Driver/AlertBanner", ""));
+    }
 }

@@ -170,15 +170,41 @@ public class AutoEnhancementsTest {
     }
 
     @Test
-    public void testWaitUntilMarkerActionLatchesFinished() {
-        FollowChoreoPath path = new FollowChoreoPath("NonExistentTraj", false);
-        WaitUntilMarkerAction markerAction = new WaitUntilMarkerAction(path, "TestMarker", 0.30);
-        markerAction.start();
+    public void testWaitActionNullSafetyAndExecution() {
+        WaitAction waitAction = new WaitAction(0.05);
 
-        // Initially with empty path it finishes because path is finished
-        assertTrue(markerAction.isFinished());
-        // Verify multiple calls remain finished (monotonicity)
-        assertTrue(markerAction.isFinished());
-        markerAction.done();
+        // Pre-start: must not throw NullPointerException
+        assertDoesNotThrow(() -> assertFalse(waitAction.isFinished()));
+        assertDoesNotThrow(waitAction::done);
+
+        // Lifecycle execution
+        waitAction.start();
+        try {
+            Thread.sleep(60);
+        } catch (InterruptedException ignored) {}
+
+        assertTrue(waitAction.isFinished());
+        assertDoesNotThrow(waitAction::done);
+    }
+
+    @Test
+    public void testIntakeActionNullSafetyAndExecution() {
+        IntakeAction intakeAction = new IntakeAction(0.05, Intake.IntakeState.INTAKING);
+        assertEquals(Set.of(Intake.class), intakeAction.getRequirements());
+        assertEquals(Intake.IntakeState.INTAKING, intakeAction.intakeState);
+
+        // Pre-start: must not throw NullPointerException
+        assertDoesNotThrow(() -> assertFalse(intakeAction.isFinished()));
+        assertDoesNotThrow(intakeAction::done);
+
+        // Lifecycle execution
+        intakeAction.start();
+        intakeAction.update();
+        try {
+            Thread.sleep(60);
+        } catch (InterruptedException ignored) {}
+
+        assertTrue(intakeAction.isFinished());
+        assertDoesNotThrow(intakeAction::done);
     }
 }

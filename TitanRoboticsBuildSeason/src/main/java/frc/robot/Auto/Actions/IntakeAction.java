@@ -6,7 +6,7 @@ import frc.robot.Subsystems.Intake;
 
 public class IntakeAction implements Actions {
     private final double seconds;
-    private Timer timer;
+    private final Timer timer = new Timer();
     private final Intake intake;
     public final Intake.IntakeState intakeState;
 
@@ -28,8 +28,7 @@ public class IntakeAction implements Actions {
 
     @Override
     public void start() {
-        timer = new Timer();
-        timer.start();
+        timer.restart();
     }
 
     @Override
@@ -39,7 +38,7 @@ public class IntakeAction implements Actions {
 
     @Override
     public boolean isFinished() {
-        return timer.get() >= seconds;
+        return timer.hasElapsed(seconds);
     }
 
     @Override

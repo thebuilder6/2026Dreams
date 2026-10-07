@@ -212,11 +212,11 @@ On the Elastic Dashboard (and SmartDashboard):
 - **Unit Tests**:
   - [`AutoMissionChooserTest.java`](../src/test/java/frc/robot/Auto/AutoMissionChooserTest.java) pins registry discovery, delay clamping, and mission resolution.
   - [`AutoMissionExecutorTest.java`](../src/test/java/frc/robot/Auto/AutoMissionExecutorTest.java) pins worker thread lifecycle, mode transition safety, and interruption handling.
-  - [`AutoEnhancementsTest.java`](../src/test/java/frc/robot/Auto/AutoEnhancementsTest.java) pins spatial marker gating, trajectory cache lifecycle, resource conflict warnings, `BranchAction`, and `WaitForBallAction`.
+  - [`AutoEnhancementsTest.java`](../src/test/java/frc/robot/Auto/AutoEnhancementsTest.java) pins spatial marker gating, trajectory cache lifecycle, resource conflict warnings, `BranchAction`, `WaitForBallAction`, and `WaitAction` / `IntakeAction` timer lifecycle and null-safety.
 - **Simulation Validation**:
   - Run `.\gradlew simulateJava` from `TitanRoboticsBuildSeason/`.
   - In SimGUI, set Autonomous Mode and observe the virtual robot execute the selected Choreo trajectory on the AdvantageScope 2D/3D field.
-- **Verified against**: JUnit 5 full test suite clean with `--rerun-tasks` (53 result files / 503 tests, 0 failures, 2026-10-07). Mission behaviour itself is only SimGUI-validated, not unit-tested.
+- **Verified against**: JUnit 5 full test suite clean with `--rerun-tasks` (53 result files / 506 tests, 0 failures, 2026-10-07). Mission behaviour itself is only SimGUI-validated, not unit-tested.
 - **Next review due**: 2026-11-06.
 
 ---

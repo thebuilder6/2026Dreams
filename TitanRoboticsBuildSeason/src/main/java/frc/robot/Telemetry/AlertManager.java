@@ -31,6 +31,7 @@ public class AlertManager {
         lastWarnings = null;
         lastInfos = null;
         lastBanner = null;
+        update();
     }
 
     public static synchronized List<Alert> getActiveAlerts() {

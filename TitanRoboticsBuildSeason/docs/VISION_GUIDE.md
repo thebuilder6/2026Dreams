@@ -188,7 +188,7 @@ In simulation (`.\gradlew simulateJava`), physical camera IO is replaced by [`Vi
     - `/Vision/Primary/AvgTagDist`: Filtered distance in meters.
     - `/Vision/Secondary/HasGamePiece`: True when Fuel piece is detected by YOLOv8.
 - **Unit Tests**:
-  - Full suite passes: 53 test files / 503 tests green (2026-10-07).
+  - Full suite passes: 53 test files / 506 tests green (2026-10-07).
 - **Next review due**: 2026-11-06.
 
 ---

@@ -8,8 +8,8 @@ import frc.robot.Interfaces.Actions;
 */
 
 public class WaitAction implements Actions {
-    private double seconds;
-    Timer timer;
+    private final double seconds;
+    private final Timer timer = new Timer();
 
     public WaitAction(double seconds) {
         this.seconds = seconds;
@@ -17,8 +17,7 @@ public class WaitAction implements Actions {
 
     @Override
     public void start() {
-        timer = new Timer();
-        timer.start();
+        timer.restart();
     }
 
     @Override
@@ -26,7 +25,7 @@ public class WaitAction implements Actions {
 
     @Override
     public boolean isFinished() {
-        return timer.get() >= seconds;
+        return timer.hasElapsed(seconds);
     }
 
     @Override

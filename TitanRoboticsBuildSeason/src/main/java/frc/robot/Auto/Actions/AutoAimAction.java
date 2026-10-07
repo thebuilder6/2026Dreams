@@ -152,4 +152,9 @@ public class AutoAimAction implements Actions {
             swerve.stop();
         }
     }
+
+    @Override
+    public java.util.Set<Class<?>> getRequirements() {
+        return java.util.Set.of(Shooter.class, SwerveBase.class);
+    }
 }

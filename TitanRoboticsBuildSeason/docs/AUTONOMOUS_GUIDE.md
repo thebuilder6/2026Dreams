@@ -94,16 +94,18 @@ All actions implement [`frc.robot.Interfaces.Actions`](../src/main/java/frc/robo
 
 | Action Class | Constructor / Usage | Description |
 |---|---|---|
-| [`FollowChoreoPath`](../src/main/java/frc/robot/Auto/Actions/FollowChoreoPath.java) | `new FollowChoreoPath(String trajName, boolean resetOdometry)` | Follows Choreo trajectory using Cartesian PID ($kP=10.0$) and continuous heading PID. |
-| [`WaitUntilMarkerAction`](../src/main/java/frc/robot/Auto/Actions/WaitUntilMarkerAction.java) | `new WaitUntilMarkerAction(FollowChoreoPath path, String marker)` | Blocks execution until the referenced trajectory passes a named Choreo event marker. |
+| [`FollowChoreoPath`](../src/main/java/frc/robot/Auto/Actions/FollowChoreoPath.java) | `new FollowChoreoPath(String trajName, boolean resetOdometry)` | Follows Choreo trajectory using Cartesian PID ($kP=10.0$) and continuous heading PID. Features static trajectory pre-caching and dual-gated (time + spatial Euclidean distance) marker triggers. |
+| [`WaitUntilMarkerAction`](../src/main/java/frc/robot/Auto/Actions/WaitUntilMarkerAction.java) | `new WaitUntilMarkerAction(FollowChoreoPath path, String marker [, double toleranceMeters])` | Blocks execution until the referenced trajectory passes a named marker and is within spatial tolerance (default 0.45 m). |
 | [`AutoAimAction`](../src/main/java/frc/robot/Auto/Actions/AutoAimAction.java) | `new AutoAimAction(FollowChoreoPath path, double timeoutSec)` | Dynamically overrides trajectory rotation to aim swerve at the Hub while spooled. |
 | [`ShootAction`](../src/main/java/frc/robot/Auto/Actions/ShootAction.java) | `new ShootAction(double timeoutSec)` | Spools flywheels, checks RPM tolerance (<150 RPM) and heading (<3°), pulses kicker. |
 | [`IntakeAction`](../src/main/java/frc/robot/Auto/Actions/IntakeAction.java) | `new IntakeAction(IntakeState state)` | Commands intake arm position (Ground / Standby) and roller state. |
+| [`BranchAction`](../src/main/java/frc/robot/Auto/Actions/BranchAction.java) | `new BranchAction(Supplier<Boolean> condition, Action trueAction, Action falseAction)` | Evaluates a dynamic condition at launch and executes the chosen branch for adaptive decision-making. |
+| [`WaitForBallAction`](../src/main/java/frc/robot/Auto/Actions/WaitForBallAction.java) | `new WaitForBallAction([double timeoutSec])` | Gated sensor action that finishes when game piece acquisition is detected (ideal for race sweeps). |
 | [`WaitAction`](../src/main/java/frc/robot/Auto/Actions/WaitAction.java) | `new WaitAction(double seconds)` | Pauses the calling sequence for the specified duration. |
 | [`LambdaAction`](../src/main/java/frc/robot/Auto/Actions/LambdaAction.java) | `new LambdaAction(() -> { ... })` | Executes an instantaneous one-cycle Java lambda function. |
 | [`SeriesAction`](../src/main/java/frc/robot/Auto/Actions/SeriesAction.java) | `new SeriesAction(Action... actions)` | Runs provided actions in strict sequential order. |
-| [`ParallelAction`](../src/main/java/frc/robot/Auto/Actions/ParallelAction.java) | `new ParallelAction(Action... actions)` | Runs all actions simultaneously; finishes when **all** actions finish. |
-| [`ParallelRaceAction`](../src/main/java/frc/robot/Auto/Actions/ParallelRaceAction.java) | `new ParallelRaceAction(Action... actions)` | Runs all actions simultaneously; finishes as soon as **any** action finishes. |
+| [`ParallelAction`](../src/main/java/frc/robot/Auto/Actions/ParallelAction.java) | `new ParallelAction(Action... actions)` | Runs all actions simultaneously; finishes when **all** actions finish. Guards against subsystem resource conflicts. |
+| [`ParallelRaceAction`](../src/main/java/frc/robot/Auto/Actions/ParallelRaceAction.java) | `new ParallelRaceAction(Action... actions)` | Runs all actions simultaneously; finishes as soon as **any** action finishes. Guards against subsystem resource conflicts. |
 
 ---
 
@@ -190,10 +192,11 @@ On the Elastic Dashboard (and SmartDashboard):
 - **Unit Tests**:
   - [`AutoMissionChooserTest.java`](../src/test/java/frc/robot/Auto/AutoMissionChooserTest.java) pins registry discovery, delay clamping, and mission resolution.
   - [`AutoMissionExecutorTest.java`](../src/test/java/frc/robot/Auto/AutoMissionExecutorTest.java) pins worker thread lifecycle, mode transition safety, and interruption handling.
+  - [`AutoEnhancementsTest.java`](../src/test/java/frc/robot/Auto/AutoEnhancementsTest.java) pins spatial marker gating, trajectory cache lifecycle, resource conflict warnings, `BranchAction`, and `WaitForBallAction`.
 - **Simulation Validation**:
   - Run `.\gradlew simulateJava` from `TitanRoboticsBuildSeason/`.
   - In SimGUI, set Autonomous Mode and observe the virtual robot execute the selected Choreo trajectory on the AdvantageScope 2D/3D field.
-- **Verified against**: JUnit 5 full test suite clean (49 files / 467 tests green, 2026-10-06).
+- **Verified against**: JUnit 5 full test suite clean (50 files / 475 tests green, 2026-10-06).
 - **Next review due**: 2026-11-06.
 
 ---

@@ -50,4 +50,8 @@ public class IntakeAction implements Actions {
         timer.stop();
     }
 
+    @Override
+    public java.util.Set<Class<?>> getRequirements() {
+        return java.util.Set.of(Intake.class);
+    }
 }

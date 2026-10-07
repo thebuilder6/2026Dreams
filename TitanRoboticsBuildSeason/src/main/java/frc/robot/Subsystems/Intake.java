@@ -86,8 +86,8 @@ public class Intake implements Subsystem {
         }
     }
 
-    private IntakeState state = IntakeState.DISABLED;
-    private double power = -0.5;
+    private volatile IntakeState state = IntakeState.DISABLED;
+    private volatile double power = -0.5;
     private double armVoltage = 0.0;
 
     private final ProfiledPIDController pivotProfiledPIDController;
@@ -96,8 +96,8 @@ public class Intake implements Subsystem {
     private double currentPosition = 128.0;
     private double upPosition = Constants.INTAKE_UP_POSITION;
     private double downPosition = Constants.INTAKE_DOWN_POSITION;
-    private double goal = Constants.INTAKE_UP_POSITION;
-    private double manualPosition = Constants.INTAKE_UP_POSITION;
+    private volatile double goal = Constants.INTAKE_UP_POSITION;
+    private volatile double manualPosition = Constants.INTAKE_UP_POSITION;
 
     // Jam detection & Alerts
     private final Debouncer stallDebouncer = new Debouncer(IntakeConstants.STALL_TIME, Debouncer.DebounceType.kRising);

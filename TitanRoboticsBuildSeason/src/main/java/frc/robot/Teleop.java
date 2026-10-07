@@ -699,5 +699,13 @@ public class Teleop {
     public double getDriverStrafe() { return driverStrafe; }
     public double getDriverRotation() { return driverRotation; }
     public boolean isJoystickEnabled() { return joystickEnabled; }
-    public void setJoystickEnabled(boolean enabled) { this.joystickEnabled = enabled; }
+    public void setJoystickEnabled(boolean enabled) {
+        this.joystickEnabled = enabled;
+        if (enabled && joystickController == null) {
+            joystickController = new Joystick(PortMap.DRIVER_CONTROLLER);
+        } else if (!enabled && driverController == null) {
+            driverController = new Controller(PortMap.DRIVER_CONTROLLER);
+            operatorController = new Controller(PortMap.OPERATOR_CONTROLLER);
+        }
+    }
 }

@@ -4,6 +4,7 @@ import frc.robot.Auto.AutoMissionEndedException;
 import frc.robot.Auto.AutoMissionChooser;
 import frc.robot.Interfaces.Actions;
 import edu.wpi.first.wpilibj.DriverStation;
+import edu.wpi.first.wpilibj.Timer;
 
 /*
     Class: MissionBase
@@ -74,32 +75,44 @@ public abstract class MissionBase {
     public void runAction(Actions action) throws AutoMissionEndedException {
         isActiveWithThrow();
         long waitTime = (long) (mUpdateRate * 1000.0);
-        // WaitForNumBannerSensorsAction for interrupt state to clear
+        // Wait for interrupt state to clear
         while (isActiveWithThrow() && mIsInterrupted) {
             try {
                 Thread.sleep(waitTime);
             } 
             catch (InterruptedException e) {
-                e.printStackTrace();
+                Thread.currentThread().interrupt();
+                break;
             }
         }
 
         action.start();
 
-        // Run action, stop action on interrupt, non active mission, or done
+        double nextLoopTimestamp = Timer.getFPGATimestamp();
+
+        // Run action paced to exact 50.0 Hz using FPGA monotonic microsecond clock
         while (isActiveWithThrow() && !action.isFinished() && !mIsInterrupted) {
             action.update();
+            nextLoopTimestamp += mUpdateRate;
 
-            try {
-                Thread.sleep(waitTime);
-            } 
-            catch (InterruptedException e) {
-                e.printStackTrace();
+            double now = Timer.getFPGATimestamp();
+            double sleepSeconds = nextLoopTimestamp - now;
+            if (sleepSeconds > 0.001) {
+                try {
+                    Thread.sleep((long) (sleepSeconds * 1000.0));
+                } 
+                catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            } else if (sleepSeconds < -0.050) {
+                // If loop overran by >50ms, resync anchor to prevent burst catchup
+                nextLoopTimestamp = now;
             }
         }
 
         action.done();
-
+        isActiveWithThrow();
     }
 
     public boolean getIsInterrupted() {

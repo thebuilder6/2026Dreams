@@ -64,4 +64,36 @@ public class AutoMissionExecutorTest {
             executor.reset();
         });
     }
+
+    private static class ActionMission extends MissionBase {
+        private volatile boolean actionStarted = false;
+        private volatile boolean actionDone = false;
+
+        @Override
+        protected void routine() throws AutoMissionEndedException {
+            runAction(new frc.robot.Interfaces.Actions() {
+                @Override public void start() { actionStarted = true; }
+                @Override public void update() {}
+                @Override public boolean isFinished() { return false; }
+                @Override public void done() { actionDone = true; }
+            });
+        }
+    }
+
+    @Test
+    public void testMissionActionTerminationOnStop() throws InterruptedException {
+        AutoMissionExecutor executor = new AutoMissionExecutor();
+        ActionMission mission = new ActionMission();
+
+        executor.setAutoMission(mission);
+        executor.start();
+        Thread.sleep(50);
+        assertTrue(mission.actionStarted);
+        assertFalse(mission.actionDone);
+
+        executor.stop();
+        Thread.sleep(50);
+        assertTrue(mission.actionDone, "action.done() must be invoked on stop");
+        assertFalse(executor.isStarted());
+    }
 }

@@ -86,6 +86,9 @@ public class AutoMissionChooser {
             if (files != null) {
                 for (File file : files) {
                     String trajName = file.getName().replace(".traj", "");
+                    // Warm the trajectory cache ahead of time to eliminate auto-start file parsing latency
+                    frc.robot.Auto.Actions.FollowChoreoPath.warmCache(trajName);
+
                     // Only add if not already registered by a specialized mission
                     if (!missionRegistry.containsKey(trajName)) {
                         missionRegistry.put(trajName, () -> new DynamicChoreoMission(trajName));

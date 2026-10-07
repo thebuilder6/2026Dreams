@@ -54,4 +54,13 @@ public class SeriesAction implements Actions {
     public void done() {
         // Any remaining cleanup if needed
     }
+
+    @Override
+    public java.util.Set<Class<?>> getRequirements() {
+        java.util.Set<Class<?>> reqs = new java.util.HashSet<>();
+        for (Actions action : actions) {
+            reqs.addAll(action.getRequirements());
+        }
+        return reqs;
+    }
 }

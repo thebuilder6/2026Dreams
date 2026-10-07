@@ -73,10 +73,10 @@ public class Shooter implements Subsystem {
     private final PIDController flywheelPidRight;
 
     // Target RPMs and State
-    private double targetRpmLeft = 0;
-    private double targetRpmRight = 0;
-    private boolean wasAtSpeed = false;
-    private ShooterState state = ShooterState.STOPPED;
+    private volatile double targetRpmLeft = 0;
+    private volatile double targetRpmRight = 0;
+    private volatile boolean wasAtSpeed = false;
+    private volatile ShooterState state = ShooterState.STOPPED;
 
     // Distance-to-RPM Interpolation Tables
     private final InterpolatingDoubleTreeMap leftRpmTable = new InterpolatingDoubleTreeMap();
@@ -86,7 +86,7 @@ public class Shooter implements Subsystem {
     private double normalDistanceToHub = 0;
     private double leftShooterVoltageCalc = 0;
     private double rightShooterVoltageCalc = 0;
-    private ShootingSolution latestShootingSolution = new ShootingSolution(new Rotation2d(), 0, 0, false);
+    private volatile ShootingSolution latestShootingSolution = new ShootingSolution(new Rotation2d(), 0, 0, false);
 
     // Simulation state lives in ShooterIOSim (sole owner of ShooterSim).
 

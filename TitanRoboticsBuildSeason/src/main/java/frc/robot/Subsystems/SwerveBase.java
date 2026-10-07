@@ -119,10 +119,10 @@ public class SwerveBase implements Subsystem {
     public SwerveBase() {
         SubsystemManager.registerSubsystem(this);
         System.out.println("SwerveBase: Simulation Mode is " + SwerveDriveTelemetry.isSimulation);
-        // Dynamically determine alliance - defaults to Red if not available
+        // Dynamically determine alliance - defaults to Blue if not available per Blue-origin convention
         boolean blueAlliance = DriverStation.getAlliance()
                 .map(alliance -> alliance == DriverStation.Alliance.Blue)
-                .orElse(false);
+                .orElse(true);
         Pose2d startingPose = blueAlliance ? new Pose2d(new Translation2d(Meter.of(1),
                 Meter.of(4)),
                 Rotation2d.fromDegrees(0))

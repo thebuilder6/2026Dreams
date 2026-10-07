@@ -17,6 +17,7 @@ import edu.wpi.first.wpilibj.Timer;
 import frc.robot.Subsystems.SwerveBase;
 import frc.robot.Data.Constants.AutonConstants;
 import frc.robot.Interfaces.Actions;
+import frc.robot.Utils.AllianceFlipUtil;
 
 /*  Class: Move Swerve Action
     Description: Ties our swerve base to the Choreo Trajectory platform so that we can make autos way easier
@@ -27,6 +28,33 @@ import frc.robot.Interfaces.Actions;
 */
 
 public class FollowChoreoPath implements Actions {
+    private static final Map<String, Optional<Trajectory<SwerveSample>>> TRAJECTORY_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
+    public static final double DEFAULT_MARKER_TOLERANCE_METERS = 0.40;
+    public static final double MARKER_TIMEOUT_EXTRA_SECONDS = 0.75;
+
+    /**
+     * Gets a cached Choreo trajectory or loads and caches it if not already present.
+     */
+    public static Optional<Trajectory<SwerveSample>> getTrajectory(String trajectoryName) {
+        return TRAJECTORY_CACHE.computeIfAbsent(trajectoryName, Choreo::loadTrajectory);
+    }
+
+    /**
+     * Pre-loads trajectories into memory to eliminate file read latency at autonomous start.
+     */
+    public static void warmCache(String... trajectoryNames) {
+        for (String name : trajectoryNames) {
+            getTrajectory(name);
+        }
+    }
+
+    /**
+     * Clears all cached trajectories.
+     */
+    public static void clearCache() {
+        TRAJECTORY_CACHE.clear();
+    }
+
     private final Optional<Trajectory<SwerveSample>> trajectory;
     private final boolean resetOdometry;
     SwerveBase swerveBase;
@@ -45,7 +73,7 @@ public class FollowChoreoPath implements Actions {
 
     public FollowChoreoPath(String trajectoryName, boolean resetOdometry) {
         swerveBase = SwerveBase.getInstance();
-        this.trajectory = Choreo.loadTrajectory(trajectoryName);
+        this.trajectory = getTrajectory(trajectoryName);
         this.timer = new Timer();
         this.resetOdometry = resetOdometry;
 
@@ -74,8 +102,7 @@ public class FollowChoreoPath implements Actions {
     }
 
     private boolean isRedAlliance() {
-        var alliance = DriverStation.getAlliance();
-        return alliance.isPresent() ? alliance.get() == Alliance.Red : false;
+        return AllianceFlipUtil.isRedAlliance();
     }
 
     @Override
@@ -136,16 +163,26 @@ public class FollowChoreoPath implements Actions {
         // Apply the generated speeds into swerve
         swerveBase.driveFieldOriented(autoSpeeds);
 
-        // Handle events
+        // Handle events with dual gate (time reached + spatial proximity OR timeout failsafe)
         for (EventMarker event : trajectory.get().events()) {
             double timestamp = event.timestamp;
-            // If we passed the timestamp and haven't triggered it yet
-            if (time >= timestamp && !triggeredMarkers.contains(event.event)) {
-                Runnable action = eventBindings.get(event.event);
-                if (action != null) {
-                    action.run();
+            if (!triggeredMarkers.contains(event.event)) {
+                Optional<SwerveSample> markerSample = trajectory.get().sampleAt(timestamp, isRedAlliance());
+                double dist = markerSample
+                        .map(s -> s.getPose().getTranslation().getDistance(currentRobotPose.getTranslation()))
+                        .orElse(0.0);
+
+                boolean timeReached = (time >= timestamp);
+                boolean positionReached = (dist <= DEFAULT_MARKER_TOLERANCE_METERS);
+                boolean timeoutReached = (time >= timestamp + MARKER_TIMEOUT_EXTRA_SECONDS);
+
+                if ((timeReached && positionReached) || timeoutReached) {
+                    Runnable action = eventBindings.get(event.event);
+                    if (action != null) {
+                        action.run();
+                    }
+                    triggeredMarkers.add(event.event);
                 }
-                triggeredMarkers.add(event.event);
             }
         }
     }
@@ -203,5 +240,41 @@ public class FollowChoreoPath implements Actions {
         if (!trajectory.isPresent())
             return Optional.empty();
         return trajectory.get().sampleAt(getCurrentTrajectoryTime() + relativeTime, isRedAlliance());
+    }
+
+    /**
+     * Retrieves the expected field pose for a named Choreo event marker.
+     */
+    public Optional<Pose2d> getMarkerPose(String markerName) {
+        if (!trajectory.isPresent()) {
+            return Optional.empty();
+        }
+        for (EventMarker event : trajectory.get().events()) {
+            if (event.event.equals(markerName)) {
+                return trajectory.get().sampleAt(event.timestamp, isRedAlliance()).map(SwerveSample::getPose);
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * Gets the Euclidean distance from the robot's current pose to a named marker's pose.
+     */
+    public double getDistanceToMarker(String markerName) {
+        return getMarkerPose(markerName)
+                .map(pose -> swerveBase.getPose().getTranslation().getDistance(pose.getTranslation()))
+                .orElse(Double.MAX_VALUE);
+    }
+
+    /**
+     * Checks if the robot is currently within a given spatial tolerance of a named marker.
+     */
+    public boolean isWithinMarkerDistance(String markerName, double toleranceMeters) {
+        return getDistanceToMarker(markerName) <= toleranceMeters;
+    }
+
+    @Override
+    public Set<Class<?>> getRequirements() {
+        return Set.of(SwerveBase.class);
     }
 }

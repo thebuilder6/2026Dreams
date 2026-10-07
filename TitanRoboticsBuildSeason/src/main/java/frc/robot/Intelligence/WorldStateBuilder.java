@@ -7,6 +7,7 @@ import java.util.List;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import edu.wpi.first.wpilibj.DriverStation;
+import edu.wpi.first.wpilibj.RobotBase;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.math.geometry.Translation2d;
 import frc.robot.Navigation.FieldMap;
@@ -252,6 +253,9 @@ public final class WorldStateBuilder {
      * @return Populated, immutable match knowledge
      */
     public static MatchKnowledge buildMatchKnowledgeForSimBot(boolean botIsRed) {
+        if (!RobotBase.isSimulation()) {
+            return ObservedKnowledge.selfOnly();
+        }
         boolean degraded = false;
         MatchScoreTracker tracker;
         try {
@@ -449,6 +453,9 @@ public final class WorldStateBuilder {
      * viable on pieces the policy was simultaneously forbidden to approach.
      */
     private static FieldFuelSnapshot snapshotZoneFuel(boolean botIsRed) {
+        if (!RobotBase.isSimulation()) {
+            return new FieldFuelSnapshot(0, 0, 0, List.of());
+        }
         try {
             var arena = SimulatedArena.getInstance();
             if (arena == null) {
@@ -495,6 +502,9 @@ public final class WorldStateBuilder {
      * On real hardware or when simulation arena is absent, returns an empty list.
      */
     public static List<Translation2d> getFieldFuel() {
+        if (!RobotBase.isSimulation()) {
+            return List.of();
+        }
         try {
             var arena = SimulatedArena.getInstance();
             if (arena == null) {

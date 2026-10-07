@@ -16,13 +16,13 @@ import frc.robot.Interfaces.Subsystem;
 import frc.robot.Sim.AIRobotSim;
 import frc.robot.Sim.AIRobotSim.AIMode;
 import frc.robot.Sim.SimDashboardKeys;
+import frc.robot.Telemetry.TelemetryKeys;
 import frc.robot.Subsystems.Intake;
 import frc.robot.Subsystems.Shooter;
 import frc.robot.Subsystems.SubsystemManager;
 import frc.robot.Subsystems.SwerveBase;
 import frc.robot.Intelligence.AIActionIntent;
 import frc.robot.Intelligence.Archetype;
-import frc.robot.Sim.GameSim;
 import frc.robot.Intelligence.JevDecisionEngine;
 import frc.robot.Intelligence.StrategicObjective;
 import frc.robot.Intelligence.WorldState;
@@ -121,7 +121,7 @@ public class MatchCoach implements Subsystem {
                 drillChooser.addOption(mode.displayName, mode);
             }
         }
-        SmartDashboard.putData("Coaching/DrillModeChooser", drillChooser);
+        SmartDashboard.putData(TelemetryKeys.Coaching.DRILL_MODE_CHOOSER, drillChooser);
     }
 
     @Override
@@ -163,8 +163,8 @@ public class MatchCoach implements Subsystem {
         double now = Timer.getTimestamp();
 
         // 1. Check for Dashboard Practice Reset Trigger
-        if (SmartDashboard.getBoolean("Coaching/ResetPractice", false)) {
-            SmartDashboard.putBoolean("Coaching/ResetPractice", false);
+        if (SmartDashboard.getBoolean(TelemetryKeys.Coaching.RESET_PRACTICE, false)) {
+            SmartDashboard.putBoolean(TelemetryKeys.Coaching.RESET_PRACTICE, false);
             executePracticeReset();
         }
 
@@ -172,7 +172,7 @@ public class MatchCoach implements Subsystem {
         DrillMode chosen = drillChooser.getSelected();
         DrillMode selectedDrill = (chosen != null)
                 ? chosen
-                : DrillMode.fromString(SmartDashboard.getString("Coaching/DrillMode", currentDrill.displayName));
+                : DrillMode.fromString(SmartDashboard.getString(TelemetryKeys.Coaching.DRILL_MODE, currentDrill.displayName));
         if (selectedDrill != currentDrill) {
             currentDrill = selectedDrill;
             configureDrillEnvironment(currentDrill);
@@ -330,9 +330,11 @@ public class MatchCoach implements Subsystem {
     public void executePracticeReset() {
         resetSessionStats();
 
-        // 1. Reset Game Simulation & Respawn Field Fuel
-        SmartDashboard.putBoolean(SimDashboardKeys.RESET, true);
-        SmartDashboard.putBoolean(SimDashboardKeys.RESPAWN_BALLS, true);
+        // 1. Reset Game Simulation & Respawn Field Fuel (simulation only)
+        if (RobotBase.isSimulation()) {
+            SmartDashboard.putBoolean(SimDashboardKeys.RESET, true);
+            SmartDashboard.putBoolean(SimDashboardKeys.RESPAWN_BALLS, true);
+        }
 
         // 2. Reset Robot Pose to Blue / Red starting line
         boolean isRed = AllianceFlipUtil.isRedAlliance();
@@ -341,9 +343,11 @@ public class MatchCoach implements Subsystem {
                 : new Pose2d(2.00, 4.035, Rotation2d.fromDegrees(0));
         swerve.resetOdometry(startPose);
 
-        // 3. Reset Opponent AI to opposite side of field and configure for Drill
-        AIRobotSim.getInstance().reset();
-        configureDrillEnvironment(currentDrill);
+        // 3. Reset Opponent AI to opposite side of field and configure for Drill (simulation only)
+        if (RobotBase.isSimulation()) {
+            AIRobotSim.getInstance().reset();
+            configureDrillEnvironment(currentDrill);
+        }
     }
 
     private void configureDrillEnvironment(DrillMode drill) {
@@ -352,20 +356,20 @@ public class MatchCoach implements Subsystem {
         switch (drill) {
             case RAPID_CYCLING:
                 // Disable opponent to allow pure time-trial cycling
-                SmartDashboard.putBoolean("Features/Opponent Robot", false);
+                SmartDashboard.putBoolean(TelemetryKeys.Features.OPPONENT_ROBOT, false);
                 SmartDashboard.putBoolean(SimDashboardKeys.RESPAWN_BALLS, true);
                 break;
 
             case TRENCH_DEFENSE:
                 // Set opponent to tactical defense patrol
-                SmartDashboard.putBoolean("Features/Opponent Robot", true);
+                SmartDashboard.putBoolean(TelemetryKeys.Features.OPPONENT_ROBOT, true);
                 SmartDashboard.putString(SimDashboardKeys.AI_MODE, AIMode.TACTICAL_DEFENSE.name());
                 SmartDashboard.putNumber(SimDashboardKeys.OPPONENT_SPEED_PERCENT, 80.0);
                 break;
 
             case ANTI_DEFENSE_SHOOTING:
                 // Set opponent to aggressive lead-pursuit interceptor
-                SmartDashboard.putBoolean("Features/Opponent Robot", true);
+                SmartDashboard.putBoolean(TelemetryKeys.Features.OPPONENT_ROBOT, true);
                 SmartDashboard.putString(SimDashboardKeys.AI_MODE, AIMode.LEAD_PURSUIT_INTERCEPT.name());
                 SmartDashboard.putNumber(SimDashboardKeys.OPPONENT_SPEED_PERCENT, 85.0);
                 break;
@@ -373,7 +377,7 @@ public class MatchCoach implements Subsystem {
             case FREE_PLAY:
             default:
                 // Standard match competitor cycling
-                SmartDashboard.putBoolean("Features/Opponent Robot", true);
+                SmartDashboard.putBoolean(TelemetryKeys.Features.OPPONENT_ROBOT, true);
                 SmartDashboard.putString(SimDashboardKeys.AI_MODE, AIMode.AUTONOMOUS_CYCLER.name());
                 SmartDashboard.putNumber(SimDashboardKeys.OPPONENT_SPEED_PERCENT, 75.0);
                 break;
@@ -437,19 +441,19 @@ public class MatchCoach implements Subsystem {
 
     @Override
     public void log() {
-        SmartDashboard.putString("Coaching/Recommendation", activeCoachingTip);
-        SmartDashboard.putString("Coaching/DriverGrade", driverGrade);
-        SmartDashboard.putNumber("Coaching/ShootingAccuracyPercent", getShootingAccuracyPercent());
-        SmartDashboard.putNumber("Coaching/AverageCycleTimeSec", getAverageCycleTimeSec());
-        SmartDashboard.putNumber("Coaching/LastCycleTimeSec", lastCycleDurationSec);
-        SmartDashboard.putNumber("Coaching/FastestCycleTimeSec", getFastestCycleSec());
-        SmartDashboard.putNumber("Coaching/CompletedCyclesCount", completedCyclesCount);
-        SmartDashboard.putNumber("Coaching/TotalShotsAttempted", totalShotsAttempted);
-        SmartDashboard.putNumber("Coaching/GoodShotsOnTarget", goodShotsOnTarget);
-        SmartDashboard.putNumber("Coaching/WastedShotsInactiveHub", wastedShotsInactiveHub);
-        SmartDashboard.putNumber("Coaching/MisalignedShots", misalignedShots);
-        SmartDashboard.putNumber("Coaching/PinWarningsCount", pinWarningsCount);
-        SmartDashboard.putString("Coaching/DrillMode", currentDrill.displayName);
+        SmartDashboard.putString(TelemetryKeys.Coaching.RECOMMENDATION, activeCoachingTip);
+        SmartDashboard.putString(TelemetryKeys.Coaching.DRIVER_GRADE, driverGrade);
+        SmartDashboard.putNumber(TelemetryKeys.Coaching.SHOOTING_ACCURACY_PERCENT, getShootingAccuracyPercent());
+        SmartDashboard.putNumber(TelemetryKeys.Coaching.AVERAGE_CYCLE_TIME_SEC, getAverageCycleTimeSec());
+        SmartDashboard.putNumber(TelemetryKeys.Coaching.LAST_CYCLE_TIME_SEC, lastCycleDurationSec);
+        SmartDashboard.putNumber(TelemetryKeys.Coaching.FASTEST_CYCLE_TIME_SEC, getFastestCycleSec());
+        SmartDashboard.putNumber(TelemetryKeys.Coaching.COMPLETED_CYCLES_COUNT, completedCyclesCount);
+        SmartDashboard.putNumber(TelemetryKeys.Coaching.TOTAL_SHOTS_ATTEMPTED, totalShotsAttempted);
+        SmartDashboard.putNumber(TelemetryKeys.Coaching.GOOD_SHOTS_ON_TARGET, goodShotsOnTarget);
+        SmartDashboard.putNumber(TelemetryKeys.Coaching.WASTED_SHOTS_INACTIVE_HUB, wastedShotsInactiveHub);
+        SmartDashboard.putNumber(TelemetryKeys.Coaching.MISALIGNED_SHOTS, misalignedShots);
+        SmartDashboard.putNumber(TelemetryKeys.Coaching.PIN_WARNINGS_COUNT, pinWarningsCount);
+        SmartDashboard.putString(TelemetryKeys.Coaching.DRILL_MODE, currentDrill.displayName);
 
         Logger.recordOutput("Coaching/DriverGrade", driverGrade);
         Logger.recordOutput("Coaching/AccuracyPercent", getShootingAccuracyPercent());

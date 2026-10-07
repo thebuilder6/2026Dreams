@@ -14,6 +14,7 @@ import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.Filesystem;
 import edu.wpi.first.wpilibj.smartdashboard.SendableChooser;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
+import frc.robot.Telemetry.TelemetryKeys;
 import org.littletonrobotics.junction.networktables.LoggedDashboardChooser;
 
 /*
@@ -39,7 +40,7 @@ public class AutoMissionChooser {
     }
 
     public AutoMissionChooser() {
-        missionChooser = new LoggedDashboardChooser<>("Auto Mission");
+        missionChooser = new LoggedDashboardChooser<>(TelemetryKeys.Auto.MISSION);
 
         // 1. Register specialized Java missions
         registerMission(DepotShootMission.class);
@@ -64,8 +65,8 @@ public class AutoMissionChooser {
             missionChooser.addOption(name, name);
         }
 
-        SmartDashboard.putNumber("Auto Delay (seconds)", 0);
-        SmartDashboard.putString("Current Action System", "None");
+        SmartDashboard.putNumber(TelemetryKeys.Auto.DELAY_SECONDS, 0);
+        SmartDashboard.putString(TelemetryKeys.Auto.CURRENT_ACTION_SYSTEM, "None");
     }
 
     /**
@@ -107,7 +108,7 @@ public class AutoMissionChooser {
     }
 
     public void updateMissionCreator() {
-        setDelay(SmartDashboard.getNumber("Auto Delay (seconds)", SmartDashboard.getNumber("Auto Delay", 0)));
+        setDelay(SmartDashboard.getNumber(TelemetryKeys.Auto.DELAY_SECONDS, SmartDashboard.getNumber("Auto Delay", 0)));
         String selected = missionChooser.get();
 
         if (selected == null) {
@@ -144,7 +145,7 @@ public class AutoMissionChooser {
     }
 
     public void outputToSmartDashboard() {
-        SmartDashboard.putString("AutoMissionSelected", cachedSelected);
+        SmartDashboard.putString(TelemetryKeys.Auto.MISSION_SELECTED, cachedSelected);
     }
 
     public SendableChooser<String> getRawChooser() {

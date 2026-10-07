@@ -224,7 +224,7 @@ USB Tether port forwarding in [`Robot.java`](../src/main/java/frc/robot/Robot.ja
     - `StdDev`: Live dynamic translation standard deviation in meters.
 - **Unit Tests**:
   - Dedicated suite [`VisionTest.java`](../src/test/java/frc/robot/Subsystems/VisionTest.java): 7/7 tests passing (configuration, presets, multi-camera, rejection matrix, dynamic std-dev, neural tracking, per-camera enable toggle).
-  - Full suite passes: 54 test files / 513 tests green (2026-10-07).
+  - Full suite passes: 57 test files / 525 tests green (2026-10-07).
 - **Next review due**: 2026-11-06.
 
 ---

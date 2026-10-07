@@ -19,6 +19,7 @@ import frc.robot.Hardware.Controller;
 import frc.robot.Hardware.Controller.RumblePattern;
 import frc.robot.Intelligence.StrategicObjective;
 import frc.robot.Telemetry.Dashboard;
+import frc.robot.Telemetry.TelemetryKeys;
 import frc.robot.Subsystems.Intake;
 import frc.robot.Subsystems.Intake.IntakeState;
 import frc.robot.Subsystems.Shooter;
@@ -583,15 +584,15 @@ public class Teleop {
         boolean autoAimActive = autoAimRequested && solution != null && solution.shotPossibility();
 
         // Publish live Driver HUD states
-        edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putBoolean("Features/Slow Mode", isSlow);
-        edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putBoolean("Driver/Snap Active", snapTargetHeading != null);
+        edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putBoolean(TelemetryKeys.Features.SLOW_MODE, isSlow);
+        edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putBoolean(TelemetryKeys.Driver.SNAP_ACTIVE, snapTargetHeading != null);
         if (snapTargetHeading != null) {
-            edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putNumber("Driver/Snap Target Angle", snapTargetHeading.getDegrees());
+            edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putNumber(TelemetryKeys.Driver.SNAP_TARGET_ANGLE, snapTargetHeading.getDegrees());
         }
 
-        edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putBoolean("CoPilot/AssistActive", coPilot.isAssistActive());
+        edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putBoolean(TelemetryKeys.CoPilot.ASSIST_ACTIVE, coPilot.isAssistActive());
         if (coPilot.getActiveObjective() != null) {
-            edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putString("CoPilot/Objective", coPilot.getActiveObjective().name());
+            edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putString(TelemetryKeys.CoPilot.OBJECTIVE, coPilot.getActiveObjective().name());
         }
 
         if (autoAimActive) {
@@ -678,11 +679,11 @@ public class Teleop {
                     shooter.setTargetRPM(3200.0, 3200.0);
                 }
                 shooter.prepareToShoot();
-                edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putBoolean("Shooter/PreSpoolingActive", true);
+                edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putBoolean(TelemetryKeys.Shooter.PRE_SPOOLING_ACTIVE, true);
             } else {
                 wasTargetLocked = false;
                 shooter.stop();
-                edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putBoolean("Shooter/PreSpoolingActive", false);
+                edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putBoolean(TelemetryKeys.Shooter.PRE_SPOOLING_ACTIVE, false);
             }
         }
     }

@@ -6,6 +6,7 @@ import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import frc.robot.Subsystems.*;
 import org.littletonrobotics.junction.Logger;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
+import frc.robot.Telemetry.TelemetryKeys;
 
 /**
  * AutonomousTeleopAgent: pure intent coordinator for the real-robot Co-Pilot.
@@ -66,9 +67,9 @@ public class AutonomousTeleopAgent {
                 objectiveCommitment, fuelTargetMemory);
         activeObjective = latestIntent.objective();
 
-        SmartDashboard.putString("CoPilot/CurrentObjective", activeObjective.name());
-        SmartDashboard.putString("CoPilot/NextObjective", latestIntent.plan().nextObjective().name());
-        SmartDashboard.putNumber("CoPilot/TimeToTransitionSec", latestIntent.plan().timeToTransitionSec());
+        SmartDashboard.putString(TelemetryKeys.CoPilot.CURRENT_OBJECTIVE, activeObjective.name());
+        SmartDashboard.putString(TelemetryKeys.CoPilot.NEXT_OBJECTIVE, latestIntent.plan().nextObjective().name());
+        SmartDashboard.putNumber(TelemetryKeys.CoPilot.TIME_TO_TRANSITION_SEC, latestIntent.plan().timeToTransitionSec());
 
         Logger.recordOutput("CoPilot/ActiveObjective", activeObjective.name());
         Logger.recordOutput("CoPilot/Confidence", latestIntent.confidence());
@@ -222,7 +223,7 @@ public class AutonomousTeleopAgent {
                 shooter.prepareToShoot();
             }
         }
-        SmartDashboard.putBoolean("CoPilot/AutoFeedActive", autoFeedActive);
+        SmartDashboard.putBoolean(TelemetryKeys.CoPilot.AUTO_FEED_ACTIVE, autoFeedActive);
 
         if (intent.intakeCommand() == Intake.IntakeState.INTAKING || intent.objective() == StrategicObjective.VACUUM_MIDFIELD) {
             intake.setState(Intake.IntakeState.INTAKING);

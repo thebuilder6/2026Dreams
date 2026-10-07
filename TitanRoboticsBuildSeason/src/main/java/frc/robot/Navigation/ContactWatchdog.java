@@ -4,8 +4,10 @@ import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.math.kinematics.ChassisSpeeds;
+import edu.wpi.first.wpilibj.RobotBase;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
+import frc.robot.Telemetry.TelemetryKeys;
 import org.littletonrobotics.junction.Logger;
 
 /**
@@ -129,7 +131,9 @@ public class ContactWatchdog {
      * @param streamName per-robot generator name, e.g. {@code "watchdog:Bot0"}
      */
     public ContactWatchdog(String streamName) {
-        this(frc.robot.Sim.MatchDeterminism.random(streamName));
+        this(RobotBase.isSimulation()
+                ? frc.robot.Sim.MatchDeterminism.random(streamName)
+                : new java.util.Random());
     }
 
     public ContactWatchdog() {
@@ -615,10 +619,10 @@ public class ContactWatchdog {
     }
 
     private void publishTelemetry(boolean isImpact, Resolution deadlock) {
-        SmartDashboard.putBoolean("PinWatchdog/IsWarning", isWarningActive());
-        SmartDashboard.putBoolean("PinWatchdog/ForcedBackoff", forcedBackoffActive);
-        SmartDashboard.putNumber("PinWatchdog/PinDurationSec", pinDuration);
-        SmartDashboard.putNumber("PinWatchdog/BackoffRemainingSec", getBackoffRemainingSec());
+        SmartDashboard.putBoolean(TelemetryKeys.PinWatchdog.IS_WARNING, isWarningActive());
+        SmartDashboard.putBoolean(TelemetryKeys.PinWatchdog.FORCED_BACKOFF, forcedBackoffActive);
+        SmartDashboard.putNumber(TelemetryKeys.PinWatchdog.PIN_DURATION_SEC, pinDuration);
+        SmartDashboard.putNumber(TelemetryKeys.PinWatchdog.BACKOFF_REMAINING_SEC, getBackoffRemainingSec());
 
         Logger.recordOutput("ContactWatchdog/JerkMagnitude", lastJerkMagnitude);
         Logger.recordOutput("ContactWatchdog/ImpactDetected", isImpactDetected());

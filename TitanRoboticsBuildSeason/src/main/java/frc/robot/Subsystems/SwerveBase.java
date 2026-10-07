@@ -40,8 +40,6 @@ import frc.robot.Navigation.DynamicRouter;
 import frc.robot.Data.Constants;
 import frc.robot.Navigation.GlidePoints;
 import frc.robot.Interfaces.Subsystem;
-import frc.robot.Sim.LimelightSim;
-import frc.robot.Sim.VisionSim;
 import frc.robot.Subsystems.drive.DriveIO;
 import frc.robot.Subsystems.drive.DriveIOInputsAutoLogged;
 import frc.robot.Subsystems.drive.DriveIOSparkMax;

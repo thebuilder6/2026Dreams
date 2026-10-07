@@ -4,6 +4,7 @@ import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.RobotBase;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
+import frc.robot.Telemetry.TelemetryKeys;
 
 /**
  * HubSchedule: official 2026 match hub-status schedule (rules 6.4 / 6.4.1).
@@ -356,15 +357,25 @@ public class HubSchedule {
         }
         // Rule 6.4.1 says random; the sim draws it from the scenario seed so a
         // tied AUTO reproduces the same SHIFT 1 order.
-        return MatchDeterminism.random("hubShiftTiebreak").nextBoolean() ? 'B' : 'R';
+        if (RobotBase.isSimulation()) {
+            return MatchDeterminism.random("hubShiftTiebreak").nextBoolean() ? 'B' : 'R';
+        }
+        return new java.util.Random().nextBoolean() ? 'B' : 'R';
     }
 
     /** Seeds the shift order from the finished AUTO period's fuel totals. */
     public static char seedFromAutoResult() {
+        if (!RobotBase.isSimulation()) {
+            String msg = DriverStation.getGameSpecificMessage();
+            char seed = (msg != null && !msg.isEmpty() && (msg.charAt(0) == 'B' || msg.charAt(0) == 'b')) ? 'B' : 'R';
+            setShiftSeed(seed);
+            SmartDashboard.putString(TelemetryKeys.Scoreboard.SHIFT_SEED, String.valueOf(seed));
+            return seed;
+        }
         MatchScoreTracker tracker = MatchScoreTracker.getInstance();
         char seed = decideSeed(tracker.getRedAutoFuelCount(), tracker.getBlueAutoFuelCount());
         setShiftSeed(seed);
-        SmartDashboard.putString("Scoreboard/Match/ShiftSeed",
+        SmartDashboard.putString(TelemetryKeys.Scoreboard.SHIFT_SEED,
                 seed + " (R" + tracker.getRedAutoFuelCount() + "/B" + tracker.getBlueAutoFuelCount()
                         + " auto)");
         return seed;

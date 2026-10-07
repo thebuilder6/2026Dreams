@@ -7,6 +7,7 @@ import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
+import frc.robot.Telemetry.TelemetryKeys;
 import frc.robot.Interfaces.Actions;
 import frc.robot.Subsystems.Shooter;
 import frc.robot.Subsystems.SwerveBase;
@@ -78,17 +79,17 @@ public class AutoAimAction implements Actions {
         var solution = shooter.calculateShootingSolution(pose, speeds, 0);
 
         // Debugging to SmartDashboard
-        SmartDashboard.putBoolean("AutoAim/Possible", solution.possible());
-        SmartDashboard.putNumber("AutoAim/TargetRPM", solution.flywheelRPM());
-        SmartDashboard.putNumber("AutoAim/TargetYaw", solution.turretAngle().getDegrees());
+        SmartDashboard.putBoolean(TelemetryKeys.AutoAim.POSSIBLE, solution.possible());
+        SmartDashboard.putNumber(TelemetryKeys.AutoAim.TARGET_RPM, solution.flywheelRPM());
+        SmartDashboard.putNumber(TelemetryKeys.AutoAim.TARGET_YAW, solution.turretAngle().getDegrees());
 
         if (solution.possible()) {
             shooter.setTargetRPM(solution.flywheelRpmLeft(), solution.flywheelRpmRight());
 
             // 3. Handle Aiming (Path Override vs Manual Drive)
             double headingErrorDegrees = Math.abs(swerve.getHeading().minus(solution.turretAngle()).getDegrees());
-            SmartDashboard.putNumber("AutoAim/HeadingError", headingErrorDegrees);
-            SmartDashboard.putNumber("AutoAim/FlywheelError",
+            SmartDashboard.putNumber(TelemetryKeys.AutoAim.HEADING_ERROR, headingErrorDegrees);
+            SmartDashboard.putNumber(TelemetryKeys.AutoAim.FLYWHEEL_ERROR,
                     Math.abs(shooter.getActualRPM() - solution.flywheelRPM()));
 
             if (!isPathActive) {
@@ -105,7 +106,7 @@ public class AutoAimAction implements Actions {
             boolean ready = shooter.isAtTargetVelocity();
             if (aimed && ready) {
                 shooter.shoot();
-                SmartDashboard.putString("AutoAim/Status", "FIRING");
+                SmartDashboard.putString(TelemetryKeys.AutoAim.STATUS, "FIRING");
             } else {
                 shooter.prepareToShoot();
 
@@ -115,14 +116,14 @@ public class AutoAimAction implements Actions {
                     status.append(String.format("Aim Err %.1f > 5.0; ", headingErrorDegrees));
                 if (!ready)
                     status.append("Spooling;");
-                SmartDashboard.putString("AutoAim/Status", status.toString());
+                SmartDashboard.putString(TelemetryKeys.AutoAim.STATUS, status.toString());
             }
 
         } else {
             // Shot Impossible (e.g. too close/far)
             shooter.prepareToShoot();
             shooter.setTargetRPM(Constants.ShooterConstants.IDLE_RPM);
-            SmartDashboard.putString("AutoAim/Status", "Solution Impossible");
+            SmartDashboard.putString(TelemetryKeys.AutoAim.STATUS, "Solution Impossible");
 
             // If path is done and we can't shoot, stop moving
             if (!isPathActive) {

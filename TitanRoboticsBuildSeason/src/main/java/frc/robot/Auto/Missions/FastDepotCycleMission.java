@@ -30,8 +30,11 @@ public class FastDepotCycleMission extends MissionBase {
             new IntakeAction(999, Intake.IntakeState.INTAKING)
         ));
 
-        // 2. Sensor-gated wait to confirm fuel acquisition at depot (max 1.5s failsafe)
-        runAction(new WaitForBallAction(1.5));
+        // 2. Sensor-gated wait to confirm fuel acquisition at depot while actively running rollers (max 1.5s failsafe)
+        runAction(new ParallelRaceAction(
+            new WaitForBallAction(1.5),
+            new IntakeAction(1.5, Intake.IntakeState.INTAKING)
+        ));
 
         // 3. Stow intake safely before transit
         runAction(new LambdaAction(() -> Intake.getInstance().setState(Intake.IntakeState.STANDBY)));

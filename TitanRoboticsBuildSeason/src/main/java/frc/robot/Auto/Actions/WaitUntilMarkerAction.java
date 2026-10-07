@@ -14,6 +14,8 @@ public class WaitUntilMarkerAction implements Actions {
     private final String markerName;
     private final double spatialToleranceMeters;
 
+    private boolean markerTriggered = false;
+
     public WaitUntilMarkerAction(FollowChoreoPath path, String markerName) {
         this(path, markerName, DEFAULT_TOLERANCE_METERS);
     }
@@ -26,6 +28,7 @@ public class WaitUntilMarkerAction implements Actions {
 
     @Override
     public void start() {
+        markerTriggered = false;
     }
 
     @Override
@@ -34,14 +37,14 @@ public class WaitUntilMarkerAction implements Actions {
 
     @Override
     public boolean isFinished() {
-        if (path == null || path.isFinished()) {
+        if (markerTriggered || path == null || path.isFinished()) {
             return true;
         }
-        if (!path.hasMarkerBeenPassed(markerName)) {
-            return false;
+        if (path.hasMarkerBeenPassed(markerName) || path.isWithinMarkerDistance(markerName, spatialToleranceMeters)) {
+            markerTriggered = true;
+            return true;
         }
-        // Marker has triggered. Verify that robot is within spatial tolerance or path completed
-        return path.isWithinMarkerDistance(markerName, spatialToleranceMeters) || path.isFinished();
+        return false;
     }
 
     @Override

@@ -168,4 +168,17 @@ public class AutoEnhancementsTest {
         // Path is finished (empty), so WaitUntilMarkerAction must finish safely without throwing
         assertTrue(markerAction.isFinished());
     }
+
+    @Test
+    public void testWaitUntilMarkerActionLatchesFinished() {
+        FollowChoreoPath path = new FollowChoreoPath("NonExistentTraj", false);
+        WaitUntilMarkerAction markerAction = new WaitUntilMarkerAction(path, "TestMarker", 0.30);
+        markerAction.start();
+
+        // Initially with empty path it finishes because path is finished
+        assertTrue(markerAction.isFinished());
+        // Verify multiple calls remain finished (monotonicity)
+        assertTrue(markerAction.isFinished());
+        markerAction.done();
+    }
 }

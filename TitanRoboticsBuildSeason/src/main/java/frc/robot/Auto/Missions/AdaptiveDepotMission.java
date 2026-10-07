@@ -32,8 +32,11 @@ public class AdaptiveDepotMission extends MissionBase {
             new IntakeAction(999, Intake.IntakeState.INTAKING)
         ));
 
-        // 2. Sensor-gated wait to ingest game piece (up to 1.5 seconds)
-        runAction(new WaitForBallAction(1.5));
+        // 2. Sensor-gated wait to ingest game piece while actively running rollers (up to 1.5 seconds)
+        runAction(new ParallelRaceAction(
+            new WaitForBallAction(1.5),
+            new IntakeAction(1.5, Intake.IntakeState.INTAKING)
+        ));
 
         // 3. Sensor-conditioned dynamic branch
         runAction(new BranchAction(

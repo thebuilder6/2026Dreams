@@ -99,7 +99,7 @@ All actions implement [`frc.robot.Interfaces.Actions`](../src/main/java/frc/robo
 | Action Class | Constructor / Usage | Description |
 |---|---|---|
 | [`FollowChoreoPath`](../src/main/java/frc/robot/Auto/Actions/FollowChoreoPath.java) | `new FollowChoreoPath(String trajName, boolean resetOdometry)` | Follows Choreo trajectory using Cartesian PID ($kP=10.0$) and continuous heading PID. Features static trajectory pre-caching and dual-gated (time + spatial Euclidean distance) marker triggers. |
-| [`WaitUntilMarkerAction`](../src/main/java/frc/robot/Auto/Actions/WaitUntilMarkerAction.java) | `new WaitUntilMarkerAction(FollowChoreoPath path, String marker [, double toleranceMeters])` | Blocks execution until the referenced trajectory passes a named marker and is within spatial tolerance (default 0.45 m). |
+| [`WaitUntilMarkerAction`](../src/main/java/frc/robot/Auto/Actions/WaitUntilMarkerAction.java) | `new WaitUntilMarkerAction(FollowChoreoPath path, String marker [, double toleranceMeters])` | Blocks execution until the referenced trajectory triggers or reaches a named marker (default 0.45 m spatial tolerance with monotonic latching). |
 | [`AutoAimAction`](../src/main/java/frc/robot/Auto/Actions/AutoAimAction.java) | `new AutoAimAction(FollowChoreoPath path, double timeoutSec)` | Dynamically overrides trajectory rotation to aim swerve at the Hub while spooled. |
 | [`ShootAction`](../src/main/java/frc/robot/Auto/Actions/ShootAction.java) | `new ShootAction(double timeoutSec)` | Spools flywheels, checks RPM tolerance (<150 RPM) and heading (<3°), pulses kicker. |
 | [`IntakeAction`](../src/main/java/frc/robot/Auto/Actions/IntakeAction.java) | `new IntakeAction(IntakeState state)` | Commands intake arm position (Ground / Standby) and roller state. |

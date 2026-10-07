@@ -726,29 +726,17 @@ public class SwerveBase implements Subsystem {
         // (hardware cutoff at 6.8V).
         // Current threshold set at 210A ramping down to 270A.
         double targetScale = 1.0;
+        double nowTs = Timer.getTimestamp();
+        double powerDt = (lastPowerBudgetTimestamp > 0.0)
+                ? MathUtil.clamp(nowTs - lastPowerBudgetTimestamp, 0.0, 0.1)
+                : 0.020;
+        lastPowerBudgetTimestamp = nowTs;
+
         if (simBatteryVoltage < 0 && RobotController.isBrownedOut()) {
             targetScale = 0.25; // Severe hardware brownout cutoff active
+            frc.robot.Hardware.PowerBudgetManager.getInstance().update(totalCurrentAmps, batteryVoltage, powerDt);
         } else {
-            double vScale = 1.0;
-            if (batteryVoltage < 9.5) {
-                // Continuous linear ramp from 1.0 at 9.5V down to 0.35 at 7.5V
-                vScale = MathUtil.clamp((batteryVoltage - 7.5) / (9.5 - 7.5), 0.35, 1.0);
-            }
-            double iScale = 1.0;
-            if (totalCurrentAmps > 180.0) {
-                // Continuous ramp down from 1.0 at 180A down to 0.50 at 240A
-                iScale = MathUtil.clamp(1.0 - ((totalCurrentAmps - 180.0) / (240.0 - 180.0)) * 0.5, 0.5, 1.0);
-            }
-            targetScale = Math.min(vScale, iScale);
-            // Main-breaker thermal budget (I^2t / Miner's rule, see Hardware/BreakerModel):
-            // short bursts above 120 A are free, sustained overload derates drive before trip.
-            double nowTs = Timer.getTimestamp();
-            double powerDt = (lastPowerBudgetTimestamp > 0.0)
-                    ? MathUtil.clamp(nowTs - lastPowerBudgetTimestamp, 0.0, 0.1)
-                    : 0.020;
-            lastPowerBudgetTimestamp = nowTs;
-            targetScale = Math.min(targetScale,
-                    frc.robot.Hardware.PowerBudgetManager.getInstance().update(totalCurrentAmps, batteryVoltage, powerDt));
+            targetScale = frc.robot.Hardware.PowerBudgetManager.getInstance().update(totalCurrentAmps, batteryVoltage, powerDt);
         }
 
         // Fast-cut on brownout hazard, responsive recovery (+5% per 20ms loop = full

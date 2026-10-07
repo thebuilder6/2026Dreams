@@ -926,6 +926,32 @@
               "topic": "/SmartDashboard/Diagnostics/Run Shooter/Flywheel Right",
               "period": 0.06
             }
+          },
+          {
+            "title": "Build & Git Metadata",
+            "x": 0.0,
+            "y": 640.0,
+            "width": 1024.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Build/Summary",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Git Commit SHA",
+            "x": 1024.0,
+            "y": 640.0,
+            "width": 512.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Build/GitSHA",
+              "period": 0.06,
+              "show_submit_button": false
+            }
           }
         ]
       }
@@ -1504,6 +1530,19 @@
             "type": "Text Display",
             "properties": {
               "topic": "/SmartDashboard/Simulation/Ally0/Score",
+              "period": 0.06,
+              "show_submit_button": false
+            }
+          },
+          {
+            "title": "Build & Git Metadata",
+            "x": 0.0,
+            "y": 640.0,
+            "width": 1024.0,
+            "height": 128.0,
+            "type": "Text Display",
+            "properties": {
+              "topic": "/SmartDashboard/Build/Summary",
               "period": 0.06,
               "show_submit_button": false
             }

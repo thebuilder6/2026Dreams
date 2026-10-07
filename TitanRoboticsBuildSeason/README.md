@@ -8,7 +8,7 @@ status: authoritative
 
 # 🚀 Titan Robotics 2026/2027 Robot Platform (Mentor Fork)
 
-Welcome to the **Team 8664 Titan Robotics** advanced exploration repository. This codebase pairs full competition-proven hardware calibrations with modern software innovations: high-fidelity physics simulation, AdvantageKit IO abstraction, dual-camera AprilTag fusion, an automated pre-flight diagnostics suite, and the Jev AI tactical decision engine.
+Welcome to the **Team 8334 Titan Robotics** advanced exploration repository. This codebase pairs full competition-proven hardware calibrations with modern software innovations: high-fidelity physics simulation, AdvantageKit IO abstraction, dual-camera AprilTag fusion, an automated pre-flight diagnostics suite, and the Jev AI tactical decision engine.
 
 ---
 
@@ -33,7 +33,7 @@ $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
 # Single class: ./gradlew test --offline --tests "frc.robot.Intelligence.JevDecisionEngineTest"
 ```
 
-### 6. Launching Desktop Physics Simulation
+### 3. Launching Desktop Physics Simulation
 Launch the WPILib SimGUI with our full `IronMaple` arena, simulated game pieces, and `AIRobotSim` opponent:
 ```powershell
 ./gradlew simulateJava
@@ -54,5 +54,9 @@ Launch the WPILib SimGUI with our full `IronMaple` arena, simulated game pieces,
 - 🧪 [Testing & Diagnostics Guide](src/main/java/frc/robot/Test/README.md): Pre-flight checks, SysId characterization, and tuning routines.
 - 🎯 [Shooter Calibration & Tuning Guide](docs/SHOOTER_TUNING_GUIDE.md): Step-by-step physical calibration, live PID tuning, SOTF, and ballistics automation tools.
 - 📥 [Intake Arm Calibration & Tuning Guide](docs/INTAKE_TUNING_GUIDE.md): Arm Profiled PID, gravity feedforward, jam detection, and trench safety.
+- 🛞 [Swerve Drive Calibration & Tuning Guide](docs/SWERVE_TUNING_GUIDE.md): MK4i module zeroing, wheel radius via `tune.py`, and YAGSL PIDF.
+- 🤖 [Autonomous & Trajectory Pipeline Guide](docs/AUTONOMOUS_GUIDE.md): Custom action framework, Choreo paths, and event markers.
+- 👁️ [Dual-Vision Platform & Calibration Guide](docs/VISION_GUIDE.md): Limelight MegaTag2, Orange Pi 5 PhotonVision, and pose filtering.
 - 📋 [Pit Tuning & Pre-Match Checklist](docs/PIT_TUNING_CHECKLIST.md): 5-station rapid pit check, 15-second diagnostics scorecard, and carpet benchmarks.
+- 🎒 [Developer & Student Onboarding Guide](docs/ONBOARDING.md): Getting started guide for new student programmers and contributors.
 

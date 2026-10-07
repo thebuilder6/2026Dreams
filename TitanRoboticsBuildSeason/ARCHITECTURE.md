@@ -143,7 +143,7 @@ flowchart TD
 ### G. Non-CLI Driver Alert Infrastructure (`Telemetry/Alert.java`, `Telemetry/AlertManager.java`, `Subsystems/LEDs.java`)
 - **No Console Clutter**: Replaces spammy driver station console printouts with persistent visual indicators.
 - **Elastic Dashboard Banner**: Color-coded single-line top banner (`Driver/AlertBanner`) and active tables (`Alerts/Errors`, `Alerts/Warnings`).
-- **Addressable LEDs Integration**:
+- **LED Driver Integration (REV Blinkin via PWM, `Subsystems/LEDs.java`)**:
   - `STROBE_RED`: Critical hardware fault (disconnected encoder, motor stall).
   - `SOLID_ORANGE`: System warning / degraded sensor operation (vision lost, auto-clearing jam).
   - `SOLID_GREEN`: Target locked & ready to shoot.

@@ -1,8 +1,8 @@
-﻿---
+---
 title: Operator Map
 audience: [human, drive-team]
 owner: drive-team
-last_verified: 2026-09-29
+last_verified: 2026-10-06
 status: authoritative
 ---
 

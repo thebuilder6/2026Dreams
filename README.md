@@ -2,7 +2,7 @@
 title: Repo Landing Page
 audience: [human, ai]
 owner: programming-leads
-last_verified: 2026-09-29
+last_verified: 2026-10-06
 status: authoritative
 ---
 
@@ -16,6 +16,8 @@ Start here:
 - `TitanRoboticsBuildSeason/docs/INDEX.md` — map of all durable guides (read second).
 - `KNOWN_ISSUES.md` — open issues, roadmap, and test status (check before adding work).
 - `TitanRoboticsBuildSeason/README.md` — platform quickstart (compile/sim/test/deploy).
+- `REBUILD_MINIMAL_CHECKLIST.md` — standalone step-by-step specification for minimal robot rebuild.
+- `SPRINT_PLAN.md` — 5-sprint project plan and tickets for rebuilding.
 - `TitanRoboticsBuildSeason/docs/CHANGELOG.md` — agent-maintained per-change log.
 
 Quick build (Windows PowerShell, from `TitanRoboticsBuildSeason/`):

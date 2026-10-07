@@ -62,4 +62,31 @@ public class AlertManagerTest {
         assertDoesNotThrow(() -> AlertManager.update());
         testAlert.set(false);
     }
+
+    @Test
+    public void testAlertContentChangeReactivity() {
+        Alert err1 = new Alert("SubsystemA", "Error 1", AlertType.ERROR);
+        Alert err2 = new Alert("SubsystemB", "Error 2", AlertType.ERROR);
+
+        err1.set(true);
+        err2.set(true);
+        AlertManager.update();
+
+        String[] publishedErrors = edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.getStringArray("Alerts/Errors", new String[0]);
+        assertEquals(2, publishedErrors.length);
+        assertEquals("[SubsystemA] Error 1", publishedErrors[0]);
+        assertEquals("[SubsystemB] Error 2", publishedErrors[1]);
+
+        // Change text of err2 while keeping the count identical (2 errors)
+        err2.setText("Error 2 Details Changed");
+        AlertManager.update();
+
+        String[] updatedErrors = edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.getStringArray("Alerts/Errors", new String[0]);
+        assertEquals(2, updatedErrors.length);
+        assertEquals("[SubsystemA] Error 1", updatedErrors[0]);
+        assertEquals("[SubsystemB] Error 2 Details Changed", updatedErrors[1]);
+
+        err1.set(false);
+        err2.set(false);
+    }
 }

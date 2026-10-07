@@ -315,6 +315,30 @@ public class ContactWatchdogTest {
     }
 
     @Test
+    public void unstickSpinIsPeerGated() {
+        ContactWatchdog r = new ContactWatchdog(new java.util.Random(1));
+        unstickTick(r, 5);
+        assertTrue(r.isPirouetteActive());
+        Pose2d robotPose = new Pose2d(5.0, 4.0, new Rotation2d());
+
+        // Bumper contact nearby keeps the aggressive pirouette.
+        ChassisSpeeds near = r.arbitrate(new ChassisSpeeds(2.0, 0.0, 0.0), robotPose,
+                new Pose2d(5.5, 4.0, new Rotation2d()));
+        assertEquals(ContactWatchdog.UNSTICK_SPIN_OMEGA_RPS, near.omegaRadiansPerSecond, 1e-9,
+                "peer within PROXIMITY_M must keep the 6.0 rad/s pirouette");
+
+        // Pure geometry gets a capped face-the-escape turn instead.
+        ChassisSpeeds far = r.arbitrate(new ChassisSpeeds(2.0, 0.0, 0.0), robotPose,
+                new Pose2d(9.0, 4.0, new Rotation2d()));
+        assertTrue(Math.abs(far.omegaRadiansPerSecond) <= ContactWatchdog.UNSTICK_FACE_OMEGA_MAX_RPS + 1e-9,
+                "peer far away must not spin at pirouette rate, got " + far.omegaRadiansPerSecond);
+
+        ChassisSpeeds alone = r.arbitrate(new ChassisSpeeds(2.0, 0.0, 0.0), robotPose, null);
+        assertTrue(Math.abs(alone.omegaRadiansPerSecond) <= ContactWatchdog.UNSTICK_FACE_OMEGA_MAX_RPS + 1e-9,
+                "no peer at all must not spin at pirouette rate, got " + alone.omegaRadiansPerSecond);
+    }
+
+    @Test
     public void inactiveUnstickLeavesTheCommandAlone() {
         ContactWatchdog r = new ContactWatchdog(new java.util.Random(1));
         for (int i = 0; i < 200; i++) {

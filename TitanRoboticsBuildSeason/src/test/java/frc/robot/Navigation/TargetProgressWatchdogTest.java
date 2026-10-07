@@ -320,6 +320,91 @@ class TargetProgressWatchdogTest {
                 "escape must back away from the abandoned piece");
     }
 
+    @Test
+    void suppressedPinnedBotEscalatesAfterCumulativeStall() {
+        // Regression for the 42r0 Ally1 wedge: contact-recovery suppression kept
+        // the watchdog at IDLE for 115 s because it zeroed every accumulator.
+        // The suppression-proof fuse must escalate at 9 s of cumulative pinning.
+        Pose2d pinned = new Pose2d(4.41, 7.30, Rotation2d.fromDegrees(0));
+        ChassisSpeeds pushing = new ChassisSpeeds(3.5, 0.0, 0.0);
+        ChassisSpeeds notMoving = new ChassisSpeeds();
+        Pose2d target = new Pose2d(6.40, 6.08, Rotation2d.fromDegrees(0));
+
+        TargetProgressWatchdog.Result last = TargetProgressWatchdog.Result.IDLE;
+        int steps = (int) (TargetProgressWatchdog.SUPPRESSED_GIVEUP_SEC / DT) + 10;
+        for (int i = 0; i < steps; i++) {
+            last = watchdog.update(pinned, pushing, notMoving, target, true, DT);
+            if (last.recovering()) {
+                break;
+            }
+        }
+        assertTrue(last.recovering(),
+                "suppressed-but-pinned bot must escalate after 9 s cumulative");
+        assertTrue(last.escapeVector().getNorm() > 0.5,
+                "escalation must produce a real escape command");
+    }
+
+    @Test
+    void suppressedMovingBotDoesNotEscalate() {
+        // A legitimate contact recovery (backing off, pirouette) is suppressed
+        // but the bot is actually moving: the 9 s fuse must not fire.
+        Pose2d pose = new Pose2d(5.0, 4.0, Rotation2d.fromDegrees(0));
+        ChassisSpeeds pushing = new ChassisSpeeds(2.0, 0.0, 0.0);
+        ChassisSpeeds moving = new ChassisSpeeds(2.0, 0.0, 0.0);
+        Pose2d target = new Pose2d(6.0, 4.0, Rotation2d.fromDegrees(0));
+
+        for (int i = 0; i < (int) (TargetProgressWatchdog.SUPPRESSED_GIVEUP_SEC / DT) + 50; i++) {
+            TargetProgressWatchdog.Result r =
+                    watchdog.update(pose, pushing, moving, target, true, DT);
+            assertFalse(r.recovering(),
+                    "a suppressed-but-moving bot must not trip the fuse at " + (i * DT) + " s");
+        }
+        assertEquals(0, watchdog.blockedPoints().size(),
+                "moving through suppression must not blacklist anything");
+    }
+
+    @Test
+    void suppressedChurningTargetStillEscalates() {
+        // The wedge target churns (RETARGET every few ticks in the log) but the
+        // robot stays pinned. The fuse is velocity-based, so churn cannot reset it.
+        Pose2d pinned = new Pose2d(4.97, 7.30, Rotation2d.fromDegrees(0));
+        ChassisSpeeds pushing = new ChassisSpeeds(3.5, 0.0, 0.0);
+        ChassisSpeeds notMoving = new ChassisSpeeds();
+
+        TargetProgressWatchdog.Result last = TargetProgressWatchdog.Result.IDLE;
+        int steps = (int) (TargetProgressWatchdog.SUPPRESSED_GIVEUP_SEC / DT) + 10;
+        for (int i = 0; i < steps; i++) {
+            // Target moves > NEW_TARGET_RESET_M every cycle to force re-evaluation.
+            Pose2d shifting = new Pose2d(6.40 - (i % 3) * 0.8, 0.68 + (i % 4) * 0.3,
+                    Rotation2d.fromDegrees(0));
+            last = watchdog.update(pinned, pushing, notMoving, shifting, true, DT);
+            if (last.recovering()) {
+                break;
+            }
+        }
+        assertTrue(last.recovering(),
+                "churning target must not reset the suppressed-pinned fuse");
+    }
+
+    @Test
+    void leavingSuppressionResetsFuse() {
+        // 4 s suppressed-pinned (under the 9 s fuse) then unsuppress: the
+        // accumulator must be cleared so the bot starts a fresh budget.
+        Pose2d pinned = START;
+        ChassisSpeeds pushing = new ChassisSpeeds(1.5, 0.0, 0.0);
+        ChassisSpeeds notMoving = new ChassisSpeeds();
+
+        for (int i = 0; i < (int) (4.0 / DT); i++) {
+            TargetProgressWatchdog.Result r =
+                    watchdog.update(pinned, pushing, notMoving, TARGET, true, DT);
+            assertFalse(r.recovering(), "must not fire before 9 s");
+        }
+        // Unsuppress for a tick: suppressedPinnedSec zeroes.
+        watchdog.update(pinned, pushing, notMoving, TARGET, false, DT);
+        assertFalse(watchdog.isRecovering(), "un-suppressed tick must reset the fuse");
+        assertEquals(0, watchdog.blockedPoints().size());
+    }
+
     private static TargetProgressWatchdog.Result giveUp(
             TargetProgressWatchdog w, Pose2d pose) {
         TargetProgressWatchdog.Result last = TargetProgressWatchdog.Result.IDLE;

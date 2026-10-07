@@ -45,6 +45,19 @@ public final class StuckRecoveryArbiter {
 
     private StuckRecoveryArbiter() {}
 
+    /** Closest peer distance, ignoring self-echoes; +inf when alone. */
+    static double nearestPeerDistM(java.util.List<Pose2d> peerRobotPoses, Pose2d pose) {
+        double nearestPeerDist = Double.MAX_VALUE;
+        if (peerRobotPoses != null) {
+            for (Pose2d peerPose : peerRobotPoses) {
+                if (peerPose == null) continue;
+                double d = pose.getTranslation().getDistance(peerPose.getTranslation());
+                if (d > 0.05 && d < nearestPeerDist) nearestPeerDist = d;
+            }
+        }
+        return nearestPeerDist;
+    }
+
     /** Soft peer separation radius (m). */
     public static final double SEPARATION_RADIUS_M = 1.30;
     /** Soft peer separation nudge magnitude (m/s). */
@@ -79,6 +92,7 @@ public final class StuckRecoveryArbiter {
             boolean inTrench) {
         ChassisSpeeds base = (trajectorySpeeds != null) ? trajectorySpeeds : new ChassisSpeeds();
         Pose2d pose = (currentPose != null) ? currentPose : new Pose2d();
+        double nearestPeerDist = nearestPeerDistM(peerRobotPoses, pose);
 
         // ── Tier 1: Rule G418 Forced Pin Backoff ────────────────────────────
         if (contactWatchdog != null && contactWatchdog.isForcedBackoffActive()
@@ -94,8 +108,11 @@ public final class StuckRecoveryArbiter {
         }
 
         // ── Tier 2: Static Geometry Unstick / Pirouette (obstacle wedge) ────
+        // The spin rate is peer-gated inside the watchdog: bumper contact keeps
+        // the pirouette, pure geometry faces the escape direction instead.
         if (contactWatchdog != null && contactWatchdog.isPirouetteActive()) {
-            ChassisSpeeds speeds = contactWatchdog.applyUnstickOnly(base);
+            ChassisSpeeds speeds = contactWatchdog.applyUnstickOnly(
+                    base, nearestPeerDist, pose.getRotation());
             return new RecoveryResult(speeds, RecoveryTier.STATIC_UNSTICK, "STATIC_UNSTICK");
         }
 
@@ -122,14 +139,6 @@ public final class StuckRecoveryArbiter {
         }
 
         // ── Tier 3b: Trench Cooldown Yield ──────────────────────────────────
-        double nearestPeerDist = Double.MAX_VALUE;
-        if (peerRobotPoses != null) {
-            for (Pose2d peerPose : peerRobotPoses) {
-                if (peerPose == null) continue;
-                double d = pose.getTranslation().getDistance(peerPose.getTranslation());
-                if (d > 0.05 && d < nearestPeerDist) nearestPeerDist = d;
-            }
-        }
         boolean trenchCoolingYield = inTrench
                 && contactWatchdog != null
                 && contactWatchdog.isDeadlockCooling()

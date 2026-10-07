@@ -103,7 +103,38 @@ public class StuckRecoveryArbiterTest {
 
         assertEquals(RecoveryTier.STATIC_UNSTICK, res.activeTier());
         assertEquals("STATIC_UNSTICK", res.stateDetail());
-        // Pirouette applies rotation rate 6.0 rad/s
+        // No peer in range: geometry wedge faces the escape instead of spinning.
+        // (Peer-gated spin: a peer within PROXIMITY_M keeps 6.0 rad/s.)
+        assertEquals(2.5, res.speeds().omegaRadiansPerSecond, 1e-4);
+    }
+
+    @Test
+    public void testStaticUnstickSpinsWithPeerNear() {
+        Pose2d robotPose = new Pose2d(5.0, 4.0, new Rotation2d());
+        Pose2d peerPose = new Pose2d(5.5, 4.0, new Rotation2d());
+
+        // Trigger unstick (stall without peer knowledge at arming time)
+        for (int i = 0; i < 10; i++) {
+            contactWatchdog.updateUnstickOnly(
+                    new ChassisSpeeds(0.05, 0.0, 0.0),
+                    new ChassisSpeeds(2.0, 0.0, 0.0),
+                    0.02);
+        }
+        assertTrue(contactWatchdog.isPirouetteActive());
+
+        // Arbitrate with a peer in bumper range: Tier 2 keeps the pirouette.
+        RecoveryResult res = StuckRecoveryArbiter.arbitrate(
+                new ChassisSpeeds(1.0, 0.0, 0.0),
+                robotPose,
+                contactWatchdog,
+                targetProgressWatchdog,
+                TargetProgressWatchdog.Result.IDLE,
+                peerPose,
+                List.of(peerPose),
+                false,
+                false);
+
+        assertEquals(RecoveryTier.STATIC_UNSTICK, res.activeTier());
         assertEquals(6.0, res.speeds().omegaRadiansPerSecond, 1e-4);
     }
 

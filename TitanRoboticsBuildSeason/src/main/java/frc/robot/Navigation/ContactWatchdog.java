@@ -116,6 +116,23 @@ public class ContactWatchdog {
     private int recoveryCount = 0;
 
     // Pirouette escape state (TrajectoryController parity)
+    /**
+     * Escape spin rate when a peer is close enough to be the wedge (pin or
+     * deadlock context). Preserved: rotating out of bumper contact needs the
+     * aggressive rate.
+     */
+    public static final double UNSTICK_SPIN_OMEGA_RPS = 6.0;
+    /**
+     * Escape spin cap against pure geometry (no peer within {@link #PROXIMITY_M}).
+     * A wall/hub/trench wedge is escaped by translation; the heading only turns
+     * to face the escape direction. The old unconditional 6.0 rad/s made every
+     * static-wedge escape a ~1 rev/s pirouette (measured as the dominant
+     * spinning in seed-2026 headless replays).
+     */
+    public static final double UNSTICK_FACE_OMEGA_MAX_RPS = 2.5;
+    /** Proportional gain steering the heading toward the escape direction. */
+    public static final double UNSTICK_FACE_KP = 3.0;
+
     private double unstickEndTime = -1.0;
     private Translation2d unstickVector = new Translation2d();
     private int unstickAttempts = 0;
@@ -422,11 +439,45 @@ public class ContactWatchdog {
      * state, which would apply them twice.
      */
     public synchronized ChassisSpeeds applyUnstickOnly(ChassisSpeeds commanded) {
+        return applyUnstickOnly(commanded, Double.MAX_VALUE, null);
+    }
+
+    /**
+     * Peer-independent geometry escape with a peer-gated spin rate.
+     *
+     * @param commanded        fallback speeds when no escape is latched
+     * @param nearestPeerDistM distance to the nearest peer robot, or
+     *                         {@link Double#MAX_VALUE} when unknown/alone
+     * @param robotHeading     current heading, used to face the escape
+     *                         direction; {@code null} holds heading
+     */
+    public synchronized ChassisSpeeds applyUnstickOnly(
+            ChassisSpeeds commanded, double nearestPeerDistM, Rotation2d robotHeading) {
         ChassisSpeeds base = (commanded != null) ? commanded : new ChassisSpeeds();
         if (Timer.getFPGATimestamp() < unstickEndTime) {
-            return new ChassisSpeeds(unstickVector.getX(), unstickVector.getY(), 6.0);
+            return new ChassisSpeeds(
+                    unstickVector.getX(), unstickVector.getY(),
+                    unstickEscapeOmega(nearestPeerDistM, robotHeading));
         }
         return base;
+    }
+
+    /**
+     * Escape spin rate, single-owned by both escape paths ({@link #applyUnstickOnly}
+     * and {@link #arbitrate}). A nearby peer means bumper contact, which keeps
+     * the aggressive pirouette; pure geometry gets a capped face-the-escape
+     * turn instead.
+     */
+    double unstickEscapeOmega(double nearestPeerDistM, Rotation2d robotHeading) {
+        if (nearestPeerDistM < PROXIMITY_M) {
+            return UNSTICK_SPIN_OMEGA_RPS;
+        }
+        if (robotHeading == null || unstickVector.getNorm() < 1e-4) {
+            return 0.0;
+        }
+        double err = unstickVector.getAngle().minus(robotHeading).getRadians();
+        return Math.max(-UNSTICK_FACE_OMEGA_MAX_RPS,
+                Math.min(UNSTICK_FACE_OMEGA_MAX_RPS, UNSTICK_FACE_KP * err));
     }
 
     /**
@@ -448,7 +499,10 @@ public class ContactWatchdog {
         }
 
         if (now < unstickEndTime) {
-            return new ChassisSpeeds(unstickVector.getX(), unstickVector.getY(), 6.0);
+            double nearestPeerDistM = (opponentPose == null) ? Double.MAX_VALUE
+                    : currentPose.getTranslation().getDistance(opponentPose.getTranslation());
+            return new ChassisSpeeds(unstickVector.getX(), unstickVector.getY(),
+                    unstickEscapeOmega(nearestPeerDistM, currentPose.getRotation()));
         }
 
         if (recoveryTimeSec > 0.0) {

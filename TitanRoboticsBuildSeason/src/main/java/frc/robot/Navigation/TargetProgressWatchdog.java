@@ -77,6 +77,17 @@ public final class TargetProgressWatchdog {
     /** How long a blacklisted fuel point stays skipped. */
     public static final double BLACKLIST_TTL_SEC = 20.0;
 
+    /**
+     * Cumulative stalled seconds under contact-recovery suppression before the
+     * loop-breaker fires anyway. Three full {@link #GIVEUP_SEC} windows: a
+     * legitimate sub-9 s maneuver can never trip it, but a bot wedged for
+     * minutes — which holds a contact recovery active ~100% of the time and
+     * would otherwise keep the 3 s accumulators at zero forever (measured:
+     * 115 s STATIC_UNSTICK with no watchdog progress) — invalidates its target
+     * instead of pinning forever.
+     */
+    public static final double SUPPRESSED_GIVEUP_SEC = 9.0;
+
     /** Duration of the escape maneuver after a give-up. */
     public static final double ESCAPE_SEC = 1.2;
 
@@ -164,6 +175,14 @@ public final class TargetProgressWatchdog {
      */
     private int consecutiveStaticEscapes = 0;
 
+    /**
+     * Stalled seconds accumulated while progress timeouts are suppressed by an
+     * active contact recovery. Unlike {@link #pinnedSec}, this is never zeroed
+     * by suppression itself — only by a target change, real motion, or an
+     * unsuppressed tick. See the suppression branch in {@link #update}.
+     */
+    private double suppressedPinnedSec = 0.0;
+
     /** Seconds holding inside ARRIVED_M while intaking without collecting before abandoning. */
     public static final double HARVEST_ARRIVAL_ABANDON_SEC = 1.8;
     private Translation2d lastHarvestTargetPos = null;
@@ -244,14 +263,43 @@ public final class TargetProgressWatchdog {
             return Result.IDLE;
         }
 
-        // When a higher-priority contact recovery is active, pause/reset progress
-        // timeouts so intentional safety backoffs or pirouettes do not trigger
-        // false target abandonment.
+        // When a higher-priority contact recovery is active, pause abandonment
+        // during the safety maneuver so intentional backoffs or pirouettes do
+        // not trigger false target abandonment — but do NOT erase the stall
+        // record. Zeroing here kept the 3 s accumulators at zero through entire
+        // wedges (a pinned bot holds a recovery active ~100% of the time),
+        // switching the loop-breaker off for the whole pin. Accumulate through
+        // suppression on the longer fuse instead. The fuse is velocity-based,
+        // not target-based, so a churning target cannot reset it — a pinned
+        // robot keeps accumulating whether its aim drifts or stays still. Only
+        // motion (or leaving suppression entirely) clears the budget.
+        Translation2d suppressedTarget = navTarget.getTranslation();
+        double suppressedCommandedSpeed = Math.hypot(
+                commanded.vxMetersPerSecond, commanded.vyMetersPerSecond);
+        boolean suppressedPinned = actual != null
+                && suppressedCommandedSpeed >= COMMAND_MIN_MPS
+                && Math.hypot(actual.vxMetersPerSecond, actual.vyMetersPerSecond) < STALL_ACTUAL_SPEED_MAX;
         if (suppressProgressTimeout) {
-            pinnedSec = 0.0;
-            noProgressSec = 0.0;
+            if (suppressedPinned) {
+                suppressedPinnedSec += dt;
+            } else {
+                suppressedPinnedSec = Math.max(0.0, suppressedPinnedSec - dt * 2.0);
+            }
+            if (suppressedPinnedSec >= SUPPRESSED_GIVEUP_SEC) {
+                double trippedAt = suppressedPinnedSec;
+                escapeFrom = suppressedTarget;
+                escapeRemainingSec = ESCAPE_SEC;
+                List<Translation2d> blocked = List.of(suppressedTarget);
+                blacklist(suppressedTarget, Timer.getFPGATimestamp());
+                suppressedPinnedSec = 0.0;
+                resetProgress();
+                consecutiveStaticEscapes = 0;
+                trackedTarget = suppressedTarget;
+                return new Result(true, escapeVector(pose), blocked, trippedAt, ESCAPE_SEC);
+            }
             return Result.IDLE;
         }
+        suppressedPinnedSec = 0.0;
 
         Translation2d target = navTarget.getTranslation();
         double distance = pose.getTranslation().getDistance(target);
@@ -543,6 +591,7 @@ public final class TargetProgressWatchdog {
         escapeFrom = new Translation2d();
         consecutiveStaticEscapes = 0;
         pinnedSec = 0.0;
+        suppressedPinnedSec = 0.0;
         lastHarvestTargetPos = null;
         harvestArrivalHoldSec = 0.0;
         lastHarvestFuelCount = 0;

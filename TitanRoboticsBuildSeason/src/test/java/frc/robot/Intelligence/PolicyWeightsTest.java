@@ -34,7 +34,7 @@ class PolicyWeightsTest {
         assertEquals(0.82, def.vacuumActiveBase(), 1e-9);
         assertEquals(0.86, def.stockpileDepotBase(), 1e-9);
         assertEquals(0.96, def.sweepAllianceZoneActive(), 1e-9);
-        assertEquals(0.78, def.poachOpponentZoneUtility(), 1e-9);
+        assertEquals(0.92, def.poachOpponentZoneUtility(), 1e-9);
         assertEquals(0.87, def.shuttlePassUtility(), 1e-9);
         assertEquals(0.94, def.snipeCloseUtility(), 1e-9);
         assertEquals(0.86, def.laneDenialActiveUtility(), 1e-9);

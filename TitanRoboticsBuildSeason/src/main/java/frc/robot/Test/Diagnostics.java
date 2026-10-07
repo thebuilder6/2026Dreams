@@ -311,8 +311,16 @@ public class Diagnostics implements Subsystem {
             case VISION_LINK:
                 // Step 6: Vision Link Check (14 to 15 seconds total)
                 if (elapsedStep >= 1.0) {
-                    boolean pass = RobotBase.isSimulation() || vision.hasTarget() || vision.getIO() != null;
-                    scorecard.put("Vision", pass ? "PASS" : "WARN (No Camera Stream)");
+                    boolean pass = RobotBase.isSimulation() || (vision.isAllCamerasConnected() && !vision.getCameras().isEmpty());
+                    int onlineCount = 0;
+                    for (var c : vision.getCameras()) {
+                        if (c.isConnected()) onlineCount++;
+                    }
+                    int totalCount = vision.getCameras().size();
+                    String status = pass
+                            ? "PASS (" + onlineCount + "/" + totalCount + " Online)"
+                            : "WARN (" + onlineCount + "/" + totalCount + " Online)";
+                    scorecard.put("Vision", status);
 
                     // Complete Sequence
                     finalizePreFlight();

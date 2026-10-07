@@ -1,289 +1,391 @@
 package frc.robot.Subsystems;
 
-import static edu.wpi.first.units.Units.DegreesPerSecond;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 import edu.wpi.first.math.Matrix;
 import edu.wpi.first.math.VecBuilder;
 import edu.wpi.first.math.filter.MedianFilter;
 import edu.wpi.first.math.geometry.Pose2d;
+import edu.wpi.first.math.geometry.Pose3d;
+import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.math.numbers.N1;
 import edu.wpi.first.math.numbers.N3;
 import edu.wpi.first.math.util.Units;
 import edu.wpi.first.wpilibj.RobotBase;
+import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import frc.robot.Data.Constants.DrivebaseConstants;
 import frc.robot.Interfaces.Subsystem;
+import frc.robot.Navigation.FieldMap;
+import frc.robot.Subsystems.vision.CameraConfig;
+import frc.robot.Subsystems.vision.CameraConfig.CameraRole;
+import frc.robot.Subsystems.vision.CameraConfig.CameraType;
+import frc.robot.Subsystems.vision.VisionConfig;
 import frc.robot.Subsystems.vision.VisionIO;
 import frc.robot.Subsystems.vision.VisionIOInputsAutoLogged;
 import frc.robot.Subsystems.vision.VisionIOLimelight;
 import frc.robot.Subsystems.vision.VisionIOPhotonVision;
 import frc.robot.Subsystems.vision.VisionIOSim;
-import edu.wpi.first.math.geometry.Pose3d;
+import frc.robot.Telemetry.Alert;
+import frc.robot.Telemetry.Alert.AlertType;
 
 /**
- * Vision Subsystem following the AdvantageKit IO abstraction pattern.
- * Manages camera inputs, MegaTag2 pose gating, and std-dev dynamic weighting.
+ * Overhauled Vision Subsystem supporting arbitrary N-camera configurations,
+ * declarative camera definitions, live dashboard tuning, multi-tag pose fusion,
+ * connection watchdogs, and neural object tracking.
  */
 public class Vision implements Subsystem {
 
+    public enum RejectionReason {
+        ACCEPTED("Accepted into Pose Estimator"),
+        NO_TARGET("No AprilTag Visible"),
+        HIGH_DISTANCE("Distance Exceeds Threshold"),
+        HIGH_YAW_RATE("Angular Velocity Exceeds Threshold"),
+        HIGH_LATENCY("Frame Latency Exceeds Threshold"),
+        HIGH_AMBIGUITY("Single-Tag Ambiguity Exceeds Threshold"),
+        OUTSIDE_FIELD("Pose Estimate Outside Field Boundaries"),
+        CAMERA_OFFLINE("Camera Disconnected or Stale"),
+        VISION_DISABLED("Vision Estimation Disabled");
+
+        public final String description;
+
+        RejectionReason(String description) {
+            this.description = description;
+        }
+    }
+
+    /**
+     * Managed camera tracker containing state, filters, and telemetry for one camera.
+     */
+    public static class ManagedCamera {
+        private final CameraConfig config;
+        private final VisionIO io;
+        private final VisionIOInputsAutoLogged inputs = new VisionIOInputsAutoLogged();
+        private final MedianFilter tagDistFilter = new MedianFilter(5);
+
+        private double filteredTagDist = 0.0;
+        private boolean isAccepted = false;
+        private double stdDev = 0.0;
+        private RejectionReason rejectionReason = RejectionReason.NO_TARGET;
+        private double lastFrameTimestamp = 0.0;
+        private boolean isConnected = RobotBase.isSimulation();
+        private final Alert disconnectAlert;
+
+        public ManagedCamera(CameraConfig config, VisionIO io) {
+            this.config = config;
+            this.io = io;
+            this.disconnectAlert = new Alert("Vision", "Camera [" + config.getName() + "] is offline", AlertType.WARNING);
+        }
+
+        public CameraConfig getConfig() {
+            return config;
+        }
+
+        public VisionIO getIO() {
+            return io;
+        }
+
+        public VisionIOInputsAutoLogged getInputs() {
+            return inputs;
+        }
+
+        public String getName() {
+            return config.getName();
+        }
+
+        public boolean isAccepted() {
+            return isAccepted;
+        }
+
+        public double getStdDev() {
+            return stdDev;
+        }
+
+        public double getFilteredTagDist() {
+            return filteredTagDist;
+        }
+
+        public RejectionReason getRejectionReason() {
+            return rejectionReason;
+        }
+
+        public boolean isConnected() {
+            return isConnected;
+        }
+
+        private void updateConnectionWatchdog(double now) {
+            if (inputs.isConnected) {
+                lastFrameTimestamp = now;
+                isConnected = true;
+            } else if (inputs.hasTarget || inputs.tagCount > 0) {
+                lastFrameTimestamp = now;
+                isConnected = true;
+            } else {
+                isConnected = (now - lastFrameTimestamp < 1.5) || RobotBase.isSimulation();
+            }
+            disconnectAlert.set(!isConnected && config.isEnabled());
+        }
+    }
+
     private static Vision instance;
 
-    private final VisionIO primaryIO;
-    private final VisionIO secondaryIO;
-    private final VisionIOInputsAutoLogged primaryInputs = new VisionIOInputsAutoLogged();
-    private final VisionIOInputsAutoLogged secondaryInputs = new VisionIOInputsAutoLogged();
-
-    // Telemetry state
-    private double stdDev = 0;
-    private boolean isAccepted = false;
-
-    // Signal Filters: 5-sample median filters reject optical noise, reflections, and transient spike frames
-    private final MedianFilter primaryTagDistFilter = new MedianFilter(5);
-    private final MedianFilter secondaryTagDistFilter = new MedianFilter(5);
+    private final List<ManagedCamera> managedCameras = new ArrayList<>();
     private final MedianFilter gamePieceDistFilter = new MedianFilter(5);
-    private double filteredPrimaryTagDist = 0.0;
-    private double filteredSecondaryTagDist = 0.0;
 
     public static synchronized Vision getInstance() {
         if (instance == null) {
-            VisionIO primary = RobotBase.isSimulation()
-                    ? new VisionIOSim(VisionIOSim.CameraType.LIMELIGHT)
-                    : new VisionIOLimelight("limelight-front");
-            VisionIO secondary = RobotBase.isSimulation()
-                    ? new VisionIOSim(VisionIOSim.CameraType.RUBIK_PI)
-                    : new VisionIOPhotonVision("rubik-pi-coprocessor");
-            instance = new Vision(primary, secondary);
+            List<CameraConfig> configs = VisionConfig.getCameras();
+            List<VisionIO> ios = new ArrayList<>();
+            for (CameraConfig cfg : configs) {
+                if (RobotBase.isSimulation()) {
+                    ios.add(new VisionIOSim(cfg));
+                } else if (cfg.getType() == CameraType.LIMELIGHT) {
+                    ios.add(new VisionIOLimelight(cfg));
+                } else {
+                    ios.add(new VisionIOPhotonVision(cfg));
+                }
+            }
+            instance = new Vision(configs, ios);
         }
         return instance;
     }
 
-    public Vision(VisionIO primaryIO) {
-        this(primaryIO, RobotBase.isSimulation()
-                ? new VisionIOSim(VisionIOSim.CameraType.RUBIK_PI)
-                : new VisionIOPhotonVision("rubik-pi-coprocessor"));
+    /**
+     * Primary constructor accepting configured camera definitions and paired IO implementations.
+     */
+    public Vision(List<CameraConfig> configs, List<VisionIO> ios) {
+        for (int i = 0; i < configs.size(); i++) {
+            CameraConfig cfg = configs.get(i);
+            VisionIO io = (i < ios.size()) ? ios.get(i) : new VisionIOSim(cfg);
+            managedCameras.add(new ManagedCamera(cfg, io));
+        }
+        SubsystemManager.registerSubsystem(this);
     }
 
+    /**
+     * Legacy convenience constructor for single-camera setup.
+     */
+    public Vision(VisionIO primaryIO) {
+        this(
+                primaryIO,
+                RobotBase.isSimulation()
+                        ? new VisionIOSim(CameraConfig.photonVision("rubik-pi-coprocessor"))
+                        : new VisionIOPhotonVision("rubik-pi-coprocessor"));
+    }
+
+    /**
+     * Legacy convenience constructor for dual-camera setup.
+     */
     public Vision(VisionIO primaryIO, VisionIO secondaryIO) {
-        this.primaryIO = primaryIO;
-        this.secondaryIO = secondaryIO;
+        CameraConfig primaryCfg = CameraConfig.limelight("limelight-front")
+                .withRole(CameraRole.HYBRID)
+                .withStdDevMultiplier(1.0)
+                .withMegaTag2(true);
+        CameraConfig secondaryCfg = CameraConfig.photonVision("rubik-pi-coprocessor")
+                .withRole(CameraRole.HYBRID)
+                .withStdDevMultiplier(1.2);
+
+        managedCameras.add(new ManagedCamera(primaryCfg, primaryIO));
+        if (secondaryIO != null) {
+            managedCameras.add(new ManagedCamera(secondaryCfg, secondaryIO));
+        }
         SubsystemManager.registerSubsystem(this);
     }
 
     @Override
     public void update() {
+        VisionConfig.updateTunables();
+        boolean masterEnabled = VisionConfig.isMasterEnabled();
+
         SwerveBase swerve = SwerveBase.getInstance();
         double yawRateDegPerSec = swerve.getGyroYawVelocityDegPerSec();
         double yawRateAbs = Math.abs(yawRateDegPerSec);
+        double headingDeg = swerve.getHeading().getDegrees();
+        double pitchDeg = swerve.getPitch().getDegrees();
+        double now = Timer.getFPGATimestamp();
 
-        // ── 1. Primary Camera (Limelight MegaTag2) ───────────────────────────
-        primaryIO.setRobotOrientation(
-                swerve.getHeading().getDegrees(),
-                yawRateDegPerSec,
-                swerve.getPitch().getDegrees(),
-                0.0);
-
-        primaryIO.updateInputs(primaryInputs);
-        org.littletonrobotics.junction.Logger.processInputs("Vision/Primary", primaryInputs);
-
-        if (primaryInputs.hasTarget && primaryInputs.tagCount > 0) {
-            filteredPrimaryTagDist = primaryTagDistFilter.calculate(primaryInputs.avgTagDist);
-            boolean doReject = false;
-            if (yawRateAbs > DrivebaseConstants.VISION_MAX_YAW_RATE) doReject = true;
-            if (filteredPrimaryTagDist > DrivebaseConstants.VISION_MAX_TAG_DIST) doReject = true;
-            if (primaryInputs.latencyMs > 150.0) doReject = true;
-
-            stdDev = DrivebaseConstants.VISION_BASE_STD_DEV;
-            if (primaryInputs.tagCount == 1) stdDev += DrivebaseConstants.VISION_SINGLE_TAG_PENALTY;
-            stdDev += (filteredPrimaryTagDist * filteredPrimaryTagDist) / DrivebaseConstants.VISION_DIST_PENALTY_DIVISOR;
-
-            isAccepted = !doReject;
-            if (isAccepted) {
-                Matrix<N3, N1> visionStdDevs = VecBuilder.fill(stdDev, stdDev, Units.degreesToRadians(900));
-                swerve.addVisionMeasurement(primaryInputs.estimatedPose, primaryInputs.timestamp, visionStdDevs);
+        for (ManagedCamera camera : managedCameras) {
+            // Feed gyro orientation to MegaTag2 Limelights
+            if (camera.config.getType() == CameraType.LIMELIGHT && camera.config.isMegaTag2()) {
+                camera.io.setRobotOrientation(headingDeg, yawRateDegPerSec, pitchDeg, 0.0);
             }
-        } else {
-            primaryTagDistFilter.reset();
-            filteredPrimaryTagDist = 0.0;
-            isAccepted = false;
-        }
 
-        // ── 2. Secondary Coprocessor (Orange Pi 5 PhotonVision) ─────────────
-        if (secondaryIO != null) {
-            secondaryIO.updateInputs(secondaryInputs);
-            org.littletonrobotics.junction.Logger.processInputs("Vision/Secondary", secondaryInputs);
+            // Update IO and record to AdvantageKit
+            camera.io.updateInputs(camera.inputs);
+            org.littletonrobotics.junction.Logger.processInputs("Vision/" + camera.getName(), camera.inputs);
+            camera.updateConnectionWatchdog(now);
 
-            if (secondaryInputs.hasTarget && secondaryInputs.tagCount > 0 && secondaryInputs.latencyMs < 150.0) {
-                filteredSecondaryTagDist = secondaryTagDistFilter.calculate(secondaryInputs.avgTagDist);
-                if (filteredSecondaryTagDist < DrivebaseConstants.VISION_MAX_TAG_DIST && yawRateAbs <= DrivebaseConstants.VISION_MAX_YAW_RATE) {
-                    double secStdDev = DrivebaseConstants.VISION_BASE_STD_DEV + 0.15;
-                    if (secondaryInputs.tagCount == 1) secStdDev += DrivebaseConstants.VISION_SINGLE_TAG_PENALTY;
-                    secStdDev += (filteredSecondaryTagDist * filteredSecondaryTagDist) / DrivebaseConstants.VISION_DIST_PENALTY_DIVISOR;
+            // Gating checks
+            if (!masterEnabled || !camera.config.isEnabled()) {
+                camera.rejectionReason = RejectionReason.VISION_DISABLED;
+                camera.isAccepted = false;
+                continue;
+            }
 
-                    Matrix<N3, N1> secStdDevs = VecBuilder.fill(secStdDev, secStdDev, Units.degreesToRadians(900));
-                    swerve.addVisionMeasurement(secondaryInputs.estimatedPose, secondaryInputs.timestamp, secStdDevs);
-                }
+            if (!camera.isConnected) {
+                camera.rejectionReason = RejectionReason.CAMERA_OFFLINE;
+                camera.isAccepted = false;
+                continue;
+            }
+
+            if (!camera.inputs.hasTarget || camera.inputs.tagCount <= 0) {
+                camera.tagDistFilter.reset();
+                camera.filteredTagDist = 0.0;
+                camera.rejectionReason = RejectionReason.NO_TARGET;
+                camera.isAccepted = false;
+                continue;
+            }
+
+            camera.filteredTagDist = camera.tagDistFilter.calculate(camera.inputs.avgTagDist);
+
+            // Rejection Gates Matrix
+            if (yawRateAbs > VisionConfig.MAX_YAW_RATE.get()) {
+                camera.rejectionReason = RejectionReason.HIGH_YAW_RATE;
+                camera.isAccepted = false;
+            } else if (camera.inputs.latencyMs > VisionConfig.MAX_LATENCY_MS.get()) {
+                camera.rejectionReason = RejectionReason.HIGH_LATENCY;
+                camera.isAccepted = false;
+            } else if (camera.filteredTagDist > VisionConfig.MAX_TAG_DIST.get()
+                    || (camera.inputs.tagCount == 1 && camera.filteredTagDist > VisionConfig.SINGLE_TAG_MAX_DIST.get())) {
+                camera.rejectionReason = RejectionReason.HIGH_DISTANCE;
+                camera.isAccepted = false;
+            } else if (camera.inputs.tagCount == 1 && camera.inputs.ambiguity > VisionConfig.MAX_AMBIGUITY.get() && camera.inputs.ambiguity > 0.0) {
+                camera.rejectionReason = RejectionReason.HIGH_AMBIGUITY;
+                camera.isAccepted = false;
             } else {
-                secondaryTagDistFilter.reset();
-                filteredSecondaryTagDist = 0.0;
+                // Field Boundary Sanity Gate
+                double poseX = camera.inputs.estimatedPose.getX();
+                double poseY = camera.inputs.estimatedPose.getY();
+                if (poseX < -0.5 || poseX > FieldMap.FIELD_LENGTH + 0.5 || poseY < -0.5 || poseY > FieldMap.FIELD_WIDTH + 0.5) {
+                    camera.rejectionReason = RejectionReason.OUTSIDE_FIELD;
+                    camera.isAccepted = false;
+                } else {
+                    camera.rejectionReason = RejectionReason.ACCEPTED;
+                    camera.isAccepted = true;
+                }
+            }
+
+            // Dynamic Standard Deviation Weighting
+            if (camera.isAccepted) {
+                double stdDev = VisionConfig.BASE_STD_DEV.get();
+                if (camera.inputs.tagCount == 1) {
+                    stdDev += VisionConfig.SINGLE_TAG_PENALTY.get();
+                }
+                stdDev += (camera.filteredTagDist * camera.filteredTagDist) / VisionConfig.DIST_PENALTY_DIVISOR.get();
+                stdDev *= camera.config.getStdDevMultiplier();
+                camera.stdDev = stdDev;
+
+                Matrix<N3, N1> visionStdDevs = VecBuilder.fill(stdDev, stdDev, Units.degreesToRadians(900));
+                swerve.addVisionMeasurement(camera.inputs.estimatedPose, camera.inputs.timestamp, visionStdDevs);
             }
         }
     }
+
+    public List<ManagedCamera> getCameras() {
+        return Collections.unmodifiableList(managedCameras);
+    }
+
+    public ManagedCamera getCamera(String name) {
+        for (ManagedCamera c : managedCameras) {
+            if (c.getName().equalsIgnoreCase(name)) {
+                return c;
+            }
+        }
+        return null;
+    }
+
+    public ManagedCamera getPrimaryCamera() {
+        return managedCameras.isEmpty() ? null : managedCameras.get(0);
+    }
+
+    public ManagedCamera getSecondaryCamera() {
+        return managedCameras.size() > 1 ? managedCameras.get(1) : null;
+    }
+
+    public boolean isCameraConnected(String name) {
+        ManagedCamera cam = getCamera(name);
+        return cam != null && cam.isConnected();
+    }
+
+    public boolean isAllCamerasConnected() {
+        if (managedCameras.isEmpty()) return false;
+        for (ManagedCamera c : managedCameras) {
+            if (c.getConfig().isEnabled() && !c.isConnected()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public RejectionReason getRejectionReason(String name) {
+        ManagedCamera cam = getCamera(name);
+        return cam != null ? cam.getRejectionReason() : RejectionReason.CAMERA_OFFLINE;
+    }
+
+    // ── Target & Pose Queries ────────────────────────────────────────────────
 
     public boolean hasTarget() {
-        return primaryInputs.hasTarget || (secondaryInputs != null && secondaryInputs.hasTarget);
-    }
-
-    public boolean hasGamePiece() {
-        return (secondaryInputs != null && secondaryInputs.hasGamePiece) || primaryInputs.hasGamePiece;
-    }
-
-    public double getGamePieceYaw() {
-        if (secondaryInputs != null && secondaryInputs.hasGamePiece) {
-            return secondaryInputs.gamePieceYaw;
+        for (ManagedCamera c : managedCameras) {
+            if (c.inputs.hasTarget && c.inputs.tagCount > 0) return true;
         }
-        return primaryInputs.gamePieceYaw;
-    }
-
-    public double getGamePiecePitch() {
-        if (secondaryInputs != null && secondaryInputs.hasGamePiece) {
-            return secondaryInputs.gamePiecePitch;
-        }
-        return primaryInputs.gamePiecePitch;
-    }
-
-    public double getGamePieceArea() {
-        if (secondaryInputs != null && secondaryInputs.hasGamePiece) {
-            return secondaryInputs.gamePieceArea;
-        }
-        return primaryInputs.gamePieceArea;
-    }
-
-    /**
-     * Calculates distance from camera to the game piece on the carpet using trigonometry.
-     * d = (h_camera - h_target) / tan(pitch_camera + pitch_target)
-     * @return Distance in meters, or 0.0 if no game piece is detected
-     */
-    public double getGamePieceDistanceMeters() {
-        if (!hasGamePiece()) {
-            gamePieceDistFilter.reset();
-            return 0.0;
-        }
-        double cameraHeight = DrivebaseConstants.RUBIK_PI_CAMERA_HEIGHT_METERS;
-        double targetHeight = DrivebaseConstants.FUEL_TARGET_HEIGHT_METERS;
-        double cameraPitchRads = Units.degreesToRadians(DrivebaseConstants.RUBIK_PI_CAMERA_PITCH_DEG);
-        double targetPitchRads = Units.degreesToRadians(getGamePiecePitch());
-
-        double totalAngleRads = cameraPitchRads + targetPitchRads;
-        // Avoid division by zero or negative distances if looking parallel/up
-        if (Math.abs(Math.tan(totalAngleRads)) < 0.01 || totalAngleRads >= 0) {
-            return 0.0;
-        }
-
-        // Camera is higher than target, total angle is negative (tilted down)
-        double rawDist = Math.abs((cameraHeight - targetHeight) / Math.tan(totalAngleRads));
-        return gamePieceDistFilter.calculate(rawDist);
-    }
-
-    /**
-     * Calculates the robot-relative (X, Y) Translation2d to the detected game piece.
-     * @return Translation2d in robot frame (+X forward, +Y left)
-     */
-    public edu.wpi.first.math.geometry.Translation2d getGamePieceRobotRelativeTranslation() {
-        double distance = getGamePieceDistanceMeters();
-        if (distance <= 0.01) {
-            return new edu.wpi.first.math.geometry.Translation2d();
-        }
-        double yawRads = -Units.degreesToRadians(getGamePieceYaw()); // CCW positive
-        double forward = distance * Math.cos(yawRads) + DrivebaseConstants.RUBIK_PI_CAMERA_FORWARD_OFFSET_METERS;
-        double left = distance * Math.sin(yawRads);
-        return new edu.wpi.first.math.geometry.Translation2d(forward, left);
-    }
-
-    /**
-     * Projects the detected game piece to global field coordinates using current odometry.
-     * @return Pose2d of game piece on field, or null if no target detected
-     */
-    public Pose2d getGamePieceFieldPose() {
-        if (!hasGamePiece()) {
-            return null;
-        }
-        Pose2d robotPose = SwerveBase.getInstance().getPose();
-        edu.wpi.first.math.geometry.Translation2d robotRel = getGamePieceRobotRelativeTranslation();
-        edu.wpi.first.math.geometry.Translation2d fieldPos = robotPose.getTranslation().plus(
-                robotRel.rotateBy(robotPose.getRotation()));
-        return new Pose2d(fieldPos, robotPose.getRotation());
-    }
-
-    /**
-     * Projects a detected robot bumper bounding box onto the field ground plane (Z = 0)
-     * and registers it with DynamicRouter.
-     *
-     * @param targetYaw Camera-relative horizontal angle (degrees, +left)
-     * @param targetPitch Camera-relative vertical angle (degrees, +up)
-     * @param radius Bumper bounding radius (meters)
-     * @return Global field Translation2d of the obstacle center, or null if invalid
-     */
-    public edu.wpi.first.math.geometry.Translation2d registerDetectedBumperObstacle(
-            double targetYaw, double targetPitch, double radius) {
-
-        double cameraHeight = DrivebaseConstants.RUBIK_PI_CAMERA_HEIGHT_METERS; // 0.45m
-        double bumperHeight = 0.12; // Bumper center approx 12cm off carpet
-        double cameraPitchRads = Units.degreesToRadians(DrivebaseConstants.RUBIK_PI_CAMERA_PITCH_DEG); // -15 deg
-        double targetPitchRads = Units.degreesToRadians(targetPitch);
-
-        double totalAngleRads = cameraPitchRads + targetPitchRads;
-        if (totalAngleRads >= 0 || Math.abs(Math.tan(totalAngleRads)) < 0.01) {
-            return null;
-        }
-
-        double groundDist = Math.abs((cameraHeight - bumperHeight) / Math.tan(totalAngleRads));
-        if (groundDist > 7.0 || groundDist < 0.3) {
-            return null;
-        }
-
-        double yawRads = Units.degreesToRadians(targetYaw);
-        double relX = groundDist * Math.cos(yawRads) + DrivebaseConstants.RUBIK_PI_CAMERA_FORWARD_OFFSET_METERS;
-        double relY = groundDist * Math.sin(yawRads);
-
-        Pose2d robotPose = SwerveBase.getInstance().getPose();
-        edu.wpi.first.math.geometry.Translation2d robotRel = new edu.wpi.first.math.geometry.Translation2d(relX, relY);
-        edu.wpi.first.math.geometry.Translation2d fieldPos = robotPose.getTranslation().plus(robotRel.rotateBy(robotPose.getRotation()));
-
-        frc.robot.Navigation.DynamicRouter.registerObstacle(fieldPos, new edu.wpi.first.math.geometry.Translation2d(), radius, 0.40);
-        return fieldPos;
+        return false;
     }
 
     public double getTX() {
-        return primaryInputs.targetTx;
+        ManagedCamera primary = getPrimaryCamera();
+        return primary != null ? primary.inputs.targetTx : 0.0;
     }
 
     public double getTY() {
-        return primaryInputs.targetTy;
+        ManagedCamera primary = getPrimaryCamera();
+        return primary != null ? primary.inputs.targetTy : 0.0;
     }
 
     public Pose2d getEstimatedPose() {
-        return primaryInputs.estimatedPose;
+        ManagedCamera primary = getPrimaryCamera();
+        return primary != null ? primary.inputs.estimatedPose : new Pose2d();
     }
 
     public boolean isAccepted() {
-        return isAccepted;
+        for (ManagedCamera c : managedCameras) {
+            if (c.isAccepted) return true;
+        }
+        return false;
+    }
+
+    public double getFilteredPrimaryTagDist() {
+        ManagedCamera primary = getPrimaryCamera();
+        return primary != null ? primary.getFilteredTagDist() : 0.0;
+    }
+
+    public double getFilteredSecondaryTagDist() {
+        ManagedCamera secondary = getSecondaryCamera();
+        return secondary != null ? secondary.getFilteredTagDist() : 0.0;
     }
 
     public VisionIO getIO() {
-        return primaryIO;
+        ManagedCamera primary = getPrimaryCamera();
+        return primary != null ? primary.getIO() : null;
     }
 
     public VisionIO getSecondaryIO() {
-        return secondaryIO;
+        ManagedCamera secondary = getSecondaryCamera();
+        return secondary != null ? secondary.getIO() : null;
     }
 
     public VisionIOInputsAutoLogged getInputs() {
-        return primaryInputs;
+        ManagedCamera primary = getPrimaryCamera();
+        return primary != null ? primary.getInputs() : new VisionIOInputsAutoLogged();
     }
 
     public VisionIOInputsAutoLogged getSecondaryInputs() {
-        return secondaryInputs;
+        ManagedCamera secondary = getSecondaryCamera();
+        return secondary != null ? secondary.getInputs() : new VisionIOInputsAutoLogged();
     }
+
+    // ── Target Estimates & Calibration Stubs ─────────────────────────────────
 
     public static class VisionTargetEstimate {
         public final Pose3d pose;
@@ -297,92 +399,241 @@ public class Vision implements Subsystem {
         }
     }
 
-    /**
-     * Get the latest Limelight target pose estimate
-     */
     public VisionTargetEstimate getLimelightTarget() {
-        if (!primaryInputs.hasTarget || primaryInputs.tagCount == 0) {
-            return null;
+        for (ManagedCamera c : managedCameras) {
+            if (c.config.getType() == CameraType.LIMELIGHT && c.inputs.hasTarget && c.inputs.tagCount > 0) {
+                return new VisionTargetEstimate(c.inputs.estimatedPose, c.inputs.avgTagDist, c.inputs.timestamp);
+            }
         }
-        return new VisionTargetEstimate(primaryInputs.estimatedPose, primaryInputs.avgTagDist, primaryInputs.timestamp);
+        return null;
     }
 
-    /**
-     * Get the latest PhotonVision target
-     */
     public VisionTargetEstimate getPhotonTarget() {
-        if (secondaryInputs == null || !secondaryInputs.hasTarget || secondaryInputs.tagCount == 0) {
-            return null;
+        for (ManagedCamera c : managedCameras) {
+            if (c.config.getType() == CameraType.PHOTONVISION && c.inputs.hasTarget && c.inputs.tagCount > 0) {
+                return new VisionTargetEstimate(c.inputs.estimatedPose, c.inputs.avgTagDist, c.inputs.timestamp);
+            }
         }
-        return new VisionTargetEstimate(secondaryInputs.estimatedPose, secondaryInputs.avgTagDist, secondaryInputs.timestamp);
+        return null;
     }
 
-    /**
-     * Get the best available target from any vision source
-     */
     public VisionTargetEstimate getBestTarget() {
-        VisionTargetEstimate primary = getLimelightTarget();
-        if (primary != null) return primary;
+        VisionTargetEstimate ll = getLimelightTarget();
+        if (ll != null) return ll;
         return getPhotonTarget();
     }
 
-    /**
-     * Get the latest vision pose estimate
-     */
     public Pose2d getVisionPose() {
         return getEstimatedPose();
     }
 
-    /**
-     * Enable or disable Limelight
-     */
     public void setLimelightEnabled(boolean enabled) {
-        System.out.println("[Vision] Limelight enabled: " + enabled);
+        for (ManagedCamera c : managedCameras) {
+            if (c.config.getType() == CameraType.LIMELIGHT) {
+                c.io.setEnabled(enabled);
+            }
+        }
     }
 
-    /**
-     * Set Limelight LED mode
-     */
     public void setLimelightLED(String mode) {
-        System.out.println("[Vision] Limelight LED mode: " + mode);
+        int code = 0;
+        if ("force_off".equalsIgnoreCase(mode)) code = 1;
+        else if ("blink".equalsIgnoreCase(mode)) code = 2;
+        else if ("force_on".equalsIgnoreCase(mode)) code = 3;
+
+        for (ManagedCamera c : managedCameras) {
+            if (c.config.getType() == CameraType.LIMELIGHT) {
+                c.io.setLEDMode(code);
+            }
+        }
     }
 
-    /**
-     * Set PhotonVision pipeline
-     */
     public void setPhotonPipeline(int pipeline) {
-        System.out.println("[Vision] PhotonVision pipeline: " + pipeline);
+        for (ManagedCamera c : managedCameras) {
+            if (c.config.getType() == CameraType.PHOTONVISION) {
+                c.io.setPipeline(pipeline);
+            }
+        }
     }
+
+    // ── Neural Network Game Piece Object Detection ("Ball Hunt") ─────────────
+
+    private ManagedCamera getGamePieceCamera() {
+        // Find first camera detecting a game piece, prioritizing object detection / hybrid roles
+        for (ManagedCamera c : managedCameras) {
+            if (c.config.getRole() != CameraRole.APRILTAG && c.inputs.hasGamePiece) {
+                return c;
+            }
+        }
+        // Fallback: check any camera
+        for (ManagedCamera c : managedCameras) {
+            if (c.inputs.hasGamePiece) return c;
+        }
+        return null;
+    }
+
+    public boolean hasGamePiece() {
+        return getGamePieceCamera() != null;
+    }
+
+    public double getGamePieceYaw() {
+        ManagedCamera cam = getGamePieceCamera();
+        return cam != null ? cam.inputs.gamePieceYaw : 0.0;
+    }
+
+    public double getGamePiecePitch() {
+        ManagedCamera cam = getGamePieceCamera();
+        return cam != null ? cam.inputs.gamePiecePitch : 0.0;
+    }
+
+    public double getGamePieceArea() {
+        ManagedCamera cam = getGamePieceCamera();
+        return cam != null ? cam.inputs.gamePieceArea : 0.0;
+    }
+
+    public double getGamePieceDistanceMeters() {
+        ManagedCamera cam = getGamePieceCamera();
+        if (cam == null) {
+            gamePieceDistFilter.reset();
+            return 0.0;
+        }
+
+        double cameraHeight = cam.config.getCameraHeightMeters();
+        double targetHeight = DrivebaseConstants.FUEL_TARGET_HEIGHT_METERS;
+        double cameraPitchRads = Math.toRadians(cam.config.getCameraPitchDegrees());
+        double targetPitchRads = Units.degreesToRadians(cam.inputs.gamePiecePitch);
+
+        // Fallback to constants if camera mount was not configured
+        if (cameraHeight <= 0.01) {
+            cameraHeight = DrivebaseConstants.RUBIK_PI_CAMERA_HEIGHT_METERS;
+            cameraPitchRads = Units.degreesToRadians(DrivebaseConstants.RUBIK_PI_CAMERA_PITCH_DEG);
+        }
+
+        double totalAngleRads = cameraPitchRads + targetPitchRads;
+        if (Math.abs(Math.tan(totalAngleRads)) < 0.01 || totalAngleRads >= 0) {
+            return 0.0;
+        }
+
+        double rawDist = Math.abs((cameraHeight - targetHeight) / Math.tan(totalAngleRads));
+        return gamePieceDistFilter.calculate(rawDist);
+    }
+
+    public Translation2d getGamePieceRobotRelativeTranslation() {
+        double distance = getGamePieceDistanceMeters();
+        if (distance <= 0.01) {
+            return new Translation2d();
+        }
+
+        ManagedCamera cam = getGamePieceCamera();
+        double forwardOffset = cam != null && cam.config.getCameraForwardOffsetMeters() > 0.01
+                ? cam.config.getCameraForwardOffsetMeters()
+                : DrivebaseConstants.RUBIK_PI_CAMERA_FORWARD_OFFSET_METERS;
+
+        double yawRads = -Units.degreesToRadians(getGamePieceYaw()); // CCW positive
+        double forward = distance * Math.cos(yawRads) + forwardOffset;
+        double left = distance * Math.sin(yawRads);
+        return new Translation2d(forward, left);
+    }
+
+    public Pose2d getGamePieceFieldPose() {
+        if (!hasGamePiece()) {
+            return null;
+        }
+        Pose2d robotPose = SwerveBase.getInstance().getPose();
+        Translation2d robotRel = getGamePieceRobotRelativeTranslation();
+        Translation2d fieldPos = robotPose.getTranslation().plus(robotRel.rotateBy(robotPose.getRotation()));
+        return new Pose2d(fieldPos, robotPose.getRotation());
+    }
+
+    public Translation2d registerDetectedBumperObstacle(double targetYaw, double targetPitch, double radius) {
+        ManagedCamera cam = getGamePieceCamera();
+        double cameraHeight = cam != null && cam.config.getCameraHeightMeters() > 0.01
+                ? cam.config.getCameraHeightMeters()
+                : DrivebaseConstants.RUBIK_PI_CAMERA_HEIGHT_METERS;
+        double cameraPitchDeg = cam != null
+                ? cam.config.getCameraPitchDegrees()
+                : DrivebaseConstants.RUBIK_PI_CAMERA_PITCH_DEG;
+        double forwardOffset = cam != null && cam.config.getCameraForwardOffsetMeters() > 0.01
+                ? cam.config.getCameraForwardOffsetMeters()
+                : DrivebaseConstants.RUBIK_PI_CAMERA_FORWARD_OFFSET_METERS;
+
+        double bumperHeight = 0.12;
+        double cameraPitchRads = Units.degreesToRadians(cameraPitchDeg);
+        double targetPitchRads = Units.degreesToRadians(targetPitch);
+
+        double totalAngleRads = cameraPitchRads + targetPitchRads;
+        if (totalAngleRads >= 0 || Math.abs(Math.tan(totalAngleRads)) < 0.01) {
+            return null;
+        }
+
+        double groundDist = Math.abs((cameraHeight - bumperHeight) / Math.tan(totalAngleRads));
+        if (groundDist > 7.0 || groundDist < 0.3) {
+            return null;
+        }
+
+        double yawRads = Units.degreesToRadians(targetYaw);
+        double relX = groundDist * Math.cos(yawRads) + forwardOffset;
+        double relY = groundDist * Math.sin(yawRads);
+
+        Pose2d robotPose = SwerveBase.getInstance().getPose();
+        Translation2d robotRel = new Translation2d(relX, relY);
+        Translation2d fieldPos = robotPose.getTranslation().plus(robotRel.rotateBy(robotPose.getRotation()));
+
+        frc.robot.Navigation.DynamicRouter.registerObstacle(fieldPos, new Translation2d(), radius, 0.40);
+        return fieldPos;
+    }
+
+    // ── Subsystem Interface ──────────────────────────────────────────────────
 
     @Override
-    public void initialize() {
-    }
+    public void initialize() {}
 
     @Override
     public void log() {
-        SmartDashboard.putNumber("Vision/Primary/TagCount", primaryInputs.tagCount);
-        SmartDashboard.putNumber("Vision/Primary/AvgDistance", primaryInputs.avgTagDist);
-        SmartDashboard.putNumber("Vision/Primary/FilteredAvgDistance", filteredPrimaryTagDist);
-        SmartDashboard.putNumber("Vision/Primary/StdDev", stdDev);
-        SmartDashboard.putBoolean("Vision/Primary/IsAccepted", isAccepted);
-        SmartDashboard.putBoolean("Vision/Primary/HasTarget", primaryInputs.hasTarget);
+        // Individual camera status & diagnostics
+        for (ManagedCamera c : managedCameras) {
+            String pfx = "Vision/" + c.getName() + "/";
+            SmartDashboard.putBoolean(pfx + "Connected", c.isConnected);
+            SmartDashboard.putBoolean(pfx + "IsAccepted", c.isAccepted);
+            SmartDashboard.putString(pfx + "RejectionReason", c.rejectionReason.name());
+            SmartDashboard.putNumber(pfx + "TagCount", c.inputs.tagCount);
+            SmartDashboard.putNumber(pfx + "AvgDistance", c.inputs.avgTagDist);
+            SmartDashboard.putNumber(pfx + "FilteredAvgDistance", c.filteredTagDist);
+            SmartDashboard.putNumber(pfx + "StdDev", c.stdDev);
+            SmartDashboard.putNumber(pfx + "LatencyMs", c.inputs.latencyMs);
 
-        if (primaryInputs.hasTarget) {
-            org.littletonrobotics.junction.Logger.recordOutput("Vision/PrimaryPose", primaryInputs.estimatedPose);
-        }
-
-        if (secondaryIO != null) {
-            SmartDashboard.putNumber("Vision/Secondary/TagCount", secondaryInputs.tagCount);
-            SmartDashboard.putNumber("Vision/Secondary/AvgDistance", secondaryInputs.avgTagDist);
-            SmartDashboard.putNumber("Vision/Secondary/FilteredAvgDistance", filteredSecondaryTagDist);
-            SmartDashboard.putBoolean("Vision/Secondary/HasTarget", secondaryInputs.hasTarget);
-            SmartDashboard.putNumber("Vision/Secondary/LatencyMs", secondaryInputs.latencyMs);
-            if (secondaryInputs.hasTarget) {
-                org.littletonrobotics.junction.Logger.recordOutput("Vision/SecondaryPose", secondaryInputs.estimatedPose);
+            if (c.inputs.hasTarget) {
+                org.littletonrobotics.junction.Logger.recordOutput("Vision/" + c.getName() + "/Pose", c.inputs.estimatedPose);
             }
         }
 
-        // Neural Network Object Detection Telemetry ("Ball Hunt" YOLOv8 / Rubik Pi 3)
+        // Legacy / Primary / Secondary mappings for Elastic Dashboard compatibility
+        ManagedCamera primary = getPrimaryCamera();
+        if (primary != null) {
+            SmartDashboard.putNumber("Vision/Primary/TagCount", primary.inputs.tagCount);
+            SmartDashboard.putNumber("Vision/Primary/AvgDistance", primary.inputs.avgTagDist);
+            SmartDashboard.putNumber("Vision/Primary/FilteredAvgDistance", primary.filteredTagDist);
+            SmartDashboard.putNumber("Vision/Primary/StdDev", primary.stdDev);
+            SmartDashboard.putBoolean("Vision/Primary/IsAccepted", primary.isAccepted);
+            SmartDashboard.putBoolean("Vision/Primary/HasTarget", primary.inputs.hasTarget);
+            if (primary.inputs.hasTarget) {
+                org.littletonrobotics.junction.Logger.recordOutput("Vision/PrimaryPose", primary.inputs.estimatedPose);
+            }
+        }
+
+        ManagedCamera secondary = getSecondaryCamera();
+        if (secondary != null) {
+            SmartDashboard.putNumber("Vision/Secondary/TagCount", secondary.inputs.tagCount);
+            SmartDashboard.putNumber("Vision/Secondary/AvgDistance", secondary.inputs.avgTagDist);
+            SmartDashboard.putNumber("Vision/Secondary/FilteredAvgDistance", secondary.filteredTagDist);
+            SmartDashboard.putBoolean("Vision/Secondary/HasTarget", secondary.inputs.hasTarget);
+            SmartDashboard.putNumber("Vision/Secondary/LatencyMs", secondary.inputs.latencyMs);
+            if (secondary.inputs.hasTarget) {
+                org.littletonrobotics.junction.Logger.recordOutput("Vision/SecondaryPose", secondary.inputs.estimatedPose);
+            }
+        }
+
+        // Neural Network Object Detection Telemetry ("Ball Hunt")
         boolean hasBall = hasGamePiece();
         SmartDashboard.putBoolean("Vision/BallHunt/HasTarget", hasBall);
         SmartDashboard.putNumber("Vision/BallHunt/TargetYaw", getGamePieceYaw());
@@ -396,14 +647,6 @@ public class Vision implements Subsystem {
         if (ballFieldPose != null) {
             org.littletonrobotics.junction.Logger.recordOutput("Vision/BallHunt/FieldPose", ballFieldPose);
         }
-    }
-
-    public double getFilteredPrimaryTagDist() {
-        return filteredPrimaryTagDist;
-    }
-
-    public double getFilteredSecondaryTagDist() {
-        return filteredSecondaryTagDist;
     }
 
     @Override

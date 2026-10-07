@@ -21,6 +21,8 @@ public class VisionIOSim implements VisionIO {
     }
 
     private final CameraType cameraType;
+    private final CameraConfig config;
+    private final String cameraName;
     private Pose2d customSimPose = null;
 
     // Manual test overrides
@@ -30,8 +32,20 @@ public class VisionIOSim implements VisionIO {
     private double simGamePiecePitch = 0.0;
     private double simGamePieceArea = 0.0;
 
+    public VisionIOSim(CameraConfig config) {
+        this.config = config;
+        this.cameraType = (config != null && config.getType() == CameraConfig.CameraType.LIMELIGHT)
+                ? CameraType.LIMELIGHT
+                : CameraType.RUBIK_PI;
+        this.cameraName = config != null ? config.getName() : "sim-camera";
+    }
+
     public VisionIOSim(CameraType cameraType) {
         this.cameraType = cameraType;
+        this.config = cameraType == CameraType.LIMELIGHT
+                ? CameraConfig.limelight("limelight-front")
+                : CameraConfig.photonVision("rubik-pi-coprocessor");
+        this.cameraName = cameraType == CameraType.LIMELIGHT ? "limelight-front" : "rubik-pi-coprocessor";
     }
 
     public VisionIOSim() {
@@ -42,6 +56,7 @@ public class VisionIOSim implements VisionIO {
         this.customSimPose = pose;
     }
 
+    @Override
     public void setRobotOrientation(double yaw, double pitch, double roll, double yawRate) {
         // Stub for orientation injection in simulation tests
     }
@@ -60,6 +75,7 @@ public class VisionIOSim implements VisionIO {
 
     @Override
     public void updateInputs(VisionIOInputs inputs) {
+        inputs.isConnected = true;
         Pose2d simPose = customSimPose;
         if (simPose == null) {
             try {
@@ -90,10 +106,12 @@ public class VisionIOSim implements VisionIO {
             inputs.latencyMs = botPose[6];
             inputs.timestamp = Timer.getFPGATimestamp() - (botPose[6] / 1000.0);
             inputs.estimatedPose = new Pose2d(botPose[0], botPose[1], Rotation2d.fromDegrees(botPose[5]));
+            inputs.ambiguity = botPose.length >= 18 ? botPose[17] : 0.05;
         } else {
             inputs.hasTarget = false;
             inputs.tagCount = 0;
             inputs.avgTagDist = 0.0;
+            inputs.ambiguity = 0.0;
         }
 
         inputs.targetTx = NetworkTableInstance.getDefault()
@@ -133,6 +151,7 @@ public class VisionIOSim implements VisionIO {
         inputs.latencyMs = photonTable.getEntry("latencyMillis").getDouble(8.0);
         inputs.tagCount = (int) photonTable.getEntry("tagCount").getDouble(hasTag ? 1.0 : 0.0);
         inputs.avgTagDist = photonTable.getEntry("avgDist").getDouble(0.0);
+        inputs.ambiguity = hasTag ? 0.08 : 0.0;
 
         double[] poseData = photonTable.getEntry("robotPose").getDoubleArray(new double[0]);
         if (poseData.length >= 3 && inputs.tagCount > 0) {
@@ -164,5 +183,10 @@ public class VisionIOSim implements VisionIO {
 
     public CameraType getCameraType() {
         return cameraType;
+    }
+
+    @Override
+    public String getName() {
+        return cameraName;
     }
 }

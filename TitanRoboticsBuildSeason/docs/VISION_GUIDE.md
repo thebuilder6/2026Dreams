@@ -8,7 +8,7 @@ status: authoritative
 
 # Dual-Vision Platform & Calibration Guide — FRC Team 8334
 
-Comprehensive engineering manual for the dual-camera vision subsystem: Limelight 3/3G MegaTag2, Orange Pi 5 coprocessor running PhotonVision, multi-tag AprilTag localization, neural network ball detection ("Ball Hunt"), and pose estimator fusion.
+Comprehensive engineering manual for the overhauled vision subsystem: declarative multi-camera configuration ([`CameraConfig`](../src/main/java/frc/robot/Subsystems/vision/CameraConfig.java)), central configuration & live tunables ([`VisionConfig`](../src/main/java/frc/robot/Subsystems/vision/VisionConfig.java)), Limelight 3/3G MegaTag2, Orange Pi 5 coprocessor running PhotonVision, multi-tag AprilTag localization, neural network ball detection ("Ball Hunt"), connection watchdogs, transparent rejection matrix, and pose estimator fusion.
 
 ---
 
@@ -16,9 +16,12 @@ Comprehensive engineering manual for the dual-camera vision subsystem: Limelight
 
 ### What this document covers
 - Architecture of [`Vision.java`](../src/main/java/frc/robot/Subsystems/Vision.java) and the AdvantageKit IO abstraction layer ([`Subsystems/vision/`](../src/main/java/frc/robot/Subsystems/vision/)).
-- Primary camera: Limelight 3/3G MegaTag2 with live gyro angular velocity injection.
-- Secondary coprocessor: Orange Pi 5 running PhotonVision with multi-tag PNP and YOLOv8 object detection.
-- Filtering and rejection logic: 5-sample median filters, latency cutoffs, high-angular-velocity rejection, and distance boundaries.
+- Declarative camera configuration via [`CameraConfig`](../src/main/java/frc/robot/Subsystems/vision/CameraConfig.java) with fluent builders for 1, 2, or N cameras.
+- Central tuning and live pit calibration via [`VisionConfig`](../src/main/java/frc/robot/Subsystems/vision/VisionConfig.java) and NetworkTables `TunableNumber` controls.
+- Primary camera: Limelight 3/3G MegaTag2 with live gyro angular velocity injection and automatic robot-space mounting pose transmission (`setCameraPose_RobotSpace`).
+- Secondary coprocessor: Orange Pi 5 running PhotonVision with dual-pipeline PhotonLib/NetworkTables support and YOLOv8 object detection.
+- Transparent rejection matrix ([`RejectionReason`](../src/main/java/frc/robot/Subsystems/Vision.java#L36-L50)): latency, distance, yaw rate, ambiguity, and field boundary gates.
+- Connection watchdog and Elastic Dashboard [`AlertManager`](../src/main/java/frc/robot/Telemetry/AlertManager.java) warnings for unplugged/offline cameras.
 - Dynamic standard deviation weighting math for WPILib Kalman filtering in [`SwerveBase`](../src/main/java/frc/robot/Subsystems/SwerveBase.java).
 - Network configuration, static IP assignments, and RoboRIO port forwarding (ports 5801–5805).
 - Desktop simulation support via [`VisionIOSim`](../src/main/java/frc/robot/Subsystems/vision/VisionIOSim.java).
@@ -30,124 +33,142 @@ Comprehensive engineering manual for the dual-camera vision subsystem: Limelight
 
 ---
 
-## Content
+## Quickstart: Configuring a Camera in 60 Seconds
 
-### 1. Dual-Vision System Architecture
+The overhauled vision subsystem uses declarative camera definitions in [`VisionConfig.java`](../src/main/java/frc/robot/Subsystems/vision/VisionConfig.java). You no longer need to modify subsystem plumbing, hardcode offsets across files, or write custom NetworkTables loops.
+
+### Adding a New Limelight
+In `VisionConfig.java`:
+```java
+VisionConfig.addCamera(
+    CameraConfig.limelight("limelight-back")
+        .withTransform(new Transform3d(
+            new Translation3d(-0.28, 0.0, 0.45), // 28cm behind robot center, 45cm off carpet
+            new Rotation3d(0.0, Math.toRadians(15.0), Math.PI))) // 15° pitch up, facing backward
+        .withRole(CameraRole.APRILTAG)
+        .withStdDevMultiplier(1.0)
+        .withMegaTag2(true)
+);
+```
+
+### Adding a PhotonVision Coprocessor Camera
+```java
+VisionConfig.addCamera(
+    CameraConfig.photonVision("photon-intake")
+        .withTransform(new Transform3d(
+            new Translation3d(0.25, 0.0, 0.45),
+            new Rotation3d(0.0, Math.toRadians(-15.0), 0.0))) // 15° downward tilt toward carpet
+        .withRole(CameraRole.OBJECT_DETECTION)
+        .withStdDevMultiplier(1.2)
+);
+```
+
+### Rapid Presets
+Switch setups instantly using built-in presets in [`VisionConfig.Presets`](../src/main/java/frc/robot/Subsystems/vision/VisionConfig.java#L81-L140):
+- `VisionConfig.Presets.dualDefault()`: Front Limelight + Orange Pi 5 PhotonVision coprocessor.
+- `VisionConfig.Presets.singleLimelight()`: Front Limelight only.
+- `VisionConfig.Presets.singlePhotonVision()`: PhotonVision coprocessor only.
+- `VisionConfig.Presets.dualPhotonVision()`: Dual PhotonVision (front + back).
+
+---
+
+## Architecture
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
 │                   PRIMARY: Limelight 3 / 3G                            │
-│  - NetworkTables hostname: "limelight-front"                           │
-│  - MegaTag2 Pose Estimation (High-speed multi-tag with gyro)           │
-│  - Receives gyro yaw, yaw rate (deg/s), pitch, roll at 50 Hz           │
+│  - Hostname: "limelight-front"                                         │
+│  - MegaTag2 Pose Estimation with live gyro feedback                    │
+│  - Automatic robot-space mount configuration via setCameraPose         │
 └───────────────────────────────────┬────────────────────────────────────┘
-                                    │ Pose2d, timestamp, avgTagDist
+                                    │ Pose2d, timestamp, avgTagDist, ambiguity
                                     ▼
 ┌────────────────────────────────────────────────────────────────────────┐
-│            VISION SUBSYSTEM LOGIC (Vision.java)                        │
-│  - 5-sample Median Filters on tag and game piece distances             │
-│  - Rejection Watchdog (latency > 150ms, tag > 4.0m, yawRate > 360°/s)  │
-│  - Dynamic std-dev calculation: stdDev = base + penalties              │
-│  - Injects measurement into SwerveBase.addVisionMeasurement(...)       │
+│            MANAGED CAMERA PIPELINE (Vision.java)                       │
+│  - 5-sample MedianFilter on tag and game piece distances               │
+│  - Transparent Rejection Matrix (Reason published to NT/AdvantageKit)  │
+│  - Dynamic std-dev calculation: stdDev = (base + penalties) * mult     │
+│  - Connection watchdog: Disconnect Alert raised if camera drops offline│
+│  - Injects valid measurement into SwerveBase.addVisionMeasurement(...) │
 └───────────────────────────────────▲────────────────────────────────────┘
-                                    │ Pose2d, timestamp, avgTagDist
+                                    │ Pose2d, timestamp, avgTagDist, ambiguity
                                     │ + Neural Network Game Piece (yaw/pitch)
 ┌───────────────────────────────────┴────────────────────────────────────┐
 │             SECONDARY: Orange Pi 5 (PhotonVision)                      │
-│  - NetworkTables table: "photonvision/rubik-pi-coprocessor"            │
-│  - Multi-tag PNP AprilTag pose estimation                              │
+│  - Hostname: "rubik-pi-coprocessor"                                    │
+│  - Native PhotonLib + NetworkTables dual-pipeline                      │
 │  - YOLOv8 Neural Network pipeline ("Ball Hunt" Fuel piece detector)    │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-### 2. Primary Camera: Limelight MegaTag2
+## Data Gating & Noise Rejection Matrix
 
-The primary camera is a **Limelight 3 or 3G** mounted on the front chassis facing forward:
-- **Hostname**: `limelight-front`
-- **NetworkTables Key**: `limelight-front`
-- **Algorithm**: MegaTag2. MegaTag2 incorporates the robot's high-frequency gyro data directly on the Limelight to resolve camera tilt ambiguities and prevent perspective flipping.
+Every camera measurement is evaluated against strict rejection gates before admission into the Kalman pose estimator. If rejected, the specific reason is published live to `/Vision/<CameraName>/RejectionReason`:
 
-#### Orientation Feedback
-Every robot periodic loop ($20\text{ ms}$), [`Vision.java`](../src/main/java/frc/robot/Subsystems/Vision.java#L79-L83) transmits the chassis IMU state:
-```java
-primaryIO.setRobotOrientation(
-    swerve.getHeading().getDegrees(),
-    swerve.getGyroYawVelocityDegPerSec(),
-    swerve.getPitch().getDegrees(),
-    0.0
-);
-```
-Passing instantaneous gyro yaw rate ($\text{deg/s}$) is mandatory for MegaTag2's motion blur and rolling shutter compensation.
+| Rejection Reason | Gate Threshold | Rationale |
+|---|---|---|
+| `NO_TARGET` | $\text{tagCount} == 0$ | No AprilTag fiducial in view. |
+| `CAMERA_OFFLINE` | No packet in $> 1.5\text{ s}$ | Camera disconnected or network stalled. |
+| `VISION_DISABLED` | `MasterEnabled} == 0$ or camera disabled | Operator/dashboard software lockout. |
+| `HIGH_YAW_RATE` | $|\omega_{\text{gyro}}| > 360.0^\circ/\text{s}$ (`MAX_YAW_RATE`) | Motion blur degrades sub-pixel corner accuracy during fast spins. |
+| `HIGH_LATENCY` | $\text{latency} > 150.0\text{ ms}$ (`MAX_LATENCY_MS`) | Stale network buffers invalidate pose synchronization. |
+| `HIGH_DISTANCE` | $\text{dist} > 4.0\text{ m}$ (or $> 3.0\text{ m}$ single-tag) | Angular error amplifies perspective projection noise quadratically. |
+| `HIGH_AMBIGUITY` | $\text{ambiguity} > 0.40$ (`MAX_AMBIGUITY`) | Single-tag coplanar ambiguity flip protection. |
+| `OUTSIDE_FIELD` | $X \notin [-0.5, 17.04]$, $Y \notin [-0.5, 8.55]$ | Rejects wild optical misidentifications outside the physical arena. |
+| `ACCEPTED` | Passes all above gates | Measurement valid and forwarded to `SwerveBase`. |
 
 ---
 
-### 3. Secondary Coprocessor: Orange Pi 5 (PhotonVision)
+## Dynamic Standard Deviation Weighting
 
-The secondary vision system runs on an **Orange Pi 5** coprocessor running PhotonVision:
-- **Coprocessor Hostname**: `rubik-pi-coprocessor`
-- **NetworkTables Table**: `/photonvision/rubik-pi-coprocessor`
-- **Neural Subtable**: `/photonvision/rubik-pi-coprocessor-neural`
+Rather than fixed trust constants, measurement variance is dynamically calculated using visual conditions and scaled by the camera's individual trust multiplier:
 
-#### Neural Network Object Detection ("Ball Hunt")
-In addition to AprilTag pose estimation, the Orange Pi 5 executes a custom YOLOv8 model trained on 2026 Fuel game pieces.
-The coprocessor streams:
-- `hasTarget`: Boolean flag indicating a detected game piece.
-- `targetYaw`: Azimuth angle offset (degrees) from camera optical center.
-- `targetPitch`: Elevation angle offset (degrees) relative to horizon.
-- `targetArea`: Normalized contour area percentage.
+$$\sigma_{xy} = \left( \sigma_{\text{base}} + \Delta\sigma_{\text{single}} + \frac{d^2}{K_{\text{dist}}} \right) \cdot M_{\text{camera}}$$
 
-#### Distance Calculation via Trigonometry
-[`Vision.getGamePieceDistanceMeters()`](../src/main/java/frc/robot/Subsystems/Vision.java#L166-L185) derives distance to ground pieces using fixed camera geometry:
+In [`Vision.java`](../src/main/java/frc/robot/Subsystems/Vision.java#L225-L236) and [`VisionConfig.java`](../src/main/java/frc/robot/Subsystems/vision/VisionConfig.java):
+- $\sigma_{\text{base}} = 0.08\text{ m}$ (`BASE_STD_DEV`, tunable)
+- $\Delta\sigma_{\text{single}} = 0.15\text{ m}$ applied when only 1 tag is visible (`SINGLE_TAG_PENALTY`, tunable)
+- Distance penalty divisor $K_{\text{dist}} = 25.0$ (`DIST_PENALTY_DIVISOR`, tunable)
+- Camera multiplier $M_{\text{camera}} = \text{config.getStdDevMultiplier()}$ ($1.0$ for primary Limelight, $1.2$ for secondary)
+- Heading trust $\sigma_\theta = 900^\circ$ ($15.7\text{ rad}$): We explicitly **do not** trust vision heading for swerve rotation. High-frequency NavX/Pigeon gyro dead reckoning remains strictly authoritative.
+
+---
+
+## Live Dashboard Tuning (Pit & Practice Field)
+
+All rejection gates and weighting parameters can be tuned in real-time from Elastic Dashboard or SmartDashboard without rebuilding code:
+
+| NetworkTables Key | Default | Function |
+|---|---|---|
+| `/SmartDashboard/Vision/Config/MasterEnabled` | `1.0` | Master enable/disable toggle for all vision pose updates |
+| `/SmartDashboard/Vision/Config/MaxTagDistMeters` | `4.0 m` | Maximum tag distance for multi-tag measurements |
+| `/SmartDashboard/Vision/Config/SingleTagMaxDistMeters` | `3.0 m` | Maximum tag distance when only 1 tag is visible |
+| `/SmartDashboard/Vision/Config/MaxAmbiguity` | `0.40` | Maximum ambiguity ratio for single-tag estimates |
+| `/SmartDashboard/Vision/Config/MaxYawRateDegPerSec` | `360.0°/s` | Maximum chassis spin rate permitted during vision capture |
+| `/SmartDashboard/Vision/Config/MaxLatencyMs` | `150.0 ms` | Maximum frame latency accepted |
+| `/SmartDashboard/Vision/Config/BaseStdDev` | `0.08 m` | Base translation standard deviation |
+| `/SmartDashboard/Vision/Config/SingleTagPenalty` | `0.15 m` | Additional standard deviation penalty for single tags |
+| `/SmartDashboard/Vision/Config/DistPenaltyDivisor` | `25.0` | Divisor governing distance quadratic penalty |
+
+---
+
+## Object Detection ("Ball Hunt") & Geometry
+
+Ground Fuel game piece targeting uses fixed camera geometry defined in `CameraConfig`:
 $$d = \frac{h_{\text{camera}} - h_{\text{target}}}{\tan(\theta_{\text{camera}} + \theta_{\text{target}})}$$
 
-Where:
-- $h_{\text{camera}} = \text{RUBIK\_PI\_CAMERA\_HEIGHT\_METERS}$ ($0.65\text{ m}$)
+- $h_{\text{camera}} = \text{config.getCameraHeightMeters()}$ ($0.45\text{ m}$)
 - $h_{\text{target}} = \text{FUEL\_TARGET\_HEIGHT\_METERS}$ ($0.08\text{ m}$, radius of fuel sphere)
-- $\theta_{\text{camera}} = \text{RUBIK\_PI\_CAMERA\_PITCH\_DEG}$ (downward tilt in degrees)
-- $\theta_{\text{target}} = \text{targetPitch}$ (measured pitch from neural pipeline)
+- $\theta_{\text{camera}} = \text{config.getCameraPitchDegrees()}$ (e.g., $-15^\circ$ downward tilt)
+- $\theta_{\text{target}} = \text{inputs.gamePiecePitch}$ (measured pitch from YOLOv8)
 
 A 5-sample median filter (`gamePieceDistFilter`) rejects transient false-positive frames.
 
 ---
 
-### 4. Data Gating & Noise Rejection Matrix
-
-Pose estimates from both cameras are subjected to strict validation gates before being permitted into the swerve pose estimator:
-
-| Gate | Rejection Threshold | Rationale |
-|---|---|---|
-| **Latency Gate** | $\text{latency} > 150.0\text{ ms}$ | Rejects old frames from stale network buffers. |
-| **Angular Rate Gate** | $|\omega_{\text{gyro}}| > 360.0^\circ/\text{s}$ | Motion blur severely degrades sub-pixel corner accuracy during aggressive spins. |
-| **Distance Gate** | $\text{avgTagDist} > 4.0\text{ m}$ | Perspective projection noise increases quadratically with distance. |
-| **Median Filter** | 5-sample sliding window | Eliminates single-frame optical spike reflections or camera misidentifications. |
-
----
-
-### 5. Dynamic Standard Deviation Weighting
-
-Rather than fixed trusting values, vision measurement variance is adjusted dynamically based on visual conditions:
-
-$$\sigma_{xy} = \sigma_{\text{base}} + \Delta\sigma_{\text{single}} + \Delta\sigma_{\text{secondary}} + \frac{d^2}{K_{\text{dist}}}$$
-
-In [`Vision.java`](../src/main/java/frc/robot/Subsystems/Vision.java#L95-L101):
-- $\sigma_{\text{base}} = 0.05\text{ m}$ (`VISION_BASE_STD_DEV`)
-- $\Delta\sigma_{\text{single}} = 0.10\text{ m}$ if only 1 AprilTag is visible (`VISION_SINGLE_TAG_PENALTY`)
-- $\Delta\sigma_{\text{secondary}} = 0.15\text{ m}$ applied to the Orange Pi 5 (Limelight MegaTag2 given higher base trust)
-- Distance penalty divisor $K_{\text{dist}} = 30.0$ (`VISION_DIST_PENALTY_DIVISOR`)
-- $\sigma_\theta = 900^\circ$ ($15.7\text{ rad}$): We explicitly do **not** trust vision yaw for swerve rotation. High-frequency NavX/Pigeon gyro dead reckoning remains strictly authoritative for heading.
-
-```java
-Matrix<N3, N1> visionStdDevs = VecBuilder.fill(stdDev, stdDev, Units.degreesToRadians(900));
-swerve.addVisionMeasurement(inputs.estimatedPose, inputs.timestamp, visionStdDevs);
-```
-
----
-
-### 6. Network Configuration & Port Forwarding
-
-All hardware is networked over static 10.TE.AM.x IP addressing on the competition VLAN:
+## Network Configuration & Port Forwarding
 
 | Device | Hostname / mDNS | Static IP | Subnet Mask | Gateway |
 |---|---|---|---|---|
@@ -156,46 +177,35 @@ All hardware is networked over static 10.TE.AM.x IP addressing on the competitio
 | **Limelight 3/3G** | `limelight-front.local` | `10.83.34.11` | `255.255.255.0` | `10.83.34.1` |
 | **Orange Pi 5** | `rubik-pi-coprocessor.local` | `10.83.34.12` | `255.255.255.0` | `10.83.34.1` |
 
-#### Port Forwarding (USB Tether Access)
-In [`Robot.java`](../src/main/java/frc/robot/Robot.java#L105-L110), WPILib `PortForwarder` forwards coprocessor web interfaces over the USB tether:
-- Port `5801` → `10.83.34.11:5801` (Limelight web configuration interface)
-- Port `5802` → `10.83.34.11:5800` (Limelight camera stream)
-- Port `5803` → `10.83.34.12:5800` (Orange Pi 5 PhotonVision web dashboard)
+USB Tether port forwarding in [`Robot.java`](../src/main/java/frc/robot/Robot.java#L105-L110):
+- Port `5801` → `10.83.34.11:5801` (Limelight web config)
+- Port `5802` → `10.83.34.11:5800` (Limelight stream)
+- Port `5803` → `10.83.34.12:5800` (PhotonVision dashboard)
 - Port `5804` → `10.83.34.12:1181` (PhotonVision stream 1)
 - Port `5805` → `10.83.34.12:1182` (PhotonVision stream 2)
-
-Connecting your laptop via USB cable and opening `http://172.22.11.2:5801` or `http://172.22.11.2:5803` provides immediate access in the pit without switching WiFi networks.
-
----
-
-### 7. Simulation Architecture (`VisionIOSim`)
-
-In simulation (`.\gradlew simulateJava`), physical camera IO is replaced by [`VisionIOSim`](../src/main/java/frc/robot/Subsystems/vision/VisionIOSim.java):
-- Utilizes `PhotonCameraSim` and `VisionSystemSim` with simulated AprilTags positioned at 2026 field coordinates.
-- Simulates realistic camera resolution ($1280\times800$), field of view ($70^\circ$ diagonal), frame rates ($30\text{ fps}$), and Gaussian pixel noise.
-- Generates simulated NetworkTables traffic under the `/photonvision` and `/limelight-front` namespaces.
 
 ---
 
 ## Verification
 
 - **Automated Pre-Flight Check**:
-  - Run Pre-Flight Diagnostics from Elastic Dashboard or Driver Station Test Mode. Station 6 verifies vision heartbeats and camera availability (`Diagnostics.java:314`).
+  - Run Pre-Flight Diagnostics from Elastic Dashboard. Station 6 inspects live connection heartbeats across all configured cameras via `vision.isAllCamerasConnected()` (`Diagnostics.java:314`).
 - **Telemetry Verification**:
-  - Check NetworkTables keys:
-    - `/Vision/Primary/HasTarget`: True when AprilTag is visible.
-    - `/Vision/Primary/TagCount`: Number of tags in view.
-    - `/Vision/Primary/AvgTagDist`: Filtered distance in meters.
-    - `/Vision/Secondary/HasGamePiece`: True when Fuel piece is detected by YOLOv8.
+  - Check NetworkTables keys under `/Vision/<CameraName>/`:
+    - `Connected`: Boolean reporting frame freshness.
+    - `IsAccepted`: Boolean indicating admission into SwerveBase.
+    - `RejectionReason`: String (`ACCEPTED`, `HIGH_DISTANCE`, etc.).
+    - `StdDev`: Live dynamic translation standard deviation in meters.
 - **Unit Tests**:
-  - Full suite passes: 53 test files / 506 tests green (2026-10-07).
+  - Dedicated suite [`VisionTest.java`](../src/test/java/frc/robot/Subsystems/VisionTest.java): 6/6 tests passing (configuration, presets, multi-camera, rejection matrix, dynamic std-dev, neural tracking).
+  - Full suite passes: 54 test files / 512 tests green (2026-10-07).
 - **Next review due**: 2026-11-06.
 
 ---
 
 ## Related
 
-- [`ARCHITECTURE.md`](../ARCHITECTURE.md) §3D: Dual-Vision platform specification.
-- [`docs/SWERVE_TUNING_GUIDE.md`](SWERVE_TUNING_GUIDE.md): Odometry integration and Kalman filter tuning.
+- [`ARCHITECTURE.md`](../ARCHITECTURE.md) §3D: Vision platform specification.
+- [`docs/SWERVE_TUNING_GUIDE.md`](SWERVE_TUNING_GUIDE.md): Swerve drive odometry and vision pose fusion.
 - [`docs/PIT_TUNING_CHECKLIST.md`](PIT_TUNING_CHECKLIST.md): Pre-match 15-second diagnostics and camera health checks.
 - [`docs/INDEX.md`](INDEX.md): Central documentation directory.

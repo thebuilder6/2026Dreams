@@ -463,6 +463,10 @@ public class GameSim implements Subsystem {
         // reproducible instead of merely "seeded".
         if (scenario != null) {
             MatchDeterminism.seed(scenario.seed());
+        } else {
+            // Returning to the interactive sim must not keep a previous training
+            // seed: leaving it set made an "unseeded" run partly deterministic.
+            MatchDeterminism.clearSeed();
         }
         try {
             int initialHeldBalls = scenario == null ? Config.INITIAL_HELD_BALLS : 0;

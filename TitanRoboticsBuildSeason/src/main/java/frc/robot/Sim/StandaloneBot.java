@@ -65,13 +65,12 @@ import frc.robot.Subsystems.intake.IntakeConstants;
  *   real launch solution plus the {@code AIRobotInstance.launchShot} spread and
  *   scores a ball if its flight passes through the funnel tolerance box
  *   ({@link #FUNNEL_TOL_XY_M} / {@link #FUNNEL_TOL_Z_M}) around the funnel
- *   centre. Missed balls are discarded rather than re-grounded.</li>
- *   <li><b>No fuel recycling.</b> The full sim's RebuiltHub physically returns
- *   scored fuel to the field ({@code GameSim.handleShotsAndScoring}), so its
- *   throughput is unbounded; here the field is a fixed pool, so every match
- *   scores out nearly all of it and the result saturates. This is the dominant
- *   reason the standalone does not yet track the full sim — see the A/B note in
- *   {@code KNOWN_ISSUES.md} §E.</li>
+ *   centre.</li>
+ *   <li><b>Fuel recycling is modelled, not physical.</b> Every fired ball is
+ *   returned to the neutral midfield near the scoring hub ({@link #recycleLanding})
+ *   after {@link FuelStore#RECYCLE_SETTLE_SEC}, mirroring {@code RebuiltHub}'s
+ *   chutes so the field is conserved instead of drained. The exact chute
+ *   trajectory and post-landing roll are not simulated.</li>
  *   <li>No static-obstacle collision or trench handling — drive is a straight
  *   line to the target, and the runner applies only a positional peer push-out
  *   after each tick.</li>
@@ -114,6 +113,7 @@ public final class StandaloneBot {
     private final Archetype archetype;
     private final boolean isRed;
     private final String shotStream;
+    private final String recycleStream;
     private int held;
     private int scored;
     private int autoScored;
@@ -154,6 +154,7 @@ public final class StandaloneBot {
         this.isRed = isRed;
         this.held = preload;
         this.shotStream = "standalone-shot:" + rosterIndex;
+        this.recycleStream = "standalone-recycle:" + rosterIndex;
         this.hasClimber = hasClimber;
         // Headless default speed scale (AIRobotSim.java:460-462).
         this.maxSpeedMps = Constants.MAX_SPEED * 0.75;
@@ -431,6 +432,7 @@ public final class StandaloneBot {
         // (legal) and is tracked separately. `attemptedShots`/`missedShots` keep
         // their original meaning: scoring-capable volleys only.
         if (intent.triggerFeedKicker() && held > 0) {
+            int fired = held;
             boolean inZone = FieldMap.AllianceZones.isInAllianceZone(pose, isRed);
             boolean inRange = hubTranslation().getDistance(pose.getTranslation())
                     <= FieldMap.Hubs.SHOOTING_MAX_DISTANCE;
@@ -454,6 +456,16 @@ public final class StandaloneBot {
                 wastedFuel += held;
             }
             held = 0;
+
+            // RebuiltHub recycles every captured Fuel straight back onto the
+            // field through its chutes, and a missed or wasted shot lands on the
+            // carpet, so the field is conserved rather than drained. Without
+            // this the standalone saturates at the initial pool and cannot track
+            // the full sim (see KNOWN_ISSUES.md §E).
+            Random rng = MatchDeterminism.random(recycleStream);
+            for (int i = 0; i < fired; i++) {
+                fuel.recycle(recycleLanding(isRed, rng), elapsedSec + FuelStore.RECYCLE_SETTLE_SEC);
+            }
         }
 
         // Climb: a climber bot that reaches its tower pole inside the endgame
@@ -467,6 +479,22 @@ public final class StandaloneBot {
                 climbArrivalSec = CLIMB_WINDOW_SEC - matchTimeRemaining;
             }
         }
+    }
+
+    /**
+     * Landing point of a recycled Fuel, modelled from {@code RebuiltHub}'s four
+     * chutes: each chute sits {@code GoalRadius} (0.5969 m) off the hub centre
+     * with a ±0.149 / ±0.448 m lateral offset, launching at 2.2 m/s, −5° pitch,
+     * and a yaw of ±11.25° / ±33.75° from the field-centre axis. Ballistic
+     * flight puts the piece roughly 0.8–1.6 m into the neutral midfield; the
+     * post-landing roll is not simulated. Seeded, so runs stay exact.
+     */
+    static Translation2d recycleLanding(boolean isRed, Random rng) {
+        double hubX = isRed ? FieldMap.Hubs.RED_HUB_X : FieldMap.Hubs.BLUE_HUB_X;
+        double out = 0.8 + rng.nextDouble() * 0.8;
+        double lateral = (rng.nextDouble() - 0.5) * 1.2;
+        double x = isRed ? hubX - out : hubX + out;
+        return new Translation2d(x, FieldMap.Hubs.HUB_Y + lateral);
     }
 
     /** Fires {@code balls} balls, each independently spread; returns how many score. */

@@ -206,6 +206,8 @@ public final class StandaloneMatchRunner {
         try {
             HubSchedule.setShiftSeed(config.shiftSeed());
             FuelStore fuel = FuelStore.scatterSeeded(config.seed(), config.fuelCount());
+            char shiftSeed = config.shiftSeed();
+            boolean autoSeedApplied = false;
             List<StandaloneBot> bots = new ArrayList<>();
             for (int i = 0; i < config.bots().size(); i++) {
                 BotSpec spec = config.bots().get(i);
@@ -223,6 +225,7 @@ public final class StandaloneMatchRunner {
                 boolean isAuto = elapsed < config.autoSec();
                 HubSchedule.update(remaining, isAuto);
                 double timeUntilShift = HubSchedule.timeUntilShiftEnd();
+                fuel.releaseReady(elapsed);
 
                 int blue = 0;
                 int red = 0;
@@ -232,6 +235,15 @@ public final class StandaloneMatchRunner {
                     } else {
                         blue += bot.getScored();
                     }
+                }
+                // The full sim seeds the SHIFT 1 order from the finished AUTO
+                // totals at teleopInit (HubSchedule.seedFromAutoResult). Mirror
+                // it so winning AUTO carries the same shift consequence, instead
+                // of a fixed Blue-first seed every match.
+                if (!isAuto && !autoSeedApplied) {
+                    shiftSeed = HubSchedule.decideSeed(red, blue);
+                    HubSchedule.setShiftSeed(shiftSeed);
+                    autoSeedApplied = true;
                 }
                 List<BotView> views = new ArrayList<>();
                 for (StandaloneBot bot : bots) {
@@ -255,14 +267,14 @@ public final class StandaloneMatchRunner {
                     int markIdx = nearestOpponentIndex(
                             bot.getPose().getTranslation(), opponents, opponentIndices);
                     Pose2d markPose = markIdx >= 0 ? views.get(markIdx).pose() : bot.getPose();
-                    bot.step(DT_SEC, remaining, isAuto, fuel, config.shiftSeed(),
+                    bot.step(DT_SEC, remaining, isAuto, fuel, shiftSeed,
                             diff, timeUntilShift, allies, opponents, markPose, elapsed);
 
                     // Teleop defensive attribution: credit the defender for the
                     // time it spent marking an opponent whose hub was live — the
                     // window a mark can actually suppress scoring.
                     if (!isAuto && markIdx >= 0 && isMarkingObjective(bot.getObjective())
-                            && HubSchedule.isHubActive(bots.get(markIdx).isRed(), phase, config.shiftSeed())) {
+                            && HubSchedule.isHubActive(bots.get(markIdx).isRed(), phase, shiftSeed)) {
                         markSeconds[i][markIdx] += DT_SEC;
                     }
                 }

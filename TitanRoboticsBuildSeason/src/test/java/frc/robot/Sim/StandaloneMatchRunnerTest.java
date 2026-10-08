@@ -148,6 +148,15 @@ public class StandaloneMatchRunnerTest {
                 "target-progress watchdog should arbitrate in a full 3v3");
     }
 
+    @Test
+    void recyclingKeepsTheFieldStocked() {
+        StandaloneMatchRunner.Config config = StandaloneMatchRunner.default3v3(7);
+        StandaloneMatchRunner.Result result = StandaloneMatchRunner.run(config);
+        assertTrue(result.pickedUp() > config.fuelCount(),
+                "recycled fuel must let total pickups exceed the initial pool, pickedUp="
+                        + result.pickedUp() + " pool=" + config.fuelCount());
+    }
+
     @Disabled("Native DataLogWriter crashes JVM in headless test runner")
     @Test
     void testStandaloneLoggingCreatesWpilog() throws Exception {

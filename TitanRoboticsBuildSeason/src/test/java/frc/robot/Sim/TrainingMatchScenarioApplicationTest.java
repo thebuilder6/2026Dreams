@@ -1,6 +1,7 @@
 package frc.robot.Sim;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
@@ -169,6 +170,22 @@ class TrainingMatchScenarioApplicationTest {
                 "Training primary must publish Simulation/Ally0/Mark");
         assertTrue(SimDashboardKeys.allKeys().contains("Simulation/Ally0/Pose"),
                 "Ally0 per-bot keys must be in the dashboard key contract");
+    }
+
+    @Test
+    void resetToInteractiveClearsMatchSeed() {
+        TrainingMatchScenario scenario = new TrainingMatchScenario(
+                23L,
+                90.0,
+                54,
+                List.of(robot(Archetype.CO_PILOT, pose(1.0, 1.0, 0.0), 6)),
+                List.of(robot(Archetype.AUTONOMOUS_CYCLER, pose(14.5, 1.2, 180.0), 5)));
+        GameSim.getInstance().resetGame(scenario);
+        assertTrue(MatchDeterminism.isSeeded(), "a training scenario seeds the random streams");
+
+        GameSim.getInstance().resetGame(null);
+        assertFalse(MatchDeterminism.isSeeded(),
+                "returning to the interactive sim must not keep the training seed");
     }
 
     private static TrainingMatchScenario.RobotConfig robot(Archetype archetype, Pose2d pose, int preload) {

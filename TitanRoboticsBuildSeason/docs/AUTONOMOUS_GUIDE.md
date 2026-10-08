@@ -216,7 +216,7 @@ On the Elastic Dashboard (and SmartDashboard):
 - **Simulation Validation**:
   - Run `.\gradlew simulateJava` from `TitanRoboticsBuildSeason/`.
   - In SimGUI, set Autonomous Mode and observe the virtual robot execute the selected Choreo trajectory on the AdvantageScope 2D/3D field.
-- **Verified against**: JUnit 5 full test suite clean (70 result files / 619 tests, 0 failures, 2026-10-08). Mission behaviour itself is only SimGUI-validated, not unit-tested.
+- **Verified against**: JUnit 5 full test suite clean (71 result files / 629 tests, 0 failures, 2026-10-08). Mission behaviour itself is only SimGUI-validated, not unit-tested.
 - **Next review due**: 2026-11-06.
 
 ---

@@ -39,13 +39,7 @@ match is bimodal (`KNOWN_ISSUES.md` §E: Blue ~200-280 or ~7-62 at random, sd
 so it is the substrate a search should optimize on. Its *rank ordering* is
 cross-checked against the full sim rather than treated as ground truth.
 
-**Hard fidelity blocker, read before optimizing.** The full sim's RebuiltHub
-recycles scored fuel back onto the field, so its scoring throughput is
-unbounded; the standalone's field is a fixed pool, so it saturates. Measured
-A/B (2026-10-08, 8 seeds): standalone scores ~3.7× lower and per-seed margins
-are uncorrelated with the full sim (r = −0.22). **Until that is fixed, a search
-on the standalone optimizes a different game**, and any champion must be
-re-validated on the full sim. See `KNOWN_ISSUES.md` §E.
+**Fidelity blocker — recycling now modelled; margin rank still unvalidated.** The full sim's RebuiltHub recycles scored fuel back onto the field, so its throughput is unbounded; the standalone originally ran a fixed pool and saturated. As of 2026-10-08 the runner models that recycle (`FuelStore` pending queue + `StandaloneBot.recycleLanding`, derived from the hub chutes), so the field is conserved. Measured A/B (2026-10-08, 8 seeds): standalone combined score rose 864 → 1549 (from 3.7× to 2.05× below the full sim) and per-seed **winner agreement rose 2/8 → 7/8**; per-seed **margin correlation is still ≈0** (Pearson −0.24, Spearman −0.14). The *level* and *winner* now track; the margin *rank* does not, and the full-sim side is one replica of a non-reproducible run (sd 151). **So the fidelity gate is only partly closed: a search on the standalone is now closer but still not validated against the full sim**, and any champion must still be re-validated there. See `KNOWN_ISSUES.md` §E.
 
 ### 2. Individual component EPA
 
@@ -116,12 +110,17 @@ python tools/tune/test_sim_epa.py        # self-test, no JVM needed
 2. **Validity gate** — before any search, Spearman-correlate the standalone
    component EPAs against a clean sequential full-sim sweep over a few policy
    variants. Blocked by the fidelity gap in §1.
-3. **Expression-tree engine** — a sealed `ExpressionNode` AST under
-   `Intelligence/utility/ast`, tier-tagged terminals so a genome cannot silently
-   read clairvoyant-only inputs on the real robot. Extract an `ObjectiveUtility`
-   seam; convert one objective (`CYCLE_SCORE_HUB`) behaviour-preserving first.
-   Frozen scaffolding stays hand-written: archetype zeroing, harvest-deadline
-   force, G420 endgame suppression, the Tier-1 no-information path, and the
+3. **Expression-tree engine** — **library landed 2026-10-08**:
+   `Intelligence/utility/ast` has the sealed `ExpressionNode` (Constant,
+   Terminal, Product/Sum/Min/Max, IfThenElse, Threshold, Sigmoid, Gaussian,
+   Power, Clamp, Not), a tier-tagged `Terminal` set with an `EvalContext` that
+   zeroes clairvoyant terminals under the observed tier, an `SExpressions` text
+   codec (the genome↔Java wire form), and `GeneticOperators` (randomTree /
+   mutate / crossover / prune). **Pending:** the `ObjectiveUtility` seam and a
+   `CYCLE_SCORE_HUB` conversion proven behaviour-preserving against the engine —
+   the library only ships an *illustrative* genome today, not parity. Frozen
+   scaffolding stays hand-written: archetype zeroing, harvest-deadline force,
+   G420 endgame suppression, the Tier-1 no-information path, and the
    `ObjectiveCommitment` inertia.
 4. **Tier 0/1** — Tier 0 is a curated *legality/invariance* card subset (never
    climb at t=140, never shoot a dead hub, never shoot out of zone, alliance
@@ -135,14 +134,18 @@ python tools/tune/test_sim_epa.py        # self-test, no JVM needed
 ## Verification
 
 - Verified against: 2026-10-08, WPILib 2026 JDK. `StandaloneMatchRunnerTest`
-  (15 run / 1 skipped) and `StandaloneRefereeTest` (4) green under the
+  (16 run / 1 skipped) and `StandaloneRefereeTest` (4) green under the
   `gradle-build` lock; `python tools/tune/test_sim_epa.py` 16 checks pass;
   end-to-end `StandaloneMatchRunner --climb` → `sim_epa.py` produces component
-  tables and bounded penalties.
-- The full suite was not re-run for this doc; see `docs/CHANGELOG.md` for the
-  joint stamp.
-- Next review due: 2026-11-07, or when the fuel-recycling fidelity gap (§1) is
-  closed and the validity gate (§5.2) can run.
+  tables and bounded penalties. The expression-tree library is covered by
+  `AstExpressionTest` (9/9: evaluation, natural veto, tier masking, genome codec
+  round-trip, malformed-genome rejection, genetic-operator well-formedness).
+  Fuel recycling added 2026-10-08
+  (`recyclingKeepsTheFieldStocked`); full suite re-run the same day: 71 files /
+  629 tests, 0 failures (clean re-run — see `docs/CHANGELOG.md`).
+- Next review due: 2026-11-07, or when a clean sequential full-sim sweep can run
+  the validity gate (§5.2) and confirm the standalone's margin rank, not just its
+  level and winner.
 
 ## Related
 

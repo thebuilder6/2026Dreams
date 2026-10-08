@@ -462,7 +462,7 @@ def main():
     print("-" * 78)
     failures = []
     for v in sorted(by_variant):
-        if v == args.baseline:
+        if v == baseline:
             continue
         vrows = by_variant[v]
         v_by_seed = defaultdict(list)

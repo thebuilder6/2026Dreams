@@ -48,7 +48,7 @@ foreach ($x in $xmlFiles) {
   } catch { Write-Warning "[counts] unreadable XML: $($x.Name)" }
 }
 $bad = $xmlFail + $xmlErr
-if ($xmlFiles.Count -lt $diskFiles) {
+if ($xmlFiles.Count -ne $diskFiles) {
   Write-Output ("[counts] REFUSING: xml has {0} files but {1} *Test.java exist on disk." -f $xmlFiles.Count, $diskFiles)
   Write-Output "[counts] The results dir is partial: another agent's run is writing it now, or the last run died mid-write"
   Write-Output "[counts] (shared-tree clobber -- this is why test runs hold the gradle-build lock). Wait, then re-run."

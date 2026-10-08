@@ -19,7 +19,13 @@ import frc.robot.Navigation.StaticPathfinder;
  * full sim — without a {@code SimulatedArena} existing at all.
  */
 public final class FuelStore {
+    /** Chute-to-carpet settle time before a recycled piece is collectable, s. */
+    public static final double RECYCLE_SETTLE_SEC = 0.5;
+
+    private record Pending(Translation2d at, double readyAtSec) {}
+
     private final List<Translation2d> pieces = new ArrayList<>();
+    private final List<Pending> pending = new ArrayList<>();
 
     public FuelStore(List<Translation2d> initial) {
         if (initial != null) {
@@ -57,6 +63,43 @@ public final class FuelStore {
     /** Remaining piece count. */
     public int size() {
         return pieces.size();
+    }
+
+    /**
+     * Queues a recycled Fuel to appear on the carpet after {@code readyAtSec}.
+     *
+     * <p>Mirrors {@code RebuiltHub.addPoints}: every captured Fuel is re-spawned
+     * through a hub chute, so the field is conserved rather than drained. Out-of-
+     * bounds or hard-footprint landings are dropped.
+     *
+     * @param at        landing point (midfield, near the scoring hub)
+     * @param readyAtSec sim time (s) at which the piece becomes collectable
+     */
+    public void recycle(Translation2d at, double readyAtSec) {
+        if (at == null) {
+            return;
+        }
+        if (at.getX() < 0.05 || at.getX() > FieldMap.FIELD_LENGTH - 0.05
+                || at.getY() < 0.05 || at.getY() > FieldMap.FIELD_WIDTH - 0.05
+                || StaticPathfinder.isPointInHardObstacle(at)) {
+            return;
+        }
+        pending.add(new Pending(at, readyAtSec));
+    }
+
+    /** Releases recycled pieces whose settle time has elapsed. */
+    public void releaseReady(double elapsedSec) {
+        for (int i = pending.size() - 1; i >= 0; i--) {
+            if (pending.get(i).readyAtSec() <= elapsedSec) {
+                pieces.add(pending.get(i).at());
+                pending.remove(i);
+            }
+        }
+    }
+
+    /** Pieces still settling off-field (telemetry/tests). */
+    public int pendingCount() {
+        return pending.size();
     }
 
     /**

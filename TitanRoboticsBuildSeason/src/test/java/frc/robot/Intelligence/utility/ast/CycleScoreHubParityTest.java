@@ -39,16 +39,6 @@ public class CycleScoreHubParityTest {
                 Rotation2d.fromDegrees(180));
     }
 
-    private static EvalContext context(int held, double distM, boolean hubActive, int scoreDiff, double timeUntilShift) {
-        return EvalContext.builder()
-                .set(Terminal.HELD_RATIO, held / (double) BALL_CAPACITY)
-                .set(Terminal.DIST_TO_HUB, 1.0 - distM / DIST_NORM)
-                .set(Terminal.TIME_UNTIL_SHIFT, timeUntilShift / 20.0)
-                .set(Terminal.SCORE_DIFF, 0.5 + scoreDiff / 2.0)
-                .setFlag(Terminal.MY_HUB_ACTIVE, hubActive)
-                .build();
-    }
-
     @Test
     void expressionMatchesTheEngineAcrossAGrid() {
         PolicyWeights weights = PolicyWeights.DEFAULT;
@@ -80,7 +70,7 @@ public class CycleScoreHubParityTest {
                                     Archetype.AUTONOMOUS_CYCLER, weights)
                                     .get(StrategicObjective.CYCLE_SCORE_HUB);
                             double expressionValue = expression.evaluate(
-                                    context(held, distM, hubActive, diff, timeUntilShift));
+                                    WorldStateTerminals.toContext(world, knowledge, DIST_NORM));
 
                             String label = "held=" + held + " d=" + distM + " hub=" + hubActive
                                     + " diff=" + diff + " tus=" + timeUntilShift;

@@ -119,11 +119,15 @@ python tools/tune/test_sim_epa.py        # self-test, no JVM needed
    (randomTree / mutate / crossover / prune). **`CYCLE_SCORE_HUB` parity proven
    2026-10-08:** `ObjectiveExpressions.cycleScoreHub` reproduces the live engine's
    value to `1e-9` across a >200-state grid (`CycleScoreHubParityTest`), with the
-   harvest-deadline-force states excluded. **Remaining:** wire the engine to *use*
-   the expression (the `ObjectiveUtility` seam), and convert the other objectives.
-   Frozen scaffolding stays hand-written: archetype zeroing, harvest-deadline
-   force, G420 endgame suppression, the Tier-1 no-information path, and the
-   `ObjectiveCommitment` inertia.
+   harvest-deadline-force states excluded. `WorldStateTerminals.toContext` maps
+   `WorldState` + `MatchKnowledge` onto the terminals (the parity test runs
+   through it), so what remains is only the engine-side call swap — deliberately
+   deferred until the validity gate clears and `JevDecisionEngine` is quiet.
+   **Remaining:** wire the engine to *use* the expression (the `ObjectiveUtility`
+   seam), and convert the other objectives. Frozen scaffolding stays
+   hand-written: archetype zeroing, harvest-deadline force, G420 endgame
+   suppression, the Tier-1 no-information path, and the `ObjectiveCommitment`
+   inertia.
 4. **Tier 0/1** — Tier 0 is a curated *legality/invariance* card subset (never
    climb at t=140, never shoot a dead hub, never shoot out of zone, alliance
    symmetry), **not** the 97-card preference set, which would bias the search

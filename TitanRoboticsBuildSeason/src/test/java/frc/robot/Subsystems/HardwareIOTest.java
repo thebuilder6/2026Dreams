@@ -233,4 +233,18 @@ public class HardwareIOTest {
         assertDoesNotThrow(() -> motor.setInverted(true));
         assertDoesNotThrow(() -> motor.setBrakeMode(true));
     }
+
+    @Test
+    public void testNeoSparkMaxSetUpdatesAppliedVoltage() {
+        frc.robot.Hardware.NeoSparkMaxMotor motor = new frc.robot.Hardware.NeoSparkMaxMotor(61);
+        // A duty-cycle command must surface as applied voltage: the intake jam
+        // detector reads getAppliedVoltage() and would otherwise always see 0,
+        // so auto-eject could never fire on hardware.
+        motor.set(0.5);
+        assertTrue(motor.getAppliedVoltage() > 0.0,
+                "set(power) must update applied-voltage telemetry");
+        assertEquals(0.5 * motor.getBusVoltage(), motor.getAppliedVoltage(), 1e-6);
+        motor.stop();
+        assertEquals(0.0, motor.getAppliedVoltage(), 1e-6);
+    }
 }

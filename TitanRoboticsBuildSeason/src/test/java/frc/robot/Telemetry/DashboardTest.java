@@ -77,4 +77,28 @@ public class DashboardTest {
         // Reset to default 0
         Dashboard.setAllyCount(0);
     }
+
+    @Test
+    public void testGameDataRefreshesBetweenMatches() {
+        Dashboard dashboard = Dashboard.getInstance();
+        try {
+            edu.wpi.first.wpilibj.simulation.DriverStationSim.setEnabled(true);
+            edu.wpi.first.wpilibj.simulation.DriverStationSim.setGameSpecificMessage("R");
+            edu.wpi.first.wpilibj.simulation.DriverStationSim.notifyNewData();
+            dashboard.update();
+            dashboard.log();
+            assertEquals("R", SmartDashboard.getString("Match/GameData", ""));
+
+            // Match 2: the FMS sends a new shift order. The match-1 value must not
+            // stick (the robot program persists across matches).
+            edu.wpi.first.wpilibj.simulation.DriverStationSim.setGameSpecificMessage("B");
+            edu.wpi.first.wpilibj.simulation.DriverStationSim.notifyNewData();
+            dashboard.update();
+            dashboard.log();
+            assertEquals("B", SmartDashboard.getString("Match/GameData", ""),
+                    "the cached shift order must refresh from the live FMS message");
+        } finally {
+            edu.wpi.first.wpilibj.simulation.DriverStationSim.resetData();
+        }
+    }
 }

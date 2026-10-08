@@ -158,6 +158,15 @@ public final class SExpressions {
                     yield new ExpressionNode.Threshold(args.get(0), num(args.get(1), name),
                             num(args.get(2), name), num(args.get(3), name));
                 }
+                case "threshold_ge" -> {
+                    require(args, 4, name);
+                    yield new ExpressionNode.Threshold(args.get(0), num(args.get(1), name),
+                            num(args.get(2), name), num(args.get(3), name), true);
+                }
+                case "scale" -> {
+                    require(args, 2, name);
+                    yield new ExpressionNode.Scale(args.get(0), num(args.get(1), name));
+                }
                 case "sigmoid" -> {
                     require(args, 3, name);
                     yield new ExpressionNode.Sigmoid(args.get(0), num(args.get(1), name), num(args.get(2), name));

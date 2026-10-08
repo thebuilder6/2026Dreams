@@ -112,15 +112,17 @@ python tools/tune/test_sim_epa.py        # self-test, no JVM needed
    variants. Blocked by the fidelity gap in §1.
 3. **Expression-tree engine** — **library landed 2026-10-08**:
    `Intelligence/utility/ast` has the sealed `ExpressionNode` (Constant,
-   Terminal, Product/Sum/Min/Max, IfThenElse, Threshold, Sigmoid, Gaussian,
-   Power, Clamp, Not), a tier-tagged `Terminal` set with an `EvalContext` that
-   zeroes clairvoyant terminals under the observed tier, an `SExpressions` text
-   codec (the genome↔Java wire form), and `GeneticOperators` (randomTree /
-   mutate / crossover / prune). **Pending:** the `ObjectiveUtility` seam and a
-   `CYCLE_SCORE_HUB` conversion proven behaviour-preserving against the engine —
-   the library only ships an *illustrative* genome today, not parity. Frozen
-   scaffolding stays hand-written: archetype zeroing, harvest-deadline force,
-   G420 endgame suppression, the Tier-1 no-information path, and the
+   Terminal, Product/Sum/Min/Max, IfThenElse, Threshold/`threshold_ge`, Sigmoid,
+   Gaussian, Power, Scale, Clamp, Not), a tier-tagged `Terminal` set with an
+   `EvalContext` that zeroes clairvoyant terminals under the observed tier, an
+   `SExpressions` text codec (the genome↔Java wire form), and `GeneticOperators`
+   (randomTree / mutate / crossover / prune). **`CYCLE_SCORE_HUB` parity proven
+   2026-10-08:** `ObjectiveExpressions.cycleScoreHub` reproduces the live engine's
+   value to `1e-9` across a >200-state grid (`CycleScoreHubParityTest`), with the
+   harvest-deadline-force states excluded. **Remaining:** wire the engine to *use*
+   the expression (the `ObjectiveUtility` seam), and convert the other objectives.
+   Frozen scaffolding stays hand-written: archetype zeroing, harvest-deadline
+   force, G420 endgame suppression, the Tier-1 no-information path, and the
    `ObjectiveCommitment` inertia.
 4. **Tier 0/1** — Tier 0 is a curated *legality/invariance* card subset (never
    climb at t=140, never shoot a dead hub, never shoot out of zone, alliance
@@ -139,10 +141,12 @@ python tools/tune/test_sim_epa.py        # self-test, no JVM needed
   end-to-end `StandaloneMatchRunner --climb` → `sim_epa.py` produces component
   tables and bounded penalties. The expression-tree library is covered by
   `AstExpressionTest` (9/9: evaluation, natural veto, tier masking, genome codec
-  round-trip, malformed-genome rejection, genetic-operator well-formedness).
+  round-trip, malformed-genome rejection, genetic-operator well-formedness) and
+  `CycleScoreHubParityTest` (2/2: the engine-parity grid + the Scale / inclusive
+  gate codec).
   Fuel recycling added 2026-10-08
-  (`recyclingKeepsTheFieldStocked`); full suite re-run the same day: 71 files /
-  629 tests, 0 failures (clean re-run — see `docs/CHANGELOG.md`).
+  (`recyclingKeepsTheFieldStocked`); full suite re-run the same day: 73 files /
+  637 tests, 0 failures (clean re-run — see `docs/CHANGELOG.md`).
 - Next review due: 2026-11-07, or when a clean sequential full-sim sweep can run
   the validity gate (§5.2) and confirm the standalone's margin rank, not just its
   level and winner.

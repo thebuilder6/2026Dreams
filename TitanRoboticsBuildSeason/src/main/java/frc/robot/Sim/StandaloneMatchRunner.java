@@ -13,6 +13,7 @@ import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Translation2d;
 import frc.robot.Intelligence.Archetype;
 import frc.robot.Intelligence.PolicyWeights;
+import frc.robot.Intelligence.StrategicObjective;
 import frc.robot.Navigation.FieldMap;
 import frc.robot.Sim.StandaloneBot.BotView;
 
@@ -41,8 +42,17 @@ public final class StandaloneMatchRunner {
     /** Minimum center-to-center distance enforced by the peer push-out. */
     public static final double PEER_MIN_DISTANCE_M = 0.90;
 
+    /** Climb points per robot; mirrors {@code MatchScoreTracker.POINTS_PER_CLIMB}. */
+    private static final int POINTS_PER_CLIMB_MIRROR = 10;
+
     /** One roster slot. */
-    public record BotSpec(Archetype archetype, boolean isRed, Pose2d startPose, int preload) {}
+    public record BotSpec(Archetype archetype, boolean isRed, Pose2d startPose, int preload,
+            boolean hasClimber) {
+        /** Legacy 4-arg slot: no climber, preserving prior behaviour. */
+        public BotSpec(Archetype archetype, boolean isRed, Pose2d startPose, int preload) {
+            this(archetype, isRed, startPose, preload, false);
+        }
+    }
 
     public record Config(
             long seed,
@@ -84,6 +94,30 @@ public final class StandaloneMatchRunner {
         }
     }
 
+    /**
+     * Per-roster-slot telemetry, the input the individual-EPA evaluator
+     * ({@code tools/tune/sim_epa.py}) consumes. Roster order is the order of
+     * {@link Config#bots()}: Blue slots first, then Red, in {@code default3v3}.
+     */
+    public record BotTelemetry(
+            boolean isRed,
+            String archetype,
+            int autoScored,
+            int teleopScored,
+            int scored,
+            int pickedUp,
+            int attemptedShots,
+            int missedShots,
+            int escapes,
+            double pathLengthM,
+            int wastedFuel,
+            int shuttledFuel,
+            boolean climbed,
+            double climbArrivalSec,
+            int minorFouls,
+            int majorFouls,
+            double hubActiveTeleopSec) {}
+
     public record Result(
             long ticks,
             int blueScored,
@@ -95,8 +129,13 @@ public final class StandaloneMatchRunner {
             String winner,
             int pickedUp,
             int fuelRemaining,
+            int attemptedShots,
+            int missedShots,
+            int escapes,
             double[] pathLengthM,
             int[] botScored,
+            BotTelemetry[] botTelemetry,
+            double[][] markSeconds,
             long wallMs) {
         public Result(
                 long ticks,
@@ -109,7 +148,8 @@ public final class StandaloneMatchRunner {
                 int[] botScored,
                 long wallMs) {
             this(ticks, blueScored, redScored, 0, 0, blueScored, redScored,
-                    winner, pickedUp, fuelRemaining, pathLengthM, botScored, wallMs);
+                    winner, pickedUp, fuelRemaining, 0, 0, 0,
+                    pathLengthM, botScored, new BotTelemetry[0], new double[0][0], wallMs);
         }
     }
 
@@ -137,6 +177,24 @@ public final class StandaloneMatchRunner {
                 scenario.fieldFuelCount(), 'R', bots);
     }
 
+    /**
+     * Full 3v3 roster with an explicit climber flag on every slot. The default
+     * roster has no climber, so endgame is otherwise unmeasurable in the
+     * standalone; the evolution harness uses this to make Endgame EPA real.
+     */
+    public static Config default3v3(long seed, boolean withClimbers) {
+        TrainingMatchScenario scenario = TrainingMatchScenario.default3v3(seed);
+        List<BotSpec> bots = new ArrayList<>();
+        for (TrainingMatchScenario.RobotConfig bot : scenario.blueRobots()) {
+            bots.add(new BotSpec(bot.archetype(), false, bot.startingPose(), bot.preloadFuel(), withClimbers));
+        }
+        for (TrainingMatchScenario.RobotConfig bot : scenario.redRobots()) {
+            bots.add(new BotSpec(bot.archetype(), true, bot.startingPose(), bot.preloadFuel(), withClimbers));
+        }
+        return new Config(seed, scenario.durationSeconds(), 15.0,
+                scenario.fieldFuelCount(), 'R', bots);
+    }
+
     public static Result run(Config config) {
         long wallStart = System.currentTimeMillis();
         char savedSeed = HubSchedule.getShiftSeed();
@@ -149,10 +207,14 @@ public final class StandaloneMatchRunner {
             HubSchedule.setShiftSeed(config.shiftSeed());
             FuelStore fuel = FuelStore.scatterSeeded(config.seed(), config.fuelCount());
             List<StandaloneBot> bots = new ArrayList<>();
-            for (BotSpec spec : config.bots()) {
+            for (int i = 0; i < config.bots().size(); i++) {
+                BotSpec spec = config.bots().get(i);
                 bots.add(new StandaloneBot(
-                        spec.startPose(), spec.archetype(), spec.isRed(), spec.preload()));
+                        spec.startPose(), spec.archetype(), spec.isRed(), spec.preload(), i,
+                        spec.hasClimber()));
             }
+            StandaloneReferee referee = new StandaloneReferee();
+            double[][] markSeconds = new double[bots.size()][bots.size()];
 
             long ticks = Math.round(config.durationSec() / DT_SEC);
             for (long tick = 0; tick < ticks; tick++) {
@@ -175,22 +237,36 @@ public final class StandaloneMatchRunner {
                 for (StandaloneBot bot : bots) {
                     views.add(bot.view());
                 }
+                HubSchedule.Phase phase = HubSchedule.phaseFor(remaining, isAuto);
                 for (int i = 0; i < bots.size(); i++) {
                     StandaloneBot bot = bots.get(i);
                     List<BotView> allies = new ArrayList<>();
                     List<BotView> opponents = new ArrayList<>();
+                    List<Integer> opponentIndices = new ArrayList<>();
                     for (int j = 0; j < bots.size(); j++) {
                         if (bots.get(j).isRed() == bot.isRed()) {
                             allies.add(views.get(j));
                         } else {
                             opponents.add(views.get(j));
+                            opponentIndices.add(j);
                         }
                     }
                     int diff = bot.isRed() ? red - blue : blue - red;
+                    int markIdx = nearestOpponentIndex(
+                            bot.getPose().getTranslation(), opponents, opponentIndices);
+                    Pose2d markPose = markIdx >= 0 ? views.get(markIdx).pose() : bot.getPose();
                     bot.step(DT_SEC, remaining, isAuto, fuel, config.shiftSeed(),
-                            diff, timeUntilShift, allies, opponents,
-                            nearestOpponent(bot.getPose().getTranslation(), opponents), elapsed);
+                            diff, timeUntilShift, allies, opponents, markPose, elapsed);
+
+                    // Teleop defensive attribution: credit the defender for the
+                    // time it spent marking an opponent whose hub was live — the
+                    // window a mark can actually suppress scoring.
+                    if (!isAuto && markIdx >= 0 && isMarkingObjective(bot.getObjective())
+                            && HubSchedule.isHubActive(bots.get(markIdx).isRed(), phase, config.shiftSeed())) {
+                        markSeconds[i][markIdx] += DT_SEC;
+                    }
                 }
+                referee.update(bots, DT_SEC);
                 if (logging) {
                     StandaloneReplay.recordTick(remaining, bots, fuel, blue, red);
                 }
@@ -204,8 +280,12 @@ public final class StandaloneMatchRunner {
             int blueTeleop = 0;
             int redTeleop = 0;
             int pickedUp = 0;
+            int attemptedShots = 0;
+            int missedShots = 0;
+            int escapes = 0;
             double[] path = new double[bots.size()];
             int[] scored = new int[bots.size()];
+            BotTelemetry[] telemetry = new BotTelemetry[bots.size()];
             for (int i = 0; i < bots.size(); i++) {
                 StandaloneBot bot = bots.get(i);
                 if (bot.isRed()) {
@@ -218,13 +298,26 @@ public final class StandaloneMatchRunner {
                     blueTeleop += bot.getTeleopScored();
                 }
                 pickedUp += bot.getPickedUp();
+                attemptedShots += bot.getAttemptedShots();
+                missedShots += bot.getMissedShots();
+                escapes += bot.getEscapes();
                 path[i] = bot.getPathLengthM();
                 scored[i] = bot.getScored();
+                telemetry[i] = new BotTelemetry(
+                        bot.isRed(), bot.getArchetype().name(),
+                        bot.getAutoScored(), bot.getTeleopScored(), bot.getScored(),
+                        bot.getPickedUp(), bot.getAttemptedShots(), bot.getMissedShots(),
+                        bot.getEscapes(), bot.getPathLengthM(),
+                        bot.getWastedFuel(), bot.getShuttledFuel(),
+                        bot.isClimbed(), bot.getClimbArrivalSec(),
+                        bot.getMinorFouls(), bot.getMajorFouls(),
+                        bot.getHubActiveTeleopSec());
             }
             String winner = blue > red ? "Blue" : red > blue ? "Red" : "Tie";
             long wallMs = System.currentTimeMillis() - wallStart;
             return new Result(ticks, blue, red, blueAuto, redAuto, blueTeleop, redTeleop,
-                    winner, pickedUp, fuel.size(), path, scored, wallMs);
+                    winner, pickedUp, fuel.size(), attemptedShots, missedShots, escapes,
+                    path, scored, telemetry, markSeconds, wallMs);
         } finally {
             if (logging) {
                 StandaloneReplay.end();
@@ -234,17 +327,27 @@ public final class StandaloneMatchRunner {
         }
     }
 
-    private static Pose2d nearestOpponent(Translation2d at, List<BotView> opponents) {
-        Pose2d best = new Pose2d();
+    /** Roster index of the nearest opponent, or -1 if there are none. */
+    private static int nearestOpponentIndex(
+            Translation2d at, List<BotView> opponents, List<Integer> opponentIndices) {
+        int best = -1;
         double bestDist = Double.MAX_VALUE;
-        for (BotView o : opponents) {
-            double d = at.getDistance(o.pose().getTranslation());
+        for (int k = 0; k < opponents.size(); k++) {
+            double d = at.getDistance(opponents.get(k).pose().getTranslation());
             if (d < bestDist) {
                 bestDist = d;
-                best = o.pose();
+                best = opponentIndices.get(k);
             }
         }
         return best;
+    }
+
+    /** Defensive postures whose intent is to physically mark an opponent. */
+    static boolean isMarkingObjective(StrategicObjective objective) {
+        return objective == StrategicObjective.DENY_SHOOTING_LANE
+                || objective == StrategicObjective.SHADOW_MIDLINE
+                || objective == StrategicObjective.LEAD_INTERCEPT
+                || objective == StrategicObjective.CHOKE_TRENCH;
     }
 
     /**
@@ -301,6 +404,9 @@ public final class StandaloneMatchRunner {
         sb.append(",\"durationSec\":").append(config.durationSec());
         sb.append(",\"autoSec\":").append(config.autoSec());
         sb.append(",\"fieldFuelCount\":").append(config.fuelCount());
+        sb.append(",\"attemptedShots\":").append(result.attemptedShots());
+        sb.append(",\"missedShots\":").append(result.missedShots());
+        sb.append(",\"escapes\":").append(result.escapes());
         sb.append(",\"winner\":\"").append(result.winner()).append('"');
         sb.append(",\"blueTotal\":").append(result.blueScored());
         sb.append(",\"redTotal\":").append(result.redScored());
@@ -311,16 +417,46 @@ public final class StandaloneMatchRunner {
         sb.append(",\"redTeleopFuel\":").append(result.redTeleopFuel());
         sb.append(",\"blueFuel\":").append(result.blueScored());
         sb.append(",\"redFuel\":").append(result.redScored());
-        sb.append(",\"blueClimb\":0");
-        sb.append(",\"redClimb\":0");
-        sb.append(",\"blueClimbCount\":0");
-        sb.append(",\"redClimbCount\":0");
-        sb.append(",\"blueFouls\":0");
-        sb.append(",\"redFouls\":0");
-        sb.append(",\"bluePenaltyPoints\":0");
-        sb.append(",\"redPenaltyPoints\":0");
-        sb.append(",\"blueWastedFuel\":0");
-        sb.append(",\"redWastedFuel\":0");
+
+        int blueClimbCount = 0;
+        int redClimbCount = 0;
+        int blueMinor = 0;
+        int blueMajor = 0;
+        int redMinor = 0;
+        int redMajor = 0;
+        int blueWasted = 0;
+        int redWasted = 0;
+        for (BotTelemetry b : result.botTelemetry()) {
+            if (b.isRed()) {
+                redMinor += b.minorFouls();
+                redMajor += b.majorFouls();
+                redWasted += b.wastedFuel();
+                if (b.climbed()) {
+                    redClimbCount++;
+                }
+            } else {
+                blueMinor += b.minorFouls();
+                blueMajor += b.majorFouls();
+                blueWasted += b.wastedFuel();
+                if (b.climbed()) {
+                    blueClimbCount++;
+                }
+            }
+        }
+        // Points are mirrored from MatchScoreTracker: a foul credits the opponent.
+        int bluePenaltyPoints = 5 * redMinor + 15 * redMajor;
+        int redPenaltyPoints = 5 * blueMinor + 15 * blueMajor;
+
+        sb.append(",\"blueClimb\":").append(blueClimbCount * POINTS_PER_CLIMB_MIRROR);
+        sb.append(",\"redClimb\":").append(redClimbCount * POINTS_PER_CLIMB_MIRROR);
+        sb.append(",\"blueClimbCount\":").append(blueClimbCount);
+        sb.append(",\"redClimbCount\":").append(redClimbCount);
+        sb.append(",\"blueFouls\":").append(blueMinor + blueMajor);
+        sb.append(",\"redFouls\":").append(redMinor + redMajor);
+        sb.append(",\"bluePenaltyPoints\":").append(bluePenaltyPoints);
+        sb.append(",\"redPenaltyPoints\":").append(redPenaltyPoints);
+        sb.append(",\"blueWastedFuel\":").append(blueWasted);
+        sb.append(",\"redWastedFuel\":").append(redWasted);
         sb.append(",\"playerBlueFuel\":0");
         sb.append(",\"playerRedFuel\":0");
         sb.append(",\"blueReconciliationResidual\":0");
@@ -355,6 +491,8 @@ public final class StandaloneMatchRunner {
 
         appendBotsBlock(sb, "redBots", redArchetypes, redPaths);
         appendBotsBlock(sb, "blueBots", blueArchetypes, bluePaths);
+        appendBotTelemetry(sb, result.botTelemetry());
+        appendMarkSeconds(sb, result.markSeconds());
 
         sb.append(",\"logPath\":\"").append(config.logPath() == null ? "" : config.logPath()).append('"');
         sb.append(",\"reportPath\":\"\"");
@@ -394,6 +532,64 @@ public final class StandaloneMatchRunner {
         sb.append("]}");
     }
 
+    /**
+     * Per-roster-slot block for the individual-EPA evaluator. Field names are
+     * lowerCamel and the array is in roster order (see {@link BotTelemetry}).
+     */
+    private static void appendBotTelemetry(StringBuilder sb, BotTelemetry[] telemetry) {
+        sb.append(",\"perBot\":[");
+        for (int i = 0; i < telemetry.length; i++) {
+            if (i > 0) {
+                sb.append(',');
+            }
+            BotTelemetry b = telemetry[i];
+            sb.append('{');
+            sb.append("\"roster\":").append(i);
+            sb.append(",\"alliance\":\"").append(b.isRed() ? "red" : "blue").append('"');
+            sb.append(",\"archetype\":\"").append(b.archetype()).append('"');
+            sb.append(",\"autoScored\":").append(b.autoScored());
+            sb.append(",\"teleopScored\":").append(b.teleopScored());
+            sb.append(",\"scored\":").append(b.scored());
+            sb.append(",\"pickedUp\":").append(b.pickedUp());
+            sb.append(",\"attemptedShots\":").append(b.attemptedShots());
+            sb.append(",\"missedShots\":").append(b.missedShots());
+            sb.append(",\"escapes\":").append(b.escapes());
+            sb.append(",\"pathLengthM\":").append(b.pathLengthM());
+            sb.append(",\"wastedFuel\":").append(b.wastedFuel());
+            sb.append(",\"shuttledFuel\":").append(b.shuttledFuel());
+            sb.append(",\"climbed\":").append(b.climbed());
+            sb.append(",\"climbArrivalSec\":").append(b.climbArrivalSec());
+            sb.append(",\"minorFouls\":").append(b.minorFouls());
+            sb.append(",\"majorFouls\":").append(b.majorFouls());
+            sb.append(",\"hubActiveTeleopSec\":").append(b.hubActiveTeleopSec());
+            sb.append('}');
+        }
+        sb.append(']');
+    }
+
+    /**
+     * Roster x roster matrix of teleop seconds defender {@code i} spent marking
+     * opponent {@code j} while {@code j}'s hub was live. Consumed by the
+     * model-based defensive-EPA residual in {@code tools/tune/sim_epa.py}.
+     */
+    private static void appendMarkSeconds(StringBuilder sb, double[][] markSeconds) {
+        sb.append(",\"markSeconds\":[");
+        for (int i = 0; i < markSeconds.length; i++) {
+            if (i > 0) {
+                sb.append(',');
+            }
+            sb.append('[');
+            for (int j = 0; j < markSeconds[i].length; j++) {
+                if (j > 0) {
+                    sb.append(',');
+                }
+                sb.append(markSeconds[i][j]);
+            }
+            sb.append(']');
+        }
+        sb.append(']');
+    }
+
     public static void main(String[] args) {
         long seed = 42;
         String seedsStr = null;
@@ -406,6 +602,7 @@ public final class StandaloneMatchRunner {
         String logPath = null;
         String variant = "standalone";
         int replica = 0;
+        boolean climb = false;
 
         for (int i = 0; i < args.length; i++) {
             switch (args[i]) {
@@ -420,6 +617,7 @@ public final class StandaloneMatchRunner {
                 case "--log" -> { if (i + 1 < args.length) logPath = args[++i]; }
                 case "--variant" -> { if (i + 1 < args.length) variant = args[++i]; }
                 case "--replica" -> { if (i + 1 < args.length) replica = Integer.parseInt(args[++i]); }
+                case "--climb" -> climb = true;
                 default -> { /* ignore unrecognized option */ }
             }
         }
@@ -442,7 +640,7 @@ public final class StandaloneMatchRunner {
 
         try {
             for (long s : seeds) {
-                Config full = default3v3(s);
+                Config full = default3v3(s, climb);
                 String matchLog = logPath;
                 if (matchLog != null && seeds.size() > 1) {
                     matchLog = matchLog.endsWith(".wpilog")
@@ -452,10 +650,12 @@ public final class StandaloneMatchRunner {
                 Config config = new Config(s, durationSec, autoSec, fuelCount, shiftSeed, full.bots(), matchLog);
                 Result res = run(config);
                 System.out.printf(
-                        "[Standalone] Seed %d: Blue %d (auto %d, teleop %d) - Red %d (auto %d, teleop %d) [%s] in %d ms%n",
+                        "[Standalone] Seed %d: Blue %d (auto %d, teleop %d) - Red %d (auto %d, teleop %d)"
+                                + " [%s] volleys %d/%d scored (miss %d), escapes %d, in %d ms%n",
                         s, res.blueScored(), res.blueAutoFuel(), res.blueTeleopFuel(),
                         res.redScored(), res.redAutoFuel(), res.redTeleopFuel(),
-                        res.winner(), res.wallMs());
+                        res.winner(), res.blueScored() + res.redScored(), res.attemptedShots(),
+                        res.missedShots(), res.escapes(), res.wallMs());
 
                 if (jsonlPath != null && !jsonlPath.isBlank()) {
                     String line = toJsonLine(config, res, variant, replica);

@@ -2,7 +2,7 @@
 title: External Resources
 audience: [human, ai]
 owner: programming-leads
-last_verified: 2026-09-28
+last_verified: 2026-10-08
 status: authoritative
 ---
 

@@ -61,6 +61,8 @@ public final class StandaloneBot {
     private final boolean isRed;
     private int held;
     private int scored;
+    private int autoScored;
+    private int teleopScored;
     private int pickedUp;
     private double pathLengthM;
     private final Set<Translation2d> blockedFuel = new HashSet<>();
@@ -96,6 +98,14 @@ public final class StandaloneBot {
 
     public int getScored() {
         return scored;
+    }
+
+    public int getAutoScored() {
+        return autoScored;
+    }
+
+    public int getTeleopScored() {
+        return teleopScored;
     }
 
     public int getPickedUp() {
@@ -224,6 +234,11 @@ public final class StandaloneBot {
                 && FieldMap.AllianceZones.isInAllianceZone(pose, isRed)
                 && hubTranslation().getDistance(pose.getTranslation())
                         <= FieldMap.Hubs.SHOOTING_MAX_DISTANCE) {
+            if (isAuto) {
+                autoScored += held;
+            } else {
+                teleopScored += held;
+            }
             scored += held;
             held = 0;
         }

@@ -16,7 +16,6 @@ import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import frc.robot.Navigation.DynamicRouter;
 import frc.robot.Sim.AIRobotSim.AIMode;
-import frc.robot.Sim.AIRobotSim.CyclerPhase;
 import frc.robot.Sim.AIRobotSim.MarkCandidate;
 import frc.robot.Telemetry.Dashboard;
 import swervelib.simulation.ironmaple.simulation.SimulatedArena;
@@ -82,7 +81,6 @@ public class AIRobotSimTest {
 
     @Test
     public void testCyclerInitialization() {
-        assertEquals(CyclerPhase.HUNT_FUEL, aiSim.getCyclerPhase());
         assertEquals(0, aiSim.getAiScoreCount());
     }
 
@@ -233,17 +231,16 @@ public class AIRobotSimTest {
     }
 
     @Test
-    public void testCyclerShootingPhaseTransition() {
+    public void testBot0ScoringLifecycle() {
         aiSim.setFuelCount(3);
-        aiSim.setCyclerPhase(CyclerPhase.SHOOTING);
-        assertEquals(CyclerPhase.SHOOTING, aiSim.getCyclerPhase());
+        assertEquals(3, aiSim.getFuelCount());
 
         SmartDashboard.putBoolean("Features/Opponent Robot", true);
         SmartDashboard.putString("Simulation/AIMode", AIMode.AUTONOMOUS_CYCLER.name());
         aiSim.getDriveSimulation().setSimulationWorldPose(new Pose2d(14.34, 4.035, Rotation2d.fromDegrees(180)));
 
         aiSim.simulationUpdate();
-        assertNotNull(aiSim.getCyclerPhase());
+        assertNotNull(aiSim.getOpponents().get(0));
     }
 
     @Test

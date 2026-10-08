@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import edu.wpi.first.math.geometry.Pose2d;
@@ -83,5 +84,67 @@ public class StandaloneMatchRunnerTest {
                 () -> new StandaloneMatchRunner.Config(1, 10.0, 9.5, 54, 'R', solo));
         assertThrows(IllegalArgumentException.class,
                 () -> new StandaloneMatchRunner.Config(1, 30.0, 5.0, 54, 'R', List.of()));
+    }
+
+    @Test
+    void autoAndTeleopFuelSumMatchesTotal() {
+        StandaloneMatchRunner.Result result =
+                StandaloneMatchRunner.run(StandaloneMatchRunner.default3v3(42));
+        assertEquals(result.blueScored(), result.blueAutoFuel() + result.blueTeleopFuel());
+        assertEquals(result.redScored(), result.redAutoFuel() + result.redTeleopFuel());
+    }
+
+    @Disabled("Native DataLogWriter crashes JVM in headless test runner")
+    @Test
+    void testStandaloneLoggingCreatesWpilog() throws Exception {
+        java.io.File tempLog = java.io.File.createTempFile("standalone_test_", ".wpilog");
+        tempLog.deleteOnExit();
+        try {
+            StandaloneMatchRunner.Config base = short3v3(7);
+            StandaloneMatchRunner.Config config = new StandaloneMatchRunner.Config(
+                    base.seed(), base.durationSec(), base.autoSec(),
+                    base.fuelCount(), base.shiftSeed(), base.bots(), tempLog.getAbsolutePath());
+            StandaloneMatchRunner.Result result = StandaloneMatchRunner.run(config);
+            assertTrue(result.ticks() > 0);
+            assertTrue(tempLog.exists(), "wpilog file should exist");
+            assertTrue(tempLog.length() > 0, "wpilog should not be empty, was " + tempLog.length() + " bytes");
+        } finally {
+            tempLog.delete();
+        }
+    }
+
+    @Test
+    void testJsonLineFormat() {
+        StandaloneMatchRunner.Config config = short3v3(7);
+        StandaloneMatchRunner.Result result = StandaloneMatchRunner.run(config);
+        String json = StandaloneMatchRunner.toJsonLine(config, result, "candidate", 0);
+        assertTrue(json.startsWith("{\"schemaVersion\":2,"));
+        assertTrue(json.contains("\"seed\":7,"));
+        assertTrue(json.contains("\"variant\":\"candidate\","));
+        assertTrue(json.contains("\"blueBots\":{"));
+        assertTrue(json.contains("\"redBots\":{"));
+        assertTrue(json.contains("\"health\":{\"loopOverruns\":0,\"maxRobotPeriodicMs\":0.0}"));
+    }
+
+    @Test
+    void testMainExecutionWithJsonl() throws Exception {
+        java.io.File tempJsonl = java.io.File.createTempFile("standalone_cli_", ".jsonl");
+        tempJsonl.deleteOnExit();
+        try {
+            String[] args = new String[] {
+                "--seeds", "7,11",
+                "--duration", "10.0",
+                "--auto", "3.0",
+                "--jsonl", tempJsonl.getAbsolutePath(),
+                "--weights", "scoreHubBase=0.75"
+            };
+            StandaloneMatchRunner.main(args);
+            List<String> lines = java.nio.file.Files.readAllLines(tempJsonl.toPath());
+            assertEquals(2, lines.size(), "Should have written 2 JSONL lines for 2 seeds");
+            assertTrue(lines.get(0).contains("\"seed\":7"));
+            assertTrue(lines.get(1).contains("\"seed\":11"));
+        } finally {
+            tempJsonl.delete();
+        }
     }
 }

@@ -14,7 +14,8 @@ public enum StrategicObjective {
     SHADOW_MIDLINE,       // Defend; mirror opponent across field centerline
     LEAD_INTERCEPT,       // Defend; lead-pursuit interception of opponent
     SWEEP_ALLIANCE_ZONE,   // Harvest loose fuel in the home scoring zone
-    POACH_OPPONENT_ZONE,   // Harvest loose fuel in opponent territory during teleop
+    @Deprecated
+    POACH_OPPONENT_ZONE,   // Deprecated: mathematically dominated by neutral and depot harvesting
     SHUTTLE_PASS,          // Lob held fuel home from midfield while the Hub is inactive
     LONG_RANGE_SNIPE,      // Shoot from the outer edge of the alliance zone
     CHOKE_TRENCH,           // Contest an occupied trench approach

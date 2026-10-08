@@ -37,7 +37,7 @@ public record PolicyWeights(
         double stageShiftImminentNormal,
         // Legacy step-window superseded by the shiftUrgency logistic (midpoint/steepness below);
         // retained so existing weight specs still parse. Engine no longer reads it.
-        double stageShiftWindowSec,
+        @Deprecated double stageShiftWindowSec,
         int stageMinFuelNormal,
 
         // Vacuum Midfield
@@ -58,10 +58,10 @@ public record PolicyWeights(
         double sweepAllianceZoneInactiveBase,
         double sweepAllianceZoneInactiveScale,
 
-        // Poach Opponent Zone
-        double poachOpponentZoneUtility,
-        double poachOpponentZoneWindowSec,
-        int poachOpponentZoneMaxHeld,
+        // Poach Opponent Zone (Deprecated: dominated by neutral/depot harvesting)
+        @Deprecated double poachOpponentZoneUtility,
+        @Deprecated double poachOpponentZoneWindowSec,
+        @Deprecated int poachOpponentZoneMaxHeld,
 
         // Shuttle Pass
         double shuttlePassUtility,

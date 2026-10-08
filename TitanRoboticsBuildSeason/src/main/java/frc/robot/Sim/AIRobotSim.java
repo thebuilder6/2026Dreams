@@ -1,9 +1,5 @@
 package frc.robot.Sim;
 
-import static edu.wpi.first.units.Units.Meters;
-import static edu.wpi.first.units.Units.MetersPerSecond;
-import static edu.wpi.first.units.Units.Radians;
-
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -40,8 +36,6 @@ import frc.robot.Intelligence.Archetype;
 import frc.robot.Intelligence.JevDecisionEngine;
 import frc.robot.Telemetry.Dashboard;
 import frc.robot.Subsystems.SubsystemManager;
-import frc.robot.Subsystems.intake.IntakeConstants;
-import frc.robot.Subsystems.shooter.ShooterConstants;
 import frc.robot.Subsystems.SwerveBase;
 import frc.robot.Utils.AllianceFlipUtil;
 import org.littletonrobotics.junction.Logger;
@@ -51,8 +45,6 @@ import swervelib.simulation.ironmaple.simulation.drivesims.SelfControlledSwerveD
 import swervelib.simulation.ironmaple.simulation.drivesims.SwerveDriveSimulation;
 import swervelib.simulation.ironmaple.simulation.drivesims.configs.DriveTrainSimulationConfig;
 import swervelib.simulation.ironmaple.simulation.gamepieces.GamePieceOnFieldSimulation;
-import swervelib.simulation.ironmaple.simulation.seasonspecific.rebuilt2026.Arena2026Rebuilt;
-import swervelib.simulation.ironmaple.simulation.seasonspecific.rebuilt2026.RebuiltFuelOnFly;
 
 /**
  * Subsystem coordinator for multi-robot sparring simulation.
@@ -101,11 +93,6 @@ public class AIRobotSim implements Subsystem {
         }
     }
 
-    public enum CyclerPhase {
-        HUNT_FUEL,
-        SCORE_HUB,
-        SHOOTING
-    }
 
     private static AIRobotSim instance;
 
@@ -124,12 +111,9 @@ public class AIRobotSim implements Subsystem {
     public static final int INITIAL_HELD_BALLS = 8;
 
     // Phase 5: Bot 0 is opponents.get(0), an AIRobotInstance like every other bot.
-    // The legacy driveSimulation/intakeSimulation fields below alias its sim objects
-    // so RefereeSim, WorldStateBuilder, and existing tests keep working unchanged.
+    // Drivetrain and intake simulation objects are owned directly by bot0Instance.
     private final AIRobotInstance bot0Instance;
-    private final SelfControlledSwerveDriveSimulation driveSimulation;
     private final Pose2d queuingPose;
-    private IntakeSimulation intakeSimulation;
 
     private Optional<Trajectory<SwerveSample>> trajectory = Optional.empty();
     private final Timer pathTimer = new Timer();
@@ -151,8 +135,6 @@ public class AIRobotSim implements Subsystem {
     private final SendableChooser<Archetype> ally1ArchetypeChooser = new SendableChooser<>();
     private final SendableChooser<Archetype> ally2ArchetypeChooser = new SendableChooser<>();
 
-    private CyclerPhase cyclerPhase = CyclerPhase.HUNT_FUEL;
-    private final Timer cyclerTimer = new Timer();
 
     private Pose2d lastActualPose = new Pose2d();
     private double lastPoseTimestamp = -1.0;
@@ -186,8 +168,6 @@ public class AIRobotSim implements Subsystem {
 
         // Bot 0 owns its sim objects like every other AIRobotInstance.
         this.bot0Instance = new AIRobotInstance(0, queuingPose, Archetype.AUTONOMOUS_CYCLER);
-        this.driveSimulation = bot0Instance.getDriveSimulation();
-        this.intakeSimulation = bot0Instance.getIntakeSimulation();
 
         var config = SwerveBase.getInstance().getSwerveController().config;
         this.headingController = new PIDController(config.headingPIDF.p, config.headingPIDF.i, config.headingPIDF.d);
@@ -250,8 +230,6 @@ public class AIRobotSim implements Subsystem {
         wasOpponentEnabled = false;
         lastSpawnedPlayerIsRed = false;
         pathTimer.restart();
-        cyclerTimer.restart();
-        cyclerPhase = CyclerPhase.HUNT_FUEL;
         aiScoreCount = 0;
         lastPoseTimestamp = -1.0;
         stallDuration = 0.0;
@@ -320,11 +298,11 @@ public class AIRobotSim implements Subsystem {
 
         if (!anyBotActive) {
             setRobotPose(queuingPose);
-            driveSimulation.runChassisSpeeds(new ChassisSpeeds(), new Translation2d(), false, true);
+            bot0Instance.getDriveSimulation().runChassisSpeeds(new ChassisSpeeds(), new Translation2d(), false, true);
             wasOpponentEnabled = false;
             currentAIStateDetail = "DISABLED";
-            if (intakeSimulation != null && intakeSimulation.isRunning()) {
-                intakeSimulation.stopIntake();
+            if (bot0Instance.getIntakeSimulation() != null && bot0Instance.getIntakeSimulation().isRunning()) {
+                bot0Instance.getIntakeSimulation().stopIntake();
             }
             try {
                 var field = SwerveBase.getInstance().getField();
@@ -453,7 +431,6 @@ public class AIRobotSim implements Subsystem {
                 allyBots.get(1).setRobotPose(getAllySpawnPose(2, playerIsRed));
             }
             pathTimer.restart();
-            cyclerTimer.restart();
             wasOpponentEnabled = true;
             lastSpawnedPlayerIsRed = playerIsRed;
         }
@@ -471,15 +448,15 @@ public class AIRobotSim implements Subsystem {
         ChassisSpeeds playerSpeeds = trainingMode
                 ? trainingBluePrimaryBot.getFieldVelocity()
                 : SwerveBase.getInstance().getFieldVelocity();
-        Pose2d currentPose = driveSimulation.getActualPoseInSimulationWorld();
+        Pose2d currentPose = bot0Instance.getActualPose();
 
         // ── 2. Handle Opponent Bot 0 Lifecycle ───────────────────────────────
         if (!opponentEnabled) {
             setRobotPose(queuingPose);
-            driveSimulation.runChassisSpeeds(new ChassisSpeeds(), new Translation2d(), false, true);
+            bot0Instance.getDriveSimulation().runChassisSpeeds(new ChassisSpeeds(), new Translation2d(), false, true);
             currentAIStateDetail = "DISABLED";
-            if (intakeSimulation != null && intakeSimulation.isRunning()) {
-                intakeSimulation.stopIntake();
+            if (bot0Instance.getIntakeSimulation() != null && bot0Instance.getIntakeSimulation().isRunning()) {
+                bot0Instance.getIntakeSimulation().stopIntake();
             }
             try {
                 var field = SwerveBase.getInstance().getField();
@@ -819,7 +796,7 @@ public class AIRobotSim implements Subsystem {
     }
 
     public boolean isStalled() {
-        return isStalled(driveSimulation.getActualPoseInSimulationWorld());
+        return isStalled(bot0Instance.getActualPose());
     }
 
     public boolean isStalled(Pose2d currentWorldPose) {
@@ -832,7 +809,7 @@ public class AIRobotSim implements Subsystem {
         lastStallEvalTimestamp = now;
 
         if (currentWorldPose == null) {
-            currentWorldPose = driveSimulation.getActualPoseInSimulationWorld();
+            currentWorldPose = bot0Instance.getActualPose();
         }
         double actualMoveDist = currentWorldPose.getTranslation().getDistance(lastActualPose.getTranslation());
         double actualSpeed = actualMoveDist / dt;
@@ -1001,55 +978,10 @@ public class AIRobotSim implements Subsystem {
     }
 
     /**
-     * Ingests fuel balls using a rectangular front-roller intake bounding box.
-     * Captures balls pressed directly against perimeter walls or in corners.
+     * Ingests fuel balls using Bot 0's front-roller intake bounding box.
      */
     public void checkProximityPickup(Pose2d robotPose) {
-        if (intakeSimulation == null || !intakeSimulation.isRunning())
-            return;
-        if (intakeSimulation.getGamePiecesAmount() >= IntakeConstants.MAX_HELD_BALLS)
-            return;
-
-        SimulatedArena arena = SimulatedArena.getInstance();
-        if (arena == null)
-            return;
-
-        try {
-            var pieces = MatchDeterminism.fuelOnFieldSorted();
-            if (pieces.isEmpty())
-                return;
-
-            Translation2d botPos = robotPose.getTranslation();
-            Rotation2d botHeading = robotPose.getRotation();
-
-            int collectedThisTick = 0;
-            for (var piece : pieces) {
-                if (piece == null || !"Fuel".equals(piece.getType()))
-                    continue;
-                Translation2d ball = piece.getPoseOnField().getTranslation();
-
-                // Transform ball to robot-relative frame (+X forward, +Y left)
-                Translation2d rel = ball.minus(botPos).rotateBy(botHeading.unaryMinus());
-
-                // Rectangular intake zone:
-                // X: 0.20m to 0.75m in front of robot center (bumper is at ~0.45m)
-                // Y: +/- 0.45m lateral width (full bumper opening)
-                boolean inIntakeBox = (rel.getX() >= 0.20 && rel.getX() <= 0.78)
-                        && (Math.abs(rel.getY()) <= 0.45);
-
-                if (inIntakeBox) {
-                    arena.removeGamePiece(piece);
-                    intakeSimulation.addGamePieceToIntake();
-                    collectedThisTick++;
-
-                    if (intakeSimulation.getGamePiecesAmount() >= IntakeConstants.MAX_HELD_BALLS
-                            || collectedThisTick >= 10) { // Changed from 4 to 10
-                        break;
-                    }
-                }
-            }
-        } catch (Exception ignored) {
-        }
+        bot0Instance.checkProximityPickup(robotPose);
     }
 
     public boolean isNearAnyFuel(Translation2d botPos, double radius) {
@@ -1071,54 +1003,8 @@ public class AIRobotSim implements Subsystem {
         return false;
     }
 
-    public void launchOpponentShot(Pose2d robotPose, Translation2d opponentHub, boolean opponentIsRed) {        RefereeSim.checkShotLegality(robotPose, opponentIsRed, "Bot 0");
-        Translation3d hub3d = opponentIsRed ? Constants.RED_HUB_LOCATION : Constants.BLUE_HUB_LOCATION;
-        Translation3d funnelTarget = new Translation3d(hub3d.getX(), hub3d.getY(), 1.48);
-
-        Translation2d botPos = robotPose.getTranslation();
-        Translation2d target2d = new Translation2d(funnelTarget.getX(), funnelTarget.getY());
-        Translation2d shooterOffset = new Translation2d(0.20, 0.0);
-        ChassisSpeeds robotVel = (driveSimulation != null && driveSimulation.getDriveTrainSimulation() != null)
-                ? driveSimulation.getDriveTrainSimulation().getDriveTrainSimulatedChassisSpeedsFieldRelative()
-                : new ChassisSpeeds();
-
-        Translation2d vel = new Translation2d(robotVel.vxMetersPerSecond, robotVel.vyMetersPerSecond);
-        Translation2d compensatedTarget = target2d;
-        if (vel.getNorm() > 0.05) {
-            double dist = botPos.getDistance(target2d);
-            double tof = 0.12 + 0.18 * dist;
-            compensatedTarget = target2d.minus(vel.times(tof));
-        }
-
-        double distance = botPos.getDistance(compensatedTarget);
-        double g = 9.81;
-        double theta = ShooterConstants.FIRING_ANGLE;
-        double h = funnelTarget.getZ() - 0.53;
-        double denom = 2.0 * (distance * Math.tan(theta) - h);
-        double exitVel = denom > 0.1 ? (distance / Math.cos(theta)) * Math.sqrt(g / denom) : 6.8;
-
-        // Seeded per purpose so a scenario seed reproduces the spread.
-        java.util.Random rng = MatchDeterminism.random("shot:player");
-        double randomExitVelocity = exitVel * (1.0 + (rng.nextDouble() - 0.5) * 0.04);
-        Rotation2d aimAngle = compensatedTarget.minus(botPos).getAngle();
-        Rotation2d randomYaw = aimAngle.plus(Rotation2d.fromDegrees((rng.nextDouble() - 0.5) * 1.6));
-        double randomPitch = theta + (rng.nextDouble() - 0.5) * 0.025;
-
-        try {
-            var fuelOnFly = new RebuiltFuelOnFly(
-                    botPos, shooterOffset, robotVel, randomYaw,
-                    Meters.of(0.53), MetersPerSecond.of(randomExitVelocity), Radians.of(randomPitch));
-            // Scoring is resolved by ShotTracker (see class docs): the hub
-            // captures balls before the analytic hit-time, so the hit callback
-            // alone would silently drop most scores.
-            ShotTracker.track(fuelOnFly, funnelTarget, opponentIsRed,
-                    () -> recordBot0ScoredHit(opponentIsRed), null);
-            fuelOnFly.withTargetPosition(() -> funnelTarget)
-                    .withTargetTolerance(new Translation3d(0.38, 0.38, 0.20));
-            SimulatedArena.getInstance().addGamePieceProjectile(fuelOnFly);
-        } catch (Exception e) {
-            System.err.println("[AIRobotSim] Error launching fuel projectile: " + e.getMessage());
-        }
+    public void launchOpponentShot(Pose2d robotPose, Translation2d opponentHub, boolean opponentIsRed) {
+        bot0Instance.launchShot(robotPose, opponentIsRed);
     }
 
     @Override
@@ -1141,7 +1027,6 @@ public class AIRobotSim implements Subsystem {
         Logger.recordOutput("AI_Telemetry/ActualPose", pose);
         Logger.recordOutput("AI_Telemetry/TargetPose", bot0Target);
         Logger.recordOutput("AI_Telemetry/StateDetail", bot0Detail);
-        Logger.recordOutput("AI_Telemetry/CyclerPhase", cyclerPhase.name());
         Logger.recordOutput("AI_Telemetry/ScoreCount", bot0Score);
         Logger.recordOutput("AI_Telemetry/HeldFuel", bot0Fuel);
         Logger.recordOutput("AI_Telemetry/IsStalled", bot0Stalled);
@@ -1157,9 +1042,7 @@ public class AIRobotSim implements Subsystem {
         Logger.recordOutput("AI_Telemetry/CommandedVxRobot", lastRobotRelativeSpeeds.vxMetersPerSecond);
         Logger.recordOutput("AI_Telemetry/CommandedVyRobot", lastRobotRelativeSpeeds.vyMetersPerSecond);
 
-        ChassisSpeeds actualPhysicsSpeeds = driveSimulation.getDriveTrainSimulation() != null
-                ? driveSimulation.getDriveTrainSimulation().getDriveTrainSimulatedChassisSpeedsFieldRelative()
-                : new ChassisSpeeds();
+        ChassisSpeeds actualPhysicsSpeeds = bot0Instance.getFieldVelocity();
         Logger.recordOutput("AI_Telemetry/ActualVxField", actualPhysicsSpeeds.vxMetersPerSecond);
         Logger.recordOutput("AI_Telemetry/ActualVyField", actualPhysicsSpeeds.vyMetersPerSecond);
         Logger.recordOutput("AI_Telemetry/ActualOmega", actualPhysicsSpeeds.omegaRadiansPerSecond);
@@ -1247,8 +1130,8 @@ public class AIRobotSim implements Subsystem {
         if (isStuck && debugAI && (now - lastConsoleDumpTime > 2.0)) {
             lastConsoleDumpTime = now;
             System.out.printf(
-                    "[AI DIAGNOSTIC] STUCK: Mode: %s | Phase: %s | Pose: (%.2f, %.2f) | Target: (%.2f, %.2f) | Stall: %.2fs%n",
-                    getAIMode().name(), cyclerPhase.name(),
+                    "[AI DIAGNOSTIC] STUCK: Mode: %s | State: %s | Pose: (%.2f, %.2f) | Target: (%.2f, %.2f) | Stall: %.2fs%n",
+                    getAIMode().name(), bot0Detail,
                     pose.getX(), pose.getY(),
                     bot0Target.getX(), bot0Target.getY(),
                     bot0Instance.getStallDuration());
@@ -1471,27 +1354,16 @@ public class AIRobotSim implements Subsystem {
         return AIMode.fromString(modeStr);
     }
 
-    public CyclerPhase getCyclerPhase() {
-        return cyclerPhase;
-    }
-
-    public void setCyclerPhase(CyclerPhase phase) {
-        this.cyclerPhase = phase;
-        this.cyclerTimer.restart();
-    }
-
     public int getAiScoreCount() {
         return bot0Instance.getScoreCount();
     }
 
     public int getFuelCount() {
-        return (intakeSimulation != null) ? intakeSimulation.getGamePiecesAmount() : 0;
+        return bot0Instance.getFuelCount();
     }
 
     public void setFuelCount(int count) {
-        if (intakeSimulation != null) {
-            intakeSimulation.setGamePiecesCount(count);
-        }
+        bot0Instance.setFuelCount(count);
     }
 
     /**
@@ -1504,11 +1376,11 @@ public class AIRobotSim implements Subsystem {
     }
 
     public SelfControlledSwerveDriveSimulation getDriveSimulation() {
-        return driveSimulation;
+        return bot0Instance.getDriveSimulation();
     }
 
     public IntakeSimulation getIntakeSimulation() {
-        return intakeSimulation;
+        return bot0Instance.getIntakeSimulation();
     }
 
     public List<Pose2d> getCurrentPath() {

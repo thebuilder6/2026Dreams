@@ -67,6 +67,12 @@ public class JevDecisionEngine {
         RETREAT_DEFENSE
     }
 
+    public enum FieldZone {
+        HOME_ALLIANCE_ZONE,
+        MIDFIELD,
+        OPPONENT_ZONE
+    }
+
     public static class DecisionResult {
         public final TacticalAction action;
         public final Pose2d targetPose;
@@ -518,6 +524,10 @@ public class JevDecisionEngine {
         double harvestCapacityFactor = (world.ballCapacity() > 0) ? 1.0 : 0.0;
         double headroomFactor = (!world.isInventoryFull()) ? 1.0 : 0.0;
         double effectiveCapacity = Math.max(1, world.ballCapacity());
+        int midFuelCount = (knowledge instanceof ClairvoyantKnowledge)
+                ? countFuelInZone(FieldZone.MIDFIELD, world.isRedAlliance(), blockedFuel, knowledge)
+                : 1; // Under ObservedKnowledge, real robot assumes neutral fuel may exist
+        double vacuumFuelPresentFactor = (midFuelCount > 0) ? 1.0 : 0.0;
         double vacuumRaw;
         if (!world.isAllianceHubActive()) {
             ResponseCurve inactiveVacuumCurve = ResponseCurve.linear(
@@ -536,7 +546,7 @@ public class JevDecisionEngine {
                 vacuumRaw = weights.vacuumActiveFullCap();
             }
         }
-        double vacuumUtility = UtilityAction.evaluateProduct(vacuumRaw, headroomFactor, harvestCapacityFactor);
+        double vacuumUtility = UtilityAction.evaluateProduct(vacuumRaw, headroomFactor, harvestCapacityFactor, vacuumFuelPresentFactor);
         utilities.put(StrategicObjective.VACUUM_MIDFIELD, vacuumUtility);
 
         // ── 5. STOCKPILE_DEPOT (IAUS Feeder Restock Response Curve) ──────────
@@ -680,7 +690,7 @@ public class JevDecisionEngine {
         if (opponentObserved && knowledge.alliesHeldFuel() >= 12 && world.isAllianceHubActive()) {
             outer: for (Pose2d ally : knowledge.allyPoses()) {
                 for (Pose2d opponent : knowledge.opponentPoses()) {
-                    if (ally.getTranslation().getDistance(opponent.getTranslation()) <= 2.2) {
+                    if (ally.getTranslation().getDistance(opponent.getTranslation()) <= 3.8) {
                         allyInDistress = true;
                         break outer;
                     }
@@ -694,6 +704,12 @@ public class JevDecisionEngine {
                 screenAllyFuelFactor,
                 screenHubFactor,
                 screenDistressFactor);
+
+        // Emergency escort: protect ally with high payload (>= 20) under distress when self has small payload (<= 8)
+        if (allyInDistress && knowledge.alliesHeldFuel() >= 20 && world.heldFuelCount() <= 8
+                && opponentObserved && world.isAllianceHubActive()) {
+            screenUtility = Math.max(screenUtility, 0.99);
+        }
         utilities.put(StrategicObjective.SCREEN_FOR_ALLY, screenUtility);
 
         // Pin duration is not present in WorldState/MatchKnowledge yet
@@ -711,15 +727,18 @@ public class JevDecisionEngine {
             laneDenialUtility = 0.0;
             shadowUtility = 0.0;
             interceptUtility = 0.0;
+            boolean inAllianceZone = FieldMap.AllianceZones.isInAllianceZone(world.selfPose(), world.isRedAlliance());
+            boolean autoShootingStandoff = inAllianceZone && distToSelfHub <= FieldMap.Hubs.OPTIMAL_STANDOFF_DISTANCE;
             boolean batchReady = world.heldFuelCount() >= AUTO_BATCH_MIN_FUEL;
             boolean autoClockLow = world.matchTimeRemaining() >= 0.0
                     && world.matchTimeRemaining() <= AUTO_DUMP_SECONDS_LEFT;
-            if (world.heldFuelCount() > 0 && (batchReady || inShootingRange || autoClockLow)) {
+            if (world.heldFuelCount() > 0 && (batchReady || autoShootingStandoff || autoClockLow)) {
                 scoreUtility = world.hasShooter() ? weights.autoBatchDumpScoreUtility() : 0.0;
                 vacuumUtility = 0.0;
                 sweepUtility = 0.0;
             } else {
                 scoreUtility = 0.0;
+                sweepUtility = 0.0;
                 vacuumUtility = (world.ballCapacity() > 0 && !world.isInventoryFull())
                         ? weights.autoHarvestVacuumUtility()
                         : 0.0;
@@ -777,6 +796,13 @@ public class JevDecisionEngine {
             scoreUtility = weights.harvestDeadlineForceUtility();
             vacuumUtility = 0.0;
             sweepUtility = 0.0;
+        }
+
+        // FRC G420 Endgame foul avoidance: suppress aggressive pursuit/lane denial in opponent territory
+        if (!world.isAutonomous() && world.matchTimeRemaining() > 0.0 && world.matchTimeRemaining() <= 30.0) {
+            laneDenialUtility = 0.0;
+            interceptUtility = 0.0;
+            chokeUtility = 0.0;
         }
 
         utilities.put(StrategicObjective.CYCLE_SCORE_HUB, scoreUtility);
@@ -1728,32 +1754,30 @@ public class JevDecisionEngine {
      * @param strictOpponentZone count the opponent's zone rather than our own
      * @param blockedFuel       fuel the watchdog abandoned, excluded from the count
      */
-    private int countFuelInZone(boolean isRedZone, boolean strictOpponentZone,
+    private int countFuelInZone(FieldZone zone, boolean isRedAlliance,
             Set<Translation2d> blockedFuel, MatchKnowledge knowledge) {
-        int available = strictOpponentZone
-                ? knowledge.opponentZoneFuel()
-                : knowledge.allianceZoneFuel();
+        int available = switch (zone) {
+            case HOME_ALLIANCE_ZONE -> knowledge.allianceZoneFuel();
+            case MIDFIELD -> knowledge.midfieldFuel();
+            case OPPONENT_ZONE -> knowledge.opponentZoneFuel();
+        };
         if (available <= 0) {
             return 0;
         }
-        // Abandoned fuel must not keep an objective viable: the watchdog blacklists
-        // a point it can no longer make progress toward, and the selectors skip it
-        // via isBlocked. Counting it here would leave SWEEP_ALLIANCE_ZONE at
-        // 0.90-0.98 on pieces the policy is simultaneously forbidden to approach,
-        // so sweepUtility never collapses, ObjectiveCommitment's release rule
-        // (incumbentUtility <= 0) never fires, and the latch holds all match. That
-        // was the root cause of the seed-dependent teleop collapse.
-        return Math.max(0, available - countBlockedInZone(isRedZone, blockedFuel, knowledge.fieldFuel()));
+        return Math.max(0, available - countBlockedInZone(zone, isRedAlliance, blockedFuel, knowledge.fieldFuel()));
+    }
+
+    private int countFuelInZone(boolean isRedZone, boolean strictOpponentZone,
+            Set<Translation2d> blockedFuel, MatchKnowledge knowledge) {
+        return countFuelInZone(
+                strictOpponentZone ? FieldZone.OPPONENT_ZONE : FieldZone.HOME_ALLIANCE_ZONE,
+                isRedZone, blockedFuel, knowledge);
     }
 
     /**
      * How many pieces the watchdog has abandoned in the zone being counted.
      */
-    int countBlockedInZone(boolean isRedZone, Set<Translation2d> blockedFuel) {
-        return countBlockedInZone(isRedZone, blockedFuel, null);
-    }
-
-    int countBlockedInZone(boolean isRedZone, Set<Translation2d> blockedFuel, List<Translation2d> fieldFuel) {
+    int countBlockedInZone(FieldZone zone, boolean isRedAlliance, Set<Translation2d> blockedFuel, List<Translation2d> fieldFuel) {
         if (blockedFuel == null || blockedFuel.isEmpty()) {
             return 0;
         }
@@ -1766,13 +1790,24 @@ public class JevDecisionEngine {
             if (at == null) {
                 continue;
             }
-            // Same zone the raw count covered: single-owned by FieldMap.AllianceZones
-            boolean inZone = FieldMap.AllianceZones.isInAllianceZone(at, isRedZone);
+            boolean inZone = switch (zone) {
+                case HOME_ALLIANCE_ZONE -> FieldMap.AllianceZones.isInAllianceZone(at, isRedAlliance);
+                case MIDFIELD -> FieldMap.AllianceZones.isInMidfield(at);
+                case OPPONENT_ZONE -> FieldMap.AllianceZones.isInAllianceZone(at, !isRedAlliance);
+            };
             if (inZone && isBlocked(blockedFuel, at)) {
                 blocked++;
             }
         }
         return blocked;
+    }
+
+    int countBlockedInZone(boolean isRedZone, Set<Translation2d> blockedFuel) {
+        return countBlockedInZone(FieldZone.HOME_ALLIANCE_ZONE, isRedZone, blockedFuel, null);
+    }
+
+    int countBlockedInZone(boolean isRedZone, Set<Translation2d> blockedFuel, List<Translation2d> fieldFuel) {
+        return countBlockedInZone(FieldZone.HOME_ALLIANCE_ZONE, isRedZone, blockedFuel, fieldFuel);
     }
 
     private StrategicObjective resolveNextObjective(StrategicObjective current, WorldState world) {
@@ -1787,10 +1822,7 @@ public class JevDecisionEngine {
             };
         }
         return switch (current) {
-            case SWEEP_ALLIANCE_ZONE -> world.isAllianceHubActive()
-                    ? StrategicObjective.CYCLE_SCORE_HUB
-                    : StrategicObjective.STAGE_STANDOFF;
-            case VACUUM_MIDFIELD -> StrategicObjective.CYCLE_SCORE_HUB;
+            case SWEEP_ALLIANCE_ZONE, VACUUM_MIDFIELD -> StrategicObjective.CYCLE_SCORE_HUB;
             case STOCKPILE_DEPOT, STAGE_STANDOFF -> StrategicObjective.CYCLE_SCORE_HUB;
             case POACH_OPPONENT_ZONE -> StrategicObjective.CYCLE_SCORE_HUB;
             case LONG_RANGE_SNIPE, SHUTTLE_PASS -> StrategicObjective.CYCLE_SCORE_HUB;

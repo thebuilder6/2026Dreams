@@ -1,8 +1,8 @@
-﻿---
+---
 title: Simulation Setup
 audience: [human, ai]
 owner: sim-owner
-last_verified: 2026-09-29
+last_verified: 2026-10-06
 status: authoritative
 ---
 
@@ -54,7 +54,7 @@ Before launching the simulation, ensure you have the following installed:
 
 ### Option B: From Terminal / PowerShell
 
-Run the following commands in PowerShell from the repository root:
+Run the following commands in PowerShell from `TitanRoboticsBuildSeason/`:
 
 ```powershell
 # Set Java environment to the WPILib 2026 JDK

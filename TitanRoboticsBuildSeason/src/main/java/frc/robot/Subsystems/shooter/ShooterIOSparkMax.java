@@ -1,7 +1,7 @@
 package frc.robot.Subsystems.shooter;
 
 import com.revrobotics.spark.config.SparkMaxConfig;
-import frc.robot.Data.Constants.ShooterConstants;
+
 import frc.robot.Hardware.PortMap;
 import frc.robot.Hardware.NeoSparkMaxMotor;
 

@@ -22,7 +22,7 @@ import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.Commands;
 import frc.robot.Data.Constants;
-import frc.robot.Data.Constants.ShooterConstants;
+import frc.robot.Subsystems.shooter.ShooterConstants;
 import frc.robot.Interfaces.Subsystem;
 import frc.robot.Subsystems.shooter.ShooterIO;
 import frc.robot.Subsystems.shooter.ShooterIOInputsAutoLogged;
@@ -73,20 +73,20 @@ public class Shooter implements Subsystem {
     private final PIDController flywheelPidRight;
 
     // Target RPMs and State
-    public double targetRpmLeft = 0;
-    public double targetRpmRight = 0;
-    private boolean wasAtSpeed = false;
-    private ShooterState state = ShooterState.STOPPED;
+    private volatile double targetRpmLeft = 0;
+    private volatile double targetRpmRight = 0;
+    private volatile boolean wasAtSpeed = false;
+    private volatile ShooterState state = ShooterState.STOPPED;
 
     // Distance-to-RPM Interpolation Tables
     private final InterpolatingDoubleTreeMap leftRpmTable = new InterpolatingDoubleTreeMap();
     private final InterpolatingDoubleTreeMap rightRpmTable = new InterpolatingDoubleTreeMap();
 
     // Diagnostics / telemetry
-    public double normalDistanceToHub = 0;
-    public double leftShooterVoltageCalc = 0;
-    public double rightShooterVoltageCalc = 0;
-    private ShootingSolution latestShootingSolution = new ShootingSolution(new Rotation2d(), 0, 0, false);
+    private double normalDistanceToHub = 0;
+    private double leftShooterVoltageCalc = 0;
+    private double rightShooterVoltageCalc = 0;
+    private volatile ShootingSolution latestShootingSolution = new ShootingSolution(new Rotation2d(), 0, 0, false);
 
     // Simulation state lives in ShooterIOSim (sole owner of ShooterSim).
 
@@ -384,7 +384,7 @@ public class Shooter implements Subsystem {
      */
     public boolean isReadyToFire(Rotation2d targetHeading) {
         double headingError = Math.abs(SwerveBase.getInstance().getHeading().minus(targetHeading).getDegrees());
-        return isAtCorrectSpeed() && headingError < Constants.ShooterConstants.ALIGNMENT_HEADING_TOLERANCE_DEG;
+        return isAtCorrectSpeed() && headingError < ShooterConstants.ALIGNMENT_HEADING_TOLERANCE_DEG;
     }
 
     /**
@@ -392,7 +392,7 @@ public class Shooter implements Subsystem {
      */
     public boolean isLinedUp() {
         Vision vision = Vision.getInstance();
-        return vision.hasTarget() && Math.abs(vision.getTX()) < Constants.ShooterConstants.LIMELIGHT_TX_TOLERANCE_DEG;
+        return vision.hasTarget() && Math.abs(vision.getTX()) < ShooterConstants.LIMELIGHT_TX_TOLERANCE_DEG;
     }
 
     public double getTargetVelocityRPM() {
@@ -441,6 +441,26 @@ public class Shooter implements Subsystem {
      */
     public AngularVelocity getActualVelocityMeasure() {
         return Units.RPM.of(getActualRPM());
+    }
+
+    public double getTargetRpmLeft() {
+        return targetRpmLeft;
+    }
+
+    public double getTargetRpmRight() {
+        return targetRpmRight;
+    }
+
+    public double getNormalDistanceToHub() {
+        return normalDistanceToHub;
+    }
+
+    public double getLeftShooterVoltageCalc() {
+        return leftShooterVoltageCalc;
+    }
+
+    public double getRightShooterVoltageCalc() {
+        return rightShooterVoltageCalc;
     }
 
     /**

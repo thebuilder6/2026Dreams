@@ -13,11 +13,11 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 NAV = ROOT / "TitanRoboticsBuildSeason/src/main/java/frc/robot/Navigation"
-SP = NAV / "StaticPathfinder.java"
+RM = NAV / "Rebuilt2026Roadmap.java"
 FM = NAV / "FieldMap.java"
 HTML = ROOT / "TitanRoboticsBuildSeason/docs/nav/roadmap.html"
 
-sp = SP.read_text(encoding="utf-8")
+rm = RM.read_text(encoding="utf-8")
 fm = FM.read_text(encoding="utf-8")
 html = HTML.read_text(encoding="utf-8")
 
@@ -40,43 +40,28 @@ src_nodes = {}
 # hardcoded literal. Resolve those against the declared constants so the
 # verifier still compares real numbers.
 consts_raw = dict(re.findall(
-    r"public static final (?:int|double) ([A-Z_0-9]+) = ([-\d.]+);", sp))
+    r"public static final (?:int|double) ([A-Z_0-9]+) = ([-\d.]+);", rm))
 consts_num = {k: float(v) for k, v in consts_raw.items()}
-
-
-def _coord(expr):
-    """Resolve a coordinate expression to a float, or return None if symbolic."""
-    e = expr.strip()
-    try:
-        return float(e)
-    except ValueError:
-        pass
-    m = re.fullmatch(r"([A-Z_0-9]+)\s*-\s*([A-Z_0-9]+)", e)
-    if m and m.group(1) in consts_num and m.group(2) in consts_num:
-        return consts_num[m.group(1)] - consts_num[m.group(2)]
-    m = re.fullmatch(r"([A-Z_0-9]+)", e)
-    if m and m.group(1) in consts_num:
-        return consts_num[m.group(1)]
-    return None
 
 
 def _lookup_const(name):
     """Resolve a Java static constant, including one on another class.
 
     The tower-wall nodes use `FieldMap.FIELD_LENGTH - TOWER_WALL_X`, and
-    FIELD_LENGTH lives on FieldMap rather than StaticPathfinder, so a single-file
+    FIELD_LENGTH lives on FieldMap rather than Rebuilt2026Roadmap, so a single-file
     constant table is not enough.
     """
-    if name in consts_num:
-        return consts_num[name]
-    m = re.search(r"public static final double " + re.escape(name) + r" = ([\d.]+);", sp)
+    bare_name = name.split(".")[-1]
+    if bare_name in consts_num:
+        return consts_num[bare_name]
+    m = re.search(r"public static final double " + re.escape(bare_name) + r" = ([\d.]+);", rm)
     if m:
         return float(m.group(1))
     try:
-        fm = (NAV / "FieldMap.java").read_text(encoding="utf-8")
+        fm_text = (NAV / "FieldMap.java").read_text(encoding="utf-8")
     except OSError:
         return None
-    m = re.search(r"public static final double " + re.escape(name) + r" = ([\d.]+);", fm)
+    m = re.search(r"public static final double " + re.escape(bare_name) + r" = ([\d.]+);", fm_text)
     return float(m.group(1)) if m else None
 
 
@@ -87,19 +72,19 @@ def _coord(expr):
         return float(e)
     except ValueError:
         pass
-    m = re.fullmatch(r"([A-Z_0-9.]+)\s*-\s*([A-Z_0-9.]+)", e)
+    m = re.fullmatch(r"([A-Za-z_0-9.]+)\s*-\s*([A-Za-z_0-9.]+)", e)
     if m:
         a, b = _lookup_const(m.group(1)), _lookup_const(m.group(2))
         if a is not None and b is not None:
             return a - b
-    m = re.fullmatch(r"([A-Z_0-9.]+)", e)
+    m = re.fullmatch(r"([A-Za-z_0-9.]+)", e)
     if m:
         return _lookup_const(m.group(1))
     return None
 
 
 for m in re.finditer(
-    r'NODES\.add\(new RoadmapNode\((\d+), "([^"]+)", ([^,]+), ([^)]+)\)\)', sp
+    r'rawNodes\.add\(new RawNode\((\d+), "([^"]+)", ([^,]+), ([^)]+)\)\)', rm
 ):
     cx, cy = _coord(m.group(3)), _coord(m.group(4))
     if cx is None or cy is None:
@@ -124,9 +109,9 @@ check(len(html_nodes) == len(src_nodes),
       f"html has {len(html_nodes)} nodes, source has {len(src_nodes)}")
 for i in sorted(set(src_nodes) | set(html_nodes)):
     if i not in src_nodes:
-        errors.append(f"node {i} in html but not in StaticPathfinder")
+        errors.append(f"node {i} in html but not in Rebuilt2026Roadmap")
     elif i not in html_nodes:
-        errors.append(f"node {i} in StaticPathfinder but missing from html")
+        errors.append(f"node {i} in Rebuilt2026Roadmap but missing from html")
     else:
         sn, sx, sy = src_nodes[i]
         hn, hx, hy = html_nodes[i]
@@ -135,9 +120,9 @@ for i in sorted(set(src_nodes) | set(html_nodes)):
               f"node {i} ({sn}) pos: source ({sx}, {sy}) vs html ({hx}, {hy})")
 
 # ---- roadmap edges ---------------------------------------------------------
-consts = dict(re.findall(r"public static final int (N_[A-Z_0-9]+) = (\d+);", sp))
+consts = dict(re.findall(r"public static final int (N_[A-Z_0-9]+) = (\d+);", rm))
 src_edges = set()
-for m in re.finditer(r"connect\((N_[A-Z_0-9]+), (N_[A-Z_0-9]+)\)", sp):
+for m in re.finditer(r"connect\(rawNodes,\s*(N_[A-Z_0-9]+),\s*(N_[A-Z_0-9]+)\)", rm):
     a, b = int(consts[m.group(1)]), int(consts[m.group(2)])
     src_edges.add((min(a, b), max(a, b)))
 

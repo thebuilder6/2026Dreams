@@ -8,6 +8,7 @@ import frc.robot.Data.Constants;
 import frc.robot.Telemetry.TunableNumber;
 import frc.robot.Hardware.Controller;
 import frc.robot.Subsystems.Shooter;
+import frc.robot.Subsystems.shooter.ShooterConstants;
 import frc.robot.Subsystems.SwerveBase;
 
 /**
@@ -176,7 +177,7 @@ public class ShooterTuning {
                     shooter.shoot();
                     shotsTaken++;
                     
-                    if (Math.abs(shooter.getFlywheelLeftVelocityRPM() - solution.flywheelRPM()) < Constants.ShooterConstants.RPM_TOLERANCE) {
+                    if (Math.abs(shooter.getFlywheelLeftVelocityRPM() - solution.flywheelRPM()) < ShooterConstants.RPM_TOLERANCE) {
                         successfulShots++;
                     }
                 } else {
@@ -256,7 +257,7 @@ public class ShooterTuning {
         lastVelocityError = Math.abs(targetVelocity - actualVelocity);
         
         // Calculate time to reach target velocity
-        if (testRunning && lastVelocityError < Constants.ShooterConstants.RPM_TOLERANCE) {
+        if (testRunning && lastVelocityError < ShooterConstants.RPM_TOLERANCE) {
             timeToTargetVelocity = edu.wpi.first.wpilibj.Timer.getFPGATimestamp() - testStartTime;
         }
     }

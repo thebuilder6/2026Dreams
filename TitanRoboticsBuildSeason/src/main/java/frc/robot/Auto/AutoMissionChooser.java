@@ -3,15 +3,18 @@ package frc.robot.Auto;
 import frc.robot.Auto.Missions.*;
 
 import java.io.File;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Supplier;
 
 import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.Filesystem;
 import edu.wpi.first.wpilibj.smartdashboard.SendableChooser;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
+import frc.robot.Telemetry.TelemetryKeys;
 import org.littletonrobotics.junction.networktables.LoggedDashboardChooser;
 
 /*
@@ -24,19 +27,34 @@ import org.littletonrobotics.junction.networktables.LoggedDashboardChooser;
 public class AutoMissionChooser {
     private final LoggedDashboardChooser<String> missionChooser;
     private final Map<String, Supplier<MissionBase>> missionRegistry = new HashMap<>();
-
-    public static double delay;
+    private static double delay = 0.0;
     private String cachedSelected = "Do Nothing";
     private Optional<MissionBase> autoMission = Optional.empty();
 
+    public static double getDelay() {
+        return delay;
+    }
+
+    public static void setDelay(double newDelay) {
+        delay = Math.max(0.0, newDelay);
+    }
+
     public AutoMissionChooser() {
-        missionChooser = new LoggedDashboardChooser<>("Auto Mission");
+        missionChooser = new LoggedDashboardChooser<>(TelemetryKeys.Auto.MISSION);
 
         // 1. Register specialized Java missions
         registerMission(DepotShootMission.class);
         registerMission(ShooterMission.class);
         registerMission(ExampleMission.class);
         registerMission(AdvancedChoreoMission.class);
+        registerMission(MobilityMission.class);
+        registerMission(SubwooferShootAndLeaveMission.class);
+        registerMission(FastDepotCycleMission.class);
+        registerMission(AdaptiveDepotMission.class);
+        registerMission(DelayedPartnerShootMission.class);
+        registerMission(ShootAndTrenchMission.class);
+        registerMission(TrenchDisruptorMission.class);
+        registerMission(CenterlineSweepMission.class);
 
         // 2. Automatically register Choreo trajectories from the deploy directory
         registerChoreoMissions();
@@ -47,8 +65,8 @@ public class AutoMissionChooser {
             missionChooser.addOption(name, name);
         }
 
-        SmartDashboard.putNumber("Auto Delay (seconds)", 0);
-        SmartDashboard.putString("Current Action System", "None");
+        SmartDashboard.putNumber(TelemetryKeys.Auto.DELAY_SECONDS, 0);
+        SmartDashboard.putString(TelemetryKeys.Auto.CURRENT_ACTION_SYSTEM, "None");
     }
 
     /**
@@ -77,6 +95,9 @@ public class AutoMissionChooser {
             if (files != null) {
                 for (File file : files) {
                     String trajName = file.getName().replace(".traj", "");
+                    // Warm the trajectory cache ahead of time to eliminate auto-start file parsing latency
+                    frc.robot.Auto.Actions.FollowChoreoPath.warmCache(trajName);
+
                     // Only add if not already registered by a specialized mission
                     if (!missionRegistry.containsKey(trajName)) {
                         missionRegistry.put(trajName, () -> new DynamicChoreoMission(trajName));
@@ -87,7 +108,7 @@ public class AutoMissionChooser {
     }
 
     public void updateMissionCreator() {
-        delay = SmartDashboard.getNumber("Auto Delay (seconds)", SmartDashboard.getNumber("Auto Delay", 0));
+        setDelay(SmartDashboard.getNumber(TelemetryKeys.Auto.DELAY_SECONDS, SmartDashboard.getNumber("Auto Delay", 0)));
         String selected = missionChooser.get();
 
         if (selected == null) {
@@ -114,13 +135,17 @@ public class AutoMissionChooser {
         return Optional.empty();
     }
 
+    public Set<String> getRegisteredMissionNames() {
+        return Collections.unmodifiableSet(missionRegistry.keySet());
+    }
+
     public void reset() {
         autoMission = Optional.empty();
         cachedSelected = "Do Nothing";
     }
 
     public void outputToSmartDashboard() {
-        SmartDashboard.putString("AutoMissionSelected", cachedSelected);
+        SmartDashboard.putString(TelemetryKeys.Auto.MISSION_SELECTED, cachedSelected);
     }
 
     public SendableChooser<String> getRawChooser() {

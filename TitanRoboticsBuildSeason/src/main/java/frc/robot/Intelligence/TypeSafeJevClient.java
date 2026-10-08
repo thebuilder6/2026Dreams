@@ -355,7 +355,9 @@ public final class TypeSafeJevClient {
         state.put("opponent_hub_active", world.isOpponentHubActive());
         state.put("seconds_until_hub_shift", world.timeUntilHubShift());
         state.put("held_fuel", world.heldFuelCount());
-        state.put("hopper_capacity", WorldState.DEFAULT_MAX_CAPACITY);
+        state.put("hopper_capacity", world.ballCapacity());
+        state.put("has_shooter", world.hasShooter());
+        state.put("has_climber", world.hasClimber());
         state.put("alliance", world.isRedAlliance() ? "red" : "blue");
         state.put("autonomous", world.isAutonomous());
         state.put("archetype", archetype.name());

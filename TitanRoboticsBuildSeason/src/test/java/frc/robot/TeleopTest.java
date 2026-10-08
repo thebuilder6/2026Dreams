@@ -161,4 +161,19 @@ public class TeleopTest {
         teleop.readControllers();
         assertFalse(teleop.isSlowModeActive(), "Remote dashboard must successfully turn off slow mode");
     }
+
+    @Test
+    public void testJoystickModeTogglingAndRead() {
+        assertFalse(teleop.isJoystickEnabled());
+
+        // Toggle to joystick mode
+        teleop.setJoystickEnabled(true);
+        assertTrue(teleop.isJoystickEnabled());
+        assertDoesNotThrow(() -> teleop.readControllers(), "Reading controllers in joystick mode must not throw NPE");
+
+        // Toggle back to controller mode
+        teleop.setJoystickEnabled(false);
+        assertFalse(teleop.isJoystickEnabled());
+        assertDoesNotThrow(() -> teleop.readControllers(), "Reading controllers in standard mode must not throw NPE");
+    }
 }

@@ -40,6 +40,7 @@ import frc.robot.Intelligence.Archetype;
 import frc.robot.Intelligence.JevDecisionEngine;
 import frc.robot.Telemetry.Dashboard;
 import frc.robot.Subsystems.SubsystemManager;
+import frc.robot.Subsystems.intake.IntakeConstants;
 import frc.robot.Subsystems.SwerveBase;
 import frc.robot.Utils.AllianceFlipUtil;
 import org.littletonrobotics.junction.Logger;
@@ -1005,7 +1006,7 @@ public class AIRobotSim implements Subsystem {
     public void checkProximityPickup(Pose2d robotPose) {
         if (intakeSimulation == null || !intakeSimulation.isRunning())
             return;
-        if (intakeSimulation.getGamePiecesAmount() >= Constants.IntakeConstants.MAX_HELD_BALLS)
+        if (intakeSimulation.getGamePiecesAmount() >= IntakeConstants.MAX_HELD_BALLS)
             return;
 
         SimulatedArena arena = SimulatedArena.getInstance();
@@ -1040,7 +1041,7 @@ public class AIRobotSim implements Subsystem {
                     intakeSimulation.addGamePieceToIntake();
                     collectedThisTick++;
 
-                    if (intakeSimulation.getGamePiecesAmount() >= Constants.IntakeConstants.MAX_HELD_BALLS
+                    if (intakeSimulation.getGamePiecesAmount() >= IntakeConstants.MAX_HELD_BALLS
                             || collectedThisTick >= 10) { // Changed from 4 to 10
                         break;
                     }

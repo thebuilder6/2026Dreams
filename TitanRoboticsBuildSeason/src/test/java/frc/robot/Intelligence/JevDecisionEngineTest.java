@@ -317,10 +317,16 @@ public class JevDecisionEngineTest {
         assertEquals(StrategicObjective.CYCLE_SCORE_HUB, endgameIntent.objective(),
                 "Endgame bot with fuel and active hub must keep cycling");
 
-        // The player-facing co-pilot (which advises a robot WITH a climber) still climbs.
-        AIActionIntent coPilotEndgame = engine.evaluatePolicy(endgameState, Archetype.CO_PILOT);
-        assertEquals(StrategicObjective.RUSH_CLIMB, coPilotEndgame.objective(),
-                "CO_PILOT advises the real robot, which has a climber");
+        // Without a climber fitted (default false), even co-pilot keeps playing.
+        AIActionIntent coPilotNoClimber = engine.evaluatePolicy(endgameState, Archetype.CO_PILOT);
+        assertNotEquals(StrategicObjective.RUSH_CLIMB, coPilotNoClimber.objective(),
+                "Robot without climber fitted must keep playing, not rush climb");
+
+        // When a climber IS fitted, the robot climbs in endgame.
+        WorldState endgameStateWithClimber = endgameState.withHardware(true, 30, true);
+        AIActionIntent coPilotWithClimber = engine.evaluatePolicy(endgameStateWithClimber, Archetype.CO_PILOT);
+        assertEquals(StrategicObjective.RUSH_CLIMB, coPilotWithClimber.objective(),
+                "Robot equipped with climber rushes to climb in endgame");
     }
 
     @Test
@@ -1380,6 +1386,92 @@ public class JevDecisionEngineTest {
         assertEquals(0.0, defenderUtils.get(StrategicObjective.SHUTTLE_PASS));
         assertEquals(0.0, defenderUtils.get(StrategicObjective.LONG_RANGE_SNIPE));
         assertTrue(defenderUtils.get(StrategicObjective.SHADOW_MIDLINE) > 0.0);
+    }
+
+    @Test
+    public void testShooterHardwareConstraintSuppressesScoringAndStaging() {
+        WorldState shooterlessWorld = new WorldState(
+                new Pose2d(3.0, 4.0, new Rotation2d()),
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                15,
+                new Pose2d(12.0, 4.0, new Rotation2d()),
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                80.0,
+                true, // active hub
+                false,
+                15.0,
+                false
+        ).withHardware(false, 30, false); // hasShooter = false
+
+        Map<StrategicObjective, Double> scores = engine.evaluateUtilityScores(
+                shooterlessWorld, Collections.emptySet(), ObservedKnowledge.selfOnly(), Archetype.CO_PILOT, PolicyWeights.getActive());
+
+        assertEquals(0.0, scores.get(StrategicObjective.CYCLE_SCORE_HUB),
+                "Robot without shooter must have 0 utility for CYCLE_SCORE_HUB");
+        assertEquals(0.0, scores.get(StrategicObjective.STAGE_STANDOFF),
+                "Robot without shooter must have 0 utility for STAGE_STANDOFF");
+        assertEquals(0.0, scores.get(StrategicObjective.SHUTTLE_PASS),
+                "Robot without shooter must have 0 utility for SHUTTLE_PASS");
+        assertEquals(0.0, scores.get(StrategicObjective.LONG_RANGE_SNIPE),
+                "Robot without shooter must have 0 utility for LONG_RANGE_SNIPE");
+
+        AIActionIntent intent = engine.evaluatePolicy(shooterlessWorld, Archetype.CO_PILOT);
+        assertNotEquals(StrategicObjective.CYCLE_SCORE_HUB, intent.objective(),
+                "Robot without shooter must never cycle score hub");
+        assertNotEquals(StrategicObjective.STAGE_STANDOFF, intent.objective(),
+                "Robot without shooter must never stage standoff");
+    }
+
+    @Test
+    public void testBallCapacityHardwareConstraintControlsHarvestingAndFullness() {
+        WorldState zeroCapacityWorld = new WorldState(
+                new Pose2d(3.0, 4.0, new Rotation2d()),
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                0,
+                new Pose2d(12.0, 4.0, new Rotation2d()),
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                80.0,
+                false, // inactive hub
+                false,
+                15.0,
+                false
+        ).withHardware(true, 0, false); // ballCapacity = 0
+
+        assertTrue(zeroCapacityWorld.isInventoryFull(),
+                "Zero ball capacity robot is always considered inventory full");
+
+        Map<StrategicObjective, Double> zeroCapScores = engine.evaluateUtilityScores(
+                zeroCapacityWorld, Collections.emptySet(), ObservedKnowledge.selfOnly(), Archetype.AUTONOMOUS_CYCLER, PolicyWeights.getActive());
+
+        assertEquals(0.0, zeroCapScores.get(StrategicObjective.VACUUM_MIDFIELD),
+                "Zero ball capacity robot must have 0 utility for VACUUM_MIDFIELD");
+        assertEquals(0.0, zeroCapScores.get(StrategicObjective.STOCKPILE_DEPOT),
+                "Zero ball capacity robot must have 0 utility for STOCKPILE_DEPOT");
+        assertEquals(0.0, zeroCapScores.get(StrategicObjective.SWEEP_ALLIANCE_ZONE),
+                "Zero ball capacity robot must have 0 utility for SWEEP_ALLIANCE_ZONE");
+
+        // Custom capacity robot (e.g. 10 balls): full when held >= 10
+        WorldState customCapacityWorld = new WorldState(
+                new Pose2d(3.0, 4.0, new Rotation2d()),
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                10,
+                new Pose2d(12.0, 4.0, new Rotation2d()),
+                new edu.wpi.first.math.kinematics.ChassisSpeeds(),
+                80.0,
+                false,
+                false,
+                15.0,
+                false
+        ).withHardware(true, 10, false);
+
+        assertTrue(customCapacityWorld.isInventoryFull(),
+                "Custom capacity 10 robot holding 10 is inventory full");
+        assertEquals(1.0, customCapacityWorld.inventoryRatio(), 1e-6);
+
+        WorldState partialCapacityWorld = customCapacityWorld.withHeldFuelCount(5);
+        assertFalse(partialCapacityWorld.isInventoryFull(),
+                "Custom capacity 10 robot holding 5 is not inventory full");
+        assertEquals(0.5, partialCapacityWorld.inventoryRatio(), 1e-6);
     }
 }
 

@@ -58,14 +58,34 @@ import math
 import random
 import statistics
 import sys
+import os
 from collections import defaultdict
 
+# Ensure the project root is on the path so `tools.tune` and `tools.score` are findable
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
+
+from tools.tune.fitness import (
+    calculate_single_match_fitness,
+    evaluate_paired_fitness,
+    fitness_from_row,
+    bootstrap_ci,
+)
 SCHEMA_VERSION = 2
 
 # Loop-health limits, mirrored from tools/score/sweep.ps1 -MaxLoopOverruns /
 # -MaxRobotPeriodicMs. Keep the two in step; sweep.ps1 produces the rows.
 GATE_MAX_LOOP_OVERRUNS = 8
 GATE_MAX_ROBOT_PERIODIC_MS = 60.0
+
+# Fitness / motion-health guardrails, mirrored from tools/tune/fitness.py
+GATE_FITNESS_STALL_SEC = 6.0
+GATE_FITNESS_CONSEC_REC = 3
+GATE_FITNESS_DEFENSIVE_PATH_M = 25.0
+GATE_FITNESS_CYCLER_SHARE = 0.15
+GATE_FITNESS_ADAPTIVE_SHARE = 0.10
+GATE_FITNESS_WASTED_TOLERANCE = 0.05
 
 # Parameters that must never be swept. Sim-physics or rulebook constants: tuning
 # them inflates the objective without improving the robot. See module docstring.
@@ -279,12 +299,16 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--results", required=True, help="JSONL from tools/score/sweep.ps1")
-    ap.add_argument("--baseline", default="baseline", help="variant name to compare against")
+    ap.add_argument("--baseline", default=None, help="variant name to compare against")
     ap.add_argument("--objective", default="blueTotal",
                     help="metric to optimise (default blueTotal)")
     ap.add_argument("--noise-floor", action="store_true",
                     help="report run-to-run repeatability instead of comparing variants")
     ap.add_argument("--no-gate", action="store_true", help="report only; never exit non-zero")
+    ap.add_argument("--paired", action="store_true",
+                    help="compute paired delta-Fitness with 95% CI lower bound")
+    ap.add_argument("--fitness", action="store_true",
+                    help="print composite fitness per row with guardrail status")
     args = ap.parse_args()
 
     rows, bad = load(args.results)
@@ -299,6 +323,9 @@ def main():
     by_variant = defaultdict(list)
     for r in rows:
         by_variant[r.get("variant", "baseline")].append(r)
+
+    # Auto-detect baseline if not specified
+    baseline = args.baseline or list(by_variant.keys())[0]
 
     print("=" * 78)
     print("SCORE RIG  %s" % args.results)
@@ -420,7 +447,7 @@ def main():
         return 0
 
     # ---- variant comparison --------------------------------------------------
-    base_rows = by_variant.get(args.baseline, [])
+    base_rows = by_variant.get(baseline, [])
     if not base_rows:
         print("baseline variant %r not found; have: %s"
               % (args.baseline, ", ".join(sorted(by_variant))))

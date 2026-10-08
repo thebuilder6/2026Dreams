@@ -23,8 +23,8 @@ $simHost = $null
 try {
   $simFlags = ".\gradlew simulateJava --offline"
   if ($RealDs) { $simFlags += " -PrealDs" }
-  $simHost = Start-Process powershell -PassThru -WindowStyle Normal -ArgumentList `
-      "-NoExit", "-Command", "cd '$GradleRoot'; `$env:JAVA_HOME='$env:JAVA_HOME'; `$env:PATH='$env:JAVA_HOME\bin;' + `$env:PATH; $simFlags"
+  $cmdStr = "cd '$GradleRoot'; `$env:JAVA_HOME = '$env:JAVA_HOME'; `$env:PATH = `"`$env:JAVA_HOME\bin;`$env:PATH`"; $simFlags"
+  $simHost = Start-Process powershell -PassThru -WindowStyle Normal -ArgumentList "-NoExit", "-Command", $cmdStr
   $null = Enter-Lock -Resource sim-gui -AnchorPid $simHost.Id `
                      -Reason "SimGUI launched by $(Get-OwnerId)" -TimeoutSec 300
   Write-Output "simulateJava launched in a new window from $GradleRoot (host pid $($simHost.Id))."

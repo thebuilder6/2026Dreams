@@ -1,6 +1,7 @@
 package frc.robot.Subsystems;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -96,6 +97,6 @@ public class SubsystemManager {
      * @return List of registered subsystems
      */
     public static List<Subsystem> getSubsystems() {
-        return subsystems;
+        return Collections.unmodifiableList(subsystems);
     }
 }

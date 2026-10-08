@@ -2,7 +2,7 @@
 title: Resource Coordination
 audience: [human, ai]
 owner: programming-leads
-last_verified: 2026-09-29
+last_verified: 2026-10-07
 status: authoritative
 ---
 
@@ -75,7 +75,16 @@ process would look alive forever and wedge the lock.
 An orchestrator that fans out N workers should take `gradle-build` **once** for
 the whole batch and let the workers run under it, rather than having each worker
 contend for the lock. Concurrent `gradlew` invocations against one tree are not
-a performance problem to be tuned; they invalidate the result.
+a performance problem to be tuned; they invalidate the result. The wrapper is
+`tools/lock/with-lock.ps1 -Resource <r> -Command "..."`, which holds the lock
+for exactly one child command and releases it in a `finally` — probe first with
+`tools/dev/check.ps1 -Resource <r>`.
+
+Verification is one automated gate plus one human, never a parallel fan-out of
+gates: `tools/dev/verify.ps1` owns the mechanical checks (roadmap, counts,
+docs-contract, optional rig-schema), and a single reviewer owns judgment with a
+30-minute TTL. Five parallel verifiers with no owner produced zero verdicts on
+Sep 25; do not repeat that shape.
 
 ### Recovery recipes
 
@@ -156,6 +165,16 @@ the non-destructive shutdown in `run-practice-match.ps1`. Treat a lock timeout a
   design. The mechanism is tested directly as listed above, but the end-to-end
   multi-agent case has not been exercised, which is why the `AGENTS.md` rule is
   advisory.
+- Dev-gate tooling verified 2026-10-07 (no lock needed; all read-only plus new
+  files under `tools/dev/`): `check.ps1` stamped a dirty tree (29 modified + 7
+  untracked), a STALE `sim-gui` lock, running AdvantageScope processes, and an
+  unset `JAVA_HOME`, each with an actionable message; `with-lock.ps1`
+  acquired/ran/released `deploy` and left it free; `verify.ps1` reported 2 PASS
+  (roadmap 106/106, docs-contract) and 1 loud FAIL when `sync-test-counts.ps1`
+  refused a 1-file `build/test-results` snapshot being written by a concurrent
+  suite run instead of syncing garbage numbers; `check-docs.ps1` passed the
+  working tree with the expected last_verified warning on another agent's
+  in-flight change.
 - Next review due: 2026-10-29.
 
 ## Related

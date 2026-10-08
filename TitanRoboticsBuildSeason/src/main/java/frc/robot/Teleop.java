@@ -19,9 +19,12 @@ import frc.robot.Hardware.Controller;
 import frc.robot.Hardware.Controller.RumblePattern;
 import frc.robot.Intelligence.StrategicObjective;
 import frc.robot.Telemetry.Dashboard;
+import frc.robot.Telemetry.TelemetryKeys;
 import frc.robot.Subsystems.Intake;
+import frc.robot.Subsystems.Intake.IntakeState;
 import frc.robot.Subsystems.Shooter;
 import frc.robot.Subsystems.Shooter.ShootingSolution;
+import frc.robot.Subsystems.shooter.ShooterConstants;
 import frc.robot.Subsystems.SwerveBase;
 import frc.robot.Telemetry.AlertManager;
 import frc.robot.Utils.AllianceFlipUtil;
@@ -46,7 +49,7 @@ public class Teleop {
     private Controller operatorController;
     private Joystick joystickController;
 
-    public static boolean joystickEnabled = false;
+    private boolean joystickEnabled = false;
 
     // Slew Rate Limiters (True 2D vector for translation, 1D scalar for rotation)
     private frc.robot.Utils.Vector2dSlewRateLimiter translationLimiter = new frc.robot.Utils.Vector2dSlewRateLimiter(
@@ -146,7 +149,7 @@ public class Teleop {
         lastDashboardSlowMode = false;
         Dashboard.setSlowModeEnabled(false);
         snapTargetHeading = null;
-        intake.setState("Disabled");
+        intake.setState(IntakeState.DISABLED);
         shooter.stop();
         coPilot.stopAssist();
         assistController.reset();
@@ -197,7 +200,7 @@ public class Teleop {
 
         // E-Stop / Abort: Back or Start pressed
         if (backButton || startButton) {
-            intake.setState("Disabled");
+            intake.setState(IntakeState.DISABLED);
             shooter.stop();
             swerveBase.stop();
             coPilot.stopAssist();
@@ -582,15 +585,15 @@ public class Teleop {
         boolean autoAimActive = autoAimRequested && solution != null && solution.shotPossibility();
 
         // Publish live Driver HUD states
-        edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putBoolean("Features/Slow Mode", isSlow);
-        edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putBoolean("Driver/Snap Active", snapTargetHeading != null);
+        edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putBoolean(TelemetryKeys.Features.SLOW_MODE, isSlow);
+        edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putBoolean(TelemetryKeys.Driver.SNAP_ACTIVE, snapTargetHeading != null);
         if (snapTargetHeading != null) {
-            edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putNumber("Driver/Snap Target Angle", snapTargetHeading.getDegrees());
+            edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putNumber(TelemetryKeys.Driver.SNAP_TARGET_ANGLE, snapTargetHeading.getDegrees());
         }
 
-        edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putBoolean("CoPilot/AssistActive", coPilot.isAssistActive());
+        edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putBoolean(TelemetryKeys.CoPilot.ASSIST_ACTIVE, coPilot.isAssistActive());
         if (coPilot.getActiveObjective() != null) {
-            edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putString("CoPilot/Objective", coPilot.getActiveObjective().name());
+            edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putString(TelemetryKeys.CoPilot.OBJECTIVE, coPilot.getActiveObjective().name());
         }
 
         if (autoAimActive) {
@@ -615,19 +618,19 @@ public class Teleop {
 
         if (ejectHeld) {
             // Eject / unjam mode: reverse rollers & hopper
-            intake.setState(armDeployed ? "Reversed" : "StandbyReversed");
+            intake.setState(armDeployed ? IntakeState.REVERSED : IntakeState.STANDBY_REVERSED);
         } else if (feedHeld) {
             // Standby feed / pass mode
-            intake.setState("StandbyIntaking");
+            intake.setState(IntakeState.STANDBY_INTAKING);
         } else if (intakeTriggerHeld) {
             // Ground intake: automatically deploy arm down and spin rollers & hopper
-            intake.setState("Intaking");
+            intake.setState(IntakeState.INTAKING);
         } else if (armDeployed) {
             // Arm deployed down but idle
-            intake.setState("Down");
+            intake.setState(IntakeState.DOWN);
         } else {
             // Retracted standby idle
-            intake.setState("Standby");
+            intake.setState(IntakeState.STANDBY);
         }
     }
 
@@ -643,7 +646,7 @@ public class Teleop {
             shooter.setTargetRPM(solution.flywheelRpmLeft(), solution.flywheelRpmRight());
 
             double headingError = Math.abs(solution.shootingAngle().minus(swerveBase.getHeading()).getDegrees());
-            boolean headingAligned = headingError <= Constants.ShooterConstants.ALIGNMENT_HEADING_TOLERANCE_DEG;
+            boolean headingAligned = headingError <= ShooterConstants.ALIGNMENT_HEADING_TOLERANCE_DEG;
             boolean flywheelsReady = shooter.isAtCorrectSpeed();
             boolean hubActive = Dashboard.getInstance().isHubActive();
             boolean targetLocked = headingAligned && flywheelsReady && hubActive;
@@ -677,11 +680,11 @@ public class Teleop {
                     shooter.setTargetRPM(3200.0, 3200.0);
                 }
                 shooter.prepareToShoot();
-                edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putBoolean("Shooter/PreSpoolingActive", true);
+                edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putBoolean(TelemetryKeys.Shooter.PRE_SPOOLING_ACTIVE, true);
             } else {
                 wasTargetLocked = false;
                 shooter.stop();
-                edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putBoolean("Shooter/PreSpoolingActive", false);
+                edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putBoolean(TelemetryKeys.Shooter.PRE_SPOOLING_ACTIVE, false);
             }
         }
     }
@@ -698,4 +701,14 @@ public class Teleop {
     public double getDriverForward() { return driverForward; }
     public double getDriverStrafe() { return driverStrafe; }
     public double getDriverRotation() { return driverRotation; }
+    public boolean isJoystickEnabled() { return joystickEnabled; }
+    public void setJoystickEnabled(boolean enabled) {
+        this.joystickEnabled = enabled;
+        if (enabled && joystickController == null) {
+            joystickController = new Joystick(PortMap.DRIVER_CONTROLLER);
+        } else if (!enabled && driverController == null) {
+            driverController = new Controller(PortMap.DRIVER_CONTROLLER);
+            operatorController = new Controller(PortMap.OPERATOR_CONTROLLER);
+        }
+    }
 }

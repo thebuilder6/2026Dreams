@@ -27,6 +27,11 @@ public class AlertManager {
         for (Alert a : alerts) {
             a.set(false);
         }
+        lastErrors = null;
+        lastWarnings = null;
+        lastInfos = null;
+        lastBanner = null;
+        update();
     }
 
     public static synchronized List<Alert> getActiveAlerts() {
@@ -73,10 +78,10 @@ public class AlertManager {
         return false;
     }
 
-    private static String lastBanner = "";
-    private static int lastErrorCount = -1;
-    private static int lastWarningCount = -1;
-    private static int lastInfoCount = -1;
+    private static String lastBanner = null;
+    private static List<String> lastErrors = null;
+    private static List<String> lastWarnings = null;
+    private static List<String> lastInfos = null;
 
     public static synchronized void update() {
         List<String> errors = new ArrayList<>();
@@ -113,7 +118,7 @@ public class AlertManager {
         }
 
         // Only publish to NetworkTables if alert state actually changed
-        if (errors.size() != lastErrorCount || warnings.size() != lastWarningCount || infos.size() != lastInfoCount || !banner.equals(lastBanner)) {
+        if (!errors.equals(lastErrors) || !warnings.equals(lastWarnings) || !infos.equals(lastInfos) || !banner.equals(lastBanner)) {
             SmartDashboard.putStringArray("Alerts/Errors", errors.toArray(new String[0]));
             SmartDashboard.putStringArray("Alerts/Warnings", warnings.toArray(new String[0]));
             SmartDashboard.putStringArray("Alerts/Infos", infos.toArray(new String[0]));
@@ -123,9 +128,9 @@ public class AlertManager {
             SmartDashboard.putBoolean("Alerts/HasErrors", !errors.isEmpty());
             SmartDashboard.putBoolean("Alerts/HasWarnings", !warnings.isEmpty());
 
-            lastErrorCount = errors.size();
-            lastWarningCount = warnings.size();
-            lastInfoCount = infos.size();
+            lastErrors = new ArrayList<>(errors);
+            lastWarnings = new ArrayList<>(warnings);
+            lastInfos = new ArrayList<>(infos);
             lastBanner = banner;
         }
     }

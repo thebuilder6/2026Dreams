@@ -15,10 +15,10 @@ public class Alert {
     }
 
     private final String group;
-    private String text;
+    private volatile String text;
     private final AlertType type;
-    private boolean active = false;
-    private double activeStartTime = 0.0;
+    private volatile boolean active = false;
+    private volatile double activeStartTime = 0.0;
 
     public Alert(String group, String text, AlertType type) {
         this.group = group;

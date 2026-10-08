@@ -11,8 +11,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
-import swervelib.simulation.ironmaple.simulation.SimulatedArena;
-import swervelib.simulation.ironmaple.simulation.gamepieces.GamePieceOnFieldSimulation;
 import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
@@ -28,6 +26,9 @@ import frc.robot.Subsystems.Intake.IntakeState;
 import frc.robot.Subsystems.Shooter.ShooterState;
 import frc.robot.Telemetry.Dashboard;
 import frc.robot.Utils.AllianceFlipUtil;
+import frc.robot.Intelligence.utility.Consideration;
+import frc.robot.Intelligence.utility.ResponseCurve;
+import frc.robot.Intelligence.utility.UtilityAction;
 import org.littletonrobotics.junction.Logger;
 
 /**
@@ -197,17 +198,31 @@ public class JevDecisionEngine {
      * gaps are the thrash we are damping, so they must also clear
      * {@link #COMMITMENT_MIN_HOLD_SEC}.
      */
+    /** A challenger this far ahead switches immediately, ignoring action inertia. */
     public static final double COMMITMENT_DECISIVE_MARGIN = 0.20;
 
-    /** Minimum time on an objective before a non-decisive challenger may take it. */
+    /** Minimum time on an objective before a matured non-decisive challenger may take it. */
     public static final double COMMITMENT_MIN_HOLD_SEC = 1.5;
 
+    /** Initial dynamic action inertia boost applied to the active objective. */
+    public static final double INERTIA_INITIAL_BOOST = 0.20;
+
+    /** Time constant tau for exponential action inertia decay (seconds). */
+    public static final double INERTIA_TIME_CONSTANT_SEC = 1.0;
+
+    /** Residual baseline hysteresis margin preventing chattering after inertia decays. */
+    public static final double INERTIA_RESIDUAL_MARGIN = 0.04;
+
     /**
-     * Resolves the committed objective for one agent.
+     * Resolves the committed objective for one agent using Dave Mark's Dynamic Action Inertia.
      *
-     * <p>Pure: it reads and returns the caller's own latch fields without
-     * mutating engine state. The caller writes the result back, which keeps
-     * commitment ownership with the agent that owns the robot.
+     * <p>Pure: it reads and returns the caller's own latch fields without mutating engine state.
+     * The incumbent receives an exponential momentum bonus:
+     * <pre>
+     *   Inertia(t) = I_0 * exp(-(now - heldSince) / tau)
+     * </pre>
+     * If the incumbent's raw utility collapses to <= 0.0 (e.g. active hub turns off), it is released
+     * immediately via natural veto. A challenger exceeding incumbent utility plus inertia breaks out at once.
      *
      * @param candidate fresh local utility winner
      * @param utilities this cycle's utility scores
@@ -222,6 +237,19 @@ public class JevDecisionEngine {
             StrategicObjective held,
             double heldSinceSeconds,
             double nowSeconds) {
+        return resolveCommittedObjective(candidate, utilities, held, heldSinceSeconds, nowSeconds, PolicyWeights.getActive());
+    }
+
+    /**
+     * Resolves the committed objective for one agent using explicit {@link PolicyWeights}.
+     */
+    public static StrategicObjective resolveCommittedObjective(
+            StrategicObjective candidate,
+            Map<StrategicObjective, Double> utilities,
+            StrategicObjective held,
+            double heldSinceSeconds,
+            double nowSeconds,
+            PolicyWeights weights) {
         if (candidate == null) {
             return held;
         }
@@ -232,19 +260,39 @@ public class JevDecisionEngine {
             return held;
         }
 
+        PolicyWeights pw = (weights != null) ? weights : PolicyWeights.getActive();
+
         // The incumbent is no longer viable (its utility collapsed, e.g. its
-        // hub just went inactive): release immediately rather than honor the
-        // minimum hold.
+        // hub just went inactive): natural veto releases immediately rather than
+        // honoring momentum.
         double incumbentUtility = utilities.getOrDefault(held, 0.0);
         if (incumbentUtility <= 0.0) {
             return candidate;
         }
 
-        double gain = utilities.getOrDefault(candidate, 0.0) - incumbentUtility;
-        boolean decisive = gain >= COMMITMENT_DECISIVE_MARGIN;
-        boolean matured = (nowSeconds - heldSinceSeconds) >= COMMITMENT_MIN_HOLD_SEC;
-        return (decisive || (matured && gain >= COMMITMENT_MARGIN)) ? candidate : held;
+        double candidateUtility = utilities.getOrDefault(candidate, 0.0);
+        double gain = candidateUtility - incumbentUtility;
+
+        // Decisive margin allows immediate switch on massive match-state changes
+        if (gain >= pw.commitmentDecisiveMargin()) {
+            return candidate;
+        }
+
+        // Continuous Action Inertia:
+        // Inertia boost decays exponentially over time constant tau.
+        double elapsedSec = Math.max(0.0, nowSeconds - heldSinceSeconds);
+        double dynamicInertia = pw.inertiaInitialBoost() * Math.exp(-elapsedSec / pw.inertiaTimeConstantSec());
+        double requiredGain = dynamicInertia + pw.inertiaResidualMargin();
+
+        if (gain >= requiredGain) {
+            return candidate;
+        }
+
+        // Matured hold rule check: after commitmentMinHoldSec, gain >= commitmentMargin is enough
+        boolean matured = elapsedSec >= pw.commitmentMinHoldSec();
+        return (matured && gain >= pw.commitmentMargin()) ? candidate : held;
     }
+
 
     public DecisionMode getDecisionMode() {
         return decisionMode;
@@ -294,7 +342,15 @@ public class JevDecisionEngine {
      * @param archetype behavior archetype selecting utility weights
      */
     public AIActionIntent evaluatePolicy(WorldState world, MatchKnowledge knowledge, Archetype archetype) {
-        return evaluatePolicy(world, knowledge, archetype, null);
+        return evaluatePolicy(world, knowledge, archetype, (String) null);
+    }
+
+    /**
+     * Evaluation overload that accepts explicit PolicyWeights.
+     */
+    public AIActionIntent evaluatePolicy(
+            WorldState world, MatchKnowledge knowledge, Archetype archetype, PolicyWeights weights) {
+        return evaluatePolicy(world, knowledge, archetype, null, null, null, null, weights);
     }
 
     /**
@@ -361,6 +417,26 @@ public class JevDecisionEngine {
      */
     public Map<StrategicObjective, Double> evaluateUtilityScores(
             WorldState world, Set<Translation2d> blockedFuel, MatchKnowledge knowledge, Archetype archetype) {
+        return evaluateUtilityScores(world, blockedFuel, knowledge, archetype, PolicyWeights.getActive());
+    }
+
+    /**
+     * Evaluates the complete raw and adjusted utility map for all strategic objectives
+     * using explicit {@link PolicyWeights}.
+     *
+     * @param world       the observable or simulated world state
+     * @param blockedFuel dynamic set of fuel positions currently contested or blocked
+     * @param knowledge   match tier knowledge (clairvoyant sim vs observed real robot)
+     * @param archetype   tactical behavior archetype
+     * @param weights     parameterized utility weights and thresholds
+     * @return map of every StrategicObjective to its computed utility value [0.0, 1.0]
+     */
+    public Map<StrategicObjective, Double> evaluateUtilityScores(
+            WorldState world, Set<Translation2d> blockedFuel, MatchKnowledge knowledge, Archetype archetype,
+            PolicyWeights weights) {
+        if (weights == null) {
+            weights = PolicyWeights.getActive();
+        }
         if (knowledge == null) {
             knowledge = ObservedKnowledge.selfOnly();
         }
@@ -377,193 +453,242 @@ public class JevDecisionEngine {
         // ── 1. Evaluate Utility Scores Across Objectives ─────────────────────
         Map<StrategicObjective, Double> utilities = new LinkedHashMap<>();
 
-        // Rush Climb (Endgame priority) — player robot only. Simulated bots are
-        // assumed to have no climber fitted, so they never select RUSH_CLIMB and
-        // instead keep playing (cycle / stage / defend) through endgame.
-        double climbUtility = 0.0;
-        if (archetype == Archetype.CO_PILOT
-                && !world.isAutonomous()
-                && world.matchTimeRemaining() > 0.0 && world.matchTimeRemaining() <= 20.0) {
-            if (world.matchTimeRemaining() <= 15.0) {
-                // Dominant endgame priority: strictly overrides cycling in final 15 seconds
-                climbUtility = 0.99 + (0.01 * (1.0 - world.matchTimeRemaining() / 15.0));
-            } else {
-                climbUtility = 0.85 + (0.13 * (1.0 - (world.matchTimeRemaining() - 15.0) / 5.0));
-            }
-        }
+        // ── 1. RUSH_CLIMB (IAUS Continuous Endgame Ramp & Natural Role Veto) ─
+        double climbRoleFactor = (world.hasClimber() && !world.isAutonomous()) ? 1.0 : 0.0;
+        double climbTimeFactor = (world.matchTimeRemaining() > 0.0 && world.matchTimeRemaining() <= 20.0) ? 1.0 : 0.0;
+        double climbBase = (world.matchTimeRemaining() <= 15.0) ? weights.climbBase15() : weights.climbBase20();
+        double climbScale = (world.matchTimeRemaining() <= 15.0) ? weights.climbScale15() : weights.climbScale20();
+        double climbProgression = (world.matchTimeRemaining() <= 15.0)
+                ? Math.max(0.0, Math.min(1.0, 1.0 - world.matchTimeRemaining() / 15.0))
+                : Math.max(0.0, Math.min(1.0, 1.0 - (world.matchTimeRemaining() - 15.0) / 5.0));
+        ResponseCurve climbRampCurve = ResponseCurve.linear(climbScale, 0.0, climbBase);
+        double rawClimbScore = climbRampCurve.calculate(climbProgression);
+        double climbUtility = UtilityAction.evaluateProduct(rawClimbScore, climbRoleFactor, climbTimeFactor);
         utilities.put(StrategicObjective.RUSH_CLIMB, climbUtility);
 
-        // Cycle Score Hub
-        // If already in shooting range (dist <= 4.0m) or Co-Pilot assist, keep firing
-        // down to the very last ball!
-        // If out in midfield, require a solid batch (>=16) unless the active shift is
-        // about to end (<=4.5s)
-        boolean inShootingRange = distToSelfHub <= 4.0;
-        boolean shiftEndingSoon = world.timeUntilHubShift() <= 4.5 && world.timeUntilHubShift() > 0.0;
-        int minFuelToScore = (archetype == Archetype.CO_PILOT || inShootingRange) ? 1 : (shiftEndingSoon ? 4 : 16);
+        // ── 2. CYCLE_SCORE_HUB (IAUS Continuous Payload & Hub Veto) ──────────
+        boolean inShootingRange = distToSelfHub <= weights.scoreHubShootingRangeMeters();
+        boolean shiftEndingSoon = world.timeUntilHubShift() <= weights.scoreHubShiftEndingWindowSec() && world.timeUntilHubShift() > 0.0;
+        int minFuelToScore = (archetype == Archetype.CO_PILOT || inShootingRange) ? 1 : (shiftEndingSoon ? weights.scoreHubMinFuelShiftEnding() : weights.scoreHubMinFuelNormal());
 
-        double scoreUtility = 0.0;
-        if (world.isAllianceHubActive() && world.heldFuelCount() >= minFuelToScore) {
-            double loadRatio = (archetype == Archetype.CO_PILOT || inShootingRange)
-                    ? 1.0
-                    : Math.min(1.0, world.heldFuelCount() / 20.0);
-            scoreUtility = 0.72 + (0.26 * loadRatio); // 0.72 to 0.98
-            // Tier-2 score awareness: chase when behind on the scoreboard.
-            // Bounded (+0.03) so it biases close calls without overriding
-            // geometry (range, batch, hub phase).
-            if (knowledge.scoreDifferential() < 0) {
-                scoreUtility = Math.min(0.99, scoreUtility + 0.03);
-            }
+        double shooterFactor = world.hasShooter() ? 1.0 : 0.0;
+        double hubActiveFactor = world.isAllianceHubActive() ? 1.0 : 0.0;
+        double fuelThresholdFactor = (world.heldFuelCount() >= minFuelToScore) ? 1.0 : 0.0;
+
+        double capacityDivisor = Math.min(weights.scoreHubCapacityDivisor(), Math.max(1, world.ballCapacity()));
+        double loadRatio = (archetype == Archetype.CO_PILOT || inShootingRange)
+                ? 1.0
+                : Math.min(1.0, (double) world.heldFuelCount() / capacityDivisor);
+        ResponseCurve scoreLoadCurve = ResponseCurve.linear(weights.scoreHubScale(), 0.0, weights.scoreHubBase());
+        double baseScore = scoreLoadCurve.calculate(loadRatio);
+
+        if (knowledge.scoreDifferential() < 0) {
+            baseScore = Math.min(weights.scoreHubBehindMax(), baseScore + weights.scoreHubBehindBonus());
         }
+        double scoreUtility = UtilityAction.evaluateProduct(baseScore, shooterFactor, hubActiveFactor, fuelThresholdFactor);
         utilities.put(StrategicObjective.CYCLE_SCORE_HUB, scoreUtility);
 
-        // Stage Standoff (Hub is inactive; wait at standoff arc once hopper is well
-        // stocked)
-        double stageUtility = 0.0;
-        int minFuelToStage = (archetype == Archetype.CO_PILOT) ? 1 : 18;
-        if (!world.isAllianceHubActive() && world.heldFuelCount() >= minFuelToStage) {
-            stageUtility = 0.80;
-            if (world.timeUntilHubShift() <= 3.5 && world.timeUntilHubShift() > 0.0) {
-                stageUtility = (archetype == Archetype.CO_PILOT) ? 0.99 : 0.95; // Anticipate imminent shift
-            }
-        }
+        // ── 3. STAGE_STANDOFF (IAUS Shift Anticipation & Stockpile Gating) ───
+        int minFuelToStage = (archetype == Archetype.CO_PILOT) ? 1 : weights.stageMinFuelNormal();
+        double stageShooterFactor = world.hasShooter() ? 1.0 : 0.0;
+        double hubInactiveFactor = (!world.isAllianceHubActive()) ? 1.0 : 0.0;
+        double stageFuelFactor = (world.heldFuelCount() >= minFuelToStage) ? 1.0 : 0.0;
+
+        double targetStage = (archetype == Archetype.CO_PILOT)
+                ? weights.stageShiftImminentCoPilot()
+                : weights.stageShiftImminentNormal();
+        boolean shiftImminent = world.timeUntilHubShift() <= weights.stageShiftWindowSec() && world.timeUntilHubShift() > 0.0;
+        double stageBase = shiftImminent ? targetStage : weights.stageStandoffBase();
+        ResponseCurve stageCurve = ResponseCurve.linear(0.0, 0.0, stageBase);
+        double stageUtility = UtilityAction.evaluateProduct(stageCurve.calculate(1.0), stageShooterFactor, hubInactiveFactor, stageFuelFactor);
         utilities.put(StrategicObjective.STAGE_STANDOFF, stageUtility);
 
-        // Vacuum Midfield (Field fuel harvest: fill hopper with large payloads)
-        double vacuumUtility = 0.0;
-        if (!world.isInventoryFull()) {
-            if (!world.isAllianceHubActive()) {
-                // Stockpile full 20-30 ball capacity while hub is locked
-                vacuumUtility = 0.88 + (0.10 * (1.0 - world.heldFuelCount() / 30.0));
+        // ── 4. VACUUM_MIDFIELD (IAUS Continuous Harvest Response Curves) ─────
+        double harvestCapacityFactor = (world.ballCapacity() > 0) ? 1.0 : 0.0;
+        double headroomFactor = (!world.isInventoryFull()) ? 1.0 : 0.0;
+        double effectiveCapacity = Math.max(1, world.ballCapacity());
+        double vacuumRaw;
+        if (!world.isAllianceHubActive()) {
+            ResponseCurve inactiveVacuumCurve = ResponseCurve.linear(
+                    -weights.vacuumInactiveScale(), 0.0, weights.vacuumInactiveBase() + weights.vacuumInactiveScale());
+            double loadProgress = Math.min(1.0, (double) world.heldFuelCount() / effectiveCapacity);
+            vacuumRaw = inactiveVacuumCurve.calculate(loadProgress);
+        } else {
+            int targetBatch = shiftEndingSoon ? weights.vacuumActiveShiftEndingBatch() : weights.vacuumActiveNormalBatch();
+            targetBatch = Math.min(targetBatch, world.ballCapacity());
+            if (world.heldFuelCount() < targetBatch) {
+                ResponseCurve activeVacuumCurve = ResponseCurve.linear(
+                        -weights.vacuumActiveScale(), 0.0, weights.vacuumActiveBase() + weights.vacuumActiveScale());
+                double batchProgress = (targetBatch > 0) ? (double) world.heldFuelCount() / targetBatch : 1.0;
+                vacuumRaw = activeVacuumCurve.calculate(batchProgress);
             } else {
-                int targetBatch = shiftEndingSoon ? 6 : 18;
-                if (world.heldFuelCount() < targetBatch) {
-                    vacuumUtility = 0.82 + (0.14 * (1.0 - (double) world.heldFuelCount() / targetBatch));
-                } else {
-                    vacuumUtility = 0.35;
-                }
+                vacuumRaw = weights.vacuumActiveFullCap();
             }
         }
+        double vacuumUtility = UtilityAction.evaluateProduct(vacuumRaw, headroomFactor, harvestCapacityFactor);
         utilities.put(StrategicObjective.VACUUM_MIDFIELD, vacuumUtility);
 
-        // Stockpile Depot (Feeder station restock: collect full payloads)
-        double stockpileUtility = 0.0;
-        if (!world.isInventoryFull() && !world.isAllianceHubActive()) {
-            stockpileUtility = 0.86 + (0.10 * (1.0 - world.heldFuelCount() / 30.0));
-        }
+        // ── 5. STOCKPILE_DEPOT (IAUS Feeder Restock Response Curve) ──────────
+        double depotHeadroomFactor = (!world.isInventoryFull()) ? 1.0 : 0.0;
+        double depotHubInactiveFactor = (!world.isAllianceHubActive()) ? 1.0 : 0.0;
+        ResponseCurve stockpileCurve = ResponseCurve.linear(
+                -weights.stockpileDepotScale(), 0.0, weights.stockpileDepotBase() + weights.stockpileDepotScale());
+        double rawStockpile = stockpileCurve.calculate(Math.min(1.0, (double) world.heldFuelCount() / effectiveCapacity));
+        double stockpileUtility = UtilityAction.evaluateProduct(rawStockpile, depotHeadroomFactor, depotHubInactiveFactor, harvestCapacityFactor);
         utilities.put(StrategicObjective.STOCKPILE_DEPOT, stockpileUtility);
 
+        // ── 6. SWEEP_ALLIANCE_ZONE (IAUS Home Zone Scavenge Response Curve) ──
         int homeFuelCount = countFuelInZone(world.isRedAlliance(), false, blockedFuel, knowledge);
-        double sweepUtility = 0.0;
-        if (homeFuelCount > 0 && !world.isInventoryFull()) {
-            sweepUtility = world.isAllianceHubActive()
-                    ? 0.96
-                    : 0.90 + 0.08 * (1.0 - world.heldFuelCount() / 30.0);
+        double sweepFuelPresentFactor = (homeFuelCount > 0) ? 1.0 : 0.0;
+        double sweepHeadroomFactor = (!world.isInventoryFull()) ? 1.0 : 0.0;
+        double rawSweep;
+        if (world.isAllianceHubActive()) {
+            rawSweep = weights.sweepAllianceZoneActive();
+        } else {
+            ResponseCurve sweepInactiveCurve = ResponseCurve.linear(
+                -weights.sweepAllianceZoneInactiveScale(), 0.0,
+                weights.sweepAllianceZoneInactiveBase() + weights.sweepAllianceZoneInactiveScale());
+            rawSweep = sweepInactiveCurve.calculate(Math.min(1.0, (double) world.heldFuelCount() / effectiveCapacity));
         }
+        double sweepUtility = UtilityAction.evaluateProduct(rawSweep, sweepFuelPresentFactor, sweepHeadroomFactor, harvestCapacityFactor);
         utilities.put(StrategicObjective.SWEEP_ALLIANCE_ZONE, sweepUtility);
 
-        // Poach only while a shift flip is genuinely approaching.
-        //
-        // The `> 0.0` floor is load-bearing and was missing. `HubSchedule
-        // .timeUntilShiftEnd()` returns 0.0 by design during AUTO, TRANSITION,
-        // ENDGAME and DONE, where no flip is coming - so a bare `<= 6.0` test
-        // stayed true for the entire endgame. It was masked while the sim ran on
-        // the frozen shift clock, because that clock is pinned at exactly 0.0
-        // and the guard was therefore true everywhere; fixing the clock without
-        // this bound would have shifted poach behaviour during shift phases and
-        // read as "fixed" while the endgame case stayed wrong.
-        double opponentZoneUtility = 0.0;
+        // ── 7. POACH_OPPONENT_ZONE (IAUS Shift Boundary Poaching) ────────────
+        double poachTeleopFactor = (!world.isAutonomous()) ? 1.0 : 0.0;
+        double poachHeadroomFactor = (!world.isInventoryFull()) ? 1.0 : 0.0;
         double timeUntilShiftForPoach = world.timeUntilHubShift();
-        if (!world.isAutonomous() && !world.isInventoryFull()
-                && timeUntilShiftForPoach > 0.0 && timeUntilShiftForPoach <= 6.0
-                // Only poach when the OPPONENT's hub is the one coming back on. In
-                // SHIFT2/SHIFT4 our own hub is about to open and theirs is about to
-                // close; sprinting across for their loose fuel then abandons our own
-                // scoring window. This is a behaviour change on a strategy judgement,
-                // not a proven defect -- same class as the STAGE_STANDOFF question.
-                && world.isOpponentHubActiveAfterShift()
-                && world.heldFuelCount() < 20
-                && countFuelInZone(!world.isRedAlliance(), true, blockedFuel, knowledge) > 0) {
-            opponentZoneUtility = 0.78;
-        }
+        double poachWindowFactor = (timeUntilShiftForPoach > 0.0 && timeUntilShiftForPoach <= weights.poachOpponentZoneWindowSec()) ? 1.0 : 0.0;
+        double poachOppHubNextFactor = world.isOpponentHubActiveAfterShift() ? 1.0 : 0.0;
+        double poachMaxHeldFactor = (world.heldFuelCount() < weights.poachOpponentZoneMaxHeld()) ? 1.0 : 0.0;
+        int oppFuelCount = countFuelInZone(!world.isRedAlliance(), true, blockedFuel, knowledge);
+        double poachFuelPresentFactor = (oppFuelCount > 0) ? 1.0 : 0.0;
+
+        double opponentZoneUtility = UtilityAction.evaluateProduct(
+                weights.poachOpponentZoneUtility(),
+                poachTeleopFactor,
+                poachHeadroomFactor,
+                poachWindowFactor,
+                poachOppHubNextFactor,
+                poachMaxHeldFactor,
+                poachFuelPresentFactor,
+                harvestCapacityFactor);
         utilities.put(StrategicObjective.POACH_OPPONENT_ZONE, opponentZoneUtility);
 
-        // G407 and the robot's shooter safety policy allow launches only from our
-        // alliance zone. Do not turn a midfield pass into an illegal launch.
-        //
-        // NOTE: the explicit opponent-hub check below is a NO-OP today, and is kept
-        // deliberately rather than as a claimed fix. Both hubs are never dark at the
-        // same time -- SHIFT1-4 have exactly one live, and AUTO/TRANSITION/ENDGAME
-        // have both -- so `!isAllianceHubActive()` already implies the opponent's hub
-        // is scoring. An earlier version of this comment claimed it prevented
-        // "lobbing into a dead hub"; that scenario is unreachable. It becomes
-        // load-bearing only if the schedule ever allows two dark hubs (DONE), so it
-        // documents the invariant at the point where the aim target is chosen.
-        double shuttleUtility = !world.isAutonomous() && !world.isAllianceHubActive()
-                && (world.isOpponentHubActive() || world.isOpponentHubActiveAfterShift())
-                && FieldMap.AllianceZones.isInAllianceZone(world.selfPose(), world.isRedAlliance())
-                && !FieldMap.Trenches.isLowClearance(world.selfPose()) && distToSelfHub > 6.0
-                && world.heldFuelCount() >= 16 ? 0.87 : 0.0;
+        // ── 8. SHUTTLE_PASS (IAUS Tactical Fuel Transit / Lobbing) ───────────
+        double shuttleShooterFactor = world.hasShooter() ? 1.0 : 0.0;
+        double shuttleTeleopFactor = (!world.isAutonomous()) ? 1.0 : 0.0;
+        double shuttleHubInactiveFactor = (!world.isAllianceHubActive()) ? 1.0 : 0.0;
+        double shuttleOppHubFactor = (world.isOpponentHubActive() || world.isOpponentHubActiveAfterShift()) ? 1.0 : 0.0;
+        double shuttleZoneFactor = FieldMap.AllianceZones.isInAllianceZone(world.selfPose(), world.isRedAlliance()) ? 1.0 : 0.0;
+        double shuttleCeilingFactor = (!FieldMap.Trenches.isLowClearance(world.selfPose())) ? 1.0 : 0.0;
+        double shuttleDistFactor = (distToSelfHub > weights.shuttlePassMinDistMeters()) ? 1.0 : 0.0;
+        double shuttleFuelFactor = (world.heldFuelCount() >= weights.shuttlePassMinHeld()) ? 1.0 : 0.0;
+
+        double shuttleUtility = UtilityAction.evaluateProduct(
+                weights.shuttlePassUtility(),
+                shuttleShooterFactor,
+                shuttleTeleopFactor,
+                shuttleHubInactiveFactor,
+                shuttleOppHubFactor,
+                shuttleZoneFactor,
+                shuttleCeilingFactor,
+                shuttleDistFactor,
+                shuttleFuelFactor);
         utilities.put(StrategicObjective.SHUTTLE_PASS, shuttleUtility);
 
-        double longRangeUtility = 0.0;
-        if (world.isAllianceHubActive() && world.heldFuelCount() >= 6
-                && FieldMap.AllianceZones.isInAllianceZone(world.selfPose(), world.isRedAlliance())
-                && distToSelfHub >= 3.6 && distToSelfHub <= FieldMap.Hubs.SHOOTING_MAX_DISTANCE) {
-            longRangeUtility = opponentObserved
-                    && world.opponentPose().getTranslation().getDistance(selfHub) <= 2.4 ? 0.94 : 0.86;
-        }
+        // ── 9. LONG_RANGE_SNIPE (IAUS Outer Perimeter Launch) ────────────────
+        double snipeShooterFactor = world.hasShooter() ? 1.0 : 0.0;
+        double snipeHubFactor = world.isAllianceHubActive() ? 1.0 : 0.0;
+        double snipeFuelFactor = (world.heldFuelCount() >= weights.snipeMinHeld()) ? 1.0 : 0.0;
+        double snipeZoneFactor = FieldMap.AllianceZones.isInAllianceZone(world.selfPose(), world.isRedAlliance()) ? 1.0 : 0.0;
+        double snipeDistFactor = (distToSelfHub >= weights.snipeMinDistMeters() && distToSelfHub <= FieldMap.Hubs.SHOOTING_MAX_DISTANCE) ? 1.0 : 0.0;
+
+        double snipeBase = (opponentObserved && world.opponentPose().getTranslation().getDistance(selfHub) <= 2.4)
+                ? weights.snipeCloseUtility()
+                : weights.snipeFarUtility();
+        double longRangeUtility = UtilityAction.evaluateProduct(
+                snipeBase,
+                snipeShooterFactor,
+                snipeHubFactor,
+                snipeFuelFactor,
+                snipeZoneFactor,
+                snipeDistFactor);
         utilities.put(StrategicObjective.LONG_RANGE_SNIPE, longRangeUtility);
 
-        // Defense Objectives
-        double laneDenialUtility = 0.0;
-        double shadowUtility = 0.0;
-        double interceptUtility = 0.0;
+        // ── Defense Objectives (IAUS Multiplicative Defensive Postures) ──────
+        boolean roleCanDefend = (archetype == Archetype.TACTICAL_DEFENDER || archetype == Archetype.DEFENSE_BULLY || archetype == Archetype.ADAPTIVE_COMPETITOR);
+        double defRoleFactor = roleCanDefend ? 1.0 : 0.0;
+        double defObservedFactor = opponentObserved ? 1.0 : 0.0;
 
-        if (archetype == Archetype.TACTICAL_DEFENDER || archetype == Archetype.DEFENSE_BULLY
-                || archetype == Archetype.ADAPTIVE_COMPETITOR) {
-            Translation2d oppHub = FieldMap.Hubs.getHubLocation2d(!world.isRedAlliance());
-            double oppDistToHub = world.opponentPose().getTranslation().getDistance(oppHub);
+        Translation2d oppHub = FieldMap.Hubs.getHubLocation2d(!world.isRedAlliance());
+        double oppDistToHub = world.opponentPose().getTranslation().getDistance(oppHub);
+        double laneDistFactor = (oppDistToHub < weights.laneDenialMaxDistMeters()) ? 1.0 : 0.0;
+        double laneOppHubActiveFactor = world.isOpponentHubActive() ? 1.0 : 0.0;
 
-            if (world.isOpponentHubActive() && oppDistToHub < 6.5) {
-                laneDenialUtility = 0.86;
-            }
-            shadowUtility = 0.65;
-            interceptUtility = 0.75;
-        }
+        // ── 10. DENY_SHOOTING_LANE ───────────────────────────────────────────
+        double laneDenialUtility = UtilityAction.evaluateProduct(
+                weights.laneDenialActiveUtility(),
+                defRoleFactor,
+                defObservedFactor,
+                laneOppHubActiveFactor,
+                laneDistFactor);
 
+        // ── 11. SHADOW_MIDLINE ───────────────────────────────────────────────
+        double shadowUtility = UtilityAction.evaluateProduct(
+                weights.shadowMidlineBaseUtility(),
+                defRoleFactor,
+                defObservedFactor);
+
+        // ── 12. LEAD_INTERCEPT ───────────────────────────────────────────────
+        double interceptUtility = UtilityAction.evaluateProduct(
+                weights.interceptBaseUtility(),
+                defRoleFactor,
+                defObservedFactor);
+
+        // ── 13. CHOKE_TRENCH ─────────────────────────────────────────────────
         boolean defensiveArchetype = archetype == Archetype.TACTICAL_DEFENDER
                 || archetype == Archetype.DEFENSE_BULLY || archetype == Archetype.ADAPTIVE_COMPETITOR;
-        double chokeUtility = 0.0;
-        // Gate on the occupied trench itself (X band AND low-clearance Y), not
-        // the X band alone — an opponent driving midfield at trench X must not
-        // pull a defender to a trench mouth.
-        if (defensiveArchetype && opponentObserved && !world.isAutonomous()
-                && FieldMap.Trenches.isLowClearance(world.opponentPose())) {
-            chokeUtility = 0.91;
-        }
+        double chokeRoleFactor = defensiveArchetype ? 1.0 : 0.0;
+        double chokeObservedFactor = opponentObserved ? 1.0 : 0.0;
+        double chokeTeleopFactor = (!world.isAutonomous()) ? 1.0 : 0.0;
+        double chokeTrenchFactor = FieldMap.Trenches.isLowClearance(world.opponentPose()) ? 1.0 : 0.0;
+
+        double chokeUtility = UtilityAction.evaluateProduct(
+                weights.chokeTrenchUtility(),
+                chokeRoleFactor,
+                chokeObservedFactor,
+                chokeTeleopFactor,
+                chokeTrenchFactor);
         utilities.put(StrategicObjective.CHOKE_TRENCH, chokeUtility);
 
-        double screenUtility = 0.0;
+        // ── 14. SCREEN_FOR_ALLY ──────────────────────────────────────────────
+        double screenObservedFactor = opponentObserved ? 1.0 : 0.0;
+        double screenAllyFuelFactor = (knowledge.alliesHeldFuel() >= 12) ? 1.0 : 0.0;
+        double screenHubFactor = world.isAllianceHubActive() ? 1.0 : 0.0;
+        boolean allyInDistress = false;
         if (opponentObserved && knowledge.alliesHeldFuel() >= 12 && world.isAllianceHubActive()) {
             outer: for (Pose2d ally : knowledge.allyPoses()) {
                 for (Pose2d opponent : knowledge.opponentPoses()) {
                     if (ally.getTranslation().getDistance(opponent.getTranslation()) <= 2.2) {
-                        screenUtility = 0.89;
+                        allyInDistress = true;
                         break outer;
                     }
                 }
             }
         }
+        double screenDistressFactor = allyInDistress ? 1.0 : 0.0;
+        double screenUtility = UtilityAction.evaluateProduct(
+                weights.screenForAllyUtility(),
+                screenObservedFactor,
+                screenAllyFuelFactor,
+                screenHubFactor,
+                screenDistressFactor);
         utilities.put(StrategicObjective.SCREEN_FOR_ALLY, screenUtility);
 
-        // Pin duration is not present in WorldState/MatchKnowledge yet; keep this
-        // objective unavailable until the simulator supplies an explicit referee
-        // signal.
+        // Pin duration is not present in WorldState/MatchKnowledge yet
         utilities.put(StrategicObjective.BAIT_PIN_FOUL, 0.0);
 
-        // Tier-1 driver assist: with no vision-tracked opponent, opponent-
-        // chasing objectives are unavailable regardless of archetype.
+        // Tier-1 driver assist: with no vision-tracked opponent, opponent-chasing objectives are unavailable
         if (!opponentObserved) {
             laneDenialUtility = 0.0;
             shadowUtility = 0.0;
@@ -572,30 +697,21 @@ public class JevDecisionEngine {
 
         // Apply Archetype Multipliers
         if (world.isAutonomous()) {
-            // FRC G201 centerline rule: in autonomous mode, robots must stay on their
-            // alliance half.
-            // Opponent interception, lane denial, and cross-field pinning are illegal in
-            // auto.
             laneDenialUtility = 0.0;
             shadowUtility = 0.0;
             interceptUtility = 0.0;
-            // Fill-then-volley: harvest until a full batch before committing to a
-            // scoring trip. (Prevents one-ball-at-a-time auto: previously any held
-            // fuel > 0 sent the bot straight to the hub.) Exceptions: already in
-            // shooting range (finish the volley instead of driving away), or auto
-            // clock nearly out (dump the hopper rather than carrying balls home).
             boolean batchReady = world.heldFuelCount() >= AUTO_BATCH_MIN_FUEL;
             boolean autoClockLow = world.matchTimeRemaining() >= 0.0
                     && world.matchTimeRemaining() <= AUTO_DUMP_SECONDS_LEFT;
             if (world.heldFuelCount() > 0 && (batchReady || inShootingRange || autoClockLow)) {
-                scoreUtility = 0.95;
+                scoreUtility = world.hasShooter() ? weights.autoBatchDumpScoreUtility() : 0.0;
                 vacuumUtility = 0.0;
-                // Do not let the newly added home-zone sweep outrank the
-                // established auto batch/clock dump decision.
                 sweepUtility = 0.0;
             } else {
                 scoreUtility = 0.0;
-                vacuumUtility = 0.85;
+                vacuumUtility = (world.ballCapacity() > 0 && !world.isInventoryFull())
+                        ? weights.autoHarvestVacuumUtility()
+                        : 0.0;
             }
         } else if (archetype == Archetype.AUTONOMOUS_CYCLER) {
             laneDenialUtility = 0.0;
@@ -610,10 +726,10 @@ public class JevDecisionEngine {
             opponentZoneUtility = 0.0;
             shuttleUtility = 0.0;
             longRangeUtility = 0.0;
-            laneDenialUtility *= 1.15;
-            shadowUtility *= 1.10;
+            laneDenialUtility *= weights.tacticalDefenderLaneMultiplier();
+            shadowUtility *= weights.tacticalDefenderShadowMultiplier();
         } else if (archetype == Archetype.LEAD_PURSUIT_INTERCEPTOR) {
-            interceptUtility = 0.99;
+            interceptUtility = weights.bullyInterceptUtility();
             scoreUtility = 0.0;
             stageUtility = 0.0;
             sweepUtility = 0.0;
@@ -623,7 +739,7 @@ public class JevDecisionEngine {
             shuttleUtility = 0.0;
             longRangeUtility = 0.0;
         } else if (archetype == Archetype.DEFENSE_BULLY) {
-            interceptUtility = 0.99;
+            interceptUtility = weights.bullyInterceptUtility();
             scoreUtility = 0.0;
             stageUtility = 0.0;
             sweepUtility = 0.0;
@@ -636,8 +752,8 @@ public class JevDecisionEngine {
             laneDenialUtility = 0.0;
             shadowUtility = 0.0;
             interceptUtility = 0.0;
-            if (world.heldFuelCount() > 0 && world.isAllianceHubActive()) {
-                scoreUtility = 0.98;
+            if (world.heldFuelCount() > 0 && world.isAllianceHubActive() && world.hasShooter()) {
+                scoreUtility = weights.coPilotActiveScoreUtility();
                 vacuumUtility = 0.0;
             }
         }
@@ -645,8 +761,9 @@ public class JevDecisionEngine {
         if ((archetype == null || !archetype.isDefensive())
                 && world.isAllianceHubActive()
                 && timeLeftToHarvest <= 0.0
-                && world.heldFuelCount() >= 8) {
-            scoreUtility = 0.98;
+                && world.heldFuelCount() >= 8
+                && world.hasShooter()) {
+            scoreUtility = weights.harvestDeadlineForceUtility();
             vacuumUtility = 0.0;
             sweepUtility = 0.0;
         }
@@ -683,6 +800,20 @@ public class JevDecisionEngine {
             WorldState world, MatchKnowledge knowledge, Archetype archetype, String cloudContext,
             Set<Translation2d> blockedFuel, ObjectiveCommitment commitmentIn,
             FuelTargetMemory fuelTargetMemory) {
+        return evaluatePolicy(world, knowledge, archetype, cloudContext, blockedFuel,
+                commitmentIn, fuelTargetMemory, PolicyWeights.getActive());
+    }
+
+    /**
+     * Full evaluation overload including per-agent latches and explicit {@link PolicyWeights}.
+     */
+    public AIActionIntent evaluatePolicy(
+            WorldState world, MatchKnowledge knowledge, Archetype archetype, String cloudContext,
+            Set<Translation2d> blockedFuel, ObjectiveCommitment commitmentIn,
+            FuelTargetMemory fuelTargetMemory, PolicyWeights weights) {
+        if (weights == null) {
+            weights = PolicyWeights.getActive();
+        }
         if (knowledge == null) {
             // Null used to become legacyObserved(), i.e. "opponents seen". Default to
             // the tier that claims the least, so a caller that forgets to pass
@@ -707,7 +838,7 @@ public class JevDecisionEngine {
         double timeLeftToHarvest = world.timeUntilHubShift() - transitTimeToHub;
 
         // ── 1. Evaluate Utility Scores Across Objectives ─────────────────────
-        Map<StrategicObjective, Double> utilities = evaluateUtilityScores(world, blockedFuel, knowledge, archetype);
+        Map<StrategicObjective, Double> utilities = evaluateUtilityScores(world, blockedFuel, knowledge, archetype, weights);
 
         // ── 2. Select Highest Utility Objective ──────────────────────────────
         StrategicObjective bestObjective = evaluateLocalUtilityMatrix(utilities, world, archetype);
@@ -731,7 +862,7 @@ public class JevDecisionEngine {
         // agent) and handed back in via commitmentIn, so the engine keeps its
         // stateless contract and no two agents can share a decision.
         if (commitmentIn != null && frozen == null) {
-            bestObjective = commitmentIn.apply(bestObjective, utilities);
+            bestObjective = commitmentIn.apply(bestObjective, utilities, weights);
         }
         double maxUtility = utilities.getOrDefault(bestObjective, 0.0);
 
@@ -745,7 +876,9 @@ public class JevDecisionEngine {
                 || bestObjective == StrategicObjective.SCREEN_FOR_ALLY)) {
             bestObjective = (archetype != null && archetype.isDefensive())
                     ? StrategicObjective.SHADOW_MIDLINE
-                    : (world.isInventoryFull() ? StrategicObjective.STAGE_STANDOFF : StrategicObjective.VACUUM_MIDFIELD);
+                    : (world.isInventoryFull()
+                            ? (world.hasShooter() ? StrategicObjective.STAGE_STANDOFF : StrategicObjective.SHADOW_MIDLINE)
+                            : StrategicObjective.VACUUM_MIDFIELD);
             maxUtility = utilities.getOrDefault(bestObjective, 0.0);
         }
 
@@ -773,6 +906,7 @@ public class JevDecisionEngine {
         double targetRPM = 0.0;
         boolean triggerKicker = false;
         String rationale;
+        FuelTourOptimizer.TourResult tourResult = FuelTourOptimizer.TourResult.EMPTY;
         StrategicObjective nextObjective = resolveNextObjective(bestObjective, world);
         double timeToTransitionSec = world.isAllianceHubActive() && world.heldFuelCount() >= 8
                 ? Math.max(0.0, timeLeftToHarvest)
@@ -823,27 +957,64 @@ public class JevDecisionEngine {
                 navTarget = new Pose2d(depotApproach, faceWall);
                 intakeCmd = IntakeState.INTAKING;
                 shooterCmd = ShooterState.STOPPED;
-                rationale = String.format("Stockpiling at Alliance Depot (%d/30).", world.heldFuelCount());
+                rationale = String.format("Stockpiling at Alliance Depot (%d/%d).", world.heldFuelCount(), world.ballCapacity());
                 break;
 
             case VACUUM_MIDFIELD:
-                navTarget = findClusterWeightedFuelTarget(world.selfPose(), world.isRedAlliance(),
-                        world.isAutonomous(), blockedFuel, fuelTargetMemory);
+                int piecesNeeded = Math.min(5, Math.max(0, world.ballCapacity() - world.heldFuelCount()));
+                FuelTourOptimizer.TourResult tour = (piecesNeeded > 1)
+                        ? planFuelHarvestTour(world.selfPose(), world.isRedAlliance(), world.isAutonomous(),
+                                piecesNeeded, blockedFuel)
+                        : FuelTourOptimizer.TourResult.EMPTY;
+
+                if (tour.isValid() && tour.pieceCount() > 1) {
+                    Translation2d immediateTarget = tour.immediateTargetPose().getTranslation();
+                    if (fuelTargetMemory != null && fuelTargetMemory.latched() != null) {
+                        boolean latchedStillPresent = tour.waypoints().stream()
+                                .anyMatch(p -> p.getDistance(fuelTargetMemory.latched()) <= FuelTargetMemory.STICK_RADIUS_M);
+                        if (!latchedStillPresent) {
+                            fuelTargetMemory.resolve(List.of(new FuelTargetMemory.ScoredTarget(immediateTarget, 100.0)));
+                        }
+                    } else if (fuelTargetMemory != null) {
+                        fuelTargetMemory.resolve(List.of(new FuelTargetMemory.ScoredTarget(immediateTarget, 100.0)));
+                    }
+                    navTarget = tour.immediateTargetPose();
+                    tourResult = tour;
+                    rationale = String.format("Harvesting multi-piece tour (%d pieces, %.1fm, %d/%d held).",
+                            tour.pieceCount(), tour.totalDistanceMeters(), world.heldFuelCount(), world.ballCapacity());
+                } else {
+                    navTarget = findClusterWeightedFuelTarget(world.selfPose(), world.isRedAlliance(),
+                            world.isAutonomous(), blockedFuel, fuelTargetMemory, knowledge.fieldFuel());
+                    rationale = String.format("Hunting fuel (%d/%d). Hopper capacity available.", world.heldFuelCount(), world.ballCapacity());
+                }
                 intakeCmd = IntakeState.INTAKING;
                 shooterCmd = ShooterState.STOPPED;
-                rationale = String.format("Hunting fuel (%d/30). Hopper capacity available.", world.heldFuelCount());
                 break;
 
             case SWEEP_ALLIANCE_ZONE:
-                navTarget = findAllianceZoneFuelTarget(world.selfPose(), world.isRedAlliance(),
-                        blockedFuel);
+                int piecesNeededZone = Math.min(5, Math.max(0, world.ballCapacity() - world.heldFuelCount()));
+                List<Translation2d> zoneCandidates = findAllianceZoneFuelCandidates(world.isRedAlliance(), blockedFuel, knowledge.fieldFuel());
+                Translation2d selfHubPos = FieldMap.Hubs.getHubLocation2d(world.isRedAlliance());
+                FuelTourOptimizer.TourResult zoneTour = (zoneCandidates.size() >= 2 && piecesNeededZone > 1)
+                        ? FuelTourOptimizer.optimizeTour(world.selfPose(), zoneCandidates, piecesNeededZone, selfHubPos)
+                        : FuelTourOptimizer.TourResult.EMPTY;
+
+                if (zoneTour.isValid() && zoneTour.pieceCount() > 1) {
+                    navTarget = zoneTour.immediateTargetPose();
+                    tourResult = zoneTour;
+                    int currentHomeFuel = countFuelInZone(world.isRedAlliance(), false, blockedFuel, knowledge);
+                    rationale = String.format("Executing alliance zone tour (%d pieces, %.1fm, %d loose total).",
+                            zoneTour.pieceCount(), zoneTour.totalDistanceMeters(), currentHomeFuel);
+                } else {
+                    navTarget = findAllianceZoneFuelTarget(world.selfPose(), world.isRedAlliance(), blockedFuel, knowledge.fieldFuel());
+                    int currentHomeFuel = countFuelInZone(world.isRedAlliance(), false, blockedFuel, knowledge);
+                    rationale = String.format("Sweeping %d loose fuel pieces in the alliance zone.", currentHomeFuel);
+                }
                 intakeCmd = IntakeState.INTAKING;
-                if (world.isAllianceHubActive()) {
+                if (world.isAllianceHubActive() && world.hasShooter()) {
                     shooterCmd = ShooterState.PREPARING;
                     targetRPM = 3200.0;
                 }
-                int currentHomeFuel = countFuelInZone(world.isRedAlliance(), false, blockedFuel, knowledge);
-                rationale = String.format("Sweeping %d loose fuel pieces in the alliance zone.", currentHomeFuel);
                 break;
 
             case LONG_RANGE_SNIPE:
@@ -868,7 +1039,7 @@ public class JevDecisionEngine {
 
             case POACH_OPPONENT_ZONE:
                 navTarget = findOpponentZoneFuelTarget(world.selfPose(), world.isRedAlliance(),
-                        blockedFuel);
+                        blockedFuel, knowledge.fieldFuel());
                 intakeCmd = IntakeState.INTAKING;
                 rationale = "Harvesting opponent-zone fuel before the next Hub shift.";
                 break;
@@ -974,10 +1145,10 @@ public class JevDecisionEngine {
                 break;
 
             case RUSH_CLIMB:
-                if (archetype != Archetype.CO_PILOT) {
+                if (!world.hasClimber()) {
                     // Belt-and-suspenders: RUSH_CLIMB is inserted first in the utility
                     // map, so a strict-greater max-selection would hand it an all-zero
-                    // tie. Bots must never navigate to the tower (they would score
+                    // tie. Bots without a climber must never navigate to the tower (they would score
                     // phantom climb points), so hold position instead.
                     navTarget = world.selfPose();
                     intakeCmd = IntakeState.STANDBY;
@@ -1006,7 +1177,7 @@ public class JevDecisionEngine {
         }
 
         boolean isLowClearance = FieldMap.Trenches.isLowClearance(world.selfPose());
-        boolean hasHopperSpace = world.heldFuelCount() < WorldState.DEFAULT_MAX_CAPACITY;
+        boolean hasHopperSpace = world.ballCapacity() > 0 && world.heldFuelCount() < world.ballCapacity();
         if ((bestObjective.isDefensive() || bestObjective == StrategicObjective.STAGE_STANDOFF)
                 && !isLowClearance && hasHopperSpace) {
             intakeCmd = IntakeState.INTAKING;
@@ -1018,15 +1189,20 @@ public class JevDecisionEngine {
         }
 
         double latencyMs = (System.nanoTime() - startNanos) / 1_000_000.0;
+        double activeInertia = (commitmentIn != null) ? commitmentIn.activeInertia(Timer.getFPGATimestamp()) : 0.0;
         Logger.recordOutput("JevAI/ActiveObjective", bestObjective.name());
         Logger.recordOutput("JevAI/Confidence", maxUtility);
         Logger.recordOutput("JevAI/Rationale", rationale);
         Logger.recordOutput("JevAI/PolicyLatencyMs", latencyMs);
+        Logger.recordOutput("JevAI/ActiveInertia", activeInertia);
+        SmartDashboard.putNumber("JevAI/ActiveInertia", activeInertia);
         String telemetryPrefix = cloudContext == null ? "JevAI" : "JevAI/" + cloudContext;
         Logger.recordOutput(telemetryPrefix + "/UsingCloudAI", usedCloud);
         Logger.recordOutput(telemetryPrefix + "/ActiveDecisionMode", activeDecisionMode.name());
+        Logger.recordOutput(telemetryPrefix + "/ActiveInertia", activeInertia);
         SmartDashboard.putBoolean(telemetryPrefix + "/UsingCloudAI", usedCloud);
         SmartDashboard.putString(telemetryPrefix + "/ActiveDecisionMode", activeDecisionMode.name());
+        SmartDashboard.putNumber(telemetryPrefix + "/ActiveInertia", activeInertia);
         if (cloudDecision != null) {
             Logger.recordOutput(telemetryPrefix + "/CloudConfidence", cloudDecision.confidence());
             Logger.recordOutput(telemetryPrefix + "/CloudLatencyMs", cloudDecision.latencyMs());
@@ -1050,7 +1226,7 @@ public class JevDecisionEngine {
         StrategicPlan plan = new StrategicPlan(bestObjective, nextObjective, timeToTransitionSec);
         return new AIActionIntent(
                 bestObjective, navTarget, aimOverride, intakeCmd, shooterCmd, targetRPM, triggerKicker, maxUtility,
-                rationale, plan);
+                rationale, plan, tourResult);
     }
 
     private DecisionMode resolveDecisionMode() {
@@ -1090,12 +1266,14 @@ public class JevDecisionEngine {
         if (archetype != null && archetype.isDefensive()) {
             return StrategicObjective.SHADOW_MIDLINE;
         }
-        if (world != null && world.heldFuelCount() > 0) {
+        if (world != null && world.heldFuelCount() > 0 && world.hasShooter()) {
             return world.isAllianceHubActive()
                     ? StrategicObjective.CYCLE_SCORE_HUB
                     : StrategicObjective.STAGE_STANDOFF;
         }
-        return StrategicObjective.VACUUM_MIDFIELD;
+        return (world != null && world.ballCapacity() > 0 && !world.isInventoryFull())
+                ? StrategicObjective.VACUUM_MIDFIELD
+                : StrategicObjective.SHADOW_MIDLINE;
     }
 
     static boolean isCloudObjectiveAdmissible(
@@ -1188,60 +1366,73 @@ public class JevDecisionEngine {
     public Pose2d findClusterWeightedFuelTarget(Pose2d robotPose, boolean isRedAlliance,
             boolean isAutonomous, Set<Translation2d> blockedFuel,
             FuelTargetMemory memory) {
-        SimulatedArena arena = SimulatedArena.getInstance();
+        return findClusterWeightedFuelTarget(robotPose, isRedAlliance, isAutonomous, blockedFuel, memory, null);
+    }
+
+    /**
+     * Parameterized cluster-weighted fuel selector accepting an explicit candidate list.
+     * When {@code candidatePieces} is null, falls back to {@link WorldStateBuilder#getFieldFuel()}.
+     */
+    public Pose2d findClusterWeightedFuelTarget(Pose2d robotPose, boolean isRedAlliance,
+            boolean isAutonomous, Set<Translation2d> blockedFuel,
+            FuelTargetMemory memory, List<Translation2d> candidatePieces) {
+        return findClusterWeightedFuelTarget(robotPose, isRedAlliance, isAutonomous, blockedFuel, memory,
+                candidatePieces, PolicyWeights.getActive());
+    }
+
+    /**
+     * Parameterized cluster-weighted fuel selector accepting an explicit candidate list
+     * and explicit {@link PolicyWeights}.
+     */
+    public Pose2d findClusterWeightedFuelTarget(Pose2d robotPose, boolean isRedAlliance,
+            boolean isAutonomous, Set<Translation2d> blockedFuel,
+            FuelTargetMemory memory, List<Translation2d> candidatePieces,
+            PolicyWeights weights) {
         Translation2d bestTarget = null;
         double highestScent = -1.0;
 
         List<Translation2d> candidates = new ArrayList<>();
         List<FuelTargetMemory.ScoredTarget> scored = new ArrayList<>();
 
-        if (arena != null) {
-            try {
-                // Sorted snapshot: the arena returns a HashSet whose order is
-                // identity-hash based, and equal-scoring candidates resolve by
-                // strict '>', so unsorted iteration picked a different target
-                // every JVM run.
-                var pieces = frc.robot.Sim.MatchDeterminism.fuelOnFieldSorted();
-                if (pieces != null && !pieces.isEmpty()) {
-                    for (var piece : pieces) {
-                        if (piece == null || !"Fuel".equals(piece.getType()))
-                            continue;
-                        Translation2d pos = piece.getPoseOnField().getTranslation();
+        List<Translation2d> pieces = (candidatePieces != null) ? candidatePieces : WorldStateBuilder.getFieldFuel();
+        if (pieces != null && !pieces.isEmpty()) {
+            for (Translation2d pos : pieces) {
+                if (pos == null)
+                    continue;
 
-                        // Field boundaries & obstacle avoidance (wall-band balls stay
-                        // eligible: the wall-normal approach below reaches them)
-                        if (pos.getX() < 0.05 || pos.getX() > 16.48 || pos.getY() < 0.05 || pos.getY() > 8.00)
-                            continue;
-                        if (StaticPathfinder.isPointInHardObstacle(pos)
-                                || StaticPathfinder.isPointNearDynamicObstacle(pos))
-                            continue;
-                        if (isBlocked(blockedFuel, pos))
-                            continue;
+                // Field boundaries & obstacle avoidance (wall-band balls stay
+                // eligible: the wall-normal approach below reaches them)
+                if (pos.getX() < 0.05 || pos.getX() > 16.48 || pos.getY() < 0.05 || pos.getY() > 8.00)
+                    continue;
+                if (StaticPathfinder.isPointInHardObstacle(pos)
+                        || StaticPathfinder.isPointNearDynamicObstacle(pos))
+                    continue;
+                if (isBlocked(blockedFuel, pos))
+                    continue;
 
-                        // Restrict opposing driver wall zone (and centerline in autonomous under FRC
-                        // G201)
-                        if (isAutonomous) {
-                            if (isRedAlliance && pos.getX() < FieldMap.CENTERLINE_X + 0.15)
-                                continue;
-                            if (!isRedAlliance && pos.getX() > FieldMap.CENTERLINE_X - 0.15)
-                                continue;
-                        } else {
-                            if (isRedAlliance && pos.getX() < 3.5)
-                                continue;
-                            if (!isRedAlliance && pos.getX() > 13.0)
-                                continue;
-                        }
-
-                        candidates.add(pos);
-                    }
+                // Restrict opposing driver wall zone (and centerline in autonomous under FRC
+                // G201)
+                if (isAutonomous) {
+                    if (isRedAlliance && pos.getX() < FieldMap.CENTERLINE_X + 0.15)
+                        continue;
+                    if (!isRedAlliance && pos.getX() > FieldMap.CENTERLINE_X - 0.15)
+                        continue;
+                } else {
+                    if (isRedAlliance && pos.getX() < 3.5)
+                        continue;
+                    if (!isRedAlliance && pos.getX() > 13.0)
+                        continue;
                 }
-            } catch (Exception ignored) {
+
+                candidates.add(pos);
             }
         }
 
+        PolicyWeights pw = (weights != null) ? weights : PolicyWeights.getActive();
         if (!candidates.isEmpty()) {
-            final double clusterRadius = 1.30;
-            final double twoSigmaSq = 2.0 * 0.50 * 0.50; // sigma = 0.50m
+            final double clusterRadius = pw.clusterNeighborhoodRadius();
+            final double sigma = pw.clusterKernelSigma();
+            final double twoSigmaSq = 2.0 * sigma * sigma;
 
             int n = candidates.size();
             double[] densities = new double[n];
@@ -1269,18 +1460,20 @@ public class JevDecisionEngine {
                 double dist = robotPose.getTranslation().getDistance(cand);
                 Translation2d delta = cand.minus(robotPose.getTranslation());
                 double angleDiff = Math.abs(robotPose.getRotation().minus(delta.getAngle()).getRadians());
-                double alignBonus = 0.70 + 0.30 * Math.max(0.0, Math.cos(angleDiff));
+                double alignBonus = (1.0 - pw.harvestHeadingAlignScale())
+                        + pw.harvestHeadingAlignScale() * Math.max(0.0, Math.cos(angleDiff));
                 Translation2d homeCenter = new Translation2d(isRedAlliance ? 14.2 : 2.3,
                         FieldMap.FIELD_WIDTH / 2.0);
                 Translation2d toHome = homeCenter.minus(cand);
                 Translation2d travel = delta;
                 double directionBonus = 0.0;
                 if (toHome.getNorm() > 1e-9 && travel.getNorm() > 1e-9) {
-                    directionBonus = 0.35 * Math.max(0.0,
+                    directionBonus = pw.harvestReturnVectorBonus() * Math.max(0.0,
                             (travel.div(travel.getNorm())).dot(toHome.div(toHome.getNorm())));
                 }
 
-                double scent = (Math.pow(density, 1.5) / (dist + 0.40)) * (alignBonus + directionBonus);
+                double scent = (Math.pow(density, pw.clusterDensityExponent()) / (dist + pw.clusterDistanceFloor()))
+                        * (alignBonus + directionBonus);
                 scored.add(new FuelTargetMemory.ScoredTarget(cand, scent));
 
                 if (scent > highestScent) {
@@ -1318,29 +1511,95 @@ public class JevDecisionEngine {
     }
 
     /**
+     * Plans an optimized sequential multi-piece fuel harvesting tour using
+     * {@link FuelTourOptimizer}.
+     *
+     * @param robotPose        current robot pose
+     * @param isRedAlliance    alliance orientation
+     * @param isAutonomous     autonomous state (enforces G201)
+     * @param maxPieces        maximum number of pieces to gather in this tour
+     * @param blockedFuel      watchdog-abandoned pieces to skip
+     * @return optimized TourResult with waypoints and immediate approach pose
+     */
+    public FuelTourOptimizer.TourResult planFuelHarvestTour(
+            Pose2d robotPose,
+            boolean isRedAlliance,
+            boolean isAutonomous,
+            int maxPieces,
+            Set<Translation2d> blockedFuel) {
+        Translation2d hubTarget = FieldMap.Hubs.getHubLocation2d(isRedAlliance);
+        List<Translation2d> candidates = FuelTourOptimizer.findFieldFuelCandidates(
+                robotPose, isRedAlliance, isAutonomous, blockedFuel);
+        return FuelTourOptimizer.optimizeTour(robotPose, candidates, maxPieces, hubTarget);
+    }
+
+    /**
      * Selects the densest reachable Fuel cluster strictly inside our alliance zone.
      */
     public Pose2d findAllianceZoneFuelTarget(Pose2d robotPose, boolean isRedAlliance) {
-        return findFuelTargetInZone(robotPose, isRedAlliance, null);
+        return findFuelTargetInZone(robotPose, isRedAlliance, null, null);
     }
 
     /** Zone-limited variant that skips caller-abandoned points. */
     public Pose2d findAllianceZoneFuelTarget(
             Pose2d robotPose, boolean isRedAlliance, Set<Translation2d> blockedFuel) {
-        return findFuelTargetInZone(robotPose, isRedAlliance, blockedFuel);
+        return findFuelTargetInZone(robotPose, isRedAlliance, blockedFuel, null);
+    }
+
+    public Pose2d findAllianceZoneFuelTarget(
+            Pose2d robotPose, boolean isRedAlliance, Set<Translation2d> blockedFuel, List<Translation2d> fieldFuel) {
+        return findFuelTargetInZone(robotPose, isRedAlliance, blockedFuel, fieldFuel);
+    }
+
+    /**
+     * Collects reachable fuel pieces located strictly within the specified alliance zone.
+     */
+    public List<Translation2d> findAllianceZoneFuelCandidates(
+            boolean isRedAlliance, Set<Translation2d> blockedFuel) {
+        return findAllianceZoneFuelCandidates(isRedAlliance, blockedFuel, null);
+    }
+
+    public List<Translation2d> findAllianceZoneFuelCandidates(
+            boolean isRedAlliance, Set<Translation2d> blockedFuel, List<Translation2d> fieldFuel) {
+        List<Translation2d> candidates = new ArrayList<>();
+        List<Translation2d> pieces = (fieldFuel != null) ? fieldFuel : WorldStateBuilder.getFieldFuel();
+        if (pieces != null) {
+            for (Translation2d point : pieces) {
+                if (point == null) {
+                    continue;
+                }
+                if (!FieldMap.AllianceZones.isInAllianceZone(point, isRedAlliance)) {
+                    continue;
+                }
+                if (StaticPathfinder.isPointInHardObstacle(point)
+                        || StaticPathfinder.isPointNearDynamicObstacle(point)) {
+                    continue;
+                }
+                if (isBlocked(blockedFuel, point)) {
+                    continue;
+                }
+                candidates.add(point);
+            }
+        }
+        return candidates;
     }
 
     /**
      * Selects the densest reachable Fuel cluster strictly inside the opponent zone.
      */
     public Pose2d findOpponentZoneFuelTarget(Pose2d robotPose, boolean isRedAlliance) {
-        return findFuelTargetInZone(robotPose, !isRedAlliance, null);
+        return findFuelTargetInZone(robotPose, !isRedAlliance, null, null);
     }
 
     /** Opponent-zone variant that skips caller-abandoned points. */
     public Pose2d findOpponentZoneFuelTarget(
             Pose2d robotPose, boolean isRedAlliance, Set<Translation2d> blockedFuel) {
-        return findFuelTargetInZone(robotPose, !isRedAlliance, blockedFuel);
+        return findFuelTargetInZone(robotPose, !isRedAlliance, blockedFuel, null);
+    }
+
+    public Pose2d findOpponentZoneFuelTarget(
+            Pose2d robotPose, boolean isRedAlliance, Set<Translation2d> blockedFuel, List<Translation2d> fieldFuel) {
+        return findFuelTargetInZone(robotPose, !isRedAlliance, blockedFuel, fieldFuel);
     }
 
     /** True when {@code point} sits within the blocked radius of any entry. */
@@ -1358,61 +1617,50 @@ public class JevDecisionEngine {
     }
 
     private Pose2d findFuelTargetInZone(Pose2d robotPose, boolean zoneIsRed,
-            Set<Translation2d> blockedFuel) {
-        SimulatedArena arena = SimulatedArena.getInstance();
+            Set<Translation2d> blockedFuel, List<Translation2d> fieldFuel) {
         Translation2d best = null;
         double bestScore = -1.0;
-        if (arena != null) {
-            try {
-                List<Translation2d> candidates = new ArrayList<>();
-                // Sorted snapshot: equal-scoring candidates resolve by strict
-                // '>', so the arena's HashSet order decided the target.
-                var pieces = frc.robot.Sim.MatchDeterminism.fuelOnFieldSorted();
-                if (pieces != null) {
-                    for (GamePieceOnFieldSimulation piece : pieces) {
-                        if (piece == null || !"Fuel".equals(piece.getType()))
-                            continue;
-                        Translation2d point = piece.getPoseOnField().getTranslation();
-                        if (!FieldMap.AllianceZones.isInAllianceZone(point, zoneIsRed))
-                            continue;
-                        if (StaticPathfinder.isPointInHardObstacle(point)
-                                || StaticPathfinder.isPointNearDynamicObstacle(point))
-                            continue;
-                        if (isBlocked(blockedFuel, point))
-                            continue;
-                        candidates.add(point);
+        List<Translation2d> pieces = (fieldFuel != null) ? fieldFuel : WorldStateBuilder.getFieldFuel();
+        if (pieces != null && !pieces.isEmpty()) {
+            List<Translation2d> candidates = new ArrayList<>();
+            for (Translation2d point : pieces) {
+                if (point == null)
+                    continue;
+                if (!FieldMap.AllianceZones.isInAllianceZone(point, zoneIsRed))
+                    continue;
+                if (StaticPathfinder.isPointInHardObstacle(point)
+                        || StaticPathfinder.isPointNearDynamicObstacle(point))
+                    continue;
+                if (isBlocked(blockedFuel, point))
+                    continue;
+                candidates.add(point);
+            }
+            int n = candidates.size();
+            double[] densities = new double[n];
+            for (int i = 0; i < n; i++) {
+                densities[i] = 1.0;
+            }
+            for (int i = 0; i < n; i++) {
+                Translation2d candI = candidates.get(i);
+                for (int j = i + 1; j < n; j++) {
+                    Translation2d candJ = candidates.get(j);
+                    double distance = candI.getDistance(candJ);
+                    if (distance > 1e-9 && distance <= 1.3) {
+                        double addedDensity = Math.exp(-(distance * distance) / 0.5);
+                        densities[i] += addedDensity;
+                        densities[j] += addedDensity;
                     }
                 }
-                int n = candidates.size();
-                double[] densities = new double[n];
-                for (int i = 0; i < n; i++) {
-                    densities[i] = 1.0;
+            }
+            for (int i = 0; i < n; i++) {
+                Translation2d candidate = candidates.get(i);
+                double density = densities[i];
+                double distance = robotPose.getTranslation().getDistance(candidate);
+                double score = Math.pow(density, 1.5) / (distance + 0.4);
+                if (score > bestScore) {
+                    bestScore = score;
+                    best = candidate;
                 }
-                for (int i = 0; i < n; i++) {
-                    Translation2d candI = candidates.get(i);
-                    for (int j = i + 1; j < n; j++) {
-                        Translation2d candJ = candidates.get(j);
-                        double distance = candI.getDistance(candJ);
-                        if (distance > 1e-9 && distance <= 1.3) {
-                            double addedDensity = Math.exp(-(distance * distance) / 0.5);
-                            densities[i] += addedDensity;
-                            densities[j] += addedDensity;
-                        }
-                    }
-                }
-                for (int i = 0; i < n; i++) {
-                    Translation2d candidate = candidates.get(i);
-                    double density = densities[i];
-                    double distance = robotPose.getTranslation().getDistance(candidate);
-                    double score = Math.pow(density, 1.5) / (distance + 0.4);
-                    if (score > bestScore) {
-                        bestScore = score;
-                        best = candidate;
-                    }
-                }
-            } catch (Exception ignored) {
-                // The real robot has no SimulatedArena; callers receive the safe fallback
-                // below.
             }
         }
         if (best != null) {
@@ -1469,49 +1717,49 @@ public class JevDecisionEngine {
         // so sweepUtility never collapses, ObjectiveCommitment's release rule
         // (incumbentUtility <= 0) never fires, and the latch holds all match. That
         // was the root cause of the seed-dependent teleop collapse.
-        return Math.max(0, available - countBlockedInZone(isRedZone, blockedFuel));
+        return Math.max(0, available - countBlockedInZone(isRedZone, blockedFuel, knowledge.fieldFuel()));
     }
 
     /**
      * How many pieces the watchdog has abandoned in the zone being counted.
-     *
-     * <p>Still reads the arena, deliberately: the blocked set is a list of points
-     * and the total is a count, but the only place that knows a piece's zone is the
-     * piece list itself. Returns 0 when no arena is available (real hardware), which
-     * is correct &mdash; an {@link ObservedKnowledge} reports 0 total fuel anyway, so
-     * the subtraction is never reached there.
      */
     int countBlockedInZone(boolean isRedZone, Set<Translation2d> blockedFuel) {
+        return countBlockedInZone(isRedZone, blockedFuel, null);
+    }
+
+    int countBlockedInZone(boolean isRedZone, Set<Translation2d> blockedFuel, List<Translation2d> fieldFuel) {
         if (blockedFuel == null || blockedFuel.isEmpty()) {
             return 0;
         }
-        SimulatedArena arena = SimulatedArena.getInstance();
-        if (arena == null) {
+        List<Translation2d> pieces = (fieldFuel != null) ? fieldFuel : WorldStateBuilder.getFieldFuel();
+        if (pieces == null || pieces.isEmpty()) {
             return 0;
         }
-        try {
-            int blocked = 0;
-            for (GamePieceOnFieldSimulation piece :
-                    frc.robot.Sim.MatchDeterminism.fuelOnFieldSorted()) {
-                if (piece == null || blockedFuel.isEmpty() || !"Fuel".equals(piece.getType())) {
-                    continue;
-                }
-                var at = piece.getPoseOnField().getTranslation();
-                // Same zone the raw count covered: single-owned by FieldMap.AllianceZones
-                boolean inZone = FieldMap.AllianceZones.isInAllianceZone(at, isRedZone);
-                if (inZone && isBlocked(blockedFuel, at)) {
-                    blocked++;
-                }
+        int blocked = 0;
+        for (Translation2d at : pieces) {
+            if (at == null) {
+                continue;
             }
-            return blocked;
-        } catch (Exception e) {
-            // Over-reporting blocked fuel would suppress a viable objective, so on
-            // failure subtract nothing and keep the raw count.
-            return 0;
+            // Same zone the raw count covered: single-owned by FieldMap.AllianceZones
+            boolean inZone = FieldMap.AllianceZones.isInAllianceZone(at, isRedZone);
+            if (inZone && isBlocked(blockedFuel, at)) {
+                blocked++;
+            }
         }
+        return blocked;
     }
 
     private StrategicObjective resolveNextObjective(StrategicObjective current, WorldState world) {
+        if (world != null && !world.hasShooter()) {
+            return switch (current) {
+                case SWEEP_ALLIANCE_ZONE, STOCKPILE_DEPOT, POACH_OPPONENT_ZONE ->
+                    (world.ballCapacity() > 0 && !world.isInventoryFull())
+                            ? StrategicObjective.VACUUM_MIDFIELD
+                            : StrategicObjective.SHADOW_MIDLINE;
+                case CHOKE_TRENCH, SCREEN_FOR_ALLY, BAIT_PIN_FOUL -> StrategicObjective.LEAD_INTERCEPT;
+                default -> current;
+            };
+        }
         return switch (current) {
             case SWEEP_ALLIANCE_ZONE -> world.isAllianceHubActive()
                     ? StrategicObjective.CYCLE_SCORE_HUB

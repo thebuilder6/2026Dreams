@@ -31,4 +31,14 @@ public interface Actions {
      * Run code once when the action finishes, usually for clean up
      */
     void done();
+
+    /**
+     * Set of subsystem classes required by this action.
+     * Used by ParallelAction to guard against conflicting resource mutations.
+     *
+     * @return Set of subsystem classes, empty by default.
+     */
+    default java.util.Set<Class<?>> getRequirements() {
+        return java.util.Collections.emptySet();
+    }
 }

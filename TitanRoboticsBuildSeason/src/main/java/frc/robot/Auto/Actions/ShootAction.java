@@ -85,4 +85,9 @@ public class ShootAction implements Actions {
         shooter.stop();
         swerveBase.stop();
     }
+
+    @Override
+    public java.util.Set<Class<?>> getRequirements() {
+        return useAutoAim ? java.util.Set.of(Shooter.class, SwerveBase.class) : java.util.Set.of(Shooter.class);
+    }
 }

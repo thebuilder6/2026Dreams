@@ -20,6 +20,7 @@ import frc.robot.Subsystems.SwerveBase;
 import frc.robot.Subsystems.Vision;
 import frc.robot.Telemetry.Alert;
 import frc.robot.Telemetry.Alert.AlertType;
+import frc.robot.Telemetry.TelemetryKeys;
 
 /**
  * Diagnostics subsystem for safe hardware verification and automated Pre-Flight pit checks.
@@ -356,25 +357,43 @@ public class Diagnostics implements Subsystem {
                 // A live IO object is not a live stream: require a fresh timestamp
                 // (or a current target) instead of getIO() != null.
                 if (elapsedStep >= 1.0) {
+                    // Link-first gate (merged 2026-10-07): the pre-flight Vision step
+                    // verifies the camera *link*, not tag visibility — a tag-less pit
+                    // is normal. PASS requires every enabled camera to report
+                    // connected via its heartbeat watchdog
+                    // (Vision.isAllCamerasConnected). Freshness (hasTarget or a
+                    // timestamp <1.0 s old with latency <500 ms) is reported as
+                    // detail so a live tag sighting is visible, but a healthy
+                    // link with nothing in view still passes.
                     boolean pass;
-                    String detail = "";
+                    String status;
                     if (RobotBase.isSimulation()) {
                         pass = true;
-                    } else if (vision.hasTarget()) {
-                        pass = true;
+                        status = "PASS";
                     } else {
-                        boolean primaryFresh = isVisionInputFresh(vision.getInputs(), now);
-                        boolean secondaryFresh = vision.getSecondaryInputs() != null
-                                && isVisionInputFresh(vision.getSecondaryInputs(), now);
-                        pass = primaryFresh || secondaryFresh;
-                        if (!pass) {
-                            boolean anyData = vision.getInputs().timestamp > 0
-                                    || (vision.getSecondaryInputs() != null
-                                            && vision.getSecondaryInputs().timestamp > 0);
-                            detail = anyData ? " (Stale)" : " (No Camera Data)";
+                        int totalCount = vision.getCameras().size();
+                        int onlineCount = 0;
+                        for (var c : vision.getCameras()) {
+                            if (c.isConnected()) onlineCount++;
+                        }
+                        boolean connected = !vision.getCameras().isEmpty()
+                                && vision.isAllCamerasConnected();
+                        boolean liveTarget = vision.hasTarget()
+                                || isVisionInputFresh(vision.getInputs(), now)
+                                || (vision.getSecondaryInputs() != null
+                                        && isVisionInputFresh(vision.getSecondaryInputs(), now));
+                        if (!connected) {
+                            pass = false;
+                            status = "WARN (" + onlineCount + "/" + totalCount + " Online)";
+                        } else if (liveTarget) {
+                            pass = true;
+                            status = "PASS (" + onlineCount + "/" + totalCount + " Online, Target/Fresh)";
+                        } else {
+                            pass = true;
+                            status = "PASS (" + onlineCount + "/" + totalCount + " Online, No Target In View)";
                         }
                     }
-                    scorecard.put("Vision", pass ? "PASS" : "WARN (No Camera Stream" + detail + ")");
+                    scorecard.put("Vision", status);
 
                     // Complete Sequence
                     finalizePreFlight();
@@ -515,9 +534,9 @@ public class Diagnostics implements Subsystem {
 
         // Pre-Flight telemetry
         SmartDashboard.putBoolean("Diagnostics/PreFlight/Running", preFlightRunning);
-        SmartDashboard.putString("Diagnostics/PreFlight/Step", preFlightStep.displayName);
+        SmartDashboard.putString(TelemetryKeys.Diagnostics.PREFLIGHT_STEP, preFlightStep.displayName);
         double totalElapsed = preFlightRunning ? (Timer.getFPGATimestamp() - preFlightStartTime) : 0.0;
-        SmartDashboard.putNumber("Diagnostics/PreFlight/Progress", Math.min(1.0, totalElapsed / 15.0));
+        SmartDashboard.putNumber(TelemetryKeys.Diagnostics.PREFLIGHT_PROGRESS, Math.min(1.0, totalElapsed / 15.0));
 
         // Scorecard publication for Elastic Dashboard (only publish when changed or during pre-flight)
         if (preFlightRunning || scorecardDirty) {
@@ -528,8 +547,8 @@ public class Diagnostics implements Subsystem {
         }
 
         // Trigger automated pre-flight check from dashboard
-        if (SmartDashboard.getBoolean("Diagnostics/Run Pre-Flight Check", false)) {
-            SmartDashboard.putBoolean("Diagnostics/Run Pre-Flight Check", false);
+        if (SmartDashboard.getBoolean(TelemetryKeys.Diagnostics.RUN_PREFLIGHT, false)) {
+            SmartDashboard.putBoolean(TelemetryKeys.Diagnostics.RUN_PREFLIGHT, false);
             startPreFlightCheck();
         }
 

@@ -190,5 +190,28 @@ class ObjectiveCommitmentTest {
                         < JevDecisionEngine.COMMITMENT_DECISIVE_MARGIN,
                 "normal margin must be tighter than the decisive-switch margin");
         assertTrue(JevDecisionEngine.COMMITMENT_MIN_HOLD_SEC > 0.0);
+        assertTrue(JevDecisionEngine.INERTIA_INITIAL_BOOST > 0.0);
+        assertTrue(JevDecisionEngine.INERTIA_TIME_CONSTANT_SEC > 0.0);
+    }
+
+    @Test
+    void testDynamicActionInertiaDecaysSmoothly() {
+        // At t = 0, incumbent has utility 0.70 + 0.20 boost.
+        // Challenger at 0.80 (+0.10 gain) cannot overcome initial inertia.
+        Map<StrategicObjective, Double> u0 = utilities(
+                StrategicObjective.VACUUM_MIDFIELD, 0.70,
+                StrategicObjective.CYCLE_SCORE_HUB, 0.80);
+
+        StrategicObjective candidate = JevDecisionEngine.resolveCommittedObjective(
+                StrategicObjective.CYCLE_SCORE_HUB, u0, StrategicObjective.VACUUM_MIDFIELD, 100.0, 100.0);
+        assertEquals(StrategicObjective.VACUUM_MIDFIELD, candidate,
+                "At t=0, challenger gain +0.10 cannot overcome initial inertia boost of +0.20");
+
+        // After 2.5 seconds (2.5 * tau), inertia has decayed to ~0.016.
+        // The same +0.10 challenger now easily overcomes the decayed inertia and wins.
+        StrategicObjective candidateAfterDecay = JevDecisionEngine.resolveCommittedObjective(
+                StrategicObjective.CYCLE_SCORE_HUB, u0, StrategicObjective.VACUUM_MIDFIELD, 100.0, 102.5);
+        assertEquals(StrategicObjective.CYCLE_SCORE_HUB, candidateAfterDecay,
+                "After inertia decay, challenger with +0.10 gain smoothly steals commitment");
     }
 }

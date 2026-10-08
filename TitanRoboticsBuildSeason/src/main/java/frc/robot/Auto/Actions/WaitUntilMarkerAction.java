@@ -8,16 +8,27 @@ import frc.robot.Interfaces.Actions;
  * This is meant to be used in a ParallelAction alongside the path.
  */
 public class WaitUntilMarkerAction implements Actions {
+    public static final double DEFAULT_TOLERANCE_METERS = 0.45;
+
     private final FollowChoreoPath path;
     private final String markerName;
+    private final double spatialToleranceMeters;
+
+    private boolean markerTriggered = false;
 
     public WaitUntilMarkerAction(FollowChoreoPath path, String markerName) {
+        this(path, markerName, DEFAULT_TOLERANCE_METERS);
+    }
+
+    public WaitUntilMarkerAction(FollowChoreoPath path, String markerName, double spatialToleranceMeters) {
         this.path = path;
         this.markerName = markerName;
+        this.spatialToleranceMeters = spatialToleranceMeters;
     }
 
     @Override
     public void start() {
+        markerTriggered = false;
     }
 
     @Override
@@ -26,7 +37,14 @@ public class WaitUntilMarkerAction implements Actions {
 
     @Override
     public boolean isFinished() {
-        return path == null || path.hasMarkerBeenPassed(markerName) || path.isFinished();
+        if (markerTriggered || path == null || path.isFinished()) {
+            return true;
+        }
+        if (path.hasMarkerBeenPassed(markerName) || path.isWithinMarkerDistance(markerName, spatialToleranceMeters)) {
+            markerTriggered = true;
+            return true;
+        }
+        return false;
     }
 
     @Override

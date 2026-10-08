@@ -4,6 +4,7 @@ import java.util.Collections;
 import java.util.List;
 
 import edu.wpi.first.math.geometry.Pose2d;
+import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.math.kinematics.ChassisSpeeds;
 
 /**
@@ -118,5 +119,11 @@ public record ObservedKnowledge(
     @Override
     public int opponentZoneFuel() {
         return 0;
+    }
+
+    /** No sensor for field fuel. */
+    @Override
+    public List<Translation2d> fieldFuel() {
+        return Collections.emptyList();
     }
 }

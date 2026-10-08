@@ -6,6 +6,7 @@ import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import frc.robot.Subsystems.*;
 import org.littletonrobotics.junction.Logger;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
+import frc.robot.Telemetry.TelemetryKeys;
 
 /**
  * AutonomousTeleopAgent: pure intent coordinator for the real-robot Co-Pilot.
@@ -53,6 +54,22 @@ public class AutonomousTeleopAgent {
     public static final double BREAKOUT_ROTATION = 0.60;
     public static final double BLEND_MIN = 0.10;
 
+    private boolean hasShooter = WorldState.DEFAULT_HAS_SHOOTER;
+    private int ballCapacity = WorldState.DEFAULT_MAX_CAPACITY;
+    private boolean hasClimber = WorldState.DEFAULT_HAS_CLIMBER;
+
+    public void setHardwareCapabilities(boolean hasShooter, int ballCapacity, boolean hasClimber) {
+        this.hasShooter = hasShooter;
+        this.ballCapacity = ballCapacity;
+        this.hasClimber = hasClimber;
+    }
+
+    public void resetHardwareCapabilities() {
+        this.hasShooter = WorldState.DEFAULT_HAS_SHOOTER;
+        this.ballCapacity = WorldState.DEFAULT_MAX_CAPACITY;
+        this.hasClimber = WorldState.DEFAULT_HAS_CLIMBER;
+    }
+
     /**
      * Evaluates the Co-Pilot policy for the player robot and caches the result.
      *
@@ -60,15 +77,15 @@ public class AutonomousTeleopAgent {
      * @return concrete intent (navigation target, aim override, subsystem commands)
      */
     public AIActionIntent getCoPilotIntent(int heldBalls) {
-        WorldState world = WorldStateBuilder.buildForPlayerRobot(heldBalls);
+        WorldState world = WorldStateBuilder.buildForPlayerRobot(heldBalls, hasShooter, ballCapacity, hasClimber);
         latestIntent = JevDecisionEngine.getInstance().evaluatePolicy(
                 world, ObservedKnowledge.selfOnly(), Archetype.CO_PILOT, null, null,
                 objectiveCommitment, fuelTargetMemory);
         activeObjective = latestIntent.objective();
 
-        SmartDashboard.putString("CoPilot/CurrentObjective", activeObjective.name());
-        SmartDashboard.putString("CoPilot/NextObjective", latestIntent.plan().nextObjective().name());
-        SmartDashboard.putNumber("CoPilot/TimeToTransitionSec", latestIntent.plan().timeToTransitionSec());
+        SmartDashboard.putString(TelemetryKeys.CoPilot.CURRENT_OBJECTIVE, activeObjective.name());
+        SmartDashboard.putString(TelemetryKeys.CoPilot.NEXT_OBJECTIVE, latestIntent.plan().nextObjective().name());
+        SmartDashboard.putNumber(TelemetryKeys.CoPilot.TIME_TO_TRANSITION_SEC, latestIntent.plan().timeToTransitionSec());
 
         Logger.recordOutput("CoPilot/ActiveObjective", activeObjective.name());
         Logger.recordOutput("CoPilot/Confidence", latestIntent.confidence());
@@ -222,7 +239,7 @@ public class AutonomousTeleopAgent {
                 shooter.prepareToShoot();
             }
         }
-        SmartDashboard.putBoolean("CoPilot/AutoFeedActive", autoFeedActive);
+        SmartDashboard.putBoolean(TelemetryKeys.CoPilot.AUTO_FEED_ACTIVE, autoFeedActive);
 
         if (intent.intakeCommand() == Intake.IntakeState.INTAKING || intent.objective() == StrategicObjective.VACUUM_MIDFIELD) {
             intake.setState(Intake.IntakeState.INTAKING);

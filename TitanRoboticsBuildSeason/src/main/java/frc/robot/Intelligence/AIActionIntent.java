@@ -18,8 +18,26 @@ public record AIActionIntent(
         boolean triggerFeedKicker,
         double confidence,
         String rationale,
-        StrategicPlan plan
+        StrategicPlan plan,
+        FuelTourOptimizer.TourResult tour
 ) {
+    /** Backward-compatible constructor for callers that provide a plan without an explicit tour. */
+    public AIActionIntent(
+            StrategicObjective objective,
+            Pose2d navigationTarget,
+            Rotation2d aimOverride,
+            IntakeState intakeCommand,
+            ShooterState shooterCommand,
+            double targetFlywheelRPM,
+            boolean triggerFeedKicker,
+            double confidence,
+            String rationale,
+            StrategicPlan plan) {
+        this(objective, navigationTarget, aimOverride, intakeCommand, shooterCommand,
+                targetFlywheelRPM, triggerFeedKicker, confidence, rationale, plan,
+                FuelTourOptimizer.TourResult.EMPTY);
+    }
+
     /** Backward-compatible constructor for callers that do not provide a lookahead. */
     public AIActionIntent(
             StrategicObjective objective,
@@ -33,6 +51,7 @@ public record AIActionIntent(
             String rationale) {
         this(objective, navigationTarget, aimOverride, intakeCommand, shooterCommand,
                 targetFlywheelRPM, triggerFeedKicker, confidence, rationale,
-                new StrategicPlan(objective, objective, 0.0));
+                new StrategicPlan(objective, objective, 0.0),
+                FuelTourOptimizer.TourResult.EMPTY);
     }
 }

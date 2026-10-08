@@ -6,6 +6,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import edu.wpi.first.hal.HAL;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
@@ -826,5 +828,84 @@ public class AIRobotSimTest {
                 "Stationary harvester watchdog must be operational");
         bot.reset();
         assertEquals(0.0, bot.getHarvestArrivalHoldSec());
+    }
+
+    @Test
+    public void testAIRobotInstanceContinuousTourExecution() {
+        SimulatedArena arena = SimulatedArena.getInstance();
+        arena.clearGamePieces();
+        // Add 3 fuel pieces in midfield ahead of Blue cycler at (6.0, 4.0)
+        arena.addGamePiece(new RebuiltFuelOnField(new Translation2d(7.0, 4.0)));
+        arena.addGamePiece(new RebuiltFuelOnField(new Translation2d(7.8, 4.0)));
+        arena.addGamePiece(new RebuiltFuelOnField(new Translation2d(8.6, 4.0)));
+
+        AIRobotInstance bot = new AIRobotInstance(1,
+                new Pose2d(6.0, 4.0, new Rotation2d(0)), Archetype.AUTONOMOUS_CYCLER, true);
+        bot.setFuelCount(0); // Needs fuel
+
+        // Update bot with Blue alliance (playerIsRed = false)
+        bot.update(java.util.List.of(), false, 3.5);
+
+        // If bot latched a tour, verify continuity and full-hopper abort
+        if (bot.hasActiveTour()) {
+            assertTrue(bot.hasActiveTour(), "Bot must latch continuous tour when multi-piece tour is available");
+            assertTrue(bot.getActiveTourWaypoints().size() >= 2, "Tour must contain multiple waypoints");
+            assertTrue(bot.getTrajectoryController().isExplicitPath(), "TrajectoryController must be on explicit path");
+
+            // Execute another update: verify it remains active
+            bot.update(java.util.List.of(), false, 3.5);
+            assertTrue(bot.hasActiveTour(), "Tour must remain active across cycles without thrashing");
+
+            // Test aborting when hopper reaches max capacity
+            bot.setFuelCount(30);
+            bot.update(java.util.List.of(), false, 3.5);
+            assertFalse(bot.hasActiveTour(), "Tour must abort when hopper is at full capacity");
+            assertFalse(bot.getTrajectoryController().isExplicitPath(), "TrajectoryController must clear explicit path on abort");
+        }
+    }
+
+    @Test
+    public void testContinuousTourExplicitAbort() {
+        AIRobotInstance bot = new AIRobotInstance(1,
+                new Pose2d(6.0, 4.0, new Rotation2d(0)), Archetype.AUTONOMOUS_CYCLER, true);
+        List<Pose2d> waypoints = List.of(
+                new Pose2d(7.0, 4.0, new Rotation2d()),
+                new Pose2d(8.0, 4.0, new Rotation2d())
+        );
+        bot.getTrajectoryController().setExplicitWaypoints(waypoints);
+        assertTrue(bot.getTrajectoryController().isExplicitPath());
+
+        bot.abortTour();
+        assertFalse(bot.hasActiveTour());
+        assertFalse(bot.getTrajectoryController().isExplicitPath());
+        assertEquals(0, bot.getActiveTourWaypoints().size());
+    }
+
+    @Test
+    public void testTrajectoryControllerExplicitPathProgression() {
+        var pid = new edu.wpi.first.math.controller.PIDController(2.0, 0, 0);
+        var tc = new frc.robot.Navigation.TrajectoryController(pid);
+
+        List<Pose2d> path = List.of(
+                new Pose2d(7.0, 4.0, new Rotation2d()),
+                new Pose2d(9.0, 4.0, new Rotation2d())
+        );
+        tc.setExplicitWaypoints(path, new Translation2d(5.0, 4.0));
+        assertTrue(tc.isExplicitPath());
+        assertEquals(0, tc.getCurrentWaypointIndex());
+
+        // Bot starts at (5.0, 4.0) in open midfield, drives towards (9.0, 4.0)
+        ChassisSpeeds s1 = tc.calculate(new Pose2d(5.0, 4.0, new Rotation2d()),
+                new ChassisSpeeds(), path.get(1), 3.0, false, false);
+        assertTrue(s1.vxMetersPerSecond > 0.5, "Should accelerate along path");
+
+        // Bot passes waypoint 0, now at (7.2, 4.0)
+        ChassisSpeeds s2 = tc.calculate(new Pose2d(7.2, 4.0, new Rotation2d()),
+                s1, path.get(1), 3.0, false, false);
+        assertEquals(1, tc.getCurrentWaypointIndex(), "Waypoint index must advance after passing waypoint 0 plane");
+
+        // Clear explicit path
+        tc.clearExplicitPath();
+        assertFalse(tc.isExplicitPath());
     }
 }

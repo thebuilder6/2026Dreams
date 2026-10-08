@@ -1,8 +1,8 @@
-﻿---
+---
 title: Match Knowledge Model
 audience: [human, ai]
 owner: programming-leads
-last_verified: 2026-09-29
+last_verified: 2026-10-07
 status: current
 ---
 
@@ -12,13 +12,11 @@ status: current
 
 Covers **what the decision layer is allowed to know**, and why that is modelled as two
 types (`ClairvoyantKnowledge` / `ObservedKnowledge`) rather than one record plus a
-flag. Owns the boundary between honest sensor truth and operator omniscience, and the
-zone-fuel counts that used to bypass the record entirely.
+flag. Owns the boundary between honest sensor truth and operator omniscience, the
+zone-fuel counts, and the field fuel positions (`fieldFuel()`) that used to bypass the record entirely.
 
 Explicitly **not** covered:
 
-- **Target selection** — which individual fuel piece to drive at. Still reads
-  `SimulatedArena` (see "Out of scope" below).
 - **Vision-tracked opponent estimates for the real robot.** That is the missing sensor
   that would let `ObservedKnowledge` carry a non-empty opponent list; it is
   `KNOWN_ISSUES.md` §E, not here.
@@ -159,11 +157,14 @@ generalises: a derived field makes the record honest, but any *caller* that
 populates the source of that derivation from somewhere else has reintroduced the
 same lie through the back door.
 
-## Out of scope
+## Target Selection Decoupling (Implemented 2026-10-07)
 
-Target *selection* (picking a specific piece's pose) still reads `SimulatedArena`
-directly in two places, because it needs individual poses rather than counts. Moving
-that behind the knowledge type is a larger change and is deliberately separate.
+Target selection (identifying candidate fuel piece coordinates for harvest tours and cluster targeting)
+previously bypassed the knowledge model by reading `SimulatedArena` directly. It is now routed
+through `MatchKnowledge.fieldFuel()`:
+- `ClairvoyantKnowledge` receives and exposes a defensive copy of field fuel positions populated via `WorldStateBuilder.snapshotZoneFuel()`.
+- `ObservedKnowledge` returns an empty list, maintaining honest sensor truth on physical hardware.
+- `JevDecisionEngine` and `FuelTourOptimizer` operate purely on `List<Translation2d>`, eliminating all direct dependencies on `swervelib.simulation.*` and `MatchDeterminism`.
 
 ## Verification
 

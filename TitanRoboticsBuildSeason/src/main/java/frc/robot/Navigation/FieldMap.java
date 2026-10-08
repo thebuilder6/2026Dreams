@@ -31,12 +31,13 @@ import frc.robot.Navigation.FieldMap.Obstacles;
  * avoidance)
  *
  * <p><b>Blue-origin convention:</b> every feature is defined once for Blue and
- * mirrored for Red ({@code X_red = FIELD_LENGTH - X_blue},
- * {@code Y_red = FIELD_WIDTH - Y_blue}). Do not add a parallel hardcoded Red
- * constant next to a Blue one — derive it, so a geometry retune cannot leave the
- * two silently out of sync. The single deliberate exception is
- * {@link Depots}, whose two loading bays are genuinely not mirror images on the
- * real field; that class documents why.
+ * mirrored for Red (standard field pose mirroring via {@link frc.robot.Utils.AllianceFlipUtil}
+ * is {@code X_red = FIELD_LENGTH - X_blue}, with {@code Y_red = Y_blue} unchanged).
+ * Do not add a parallel hardcoded Red constant next to a Blue one — derive it, so a geometry
+ * retune cannot leave the two silently out of sync. Documented exceptions:
+ * {@link Depots}, whose two loading bays are genuinely asymmetric on the real field,
+ * and the tower-post AABBs at lines 506–511, which mirror both axes deliberately due to
+ * rotational symmetry.
  */
 public final class FieldMap {
 

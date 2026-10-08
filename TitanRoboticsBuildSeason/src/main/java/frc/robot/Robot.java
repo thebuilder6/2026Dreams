@@ -296,6 +296,7 @@ public class Robot extends LoggedRobot {
   /** This function is called once when teleop is enabled. */
   @Override
   public void teleopInit() {
+    mAutoMissionExecutor.stop();
     teleop.init();
     if (isSimulation()) {
       // Sim acts as FMS: seed the SHIFT 1 hub order from the AUTO fuel result
@@ -344,6 +345,7 @@ public class Robot extends LoggedRobot {
   /** This function is called once when test mode is enabled. */
   @Override
   public void testInit() {
+    mAutoMissionExecutor.stop();
     CommandScheduler.getInstance().cancelAll();
     if (testMode != null) {
       testMode.setEnabled(true);

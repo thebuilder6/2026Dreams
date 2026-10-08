@@ -28,6 +28,7 @@ import frc.robot.Data.Constants;
 import frc.robot.Navigation.FieldMap;
 import frc.robot.Interfaces.Subsystem;
 import frc.robot.Subsystems.Intake;
+import frc.robot.Subsystems.intake.IntakeConstants;
 import frc.robot.Subsystems.Shooter;
 import frc.robot.Subsystems.SubsystemManager;
 import frc.robot.Subsystems.SwerveBase;
@@ -44,7 +45,7 @@ public class GameSim implements Subsystem {
         static final double MATCH_DURATION_SEC = 150.0;
         static final double PICKUP_RADIUS_M = 0.45;
         static final double PICKUP_ANGLE_RAD = Math.PI / 2; // 90 degrees
-        static final int MAX_HELD_BALLS = Constants.IntakeConstants.MAX_HELD_BALLS;
+        static final int MAX_HELD_BALLS = IntakeConstants.MAX_HELD_BALLS;
         static final int PICKUP_PER_CHECK_LIMIT = 10;
         static final double MIN_RESPAWN_INTERVAL = 0.2;
         static final double PUBLISH_INTERVAL_SEC = 0.1; // 10Hz

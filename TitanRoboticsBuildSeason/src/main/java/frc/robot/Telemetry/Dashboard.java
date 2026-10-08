@@ -39,19 +39,19 @@ public class Dashboard implements Subsystem {
 
     // NT4 Cached Subscribers and Table Handle
     private static final NetworkTable table = NetworkTableInstance.getDefault().getTable("SmartDashboard");
-    private static final BooleanSubscriber useTypeSafeJevSub = table.getBooleanTopic("Features/Use TypeSafe Jev AI").subscribe(false);
-    private static final StringSubscriber jevDecisionModeSub = table.getStringTopic("JevAI/DecisionMode").subscribe("AUTO_FALLBACK");
-    private static final BooleanSubscriber snapToTurnSub = table.getBooleanTopic("Features/Snap to Turn").subscribe(true);
-    private static final BooleanSubscriber ballHuntSub = table.getBooleanTopic("Features/Ball Hunt").subscribe(true);
-    private static final BooleanSubscriber glidePointsSub = table.getBooleanTopic("Features/Glide Points").subscribe(true);
-    private static final BooleanSubscriber fieldOrientedSub = table.getBooleanTopic("Features/Field Oriented").subscribe(true);
-    private static final BooleanSubscriber slowModeSub = table.getBooleanTopic("Features/Slow Mode").subscribe(false);
-    private static final BooleanSubscriber autoAimSub = table.getBooleanTopic("Features/Auto Aim").subscribe(true);
-    private static final BooleanSubscriber opponentRobotSub = table.getBooleanTopic("Features/Opponent Robot").subscribe(false);
-    private static final BooleanSubscriber allyBotsSub = table.getBooleanTopic("Features/Ally Bots").subscribe(false);
-    private static final BooleanSubscriber twoPlayerDefenseSub = table.getBooleanTopic("Features/2 Player Defense").subscribe(false);
-    private static final BooleanSubscriber pitModeSub = table.getBooleanTopic("Features/Pit Mode").subscribe(false);
-    private static final BooleanSubscriber hapticCollisionSub = table.getBooleanTopic("Operator/HapticCollisionEnabled")
+    private static final BooleanSubscriber useTypeSafeJevSub = table.getBooleanTopic(TelemetryKeys.Features.USE_TYPESAFE_JEV).subscribe(false);
+    private static final StringSubscriber jevDecisionModeSub = table.getStringTopic(TelemetryKeys.JevAI.DECISION_MODE).subscribe("AUTO_FALLBACK");
+    private static final BooleanSubscriber snapToTurnSub = table.getBooleanTopic(TelemetryKeys.Features.SNAP_TO_TURN).subscribe(true);
+    private static final BooleanSubscriber ballHuntSub = table.getBooleanTopic(TelemetryKeys.Features.BALL_HUNT).subscribe(true);
+    private static final BooleanSubscriber glidePointsSub = table.getBooleanTopic(TelemetryKeys.Features.GLIDE_POINTS).subscribe(true);
+    private static final BooleanSubscriber fieldOrientedSub = table.getBooleanTopic(TelemetryKeys.Features.FIELD_ORIENTED).subscribe(true);
+    private static final BooleanSubscriber slowModeSub = table.getBooleanTopic(TelemetryKeys.Features.SLOW_MODE).subscribe(false);
+    private static final BooleanSubscriber autoAimSub = table.getBooleanTopic(TelemetryKeys.Features.AUTO_AIM).subscribe(true);
+    private static final BooleanSubscriber opponentRobotSub = table.getBooleanTopic(TelemetryKeys.Features.OPPONENT_ROBOT).subscribe(false);
+    private static final BooleanSubscriber allyBotsSub = table.getBooleanTopic(TelemetryKeys.Features.ALLY_BOTS).subscribe(false);
+    private static final BooleanSubscriber twoPlayerDefenseSub = table.getBooleanTopic(TelemetryKeys.Features.TWO_PLAYER_DEFENSE).subscribe(false);
+    private static final BooleanSubscriber pitModeSub = table.getBooleanTopic(TelemetryKeys.Features.PIT_MODE).subscribe(false);
+    private static final BooleanSubscriber hapticCollisionSub = table.getBooleanTopic(TelemetryKeys.Operator.HAPTIC_COLLISION_ENABLED)
             .subscribe(!edu.wpi.first.wpilibj.RobotBase.isSimulation());
     private static final DoubleSubscriber opponentCountSub = table.getDoubleTopic(SimDashboardKeys.OPPONENT_COUNT).subscribe(1.0);
     private static final DoubleSubscriber opponentSpeedSub = table.getDoubleTopic(SimDashboardKeys.OPPONENT_SPEED_PERCENT).subscribe(75.0);
@@ -96,28 +96,28 @@ public class Dashboard implements Subsystem {
         TypeSafeJevClient.getInstance();
 
         // Publish Git commit metadata, compile date, and robot name for Elastic Dashboard and auditability
-        SmartDashboard.putString("Build/RobotName", BuildConstants.ROBOT_NAME);
-        SmartDashboard.putString("Build/GitSHA", BuildConstants.GIT_SHA);
-        SmartDashboard.putString("Build/GitBranch", BuildConstants.GIT_BRANCH);
-        SmartDashboard.putString("Build/GitDate", BuildConstants.GIT_DATE);
-        SmartDashboard.putString("Build/CompileDate", BuildConstants.BUILD_DATE);
-        SmartDashboard.putBoolean("Build/IsDirty", BuildConstants.DIRTY == 1);
-        SmartDashboard.putString("Build/Summary", BuildConstants.ROBOT_NAME + " [" + BuildConstants.GIT_BRANCH + "@" + BuildConstants.GIT_SHA + (BuildConstants.DIRTY == 1 ? " (DIRTY)" : "") + "] " + BuildConstants.BUILD_DATE);
+        SmartDashboard.putString(TelemetryKeys.Build.ROBOT_NAME, BuildConstants.ROBOT_NAME);
+        SmartDashboard.putString(TelemetryKeys.Build.GIT_SHA, BuildConstants.GIT_SHA);
+        SmartDashboard.putString(TelemetryKeys.Build.GIT_BRANCH, BuildConstants.GIT_BRANCH);
+        SmartDashboard.putString(TelemetryKeys.Build.GIT_DATE, BuildConstants.GIT_DATE);
+        SmartDashboard.putString(TelemetryKeys.Build.COMPILE_DATE, BuildConstants.BUILD_DATE);
+        SmartDashboard.putBoolean(TelemetryKeys.Build.IS_DIRTY, BuildConstants.DIRTY == 1);
+        SmartDashboard.putString(TelemetryKeys.Build.SUMMARY, BuildConstants.ROBOT_NAME + " [" + BuildConstants.GIT_BRANCH + "@" + BuildConstants.GIT_SHA + (BuildConstants.DIRTY == 1 ? " (DIRTY)" : "") + "] " + BuildConstants.BUILD_DATE);
 
         // Publish default toggle states if not already present on NetworkTables
-        ensureTopicDefault("Features/Snap to Turn", true);
-        ensureTopicDefault("Features/Ball Hunt", true);
-        ensureTopicDefault("Features/Glide Points", true);
-        ensureTopicDefault("Features/Field Oriented", true);
-        ensureTopicDefault("Features/Slow Mode", false);
-        ensureTopicDefault("Features/Auto Aim", true);
-        ensureTopicDefault("Features/Opponent Robot", false);
-        ensureTopicDefault("Features/Ally Bots", false);
-        ensureTopicDefault("Features/2 Player Defense", false);
-        ensureTopicDefault("Features/Pit Mode", false);
-        ensureTopicDefault("Features/Use TypeSafe Jev AI", false);
-        ensureStringTopicDefault("JevAI/DecisionMode", "AUTO_FALLBACK");
-        ensureTopicDefault("Operator/HapticCollisionEnabled", !edu.wpi.first.wpilibj.RobotBase.isSimulation());
+        ensureTopicDefault(TelemetryKeys.Features.SNAP_TO_TURN, true);
+        ensureTopicDefault(TelemetryKeys.Features.BALL_HUNT, true);
+        ensureTopicDefault(TelemetryKeys.Features.GLIDE_POINTS, true);
+        ensureTopicDefault(TelemetryKeys.Features.FIELD_ORIENTED, true);
+        ensureTopicDefault(TelemetryKeys.Features.SLOW_MODE, false);
+        ensureTopicDefault(TelemetryKeys.Features.AUTO_AIM, true);
+        ensureTopicDefault(TelemetryKeys.Features.OPPONENT_ROBOT, false);
+        ensureTopicDefault(TelemetryKeys.Features.ALLY_BOTS, false);
+        ensureTopicDefault(TelemetryKeys.Features.TWO_PLAYER_DEFENSE, false);
+        ensureTopicDefault(TelemetryKeys.Features.PIT_MODE, false);
+        ensureTopicDefault(TelemetryKeys.Features.USE_TYPESAFE_JEV, false);
+        ensureStringTopicDefault(TelemetryKeys.JevAI.DECISION_MODE, "AUTO_FALLBACK");
+        ensureTopicDefault(TelemetryKeys.Operator.HAPTIC_COLLISION_ENABLED, !edu.wpi.first.wpilibj.RobotBase.isSimulation());
         ensureNumberDefault(SimDashboardKeys.OPPONENT_COUNT, 1.0);
         ensureNumberDefault(SimDashboardKeys.OPPONENT_SPEED_PERCENT, 75.0);
         ensureNumberDefault(SimDashboardKeys.ALLY_SPEED_PERCENT, 75.0);
@@ -175,6 +175,7 @@ public class Dashboard implements Subsystem {
         double timeRemainingSec = DriverStation.getMatchTime();
         updateHubStatus(timeRemainingSec);
         updateFieldVisuals();
+        PolicyWeightsDashboardAdapter.update();
 
         // Update the auto mission chooser and delay
         autoMissionChooser.updateMissionCreator();
@@ -243,28 +244,28 @@ public class Dashboard implements Subsystem {
                 || (solution != null && solution.possible() && Shooter.getInstance().isReadyToFire(solution.turretAngle()));
         boolean canShoot = isMyHubActive && shooterAtSpeed && shooterLinedUp && inAllianceZone;
 
-        SmartDashboard.putBoolean("Driver/Shooter Ready", shooterAtSpeed);
-        SmartDashboard.putBoolean("Driver/Hub Active", isMyHubActive);
-        SmartDashboard.putString("Driver/Hub Status", isMyHubActive ? "ACTIVE" : "INACTIVE");
-        SmartDashboard.putNumber("Driver/Hub Shift Time Remaining", timeUntilSwitch);
-        SmartDashboard.putNumber("Driver/Hub Shift Progress", hubSwitchProgress);
+        SmartDashboard.putBoolean(TelemetryKeys.Driver.SHOOTER_READY, shooterAtSpeed);
+        SmartDashboard.putBoolean(TelemetryKeys.Driver.HUB_ACTIVE, isMyHubActive);
+        SmartDashboard.putString(TelemetryKeys.Driver.HUB_STATUS, isMyHubActive ? "ACTIVE" : "INACTIVE");
+        SmartDashboard.putNumber(TelemetryKeys.Driver.HUB_SHIFT_TIME_REMAINING, timeUntilSwitch);
+        SmartDashboard.putNumber(TelemetryKeys.Driver.HUB_SHIFT_PROGRESS, hubSwitchProgress);
 
-        SmartDashboard.putBoolean("Driver/Shoot Alert", canShoot);
-        SmartDashboard.putString("Driver/Shoot Message",
+        SmartDashboard.putBoolean(TelemetryKeys.Driver.SHOOT_ALERT, canShoot);
+        SmartDashboard.putString(TelemetryKeys.Driver.SHOOT_MESSAGE,
                 canShoot ? "READY TO FIRE" : (!inAllianceZone ? "OUTSIDE ALLIANCE ZONE" : (!isMyHubActive ? "HUB INACTIVE" : (!shooterAtSpeed ? "SPINNING UP" : "ALIGNING"))));
 
         // Dual Flywheel RPM breakdown
         double avgActualRPM = (Shooter.getInstance().getFlywheelLeftVelocityRPM() + Shooter.getInstance().getFlywheelRightVelocityRPM()) / 2.0;
         double targetRPM = solution != null ? solution.flywheelRPM() : 0.0;
-        SmartDashboard.putNumber("Driver/Flywheel Actual RPM", avgActualRPM);
-        SmartDashboard.putNumber("Driver/Flywheel Target RPM", targetRPM);
+        SmartDashboard.putNumber(TelemetryKeys.Driver.FLYWHEEL_ACTUAL_RPM, avgActualRPM);
+        SmartDashboard.putNumber(TelemetryKeys.Driver.FLYWHEEL_TARGET_RPM, targetRPM);
 
-        SmartDashboard.putString("Driver/Intake State", Intake.getInstance().getStateString());
+        SmartDashboard.putString(TelemetryKeys.Driver.INTAKE_STATE, Intake.getInstance().getStateString());
 
         var nearest = SwerveBase.getInstance().getNearestGlidePoint();
-        SmartDashboard.putString("Driver/Nearest Glide", nearest == null ? "---" : nearest.name);
+        SmartDashboard.putString(TelemetryKeys.Driver.NEAREST_GLIDE, nearest == null ? "---" : nearest.name);
 
-        SmartDashboard.putBoolean("Driver/Lined Up", shooterLinedUp);
+        SmartDashboard.putBoolean(TelemetryKeys.Driver.LINED_UP, shooterLinedUp);
     }
 
     /**
@@ -430,7 +431,7 @@ public class Dashboard implements Subsystem {
     }
 
     public static void setSlowModeEnabled(boolean enabled) {
-        SmartDashboard.putBoolean("Features/Slow Mode", enabled);
+        SmartDashboard.putBoolean(TelemetryKeys.Features.SLOW_MODE, enabled);
     }
 
     public static boolean isAutoAimEnabled() {

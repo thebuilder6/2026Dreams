@@ -4,6 +4,8 @@ import static edu.wpi.first.units.Units.Meters;
 import static edu.wpi.first.units.Units.MetersPerSecond;
 import static edu.wpi.first.units.Units.Radians;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 
@@ -16,17 +18,20 @@ import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import edu.wpi.first.wpilibj.Timer;
 import frc.robot.Navigation.ContactWatchdog;
 import frc.robot.Navigation.DynamicRouter;
+import frc.robot.Navigation.StuckRecoveryArbiter;
 import frc.robot.Navigation.TrajectoryController;
 import frc.robot.Navigation.TargetProgressWatchdog;
 import frc.robot.Data.Constants;
 import frc.robot.Intelligence.AIActionIntent;
 import frc.robot.Intelligence.Archetype;
+import frc.robot.Intelligence.StrategicObjective;
 import frc.robot.Intelligence.JevDecisionEngine;
 import frc.robot.Intelligence.MatchKnowledge;
 import frc.robot.Intelligence.WorldState;
 import frc.robot.Intelligence.WorldStateBuilder;
 import frc.robot.Navigation.FieldMap;
 import frc.robot.Subsystems.Intake.IntakeState;
+import frc.robot.Subsystems.intake.IntakeConstants;
 import frc.robot.Subsystems.SwerveBase;
 import org.littletonrobotics.junction.Logger;
 import swervelib.simulation.ironmaple.simulation.IntakeSimulation;
@@ -87,14 +92,15 @@ public class AIRobotInstance {
     private boolean lastStallResult = false;
     private double lastStallEvalTimestamp = -1.0;
 
-    // Stationary-arm harvester watchdog (prevents contested-target deadlock inside ARRIVED_M)
-    public static final double HARVEST_ARRIVAL_ABANDON_SEC = 1.8;
-    private double harvestArrivalHoldSec = 0.0;
-    private int lastHarvestFuelCount = 0;
-    private Translation2d lastHarvestTargetPos = null;
+    // Stationary-arm harvester watchdog (delegated to TargetProgressWatchdog)
+    public static final double HARVEST_ARRIVAL_ABANDON_SEC = TargetProgressWatchdog.HARVEST_ARRIVAL_ABANDON_SEC;
 
     // Score-rig instrumentation (read-only; no behaviour depends on it).
     private final BotMatchMetrics matchMetrics = new BotMatchMetrics();
+
+    // Tour Continuity Latch for continuous multi-piece harvesting tours
+    private List<Translation2d> activeTourWaypoints = null;
+    private Pose2d activeTourExitPose = null;
 
     public AIRobotInstance(int botId, Pose2d queuingPose, Archetype defaultArchetype) {
         this(botId, queuingPose, defaultArchetype, false);
@@ -135,7 +141,7 @@ public class AIRobotInstance {
                     Meters.of(0.70),
                     Meters.of(0.30),
                     IntakeSimulation.IntakeSide.FRONT,
-                    Constants.IntakeConstants.MAX_HELD_BALLS
+                    IntakeConstants.MAX_HELD_BALLS
             );
             if (this.intakeSimulation != null) {
                 this.intakeSimulation.setGamePiecesCount(AIRobotSim.INITIAL_HELD_BALLS);
@@ -217,7 +223,7 @@ public class AIRobotInstance {
     }
 
     public void setFuelCount(int fuelCount) {
-        if (fuelCount < 0 || fuelCount > Constants.IntakeConstants.MAX_HELD_BALLS) {
+        if (fuelCount < 0 || fuelCount > IntakeConstants.MAX_HELD_BALLS) {
             throw new IllegalArgumentException("fuelCount is outside the robot hopper capacity");
         }
         if (intakeSimulation != null) {
@@ -230,7 +236,7 @@ public class AIRobotInstance {
         if (startingPose == null) {
             throw new IllegalArgumentException("startingPose must not be null");
         }
-        if (preloadFuel < 0 || preloadFuel > Constants.IntakeConstants.MAX_HELD_BALLS) {
+        if (preloadFuel < 0 || preloadFuel > IntakeConstants.MAX_HELD_BALLS) {
             throw new IllegalArgumentException("preloadFuel is outside the robot hopper capacity");
         }
         setRobotPose(startingPose);
@@ -246,10 +252,9 @@ public class AIRobotInstance {
         objectiveCommitment.reset();
         fuelTargetMemory.reset();
         trajectoryController.reset();
+        activeTourWaypoints = null;
+        activeTourExitPose = null;
         matchMetrics.reset();
-        harvestArrivalHoldSec = 0.0;
-        lastHarvestFuelCount = preloadFuel;
-        lastHarvestTargetPos = null;
         try {
             String botName = isAlly ? ("AllyBot" + (botId - 100)) : ("OpponentBot" + botId);
             String targetName = isAlly ? ("AllyTarget" + (botId - 100)) : ("OpponentTarget" + botId);
@@ -374,11 +379,23 @@ public class AIRobotInstance {
                 intentPrefix + "/TimeToTransitionSec", intent.plan().timeToTransitionSec());
 
         // 3. Compute drive trajectory speeds
-        currentTargetPose = intent.navigationTarget();
+        updateTourContinuity(intent, currentPose, heldPieces);
+
+        Pose2d driveTargetPose;
+        if (trajectoryController.isExplicitPath() && activeTourWaypoints != null && !activeTourWaypoints.isEmpty()) {
+            driveTargetPose = (activeTourExitPose != null) ? activeTourExitPose : intent.navigationTarget();
+            int currWpIdx = trajectoryController.getCurrentWaypointIndex();
+            List<Pose2d> wps = trajectoryController.getWaypoints();
+            currentTargetPose = (currWpIdx < wps.size()) ? wps.get(currWpIdx) : driveTargetPose;
+        } else {
+            currentTargetPose = intent.navigationTarget();
+            driveTargetPose = currentTargetPose;
+        }
+
         currentAIStateDetail = intent.objective().name() + " (" + intent.rationale() + ")";
         boolean stalled = isStalled();
         currentTargetSpeeds = trajectoryController.calculate(
-                currentPose, currentTargetSpeeds, currentTargetPose, maxSpeed, stalled, true);
+                currentPose, currentTargetSpeeds, driveTargetPose, maxSpeed, stalled, true);
 
         // Track pinning against the assigned mark (or the player by default) -
         // only for opponent bots. RefereeSim scores the actual foul; this drives
@@ -406,21 +423,8 @@ public class AIRobotInstance {
                     nearestForPin,
                     pinReference,
                     0.02);
-
-            if (contactWatchdog.isForcedBackoffActive() && archetype.isDefensive() && pinReference != null) {
-                Pose2d backoff = contactWatchdog.getBackOffTarget(currentPose, pinReference);
-                currentTargetPose = backoff;
-                currentTargetSpeeds = trajectoryController.calculate(
-                        currentPose, currentTargetSpeeds, currentTargetPose, maxSpeed, false, false);
-                currentAIStateDetail = String.format("PIN_RULE_BACKOFF (%.1fs)", contactWatchdog.getBackoffRemainingSec());
-            }
         }
 
-        // Single-owner drive arbitration (Phase 1): the trajectory speeds get
-        // exactly one peer correction per tick — deadlock recovery, trench
-        // yield, or soft separation — never a sum. Previously the separation
-        // nudge was added first and then scaled again by the deadlock recovery,
-        // so two corrections fought over one command. See resolvePreProgressCommand.
         boolean inTrenchCorridor = FieldMap.Trenches.isLowClearance(currentPose.getTranslation());
         double nearestPeerDist = Double.MAX_VALUE;
         if (peerRobotPoses != null) {
@@ -430,93 +434,52 @@ public class AIRobotInstance {
                 if (d > 0.05 && d < nearestPeerDist) nearestPeerDist = d;
             }
         }
-        ContactWatchdog.Resolution deadlock = contactWatchdog.updateDeadlockOnly(
-                stalled, nearestPeerDist, 0.02, inTrenchCorridor);
-
+        contactWatchdog.updateDeadlockOnly(stalled, nearestPeerDist, 0.02, inTrenchCorridor);
         boolean trenchCoolingYield = inTrenchCorridor
                 && contactWatchdog.isDeadlockCooling()
                 && nearestPeerDist < ContactWatchdog.PROXIMITY_M;
-        ResolvedDrive resolved = resolvePreProgressCommand(
-                currentTargetSpeeds, currentPose, peerRobotPoses,
-                deadlock, trenchCoolingYield);
-        currentTargetSpeeds = resolved.speeds();
-        if (resolved.detail() != null) {
-            currentAIStateDetail = resolved.detail();
-        }
 
-        // Peer-independent geometry escape, applied after the peer corrections so
-        // it is a true single-owner override rather than a second correction
-        // summed onto this tick. Deadlock cannot cover this case: it only
-        // accumulates when a peer is within PROXIMITY_M, so a bot wedged alone
-        // against a hub core, ramp, trench wall, or tower post has no peer path
-        // to be rescued by. Allies previously skipped the whole watchdog update,
-        // so they never even armed this.
-        //
-        // Priority order, highest first: rule-mandated G418 backoff (inside
-        // contactWatchdog.update) > this geometry escape > peer deadlock/yield/
-        // separation > raw trajectory. The target-unreachable escape below is
-        // peer-independent too and keeps its existing later position in the
-        // pipeline; it needs the nav target rather than just a stall signal.
-        if (contactWatchdog.isPirouetteActive()) {
-            currentTargetSpeeds = contactWatchdog.applyUnstickOnly(currentTargetSpeeds);
-            currentAIStateDetail = "STATIC_UNSTICK";
-        }
-
-        // Unreachable-target recovery (peer-independent). ContactWatchdog only
-        // fires near a peer, so a bot that drives alone into an unreachable
-        // fuel target used to hold position for the rest of the match.
-        String progressPrefix = (isAlly ? "AI_Telemetry/Ally" + (botId - 100) : "AI_Telemetry/Bot" + botId) + "/";
-        // currentVel is the measured chassis velocity, which is what lets the
-        // watchdog recognise a physically pinned robot even while the Jev
-        // selector churns between fuel pieces. Passing only the commanded speeds
-        // made "no progress" depend entirely on the target holding still.
+        // Suppress target progress timeouts while higher-priority contact recoveries are active
+        boolean inContactRecovery = contactWatchdog.isAnyContactRecoveryActive();
         TargetProgressWatchdog.Result progress = targetProgressWatchdog.update(
-                currentPose, currentTargetSpeeds, currentVel, currentTargetPose, 0.02);
+                currentPose, currentTargetSpeeds, currentVel, currentTargetPose, inContactRecovery, 0.02);
 
-        // Stationary-arm harvester watchdog: if arrived inside ARRIVED_M while intaking,
-        // but no fuel is being collected (e.g. peer wedging, physical obstacle block),
-        // abandon the target after HARVEST_ARRIVAL_ABANDON_SEC so the bot escapes and retargets.
+        // Stationary-arm harvester watchdog (encapsulated in TargetProgressWatchdog)
         boolean isHarvesting = (intent.intakeCommand() == IntakeState.INTAKING);
-        double distToTarget = currentTargetPose != null
-                ? currentPose.getTranslation().getDistance(currentTargetPose.getTranslation())
-                : Double.MAX_VALUE;
-
-        if (isHarvesting && distToTarget < TargetProgressWatchdog.ARRIVED_M && !progress.recovering()) {
-            if (lastHarvestTargetPos == null
-                    || currentTargetPose.getTranslation().getDistance(lastHarvestTargetPos) > 0.5) {
-                lastHarvestTargetPos = currentTargetPose.getTranslation();
-                harvestArrivalHoldSec = 0.0;
-                lastHarvestFuelCount = heldPieces;
-            } else if (heldPieces > lastHarvestFuelCount) {
-                harvestArrivalHoldSec = 0.0;
-                lastHarvestFuelCount = heldPieces;
-            } else {
-                harvestArrivalHoldSec += 0.02;
-                if (harvestArrivalHoldSec >= HARVEST_ARRIVAL_ABANDON_SEC) {
-                    progress = targetProgressWatchdog.abandonTarget(
-                            currentTargetPose.getTranslation(), currentPose);
-                    harvestArrivalHoldSec = 0.0;
-                    lastHarvestFuelCount = heldPieces;
-                }
-            }
-        } else {
-            harvestArrivalHoldSec = 0.0;
-            lastHarvestFuelCount = heldPieces;
-            if (distToTarget >= TargetProgressWatchdog.ARRIVED_M) {
-                lastHarvestTargetPos = null;
-            }
+        TargetProgressWatchdog.Result harvestProgress = targetProgressWatchdog.updateHarvestArrivalWatchdog(
+                currentPose, currentTargetPose, isHarvesting, heldPieces, 0.02);
+        if (harvestProgress.recovering()) {
+            progress = harvestProgress;
         }
 
-        if (progress.recovering()) {
-            currentTargetSpeeds.vxMetersPerSecond = progress.escapeVector().getX();
-            currentTargetSpeeds.vyMetersPerSecond = progress.escapeVector().getY();
-            currentTargetSpeeds.omegaRadiansPerSecond = 0.0;
-            currentAIStateDetail = String.format("TARGET_UNREACHABLE (%.1fs)", progress.escapeRemainingSec());
-            Logger.recordOutput(progressPrefix + "UnreachableRecovering", true);
-        } else {
-            Logger.recordOutput(progressPrefix + "UnreachableRecovering", false);
+        if (progress.recovering() || inContactRecovery) {
+            abortTour();
         }
+
+        // Single-owner drive arbitration across all safety, stall, and progress tiers
+        StuckRecoveryArbiter.RecoveryResult recovery = StuckRecoveryArbiter.arbitrate(
+                currentTargetSpeeds,
+                currentPose,
+                contactWatchdog,
+                targetProgressWatchdog,
+                progress,
+                pinReference,
+                peerRobotPoses,
+                archetype.isDefensive(),
+                inTrenchCorridor);
+
+        currentTargetSpeeds = recovery.speeds();
+        if (recovery.stateDetail() != null) {
+            currentAIStateDetail = recovery.stateDetail();
+        }
+        if (recovery.activeTier() == StuckRecoveryArbiter.RecoveryTier.PIN_RULE_BACKOFF && pinReference != null) {
+            currentTargetPose = contactWatchdog.getBackOffTarget(currentPose, pinReference);
+        }
+
+        String progressPrefix = (isAlly ? "AI_Telemetry/Ally" + (botId - 100) : "AI_Telemetry/Bot" + botId) + "/";
+        Logger.recordOutput(progressPrefix + "UnreachableRecovering", progress.recovering());
         Logger.recordOutput(progressPrefix + "UnreachableNoProgressSec", progress.noProgressSec());
+        Logger.recordOutput(progressPrefix + "StuckRecoveryTier", recovery.activeTier().name());
 
         // Plant-and-fire: aiming + solution ready but still moving means the
         // 80 ms volley would stream shots at transit speed (the dominant sim
@@ -566,9 +529,40 @@ public class AIRobotInstance {
         // Publish to Field2d
         String botObjName = isAlly ? ("AllyBot" + (botId - 100)) : ("OpponentBot" + botId);
         String targetObjName = isAlly ? ("AllyTarget" + (botId - 100)) : ("OpponentTarget" + botId);
+        String tourObjName = isAlly ? ("AllyTour" + (botId - 100)) : ("OpponentTour" + botId);
+        boolean hasTour = (activeTourWaypoints != null && trajectoryController.isExplicitPath())
+                || (intent.tour() != null && intent.tour().isValid() && !intent.tour().waypoints().isEmpty());
+        Pose2d[] tourPoses;
+        double[] flatTour;
+        if (activeTourWaypoints != null && trajectoryController.isExplicitPath()) {
+            List<Pose2d> wps = trajectoryController.getWaypoints();
+            tourPoses = wps.toArray(new Pose2d[0]);
+            flatTour = new double[wps.size() * 2];
+            for (int i = 0; i < wps.size(); i++) {
+                flatTour[i * 2] = wps.get(i).getX();
+                flatTour[i * 2 + 1] = wps.get(i).getY();
+            }
+        } else if (hasTour) {
+            java.util.List<Translation2d> wps = intent.tour().waypoints();
+            tourPoses = new Pose2d[wps.size()];
+            flatTour = new double[wps.size() * 2];
+            for (int i = 0; i < wps.size(); i++) {
+                Rotation2d heading = (i < wps.size() - 1)
+                        ? wps.get(i + 1).minus(wps.get(i)).getAngle()
+                        : intent.tour().finalExitPose().getRotation();
+                tourPoses[i] = new Pose2d(wps.get(i), heading);
+                flatTour[i * 2] = wps.get(i).getX();
+                flatTour[i * 2 + 1] = wps.get(i).getY();
+            }
+        } else {
+            tourPoses = new Pose2d[0];
+            flatTour = new double[0];
+        }
+
         try {
             SwerveBase.getInstance().getField().getObject(botObjName).setPose(currentPose);
             SwerveBase.getInstance().getField().getObject(targetObjName).setPose(currentTargetPose);
+            SwerveBase.getInstance().getField().getObject(tourObjName).setPoses(tourPoses);
         } catch (Exception ignored) {}
 
         // Telemetry logging (AdvantageKit & SmartDashboard)
@@ -584,6 +578,11 @@ public class AIRobotInstance {
         Logger.recordOutput(prefix + "Score", scoreCount);
         Logger.recordOutput(prefix + "Confidence", intent.confidence());
         Logger.recordOutput(prefix + "Archetype", archetype.name());
+        Logger.recordOutput(prefix + "TourWaypoints", tourPoses);
+        Logger.recordOutput(prefix + "HasActiveTour", hasTour);
+        Logger.recordOutput(prefix + "TourPieces", hasTour ? intent.tour().pieceCount() : 0);
+        Logger.recordOutput(prefix + "TourDistanceMeters", hasTour ? intent.tour().totalDistanceMeters() : 0.0);
+        Logger.recordOutput(intentPrefix + "/TourWaypoints", tourPoses);
 
         String dashPrefix = (isAlly ? SimDashboardKeys.allyPrefix(botId - 100)
                 : SimDashboardKeys.botPrefix(botId)) + "/";
@@ -596,6 +595,12 @@ public class AIRobotInstance {
         edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putBoolean(dashPrefix + "Stalled", stalled);
         edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putNumber(dashPrefix + "CommandedSpeed", commandedSpeed);
         edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putString(dashPrefix + "Archetype", archetype.name());
+        edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putNumberArray(dashPrefix + "TourWaypoints", flatTour);
+        edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putBoolean(dashPrefix + "HasActiveTour", hasTour);
+        edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putNumber(dashPrefix + "TourPieces", hasTour ? intent.tour().pieceCount() : 0);
+        edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putNumber(dashPrefix + "TourDistanceMeters", hasTour ? intent.tour().totalDistanceMeters() : 0.0);
+        edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putNumberArray(intentPrefix + "/TourWaypoints", flatTour);
+        edu.wpi.first.wpilibj.smartdashboard.SmartDashboard.putBoolean(intentPrefix + "/HasActiveTour", hasTour);
 
         // 6. Score-rig instrumentation. Sampled last so it sees the settled state.
         // Uses the same `stalled` flag that drives the production watchdogs, so the
@@ -614,7 +619,7 @@ public class AIRobotInstance {
                 new RecoveryState(
                         contactWatchdog.isPirouetteActive(),
                         progress.recovering(),
-                        deadlock.recovering(),
+                        contactWatchdog.isDeadlockRecovering(),
                         inTrenchCorridor,
                         trenchCoolingYield,
                         stalled),
@@ -630,7 +635,7 @@ public class AIRobotInstance {
                 edu.wpi.first.wpilibj.Timer.getFPGATimestamp(), stallCause);
         Logger.recordOutput(prefix + "StallCause",
                 stallCause == null ? "flowing" : stallCause.name());
-        Logger.recordOutput(prefix + "DriveCorrection", resolved.correction().name());
+        Logger.recordOutput(prefix + "DriveCorrection", recovery.activeTier().name());
     }
 
     /**
@@ -963,7 +968,7 @@ public class AIRobotInstance {
 
     public void checkProximityPickup(Pose2d robotPose) {
         if (intakeSimulation == null || !intakeSimulation.isRunning()) return;
-        if (intakeSimulation.getGamePiecesAmount() >= Constants.IntakeConstants.MAX_HELD_BALLS) return;
+        if (intakeSimulation.getGamePiecesAmount() >= IntakeConstants.MAX_HELD_BALLS) return;
 
         SimulatedArena arena = SimulatedArena.getInstance();
         if (arena == null) return;
@@ -994,7 +999,7 @@ public class AIRobotInstance {
                     intakeSimulation.addGamePieceToIntake();
                     collectedThisTick++;
 
-                    if (intakeSimulation.getGamePiecesAmount() >= Constants.IntakeConstants.MAX_HELD_BALLS
+                    if (intakeSimulation.getGamePiecesAmount() >= IntakeConstants.MAX_HELD_BALLS
                             || collectedThisTick >= 10) {
                         break;
                     }
@@ -1074,6 +1079,88 @@ public class AIRobotInstance {
     }
 
     public double getHarvestArrivalHoldSec() {
-        return harvestArrivalHoldSec;
+        return targetProgressWatchdog.getHarvestArrivalHoldSec();
+    }
+
+    /**
+     * Aborts any currently executing explicit tour and restores dynamic pathfinding.
+     */
+    public void abortTour() {
+        if (activeTourWaypoints != null || trajectoryController.isExplicitPath()) {
+            activeTourWaypoints = null;
+            activeTourExitPose = null;
+            trajectoryController.clearExplicitPath();
+        }
+    }
+
+    /**
+     * Manages multi-piece tour continuity across 50Hz cycles.
+     * Prevents thrashing explicit waypoint state while a tour is in progress,
+     * while aborting cleanly when pieces are completed, blocked, or full.
+     */
+    private void updateTourContinuity(AIActionIntent intent, Pose2d currentPose, int heldPieces) {
+        boolean hasTourIntent = intent.tour() != null
+                && intent.tour().isValid()
+                && intent.tour().pieceCount() > 1
+                && !intent.tour().waypoints().isEmpty();
+        boolean isHarvestingObjective = intent.objective() == StrategicObjective.VACUUM_MIDFIELD
+                || intent.objective() == StrategicObjective.SWEEP_ALLIANCE_ZONE;
+
+        if (!isHarvestingObjective || heldPieces >= WorldState.DEFAULT_MAX_CAPACITY) {
+            abortTour();
+            return;
+        }
+
+        // Check if an existing active tour was completed
+        if (activeTourWaypoints != null) {
+            int lastIndex = activeTourWaypoints.size() - 1;
+            boolean atOrPastLast = trajectoryController.getCurrentWaypointIndex() >= lastIndex;
+            double distToFinal = currentPose.getTranslation().getDistance(activeTourWaypoints.get(lastIndex));
+            if (atOrPastLast && distToFinal < 0.35) {
+                abortTour();
+            }
+        }
+
+        // Check if remaining waypoints are blocked by watchdog
+        if (activeTourWaypoints != null && !targetProgressWatchdog.blockedPoints().isEmpty()) {
+            int currIdx = trajectoryController.getCurrentWaypointIndex();
+            boolean tourBlocked = false;
+            for (int i = currIdx; i < activeTourWaypoints.size(); i++) {
+                Translation2d wp = activeTourWaypoints.get(i);
+                for (Translation2d blocked : targetProgressWatchdog.blockedPoints()) {
+                    if (blocked.getDistance(wp) < 0.8) {
+                        tourBlocked = true;
+                        break;
+                    }
+                }
+                if (tourBlocked) break;
+            }
+            if (tourBlocked) {
+                abortTour();
+            }
+        }
+
+        // Start new tour if none is currently active and intent provides a valid multi-piece tour
+        if (activeTourWaypoints == null && hasTourIntent) {
+            List<Translation2d> wps = intent.tour().waypoints();
+            List<Pose2d> tourPoses = new ArrayList<>(wps.size());
+            for (int i = 0; i < wps.size(); i++) {
+                Rotation2d heading = (i < wps.size() - 1)
+                        ? wps.get(i + 1).minus(wps.get(i)).getAngle()
+                        : intent.tour().finalExitPose().getRotation();
+                tourPoses.add(new Pose2d(wps.get(i), heading));
+            }
+            trajectoryController.setExplicitWaypoints(tourPoses, currentPose.getTranslation());
+            activeTourWaypoints = new ArrayList<>(wps);
+            activeTourExitPose = intent.tour().finalExitPose();
+        }
+    }
+
+    public boolean hasActiveTour() {
+        return activeTourWaypoints != null && trajectoryController.isExplicitPath();
+    }
+
+    public List<Translation2d> getActiveTourWaypoints() {
+        return activeTourWaypoints != null ? Collections.unmodifiableList(activeTourWaypoints) : Collections.emptyList();
     }
 }

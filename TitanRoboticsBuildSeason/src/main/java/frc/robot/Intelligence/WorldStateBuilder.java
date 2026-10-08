@@ -1,11 +1,13 @@
 package frc.robot.Intelligence;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import edu.wpi.first.wpilibj.DriverStation;
+import edu.wpi.first.wpilibj.RobotBase;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.math.geometry.Translation2d;
 import frc.robot.Navigation.FieldMap;
@@ -100,6 +102,24 @@ public final class WorldStateBuilder {
      * @return Immutable WorldState snapshot
      */
     public static WorldState buildForPlayerRobot(int heldFuelCount) {
+        return buildForPlayerRobot(heldFuelCount, WorldState.DEFAULT_HAS_SHOOTER,
+                WorldState.DEFAULT_MAX_CAPACITY, WorldState.DEFAULT_HAS_CLIMBER);
+    }
+
+    /**
+     * Builds a WorldState snapshot for the primary player robot with explicit hardware capabilities.
+     *
+     * @param heldFuelCount Estimated or sensor-confirmed fuel/game pieces held in hopper
+     * @param hasShooter True if robot is equipped with a functional shooter
+     * @param ballCapacity Maximum hopper capacity
+     * @param hasClimber True if robot is equipped with a functional climber
+     * @return Immutable WorldState snapshot
+     */
+    public static WorldState buildForPlayerRobot(
+            int heldFuelCount,
+            boolean hasShooter,
+            int ballCapacity,
+            boolean hasClimber) {
         Pose2d playerPose = SwerveBase.getInstance().getPose();
         ChassisSpeeds playerVel = SwerveBase.getInstance().getFieldVelocity();
 
@@ -147,7 +167,10 @@ public final class WorldStateBuilder {
                 isPlayerRed,
                 DriverStation.isAutonomous(),
                 mineAfter,
-                theirsAfter
+                theirsAfter,
+                hasShooter,
+                ballCapacity,
+                hasClimber
         );
     }
 
@@ -187,6 +210,26 @@ public final class WorldStateBuilder {
             boolean isSelfHubActive,
             Pose2d markPose,
             ChassisSpeeds markVelocity) {
+        return buildForSimBot(selfPose, selfVelocity, heldFuelCount, isBotRed,
+                isSelfHubActive, markPose, markVelocity,
+                WorldState.DEFAULT_HAS_SHOOTER, WorldState.DEFAULT_MAX_CAPACITY,
+                WorldState.DEFAULT_HAS_CLIMBER);
+    }
+
+    /**
+     * Builds a WorldState snapshot for a simulated AI sparring robot with explicit hardware capabilities.
+     */
+    public static WorldState buildForSimBot(
+            Pose2d selfPose,
+            ChassisSpeeds selfVelocity,
+            int heldFuelCount,
+            boolean isBotRed,
+            boolean isSelfHubActive,
+            Pose2d markPose,
+            ChassisSpeeds markVelocity,
+            boolean hasShooter,
+            int ballCapacity,
+            boolean hasClimber) {
 
         // Shift-aware decisions read the schedule's own clock. The DS clock is
         // -1 under simulation, so Dashboard.getTimeUntilSwitch() stays pinned at
@@ -201,7 +244,7 @@ public final class WorldStateBuilder {
         // Full reasoning, and why the flag is still off, live in
         // KNOWN_ISSUES.md section A. Do not re-document it here.
         HubSchedule.refreshFromMatchState();
-        boolean useRealShiftClock = Boolean.getBoolean("frc.jev.realShiftClock");
+        boolean useRealShiftClock = !"false".equalsIgnoreCase(System.getProperty("frc.jev.realShiftClock"));
         double matchTime = useRealShiftClock ? HubSchedule.lastMatchTimeRemaining() : 135.0;
         if (matchTime < 0.0) matchTime = 135.0;
 
@@ -237,7 +280,10 @@ public final class WorldStateBuilder {
                 isBotRed,
                 DriverStation.isAutonomous(),
                 mineAfter,
-                theirsAfter
+                theirsAfter,
+                hasShooter,
+                ballCapacity,
+                hasClimber
         );
     }
 
@@ -251,6 +297,9 @@ public final class WorldStateBuilder {
      * @return Populated, immutable match knowledge
      */
     public static MatchKnowledge buildMatchKnowledgeForSimBot(boolean botIsRed) {
+        if (!RobotBase.isSimulation()) {
+            return ObservedKnowledge.selfOnly();
+        }
         boolean degraded = false;
         MatchScoreTracker tracker;
         try {
@@ -410,10 +459,10 @@ public final class WorldStateBuilder {
             degraded = true;
         }
 
-        int[] zoneFuel = countZoneFuel(botIsRed);
-        if (zoneFuel == null) {
+        FieldFuelSnapshot fuelSnap = snapshotZoneFuel(botIsRed);
+        if (fuelSnap == null) {
             degraded = true;
-            zoneFuel = new int[] {0, 0, 0};
+            fuelSnap = new FieldFuelSnapshot(0, 0, 0, List.of());
         }
 
         if (!degraded) {
@@ -424,8 +473,11 @@ public final class WorldStateBuilder {
                 alliesHeld, opponentsHeld, alliesScored, opponentsScored,
                 List.copyOf(allyPoses), List.copyOf(opponentPoses),
                 List.copyOf(allyVels), List.copyOf(opponentVels),
-                zoneFuel[0], zoneFuel[1], zoneFuel[2]);
+                fuelSnap.ownZone(), fuelSnap.midfield(), fuelSnap.opponentZone(),
+                fuelSnap.pieces());
     }
+
+    private record FieldFuelSnapshot(int ownZone, int midfield, int opponentZone, List<Translation2d> pieces) {}
 
     /**
      * Fuel on the field, bucketed into the three zones by
@@ -443,19 +495,21 @@ public final class WorldStateBuilder {
      * {@code TargetProgressWatchdog} is excluded. Counting abandoned fuel here
      * would reinstate the live-lock, where {@code SWEEP_ALLIANCE_ZONE} stayed
      * viable on pieces the policy was simultaneously forbidden to approach.
-     *
-     * @return {@code {ownAllianceZone, midfield, opponentZone}}
      */
-    private static int[] countZoneFuel(boolean botIsRed) {
+    private static FieldFuelSnapshot snapshotZoneFuel(boolean botIsRed) {
+        if (!RobotBase.isSimulation()) {
+            return new FieldFuelSnapshot(0, 0, 0, List.of());
+        }
         try {
             var arena = SimulatedArena.getInstance();
             if (arena == null) {
                 // Real hardware: no sensor for field fuel. Zeros are the truth.
-                return new int[] {0, 0, 0};
+                return new FieldFuelSnapshot(0, 0, 0, List.of());
             }
             int own = 0;
             int midfield = 0;
             int theirs = 0;
+            List<Translation2d> eligible = new ArrayList<>();
             // Single-owned by MatchDeterminism, which returns a stable (x,y)-sorted
             // snapshot rather than iterating a fresh HashSet whose order follows
             // identity hash codes and differs between JVM runs.
@@ -464,10 +518,14 @@ public final class WorldStateBuilder {
                     continue;
                 }
                 Translation2d at = piece.getPoseOnField().getTranslation();
+                if (at.getX() < 0.05 || at.getX() > 16.48 || at.getY() < 0.05 || at.getY() > 8.00) {
+                    continue;
+                }
                 if (StaticPathfinder.isPointInHardObstacle(at)
                         || StaticPathfinder.isPointNearDynamicObstacle(at)) {
                     continue;
                 }
+                eligible.add(at);
                 if (FieldMap.AllianceZones.isInMidfield(at)) {
                     midfield++;
                 } else if (FieldMap.AllianceZones.isInAllianceZone(at, botIsRed)) {
@@ -476,10 +534,44 @@ public final class WorldStateBuilder {
                     theirs++;
                 }
             }
-            return new int[] {own, midfield, theirs};
+            return new FieldFuelSnapshot(own, midfield, theirs, Collections.unmodifiableList(eligible));
         } catch (Exception e) {
             reportDegraded("zoneFuel", e);
             return null;
+        }
+    }
+
+    /**
+     * Returns a snapshot of eligible fuel pieces on the field from simulation.
+     * On real hardware or when simulation arena is absent, returns an empty list.
+     */
+    public static List<Translation2d> getFieldFuel() {
+        if (!RobotBase.isSimulation()) {
+            return List.of();
+        }
+        try {
+            var arena = SimulatedArena.getInstance();
+            if (arena == null) {
+                return List.of();
+            }
+            List<Translation2d> fuel = new ArrayList<>();
+            for (var piece : frc.robot.Sim.MatchDeterminism.fuelOnFieldSorted()) {
+                if (piece == null || !"Fuel".equals(piece.getType())) {
+                    continue;
+                }
+                Translation2d at = piece.getPoseOnField().getTranslation();
+                if (at.getX() < 0.05 || at.getX() > 16.48 || at.getY() < 0.05 || at.getY() > 8.00) {
+                    continue;
+                }
+                if (StaticPathfinder.isPointInHardObstacle(at)
+                        || StaticPathfinder.isPointNearDynamicObstacle(at)) {
+                    continue;
+                }
+                fuel.add(at);
+            }
+            return Collections.unmodifiableList(fuel);
+        } catch (Exception e) {
+            return List.of();
         }
     }
 }

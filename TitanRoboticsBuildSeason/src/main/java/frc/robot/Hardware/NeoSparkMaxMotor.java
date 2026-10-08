@@ -3,11 +3,13 @@ package frc.robot.Hardware;
 import com.revrobotics.PersistMode;
 import com.revrobotics.RelativeEncoder;
 import com.revrobotics.ResetMode;
+import com.revrobotics.REVLibError;
 import com.revrobotics.spark.SparkLowLevel.MotorType;
 import com.revrobotics.spark.SparkMax;
 import com.revrobotics.spark.config.SparkBaseConfig.IdleMode;
 import com.revrobotics.spark.config.SparkMaxConfig;
 
+import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.RobotBase;
 
 /*
@@ -40,10 +42,26 @@ public class NeoSparkMaxMotor {
         }
     }
 
-    public void configure(SparkMaxConfig config) {
-        if (m_motor != null) {
-            m_motor.configure(config, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
+    /**
+     * Applies configuration to the SparkMax with up to 4 retry attempts.
+     * Reports an error to DriverStation if configuration fails after all attempts.
+     *
+     * @param config The {@link SparkMaxConfig} to apply
+     * @return The resulting {@link REVLibError}
+     */
+    public REVLibError configure(SparkMaxConfig config) {
+        if (m_motor == null) {
+            return REVLibError.kError;
         }
+        REVLibError error = REVLibError.kError;
+        for (int i = 0; i < 4; i++) {
+            error = m_motor.configure(config, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
+            if (error == REVLibError.kOk) {
+                return error;
+            }
+        }
+        DriverStation.reportError("Failed to configure SparkMax CAN ID " + CANID + ": " + error, false);
+        return error;
     }
 
     /**

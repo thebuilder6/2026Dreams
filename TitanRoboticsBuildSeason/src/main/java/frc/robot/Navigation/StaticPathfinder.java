@@ -729,140 +729,25 @@ public class StaticPathfinder {
      */
     public static final double LOCAL_RECOVERY_MIN_STEP_M = 0.30;
 
+    private static final VisibilityGraphPlanner DEFAULT_PLANNER = new VisibilityGraphPlanner(
+            Rebuilt2026Roadmap.getInstance(), new FieldMapObstacleModel(), BUMPER_MARGIN);
+
+    public static VisibilityGraphPlanner getDefaultPlanner() {
+        return DEFAULT_PLANNER;
+    }
+
     /**
      * {@link #findPath} with an explicit status. Prefer this when the caller needs
      * to distinguish a frozen robot from a routed one; the two-argument
      * {@link #findPath} is the same computation with the status discarded.
      */
     public static PathResult findPathWithStatus(Pose2d start, Pose2d target) {
-        Pose2d safeStart = ensurePoseOutsideObstacles(start, target.getTranslation());
-        Pose2d safeTarget = ensurePoseOutsideObstacles(target, safeStart.getTranslation());
-
-        Translation2d pStart = safeStart.getTranslation();
-        Translation2d pTarget = safeTarget.getTranslation();
-
-        // 1. Fast Path: If direct line of sight is unobstructed, proceed directly!
-        if (isLineOfSightClear(pStart, pTarget)) {
-            List<Pose2d> direct = new ArrayList<>();
-            if (safeStart.getTranslation().getDistance(start.getTranslation()) > 1e-6) {
-                Translation2d escapeDirection = safeStart.getTranslation().minus(start.getTranslation());
-                Rotation2d escapeHeading = escapeDirection.getNorm() > 1e-6
-                        ? escapeDirection.getAngle()
-                        : safeStart.getRotation();
-                direct.add(new Pose2d(safeStart.getTranslation(), escapeHeading));
-            }
-            direct.add(new Pose2d(pTarget, safeTarget.getRotation()));
-            return new PathResult(direct, PathStatus.DIRECT);
-        }
-
-        // 2. Connect start and target to visible roadmap nodes
-        List<Integer> startVisible = new ArrayList<>();
-        List<Integer> targetVisible = new ArrayList<>();
-
-        for (RoadmapNode node : NODES) {
-            if (isLineOfSightClear(pStart, node.pos)) {
-                startVisible.add(node.id);
-            }
-            if (isLineOfSightClear(node.pos, pTarget)) {
-                targetVisible.add(node.id);
-            }
-        }
-
-        // Never attach an endpoint to a node through an obstacle. If the
-        // sanitized endpoint cannot see the roadmap, try a bounded local recovery
-        // rather than inventing a blocked connector -- and rather than silently
-        // returning nothing, which reads as a hang in a replay.
-        if (startVisible.isEmpty() || targetVisible.isEmpty()) {
-            return localRecoveryResult(safeStart, pStart, pTarget);
-        }
-
-        // 3. A* Search over Roadmap Graph
-        List<Integer> rawPath = aStarSearch(pStart, pTarget, startVisible, targetVisible);
-        if (rawPath.isEmpty()) {
-            // Never turn an unreachable route into a straight-line command through an
-            // obstacle. A short verified-safe step is acceptable; the target is not.
-            return localRecoveryResult(safeStart, pStart, pTarget);
-        }
-
-        // Convert node IDs to 2D coordinates
-        List<Translation2d> waypoints = new ArrayList<>();
-        waypoints.add(pStart);
-        for (int id : rawPath) {
-            waypoints.add(NODES.get(id).pos);
-        }
-        waypoints.add(pTarget);
-
-        // 4. String-Pulling Shortcut Smoothing
-        List<Translation2d> smoothed = smoothPath(waypoints);
-
-        // 5. Convert to List<Pose2d> with smooth segment headings
-        List<Pose2d> finalPath = new ArrayList<>();
-        for (int i = 1; i < smoothed.size(); i++) {
-            Translation2d pt = smoothed.get(i);
-            Rotation2d heading;
-            if (i == smoothed.size() - 1) {
-                heading = safeTarget.getRotation();
-            } else {
-                Translation2d nextPt = smoothed.get(i + 1);
-                heading = nextPt.minus(pt).getAngle();
-            }
-            finalPath.add(new Pose2d(pt, heading));
-        }
-
-        // If the measured robot pose is inside the inflated footprint (for
-        // example, pressed against a ramp corner), the controller must first
-        // drive to the sanitized start point before following the route around it.
-        if (safeStart.getTranslation().getDistance(start.getTranslation()) > 1e-6) {
-            Translation2d escapeDirection = safeStart.getTranslation().minus(start.getTranslation());
-            Rotation2d escapeHeading = escapeDirection.getNorm() > 1e-6
-                    ? escapeDirection.getAngle()
-                    : safeStart.getRotation();
-            finalPath.add(0, new Pose2d(safeStart.getTranslation(), escapeHeading));
-        }
-
-        if (finalPath.isEmpty()) {
-            finalPath.add(new Pose2d(pTarget, safeTarget.getRotation()));
-        }
-
-        return new PathResult(finalPath, PathStatus.ROADMAP);
+        return DEFAULT_PLANNER.planPathWithStatus(start, target);
     }
 
-    /**
-     * A bounded, verified-safe step away from an obstruction.
-     *
-     * <p>Tries the direction to the target first, then fans out. Every candidate
-     * is accepted only if the <i>whole step</i> is line-of-sight clear and the
-     * endpoint is outside static obstacles, so this can never command the robot
-     * through a wall or into a hub. If nothing qualifies the result is honestly
-     * {@link PathStatus#UNREACHABLE} with an empty list: a bot that is truly
-     * boxed in should hold and be measured as stalled, not be told to drive into
-     * geometry.
-     */
-    private static PathResult localRecoveryResult(Pose2d safeStart, Translation2d pStart,
+    public static PathResult localRecoveryResult(Pose2d safeStart, Translation2d pStart,
             Translation2d pTarget) {
-        Translation2d towardTarget = pTarget.minus(pStart);
-        if (towardTarget.getNorm() < 1e-6) {
-            return new PathResult(List.of(), PathStatus.UNREACHABLE);
-        }
-        double baseAngle = towardTarget.getAngle().getDegrees();
-
-        // Toward the target, then a fan either side. 12 steps of 30 degrees covers
-        // a full reversal, which is what a robot facing into a wall needs.
-        for (int i = 0; i < 12; i++) {
-            double angleDeg = baseAngle + (i * 30.0);
-            Translation2d candidate = pStart.plus(new Translation2d(
-                    LOCAL_RECOVERY_MAX_STEP_M, 0.0).rotateBy(Rotation2d.fromDegrees(angleDeg)));
-            if (isLineOfSightClear(pStart, candidate)
-                    && !isPointInStaticObstacle(candidate)
-                    && FieldMap.isWithinField(candidate, BUMPER_MARGIN)) {
-                Pose2d step = new Pose2d(candidate,
-                        Rotation2d.fromDegrees(baseAngle + (i * 30.0)));
-                return new PathResult(List.of(step), PathStatus.LOCAL_RECOVERY);
-            }
-        }
-
-        // Nothing safe. Hold, and say so.
-        return new PathResult(List.of(), PathStatus.UNREACHABLE);
+        return DEFAULT_PLANNER.localRecoveryResult(safeStart, pStart, pTarget);
     }
 
     /**
@@ -892,17 +777,7 @@ public class StaticPathfinder {
         return findPathWithStatus(start, target).waypoints();
     }
 
-    private static class NodeRecord {
-        final int id;
-        final double gScore;
-        final double fScore;
 
-        NodeRecord(int id, double gScore, double fScore) {
-            this.id = id;
-            this.gScore = gScore;
-            this.fScore = fScore;
-        }
-    }
 
     /**
      * Cost multiplier ceiling applied to an edge that runs close to an inflated
@@ -947,179 +822,20 @@ public class StaticPathfinder {
      * Edge cost = length, scaled up to {@link #CLEARANCE_COST_MULTIPLIER_MAX} as the
      * segment's closest approach to an inflated obstacle falls to zero.
      */
-    private static double clearancePenalisedCost(Translation2d a, Translation2d b, double length) {
-        double clearance = segmentMinClearance(a, b);
-        if (!(clearance < CLEARANCE_TIGHT_M)) {
-            return length;
-        }
-        double tightness = 1.0 - (clearance / CLEARANCE_TIGHT_M); // 0 .. 1
-        return length * (1.0 + (CLEARANCE_COST_MULTIPLIER_MAX - 1.0) * tightness);
+    public static double clearancePenalisedCost(Translation2d a, Translation2d b, double length) {
+        return DEFAULT_PLANNER.clearancePenalisedCost(a, b, length);
     }
 
-    /**
-     * Cost added for traversing a node in a peer-occupied trench corridor,
-     * replacing the previous hard pruning.
-     *
-     * <p>Hard pruning ({@code if (blocked) continue;}) was not merely a path
-     * quality choice, it was a connectivity bug. The Blue alliance nodes reach
-     * midfield <i>only</i> through the trench funnel pairs
-     * (ALLIANCE -&gt; *_BYPASS -&gt; TRENCH_W), so masking both Blue corridors
-     * isolated every Blue node from the entire rest of the roadmap: A* returned
-     * an empty path, the controller commanded zero, and the bot froze in open
-     * field. Verified by
-     * {@code StaticPathfinderTrenchMaskTest.twoPeerOccupiedCorridorsDoNotSeverTheField},
-     * which failed against the pruning implementation.
-     *
-     * <p>An additive penalty keeps the corridor usable, so A* always has a route;
-     * it simply prefers the clear corridor when one exists. Sized well above any
-     * real path cost (a full field diagonal is ~18.5 m) so a contested trench is
-     * only chosen when it is genuinely the only way through.
-     */
-    private static final double OCCUPIED_TRENCH_PENALTY_M = 20.0;
-
-    /** Additive cost for entering a node in an occupied trench corridor. */
-    private static double trenchPenalty(int nodeId, java.util.Set<Integer> blockedNodes) {
-        return blockedNodes.contains(nodeId) ? OCCUPIED_TRENCH_PENALTY_M : 0.0;
-    }
-
-    private static List<Integer> aStarSearch(
+    public static List<Integer> aStarSearch(
             Translation2d startPos,
             Translation2d targetPos,
             List<Integer> startVisible,
             List<Integer> targetVisible) {
-
-        // Exclude this robot's own registered obstacle from the corridor mask.
-        // Without it a robot sitting in a trench masks the trench it is in and
-        // cannot plan an exit -- the jitter/dance loop. A peer in the same
-        // corridor is outside EGO_DYNAMIC_EXCLUSION_M and still masks it.
-        java.util.Set<Integer> blockedNodes = getBlockedTrenchNodes(startPos);
-
-        int totalNodes = NODES.size();
-        double[] gScore = new double[totalNodes];
-        Arrays.fill(gScore, Double.MAX_VALUE);
-        int[] parent = new int[totalNodes];
-        Arrays.fill(parent, -1);
-
-        PriorityQueue<NodeRecord> openSet = new PriorityQueue<>(Comparator.comparingDouble(nr -> nr.fScore));
-
-        for (int startNodeId : startVisible) {
-            // Penalised rather than skipped, so a contested corridor never
-            // severs the graph (see OCCUPIED_TRENCH_PENALTY_M). Penalised like
-            // any other edge, so an endpoint connector that hugs an obstacle
-            // does not get a free pass into the graph.
-            double d = clearancePenalisedCost(startPos, NODES.get(startNodeId).pos,
-                    startPos.getDistance(NODES.get(startNodeId).pos))
-                    + trenchPenalty(startNodeId, blockedNodes);
-            gScore[startNodeId] = d;
-            double h = NODES.get(startNodeId).pos.getDistance(targetPos);
-            openSet.add(new NodeRecord(startNodeId, d, d + h));
-        }
-
-        int bestEndNode = -1;
-        double bestTotalCost = Double.MAX_VALUE;
-
-        while (!openSet.isEmpty()) {
-            NodeRecord current = openSet.poll();
-
-            if (current.gScore > gScore[current.id])
-                continue;
-
-            // Check if current node can reach target directly
-            if (targetVisible.contains(current.id)) {
-                Translation2d endPos = NODES.get(current.id).pos;
-                double totalCost = current.gScore
-                        + clearancePenalisedCost(endPos, targetPos, endPos.getDistance(targetPos));
-                if (totalCost < bestTotalCost) {
-                    bestTotalCost = totalCost;
-                    bestEndNode = current.id;
-                }
-            }
-
-            RoadmapNode curNode = NODES.get(current.id);
-            for (int neighborId : curNode.neighbors) {
-                // Roadmap links are only topological hints. Geometry and obstacle modes
-                // change at runtime, so validate each edge before allowing A* to use it.
-                if (!isLineOfSightClear(curNode.pos, NODES.get(neighborId).pos))
-                    continue;
-                Translation2d neighbourPos = NODES.get(neighborId).pos;
-                double edgeWeight = curNode.pos.getDistance(neighbourPos);
-                double tentativeG = current.gScore + clearancePenalisedCost(
-                        curNode.pos, neighbourPos, edgeWeight)
-                        + trenchPenalty(neighborId, blockedNodes);
-
-                if (tentativeG < gScore[neighborId]) {
-                    gScore[neighborId] = tentativeG;
-                    parent[neighborId] = current.id;
-                    double h = NODES.get(neighborId).pos.getDistance(targetPos);
-                    openSet.add(new NodeRecord(neighborId, tentativeG, tentativeG + h));
-                }
-            }
-        }
-
-        // Reconstruct path
-        List<Integer> path = new ArrayList<>();
-        if (bestEndNode == -1) {
-            return path;
-        }
-
-        int curr = bestEndNode;
-        while (curr != -1) {
-            path.add(curr);
-            curr = parent[curr];
-        }
-        Collections.reverse(path);
-        return path;
+        return DEFAULT_PLANNER.aStarSearch(startPos, targetPos, startVisible, targetVisible);
     }
 
-    /**
-     * String-pulling shortcut smoothing:
-     * Greedily skips intermediate waypoints whenever line-of-sight is completely
-     * clear.
-     */
-    private static List<Translation2d> smoothPath(List<Translation2d> raw) {
-        if (raw.size() <= 2)
-            return raw;
-
-        List<Translation2d> smoothed = new ArrayList<>();
-        smoothed.add(raw.get(0));
-
-        int curr = 0;
-        while (curr < raw.size() - 1) {
-            int furthest = curr + 1;
-            for (int next = raw.size() - 1; next > curr + 1; next--) {
-                // Enforce: Never shortcut across the mouth of a trench corridor.
-                // A path entering or exiting the trench MUST visit the collinear funnel
-                // waypoints.
-                if (isTrenchCorridorTransition(raw.get(curr), raw.get(next))) {
-                    continue;
-                }
-                if (isLineOfSightClear(raw.get(curr), raw.get(next))) {
-                    furthest = next;
-                    break;
-                }
-            }
-            smoothed.add(raw.get(furthest));
-            curr = furthest;
-        }
-
-        return smoothed;
-    }
-
-    private static boolean isTrenchCorridorTransition(Translation2d p1, Translation2d p2) {
-        // Top Trench corridor Y is ~7.42m; Bottom Trench corridor Y is ~0.65m
-        boolean p1InTopTrench = p1.getY() > 7.0;
-        boolean p2InTopTrench = p2.getY() > 7.0;
-        if (p1InTopTrench ^ p2InTopTrench) {
-            return true; // Crossing into or out of Top Trench: must follow funnel nodes
-        }
-
-        boolean p1InBotTrench = p1.getY() < 1.0;
-        boolean p2InBotTrench = p2.getY() < 1.0;
-        if (p1InBotTrench ^ p2InBotTrench) {
-            return true; // Crossing into or out of Bottom Trench: must follow funnel nodes
-        }
-
-        return false;
+    public static List<Translation2d> smoothPath(List<Translation2d> raw) {
+        return DEFAULT_PLANNER.smoothPath(raw);
     }
 
     // =========================================================================

@@ -20,10 +20,41 @@ public record WorldState(
         boolean isRedAlliance,
         boolean isAutonomous,
         boolean isAllianceHubActiveAfterShift,
-        boolean isOpponentHubActiveAfterShift
+        boolean isOpponentHubActiveAfterShift,
+        boolean hasShooter,
+        int ballCapacity,
+        boolean hasClimber
 ) {
     public static final int DEFAULT_MAX_CAPACITY = 30;
     public static final int CO_PILOT_CAPACITY = 30; // Changed from 8 to 30
+    public static final boolean DEFAULT_HAS_SHOOTER = true;
+    public static final boolean DEFAULT_HAS_CLIMBER = false;
+
+    /**
+     * Backward-compatible 13-parameter constructor defaulting hardware capabilities:
+     * hasShooter = true, ballCapacity = 30, hasClimber = false.
+     */
+    public WorldState(
+            Pose2d selfPose,
+            ChassisSpeeds selfVelocity,
+            int heldFuelCount,
+            Pose2d opponentPose,
+            ChassisSpeeds opponentVelocity,
+            double matchTimeRemaining,
+            boolean isAllianceHubActive,
+            boolean isOpponentHubActive,
+            double timeUntilHubShift,
+            boolean isRedAlliance,
+            boolean isAutonomous,
+            boolean isAllianceHubActiveAfterShift,
+            boolean isOpponentHubActiveAfterShift
+    ) {
+        this(selfPose, selfVelocity, heldFuelCount, opponentPose, opponentVelocity,
+                matchTimeRemaining, isAllianceHubActive, isOpponentHubActive,
+                timeUntilHubShift, isRedAlliance, isAutonomous,
+                isAllianceHubActiveAfterShift, isOpponentHubActiveAfterShift,
+                DEFAULT_HAS_SHOOTER, DEFAULT_MAX_CAPACITY, DEFAULT_HAS_CLIMBER);
+    }
 
     /**
      * Backward-compatible 11-parameter constructor defaulting isAutonomous to
@@ -49,7 +80,8 @@ public record WorldState(
                 // keeps every pre-existing caller behaviourally identical while
                 // still describing an honest state: with nothing pending, the
                 // post-shift state equals the present one.
-                isAllianceHubActive, isOpponentHubActive);
+                isAllianceHubActive, isOpponentHubActive,
+                DEFAULT_HAS_SHOOTER, DEFAULT_MAX_CAPACITY, DEFAULT_HAS_CLIMBER);
     }
 
     /**
@@ -70,6 +102,30 @@ public record WorldState(
         this(selfPose, selfVelocity, heldFuelCount, opponentPose, opponentVelocity,
                 matchTimeRemaining, isAllianceHubActive, isOpponentHubActive,
                 timeUntilHubShift, isRedAlliance, false);
+    }
+
+    /**
+     * Fluent helper producing a copy of this WorldState with customized hardware capabilities.
+     */
+    public WorldState withHardware(boolean hasShooter, int ballCapacity, boolean hasClimber) {
+        return new WorldState(
+                selfPose, selfVelocity, heldFuelCount, opponentPose, opponentVelocity,
+                matchTimeRemaining, isAllianceHubActive, isOpponentHubActive,
+                timeUntilHubShift, isRedAlliance, isAutonomous,
+                isAllianceHubActiveAfterShift, isOpponentHubActiveAfterShift,
+                hasShooter, ballCapacity, hasClimber);
+    }
+
+    /**
+     * Fluent helper producing a copy of this WorldState with a modified held fuel count.
+     */
+    public WorldState withHeldFuelCount(int fuel) {
+        return new WorldState(
+                selfPose, selfVelocity, fuel, opponentPose, opponentVelocity,
+                matchTimeRemaining, isAllianceHubActive, isOpponentHubActive,
+                timeUntilHubShift, isRedAlliance, isAutonomous,
+                isAllianceHubActiveAfterShift, isOpponentHubActiveAfterShift,
+                hasShooter, ballCapacity, hasClimber);
     }
 
     // Self hub active alias:
@@ -94,13 +150,19 @@ public record WorldState(
     }
 
     // Inventory fullness check:
-    public boolean isInventoryFull() { return heldFuelCount >= DEFAULT_MAX_CAPACITY; }
+    public boolean isInventoryFull() {
+        return ballCapacity <= 0 || heldFuelCount >= ballCapacity;
+    }
 
     // Game-agnostic convenience accessors:
     public int heldGamePieceCount() { return heldFuelCount; }
     public boolean isAllianceGoalActive() { return isAllianceHubActive; }
     public boolean isOpponentGoalActive() { return isOpponentHubActive; }
     public double timeUntilGoalShift() { return timeUntilHubShift; }
+
+    public double inventoryRatio() {
+        return ballCapacity <= 0 ? 1.0 : Math.min(1.0, (double) heldFuelCount / ballCapacity);
+    }
 
     public double inventoryRatio(int capacity) {
         return Math.min(1.0, (double) heldFuelCount / Math.max(1, capacity));

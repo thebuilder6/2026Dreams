@@ -222,4 +222,15 @@ public class HardwareIOTest {
             intakeIO.stop();
         });
     }
+
+    @Test
+    public void testNeoSparkMaxMotorConfigureAndRetry() {
+        frc.robot.Hardware.NeoSparkMaxMotor motor = new frc.robot.Hardware.NeoSparkMaxMotor(60);
+        com.revrobotics.spark.config.SparkMaxConfig config = new com.revrobotics.spark.config.SparkMaxConfig();
+        com.revrobotics.REVLibError err = motor.configure(config);
+        assertNotNull(err);
+        assertEquals(60, motor.getCANID());
+        assertDoesNotThrow(() -> motor.setInverted(true));
+        assertDoesNotThrow(() -> motor.setBrakeMode(true));
+    }
 }

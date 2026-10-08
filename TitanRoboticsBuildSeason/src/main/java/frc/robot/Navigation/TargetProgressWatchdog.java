@@ -60,7 +60,7 @@ public final class TargetProgressWatchdog {
      * made on <i>progress</i>, not on speed: a converging bot improves
      * {@link #bestDistanceM} and resets the window every cycle.
      */
-    public static final double COMMAND_MIN_MPS = 0.12;
+    public static final double COMMAND_MIN_MPS = ContactWatchdog.STALL_CMD_SPEED_MIN;
 
     /** Seconds of commanded-but-no-approach before the target is abandoned. */
     public static final double GIVEUP_SEC = 3.0;
@@ -76,6 +76,17 @@ public final class TargetProgressWatchdog {
 
     /** How long a blacklisted fuel point stays skipped. */
     public static final double BLACKLIST_TTL_SEC = 20.0;
+
+    /**
+     * Cumulative stalled seconds under contact-recovery suppression before the
+     * loop-breaker fires anyway. Three full {@link #GIVEUP_SEC} windows: a
+     * legitimate sub-9 s maneuver can never trip it, but a bot wedged for
+     * minutes — which holds a contact recovery active ~100% of the time and
+     * would otherwise keep the 3 s accumulators at zero forever (measured:
+     * 115 s STATIC_UNSTICK with no watchdog progress) — invalidates its target
+     * instead of pinning forever.
+     */
+    public static final double SUPPRESSED_GIVEUP_SEC = 9.0;
 
     /** Duration of the escape maneuver after a give-up. */
     public static final double ESCAPE_SEC = 1.2;
@@ -165,6 +176,20 @@ public final class TargetProgressWatchdog {
     private int consecutiveStaticEscapes = 0;
 
     /**
+     * Stalled seconds accumulated while progress timeouts are suppressed by an
+     * active contact recovery. Unlike {@link #pinnedSec}, this is never zeroed
+     * by suppression itself — only by a target change, real motion, or an
+     * unsuppressed tick. See the suppression branch in {@link #update}.
+     */
+    private double suppressedPinnedSec = 0.0;
+
+    /** Seconds holding inside ARRIVED_M while intaking without collecting before abandoning. */
+    public static final double HARVEST_ARRIVAL_ABANDON_SEC = 1.8;
+    private Translation2d lastHarvestTargetPos = null;
+    private double harvestArrivalHoldSec = 0.0;
+    private int lastHarvestFuelCount = 0;
+
+    /**
      * Churn escapes before the rescue escalates to blacklisting. Three fires
      * at ~2 s per escape/re-pin cycle lands escalation ~6-8 s into a loop,
      * an order of magnitude inside the measured 60-140 s catastrophes.
@@ -214,6 +239,17 @@ public final class TargetProgressWatchdog {
     public synchronized Result update(
             Pose2d pose, ChassisSpeeds commanded, ChassisSpeeds actual,
             Pose2d navTarget, double dt) {
+        return update(pose, commanded, actual, navTarget, false, dt);
+    }
+
+    /**
+     * Advances the watchdog with measured velocity and optional suppression of
+     * progress timeouts while higher-priority contact recoveries (G418 backoff,
+     * pirouette unstick, or deadlock recovery) are active.
+     */
+    public synchronized Result update(
+            Pose2d pose, ChassisSpeeds commanded, ChassisSpeeds actual,
+            Pose2d navTarget, boolean suppressProgressTimeout, double dt) {
         if (pose == null || commanded == null || !Double.isFinite(dt) || dt <= 0.0) {
             return Result.IDLE;
         }
@@ -226,6 +262,44 @@ public final class TargetProgressWatchdog {
             resetProgress();
             return Result.IDLE;
         }
+
+        // When a higher-priority contact recovery is active, pause abandonment
+        // during the safety maneuver so intentional backoffs or pirouettes do
+        // not trigger false target abandonment — but do NOT erase the stall
+        // record. Zeroing here kept the 3 s accumulators at zero through entire
+        // wedges (a pinned bot holds a recovery active ~100% of the time),
+        // switching the loop-breaker off for the whole pin. Accumulate through
+        // suppression on the longer fuse instead. The fuse is velocity-based,
+        // not target-based, so a churning target cannot reset it — a pinned
+        // robot keeps accumulating whether its aim drifts or stays still. Only
+        // motion (or leaving suppression entirely) clears the budget.
+        Translation2d suppressedTarget = navTarget.getTranslation();
+        double suppressedCommandedSpeed = Math.hypot(
+                commanded.vxMetersPerSecond, commanded.vyMetersPerSecond);
+        boolean suppressedPinned = actual != null
+                && suppressedCommandedSpeed >= COMMAND_MIN_MPS
+                && Math.hypot(actual.vxMetersPerSecond, actual.vyMetersPerSecond) < STALL_ACTUAL_SPEED_MAX;
+        if (suppressProgressTimeout) {
+            if (suppressedPinned) {
+                suppressedPinnedSec += dt;
+            } else {
+                suppressedPinnedSec = Math.max(0.0, suppressedPinnedSec - dt * 2.0);
+            }
+            if (suppressedPinnedSec >= SUPPRESSED_GIVEUP_SEC) {
+                double trippedAt = suppressedPinnedSec;
+                escapeFrom = suppressedTarget;
+                escapeRemainingSec = ESCAPE_SEC;
+                List<Translation2d> blocked = List.of(suppressedTarget);
+                blacklist(suppressedTarget, Timer.getFPGATimestamp());
+                suppressedPinnedSec = 0.0;
+                resetProgress();
+                consecutiveStaticEscapes = 0;
+                trackedTarget = suppressedTarget;
+                return new Result(true, escapeVector(pose), blocked, trippedAt, ESCAPE_SEC);
+            }
+            return Result.IDLE;
+        }
+        suppressedPinnedSec = 0.0;
 
         Translation2d target = navTarget.getTranslation();
         double distance = pose.getTranslation().getDistance(target);
@@ -367,7 +441,7 @@ public final class TargetProgressWatchdog {
     }
 
     /** True when one second of travel along {@code direction} breaches the wall band. */
-    private static boolean headsIntoWall(Pose2d pose, Translation2d direction) {
+    static boolean headsIntoWall(Pose2d pose, Translation2d direction) {
         Translation2d predicted = pose.getTranslation().plus(direction);
         return predicted.getX() < WALL_MARGIN_M
                 || predicted.getX() > FieldMap.FIELD_LENGTH - WALL_MARGIN_M
@@ -450,6 +524,65 @@ public final class TargetProgressWatchdog {
         return new Result(true, escapeVector(pose), blocked, GIVEUP_SEC, ESCAPE_SEC);
     }
 
+    /**
+     * Stationary-arm harvester watchdog: if arrived inside ARRIVED_M while intaking,
+     * but no fuel is being collected (e.g. peer wedging, physical obstacle block),
+     * abandon the target after HARVEST_ARRIVAL_ABANDON_SEC so the bot escapes and retargets.
+     *
+     * @param currentPose current robot pose
+     * @param targetPose commanded target pose
+     * @param isHarvesting true if intake is actively running in intaking state
+     * @param heldPieces number of fuel pieces currently held
+     * @param dt cycle time
+     * @return Result of the target progress check (may command escape away from target)
+     */
+    public synchronized Result updateHarvestArrivalWatchdog(
+            Pose2d currentPose,
+            Pose2d targetPose,
+            boolean isHarvesting,
+            int heldPieces,
+            double dt) {
+        if (!isHarvesting || targetPose == null || currentPose == null) {
+            harvestArrivalHoldSec = 0.0;
+            lastHarvestFuelCount = heldPieces;
+            lastHarvestTargetPos = null;
+            return isRecovering()
+                    ? new Result(true, escapeVector(currentPose), List.of(), noProgressSec, escapeRemainingSec)
+                    : Result.IDLE;
+        }
+
+        double distToTarget = currentPose.getTranslation().getDistance(targetPose.getTranslation());
+        if (distToTarget < ARRIVED_M && !isRecovering()) {
+            if (lastHarvestTargetPos == null
+                    || targetPose.getTranslation().getDistance(lastHarvestTargetPos) > 0.5) {
+                lastHarvestTargetPos = targetPose.getTranslation();
+                harvestArrivalHoldSec = 0.0;
+                lastHarvestFuelCount = heldPieces;
+            } else if (heldPieces > lastHarvestFuelCount) {
+                harvestArrivalHoldSec = 0.0;
+                lastHarvestFuelCount = heldPieces;
+            } else {
+                harvestArrivalHoldSec += dt;
+                if (harvestArrivalHoldSec >= HARVEST_ARRIVAL_ABANDON_SEC) {
+                    Result res = abandonTarget(targetPose.getTranslation(), currentPose);
+                    harvestArrivalHoldSec = 0.0;
+                    lastHarvestFuelCount = heldPieces;
+                    return res;
+                }
+            }
+        } else {
+            harvestArrivalHoldSec = 0.0;
+            lastHarvestFuelCount = heldPieces;
+            if (distToTarget >= ARRIVED_M) {
+                lastHarvestTargetPos = null;
+            }
+        }
+
+        return isRecovering()
+                ? new Result(true, escapeVector(currentPose), List.of(), noProgressSec, escapeRemainingSec)
+                : Result.IDLE;
+    }
+
     /** Clears all state (match reset). */
     public synchronized void reset() {
         blacklist.clear();
@@ -458,6 +591,10 @@ public final class TargetProgressWatchdog {
         escapeFrom = new Translation2d();
         consecutiveStaticEscapes = 0;
         pinnedSec = 0.0;
+        suppressedPinnedSec = 0.0;
+        lastHarvestTargetPos = null;
+        harvestArrivalHoldSec = 0.0;
+        lastHarvestFuelCount = 0;
     }
 
     /** No-progress window currently accumulated, in seconds. */
@@ -478,6 +615,11 @@ public final class TargetProgressWatchdog {
      */
     public synchronized double getTrackedTargetAgeSec() {
         return trackedTarget == null ? -1.0 : trackedSec;
+    }
+
+    /** Seconds holding inside ARRIVED_M while intaking with no fuel collected. */
+    public synchronized double getHarvestArrivalHoldSec() {
+        return harvestArrivalHoldSec;
     }
 
     /** True while an escape maneuver is latched. */

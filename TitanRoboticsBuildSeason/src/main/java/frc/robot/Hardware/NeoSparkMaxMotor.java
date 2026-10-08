@@ -93,6 +93,11 @@ public class NeoSparkMaxMotor {
 
     public void set(double power) {
         simSpeed = power;
+        // Duty-cycle commands do not go through setVoltage(), but
+        // getAppliedVoltage() reports the last commanded voltage and the intake
+        // jam detector gates on it. Without this a roller driven via set() reads
+        // 0 V forever and the auto-eject can never fire on hardware.
+        lastVoltage = power * getBusVoltage();
         if (m_motor != null) {
             m_motor.set(power);
         }

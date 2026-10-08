@@ -128,13 +128,7 @@ public class StaticPathfinder {
     public static final double FIELD_WIDTH = FieldMap.FIELD_WIDTH;
 
     private static List<FieldMap.AABB> getInflatedActiveObstacles() {
-        List<FieldMap.AABB> inflated = new ArrayList<>();
-        for (FieldMap.AABB obstacle : FieldMap.Obstacles.getActiveObstacles()) {
-            inflated.add(new FieldMap.AABB(obstacle.name,
-                    obstacle.minX - BUMPER_MARGIN, obstacle.maxX + BUMPER_MARGIN,
-                    obstacle.minY - BUMPER_MARGIN, obstacle.maxY + BUMPER_MARGIN));
-        }
-        return inflated;
+        return INFLATED_ACTIVE_OBSTACLES;
     }
 
     // =========================================================================
@@ -430,6 +424,25 @@ public class StaticPathfinder {
     // Obstacle Containment & Safe Target Projection
     // =========================================================================
     public static final double BUMPER_MARGIN = FieldMap.ROBOT_RADIUS; // Match the bumper half-width; apply once
+
+    /**
+     * Field obstacles pre-inflated by the bumper margin. The obstacle set is
+     * constant ({@link FieldMap.Obstacles#getActiveObstacles()} returns the same
+     * list for every handling mode), so build it once instead of allocating ~14
+     * AABBs on every line-of-sight / point check in the 50 Hz loop. Declared
+     * after {@link #BUMPER_MARGIN} so it is initialised with the real margin.
+     */
+    private static final List<FieldMap.AABB> INFLATED_ACTIVE_OBSTACLES = buildInflatedActiveObstacles();
+
+    private static List<FieldMap.AABB> buildInflatedActiveObstacles() {
+        List<FieldMap.AABB> inflated = new ArrayList<>();
+        for (FieldMap.AABB obstacle : FieldMap.Obstacles.getActiveObstacles()) {
+            inflated.add(new FieldMap.AABB(obstacle.name,
+                    obstacle.minX - BUMPER_MARGIN, obstacle.maxX + BUMPER_MARGIN,
+                    obstacle.minY - BUMPER_MARGIN, obstacle.maxY + BUMPER_MARGIN));
+        }
+        return List.copyOf(inflated);
+    }
 
     /**
      * Checks if a 2D point is located inside any static field obstacle (AABB)

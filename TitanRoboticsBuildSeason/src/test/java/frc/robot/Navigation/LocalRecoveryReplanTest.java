@@ -65,6 +65,28 @@ class LocalRecoveryReplanTest {
                 "consumed recovery with goal 0.84 m away must replan, not park; got " + trans(out3));
     }
 
+    /** A goal that moves mid-recovery must not overwrite the shake-loose step. */
+    @Test
+    void movedGoalDoesNotClobberActiveRecoveryStep() {
+        TrajectoryController tc = new TrajectoryController(new PIDController(1.0, 0.0, 0.0));
+
+        // Tick 1: establish the LOCAL_RECOVERY plan and record its step endpoint.
+        tc.calculate(SIT_POSE, new ChassisSpeeds(), SIT_TARGET, 3.4, false, false);
+        List<Pose2d> plan = tc.getWaypoints();
+        Pose2d stepEnd = plan.get(plan.size() - 1);
+
+        // Tick 2: nudge the goal 0.05 m. This is the small-move branch that used to
+        // retarget the last waypoint onto an unreachable target.
+        Pose2d nudged = new Pose2d(
+                SIT_TARGET.getX() + 0.05, SIT_TARGET.getY(), SIT_TARGET.getRotation());
+        tc.calculate(SIT_POSE, new ChassisSpeeds(), nudged, 3.4, false, false);
+
+        List<Pose2d> after = tc.getWaypoints();
+        Pose2d lastAfter = after.get(after.size() - 1);
+        assertTrue(lastAfter.getTranslation().getDistance(stepEnd.getTranslation()) < 1e-6,
+                "a moved goal must not overwrite the active recovery step endpoint");
+    }
+
     /** Normal routes are untouched: open-field arrival still holds at zero. */
     @Test
     void directRouteArrivalStillHolds() {

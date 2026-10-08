@@ -330,6 +330,9 @@ public class Robot extends LoggedRobot {
     Shooter.getInstance().stop();
     Intake.getInstance().stop();
     swerveBase.setMotorBrake(true);
+    // Clear accumulated breaker thermal damage so match 2 does not start
+    // pre-derated (the robot program persists across matches).
+    frc.robot.Hardware.PowerBudgetManager.getInstance().reset();
     if (testMode != null) {
       testMode.cleanup();
     }

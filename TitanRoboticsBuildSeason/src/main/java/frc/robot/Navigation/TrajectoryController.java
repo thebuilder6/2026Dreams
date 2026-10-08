@@ -251,7 +251,10 @@ public class TrajectoryController {
             } else {
                 Logger.recordOutput("Trajectory/NoRoute", false);
             }
-        } else if (!isExplicitPath && distTargetMoved > 0.01 && !waypoints.isEmpty()) {
+        } else if (!isExplicitPath
+                && lastPathStatus != StaticPathfinder.PathStatus.LOCAL_RECOVERY
+                && distTargetMoved > 0.01
+                && !waypoints.isEmpty()) {
             waypoints.set(waypoints.size() - 1, targetPose);
             lastPathTarget = targetPose;
         }

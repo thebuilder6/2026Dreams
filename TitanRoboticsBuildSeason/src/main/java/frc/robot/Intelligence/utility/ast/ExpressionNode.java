@@ -257,22 +257,31 @@ public sealed interface ExpressionNode {
         }
     }
 
-    /** Hard gate: {@code x > threshold ? above : below}. */
-    record Threshold(ExpressionNode x, double threshold, double below, double above)
+    /**
+     * Hard gate: {@code x >= threshold ? above : below} when {@code inclusive},
+     * otherwise {@code x > threshold ? above : below}.
+     */
+    record Threshold(ExpressionNode x, double threshold, double below, double above, boolean inclusive)
             implements ExpressionNode {
+        /** Strict form ({@code x > threshold}). */
+        Threshold(ExpressionNode x, double threshold, double below, double above) {
+            this(x, threshold, below, above, false);
+        }
         @Override public double evaluate(EvalContext ctx) {
-            return clamp01(x.evaluate(ctx) > threshold ? above : below);
+            double v = x.evaluate(ctx);
+            boolean hit = inclusive ? v >= threshold : v > threshold;
+            return clamp01(hit ? above : below);
         }
         @Override public List<ExpressionNode> children() {
             return List.of(x);
         }
         @Override public ExpressionNode withChildren(List<ExpressionNode> children) {
             require(children, 1, "Threshold");
-            return new Threshold(children.get(0), threshold, below, above);
+            return new Threshold(children.get(0), threshold, below, above, inclusive);
         }
         @Override public String toReadableString() {
-            return "threshold(" + x.toReadableString() + ", " + fmt(threshold) + ", "
-                    + fmt(below) + ", " + fmt(above) + ")";
+            return (inclusive ? "threshold_ge(" : "threshold(") + x.toReadableString() + ", "
+                    + fmt(threshold) + ", " + fmt(below) + ", " + fmt(above) + ")";
         }
     }
 
@@ -351,6 +360,26 @@ public sealed interface ExpressionNode {
         }
         @Override public String toReadableString() {
             return "clamp(" + x.toReadableString() + ", " + fmt(min) + ", " + fmt(max) + ")";
+        }
+    }
+
+    /**
+     * Linear scaling by a raw, unclamped factor (e.g. a weight &gt; 1 that a
+     * {@link Product} would clamp away). The result is clamped to {@code [0,1]}.
+     */
+    record Scale(ExpressionNode x, double factor) implements ExpressionNode {
+        @Override public double evaluate(EvalContext ctx) {
+            return clamp01(x.evaluate(ctx) * factor);
+        }
+        @Override public List<ExpressionNode> children() {
+            return List.of(x);
+        }
+        @Override public ExpressionNode withChildren(List<ExpressionNode> children) {
+            require(children, 1, "Scale");
+            return new Scale(children.get(0), factor);
+        }
+        @Override public String toReadableString() {
+            return "scale(" + x.toReadableString() + ", " + fmt(factor) + ")";
         }
     }
 

@@ -423,11 +423,17 @@ function Exit-Lock {
         $path = Join-Path $dir "$r.lock"
         if (-not (Test-Path $path)) { continue }
         $rec = ConvertTo-LockRecord -Lines (Get-Content $path)
-        # Only ever delete our own. If a stale lock was legitimately reclaimed
-        # and the old owner came back, it must not free the new holder.
-        if ($rec['owner'] -ne $owner) {
+        # Only ever delete our own. Owner alone is too weak: every agent on this
+        # machine resolves to the same Windows account, so a peer's live lock would
+        # look like ours. Require a PID overlap, or that the recorded anchors are
+        # all dead (a provably-stale lock is safe to clear -- the reaper would do
+        # it anyway). A lock held by a *live* foreign anchor under our owner name
+        # is refused; that is the case that used to free another agent's run.
+        $owned = Test-LockOwnedByMe -Record $rec
+        if ($rec['owner'] -ne $owner -or (-not $owned -and -not (Test-LockStale -Record $rec))) {
             if (-not $Quiet) {
-                Write-Warning ("[lock] not releasing '{0}': held by {1}, we are {2}." -f $r, $rec['owner'], $owner)
+                Write-Warning ("[lock] not releasing '{0}': held by {1} (pid {2}), we are {3}." -f `
+                    $r, $rec['owner'], (@($rec['pids']) -join ','), $owner)
             }
             continue
         }

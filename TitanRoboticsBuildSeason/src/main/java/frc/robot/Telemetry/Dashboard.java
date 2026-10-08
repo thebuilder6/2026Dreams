@@ -274,9 +274,14 @@ public class Dashboard implements Subsystem {
      * @param matchTime The time remaining in the match (seconds)
      */
     private void updateHubStatus(double matchTime) {
-        // 1. Get Game Data if we don't have it
-        if (gameData == null || gameData.isEmpty()) {
-            gameData = DriverStation.getGameSpecificMessage();
+        // Prefer the live FMS message every tick. The robot program persists
+        // across matches, so a value cached in match 1 must not survive into
+        // match 2; the cached field is only the sim FMS seed (see setGameData).
+        String liveGameData = DriverStation.getGameSpecificMessage();
+        if (liveGameData != null && !liveGameData.isEmpty()) {
+            gameData = liveGameData;
+        } else if (gameData == null) {
+            gameData = "";
         }
 
         // No valid clock (disabled/disconnected): fail open on active.

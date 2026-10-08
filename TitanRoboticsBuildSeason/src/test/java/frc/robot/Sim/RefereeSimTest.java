@@ -125,6 +125,19 @@ public class RefereeSimTest {
     }
 
     @Test
+    public void testG407RepeatedIllegalShotsAreDebounced() {
+        // A sustained illegal volley is checked once per volley (~12/s). It must
+        // count one foul, not one per check.
+        Pose2d illegalPose = new Pose2d(8.0, 4.0, new Rotation2d());
+        for (int i = 0; i < 20; i++) {
+            RefereeSim.checkShotLegality(illegalPose, false, "Player");
+        }
+        assertEquals(1, scoreTracker.getBlueFoulCount(),
+                "a held illegal volley must count one foul, not one per launch check");
+        assertEquals(15, scoreTracker.getRedPenaltyScore());
+    }
+
+    @Test
     public void testG418PinEscalatesMinorThenMajor() {
         // Player and Bot 0 held in contact
         SwerveBase.getInstance().resetOdometry(new Pose2d(5.0, 4.0, new Rotation2d()));

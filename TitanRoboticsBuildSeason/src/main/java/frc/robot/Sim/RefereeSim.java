@@ -291,6 +291,13 @@ public class RefereeSim implements Subsystem {
         if (shooterPose == null) return;
         if (!RobotBase.isSimulation()) return;
         if (!FieldMap.AllianceZones.isInAllianceZone(shooterPose, shooterIsRedAlliance)) {
+            // Debounce per shooter: a held trigger is checked once per volley
+            // (~12/s), so without this a single sustained illegal hold would add
+            // ~60 fouls over 5 s. Key includes the label so each robot is
+            // debounced independently.
+            if (getInstance().debounced("G407_" + shooterLabel, Timer.getFPGATimestamp())) {
+                return;
+            }
             MatchScoreTracker.getInstance().recordMajorFoul(shooterIsRedAlliance,
                     "G407 Shot Outside Alliance Zone by " + shooterLabel);
         }

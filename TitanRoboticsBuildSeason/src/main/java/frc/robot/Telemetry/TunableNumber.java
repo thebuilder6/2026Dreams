@@ -12,7 +12,7 @@ import frc.robot.Data.Constants;
  * Uses AdvantageKit LoggedNetworkNumber for deterministic log replay.
  */
 public class TunableNumber {
-  private static final String tableKey = "TunableNumbers";
+  private static final String tableKey = "/TunableNumbers";
 
   private final String key;
   private double defaultValue;
@@ -76,7 +76,11 @@ public class TunableNumber {
       return 0.0;
     }
 
-    return (Constants.TUNING_MODE && loggedNumber != null) ? loggedNumber.get() : defaultValue;
+    if (Constants.TUNING_MODE && loggedNumber != null) {
+      loggedNumber.periodic();
+      return loggedNumber.get();
+    }
+    return defaultValue;
   }
 
   /**

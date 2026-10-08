@@ -35,6 +35,8 @@ public record PolicyWeights(
         double stageStandoffBase,
         double stageShiftImminentCoPilot,
         double stageShiftImminentNormal,
+        // Legacy step-window superseded by the shiftUrgency logistic (midpoint/steepness below);
+        // retained so existing weight specs still parse. Engine no longer reads it.
         double stageShiftWindowSec,
         int stageMinFuelNormal,
 
@@ -103,11 +105,19 @@ public record PolicyWeights(
         double clusterDensityExponent,
         double clusterDistanceFloor,
         double harvestHeadingAlignScale,
-        double harvestReturnVectorBonus
+        double harvestReturnVectorBonus,
+
+        // IAUS Consideration Curve Shapes (plan §4: continuous tunables for optimization)
+        double scoreHubPayloadExponent,
+        double shiftUrgencySigmoidSteepness,
+        double shiftUrgencyMidpointSec,
+        double optimalStandoffMidpointM,
+        double optimalStandoffSigmaM
 ) {
 
     /**
-     * Backward-compatible 53-parameter constructor defaulting action inertia and scent parameters.
+     * Backward-compatible 53-parameter constructor defaulting action inertia, scent,
+     * and IAUS curve-shape parameters.
      */
     public PolicyWeights(
             double climbBase15, double climbScale15, double climbBase20, double climbScale20,
@@ -145,7 +155,8 @@ public record PolicyWeights(
                 tacticalDefenderLaneMultiplier, tacticalDefenderShadowMultiplier, bullyInterceptUtility,
                 coPilotActiveScoreUtility, harvestDeadlineForceUtility, autoBatchDumpScoreUtility, autoHarvestVacuumUtility,
                 0.06, 0.20, 1.5, 0.20, 1.0, 0.04,
-                1.30, 0.50, 1.50, 0.40, 0.30, 0.35
+                1.30, 0.50, 1.50, 0.40, 0.30, 0.35,
+                1.0, 8.0, 3.5, 2.8, 0.5
         );
     }
 
@@ -178,7 +189,9 @@ public record PolicyWeights(
             // Action Inertia
             0.06, 0.20, 1.5, 0.20, 1.0, 0.04,
             // Scent & Clustering
-            1.30, 0.50, 1.50, 0.40, 0.30, 0.35
+            1.30, 0.50, 1.50, 0.40, 0.30, 0.35,
+            // IAUS Curve Shapes (defaults reproduce the legacy step/linear behavior)
+            1.0, 8.0, 3.5, 2.8, 0.5
     );
 
 
@@ -330,6 +343,11 @@ public record PolicyWeights(
         private double clusterDistanceFloor;
         private double harvestHeadingAlignScale;
         private double harvestReturnVectorBonus;
+        private double scoreHubPayloadExponent;
+        private double shiftUrgencySigmoidSteepness;
+        private double shiftUrgencyMidpointSec;
+        private double optimalStandoffMidpointM;
+        private double optimalStandoffSigmaM;
 
         public Builder(PolicyWeights base) {
             this.climbBase15 = base.climbBase15;
@@ -397,6 +415,11 @@ public record PolicyWeights(
             this.clusterDistanceFloor = base.clusterDistanceFloor;
             this.harvestHeadingAlignScale = base.harvestHeadingAlignScale;
             this.harvestReturnVectorBonus = base.harvestReturnVectorBonus;
+            this.scoreHubPayloadExponent = base.scoreHubPayloadExponent;
+            this.shiftUrgencySigmoidSteepness = base.shiftUrgencySigmoidSteepness;
+            this.shiftUrgencyMidpointSec = base.shiftUrgencyMidpointSec;
+            this.optimalStandoffMidpointM = base.optimalStandoffMidpointM;
+            this.optimalStandoffSigmaM = base.optimalStandoffSigmaM;
         }
 
         public void setField(String key, String valStr) {
@@ -467,6 +490,11 @@ public record PolicyWeights(
                     case "clusterDistanceFloor" -> this.clusterDistanceFloor = Double.parseDouble(valStr);
                     case "harvestHeadingAlignScale" -> this.harvestHeadingAlignScale = Double.parseDouble(valStr);
                     case "harvestReturnVectorBonus" -> this.harvestReturnVectorBonus = Double.parseDouble(valStr);
+                    case "scoreHubPayloadExponent" -> this.scoreHubPayloadExponent = Double.parseDouble(valStr);
+                    case "shiftUrgencySigmoidSteepness" -> this.shiftUrgencySigmoidSteepness = Double.parseDouble(valStr);
+                    case "shiftUrgencyMidpointSec" -> this.shiftUrgencyMidpointSec = Double.parseDouble(valStr);
+                    case "optimalStandoffMidpointM" -> this.optimalStandoffMidpointM = Double.parseDouble(valStr);
+                    case "optimalStandoffSigmaM" -> this.optimalStandoffSigmaM = Double.parseDouble(valStr);
                     default -> throw new IllegalArgumentException("Unknown policy weight key: '" + key + "'");
                 }
             } catch (NumberFormatException e) {
@@ -477,7 +505,12 @@ public record PolicyWeights(
         public Builder scoreHubBase(double val) { this.scoreHubBase = val; return this; }
         public Builder scoreHubScale(double val) { this.scoreHubScale = val; return this; }
         public Builder vacuumActiveBase(double val) { this.vacuumActiveBase = val; return this; }
+        public Builder vacuumInactiveBase(double val) { this.vacuumInactiveBase = val; return this; }
         public Builder stageStandoffBase(double val) { this.stageStandoffBase = val; return this; }
+        public Builder sweepAllianceZoneActive(double val) { this.sweepAllianceZoneActive = val; return this; }
+        public Builder laneDenialActiveUtility(double val) { this.laneDenialActiveUtility = val; return this; }
+        public Builder shadowMidlineBaseUtility(double val) { this.shadowMidlineBaseUtility = val; return this; }
+        public Builder interceptBaseUtility(double val) { this.interceptBaseUtility = val; return this; }
         public Builder poachOpponentZoneUtility(double val) { this.poachOpponentZoneUtility = val; return this; }
         public Builder commitmentMargin(double val) { this.commitmentMargin = val; return this; }
         public Builder commitmentDecisiveMargin(double val) { this.commitmentDecisiveMargin = val; return this; }
@@ -491,6 +524,11 @@ public record PolicyWeights(
         public Builder clusterDistanceFloor(double val) { this.clusterDistanceFloor = val; return this; }
         public Builder harvestHeadingAlignScale(double val) { this.harvestHeadingAlignScale = val; return this; }
         public Builder harvestReturnVectorBonus(double val) { this.harvestReturnVectorBonus = val; return this; }
+        public Builder scoreHubPayloadExponent(double val) { this.scoreHubPayloadExponent = val; return this; }
+        public Builder shiftUrgencySigmoidSteepness(double val) { this.shiftUrgencySigmoidSteepness = val; return this; }
+        public Builder shiftUrgencyMidpointSec(double val) { this.shiftUrgencyMidpointSec = val; return this; }
+        public Builder optimalStandoffMidpointM(double val) { this.optimalStandoffMidpointM = val; return this; }
+        public Builder optimalStandoffSigmaM(double val) { this.optimalStandoffSigmaM = val; return this; }
 
         public PolicyWeights build() {
             return new PolicyWeights(
@@ -512,7 +550,9 @@ public record PolicyWeights(
                     commitmentMargin, commitmentDecisiveMargin, commitmentMinHoldSec,
                     inertiaInitialBoost, inertiaTimeConstantSec, inertiaResidualMargin,
                     clusterNeighborhoodRadius, clusterKernelSigma, clusterDensityExponent, clusterDistanceFloor,
-                    harvestHeadingAlignScale, harvestReturnVectorBonus
+                    harvestHeadingAlignScale, harvestReturnVectorBonus,
+                    scoreHubPayloadExponent, shiftUrgencySigmoidSteepness, shiftUrgencyMidpointSec,
+                    optimalStandoffMidpointM, optimalStandoffSigmaM
             );
         }
 

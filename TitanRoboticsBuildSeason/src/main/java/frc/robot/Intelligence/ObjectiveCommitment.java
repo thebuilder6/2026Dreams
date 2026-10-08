@@ -82,26 +82,40 @@ public final class ObjectiveCommitment {
     }
 
     /**
-     * Latches {@code candidate} against the current commitment using explicit {@link PolicyWeights}.
+     * Wall-clock entry point: delegates to {@link #applyAt} with the FPGA
+     * timestamp, preserving the production path exactly.
      */
     public StrategicObjective apply(StrategicObjective candidate,
             Map<StrategicObjective, Double> utilities,
             PolicyWeights weights) {
+        return applyAt(candidate, utilities, weights, Timer.getFPGATimestamp());
+    }
+
+    /**
+     * Sim-time entry point for fast-forward runners, whose wall clock does not
+     * advance between ticks. Pure function of {@code nowSeconds}: identical
+     * rules to the wall-clock path, driven by the caller's match clock.
+     *
+     * @param nowSeconds caller-owned time base (sim elapsed, seconds)
+     */
+    public StrategicObjective applyAt(StrategicObjective candidate,
+            Map<StrategicObjective, Double> utilities,
+            PolicyWeights weights,
+            double nowSeconds) {
         if (candidate == null) {
             return committed;
         }
-        double now = Timer.getFPGATimestamp();
         if (committed == null) {
             committed = candidate;
-            sinceSeconds = now;
+            sinceSeconds = nowSeconds;
             return committed;
         }
 
         StrategicObjective resolved = JevDecisionEngine.resolveCommittedObjective(
-                candidate, utilities, committed, sinceSeconds, now, weights);
+                candidate, utilities, committed, sinceSeconds, nowSeconds, weights);
         if (resolved != committed) {
             committed = resolved;
-            sinceSeconds = now;
+            sinceSeconds = nowSeconds;
         }
         return committed;
     }

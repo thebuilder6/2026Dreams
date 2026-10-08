@@ -2,7 +2,7 @@
 title: Score Rig — Measured Results
 audience: [human, ai]
 owner: leads
-last_verified: 2026-10-06
+last_verified: 2026-10-08
 status: authoritative
 ---
 
@@ -176,9 +176,13 @@ produce a confident wrong answer.
 
 ## 7. Verdict and next step
 
-Do not start the `PolicyWeights` extraction yet. Parameterising ~25 utility weights is
-only worth doing once a measurement can detect the effect; today a sweep would mostly
-be measuring which run hit the collapse.
+The `PolicyWeights` extraction this section used to gate on is **done** (Oct 07 record +
+Oct 08 curve-shape completion: payload exponent, shift-urgency logistic, standoff
+midpoint/sigma plumbed through engine defaults, dashboard tunables, and the optimizer
+`curves` subspace — decision-cards report byte-identical pre/post, so defaults preserve
+the legacy policy). What still blocks calibration is unchanged: the Tier-1 cards gate
+(~53/95 PASS, 0 asymmetry — human review of the 29+ MISMATCH rows owns the fix, not code)
+and the fitness-validity blockers above (bimodal collapse + unseeded physics).
 
 Two honest paths:
 

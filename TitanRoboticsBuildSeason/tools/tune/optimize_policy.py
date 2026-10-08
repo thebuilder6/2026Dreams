@@ -12,9 +12,18 @@ by the 4-tier fitness evaluation pipeline:
   Tier 3: Paired δ-Fitness evaluation with 95% CI lower bound (mean_delta - 1.96 * SE)
 
 Usage:
-  python tools/tune/optimize_policy.py --subspace inertia --n-trials 10 --tier1-only
-  python tools/tune/optimize_policy.py --subspace scent --n-trials 15 --tier1-only
+  python tools/tune/optimize_policy.py --subspace macro --n-trials 10 --tier1-only
   python tools/tune/optimize_policy.py --subspace all --n-trials 20 --tier1-only
+  # Full pipeline (T1 cards -> T2 sweep -> T3 paired fitness). Baseline rows must
+  # come from a default-weights sweep over the SAME seeds; collect with e.g.:
+  #   powershell -File tools/score/sweep.ps1 -Seeds 7,11,42 -OutFile results/baseline.jsonl -Fresh
+  # then pass --baseline-jsonl + --seeds:
+  python tools/tune/optimize_policy.py --subspace macro --n-trials 10 \
+      --seeds 7,11,42 --baseline-jsonl results/baseline.jsonl
+  # NOTE: --tier1-only only sees the `macro` (+`all`) subspace. Inertia keys act
+  # through the commitment latch (null in cards) and scent keys act through fuel
+  # targeting (not the verdict), so inertia/scent trials are a flat landscape
+  # under Tier 1 — run those subspaces through the full pipeline instead.
 """
 
 import argparse
@@ -38,6 +47,7 @@ from tools.tune.fitness import (
     calculate_single_match_fitness,
     evaluate_paired_fitness,
 )
+from tools.tune.robust_fitness import evaluate_paired_robust
 
 # ---------------------------------------------------------------------------
 # Tier 0: Frozen Parameters Guardrail
@@ -80,7 +90,21 @@ SUBSPACE_DEFINITIONS: Dict[str, Dict[str, Tuple[float, float, float]]] = {
         "sweepAllianceZoneActive": (0.70, 0.99, 0.96),
         "laneDenialActiveUtility": (0.60, 0.95, 0.86),
     },
+    "curves": {
+        "scoreHubPayloadExponent": (1.00, 3.00, 1.00),
+        "shiftUrgencySigmoidSteepness": (2.00, 10.00, 8.00),
+        "shiftUrgencyMidpointSec": (2.00, 6.00, 3.50),
+        "optimalStandoffMidpointM": (2.20, 3.40, 2.80),
+        "optimalStandoffSigmaM": (0.30, 0.80, 0.50),
+    },
 }
+
+# Subspaces whose keys can move a Tier-1 cards verdict (they enter the utility
+# race directly). Inertia keys act only through the commitment latch — which
+# DecisionCards passes as null — and scent keys act only through fuel-target
+# selection, which the PASS/MISMATCH verdict never reads. Tier-1 trials over
+# those subspaces are a flat landscape by construction, not by measurement.
+TIER1_VISIBLE_SUBSPACES = {"macro", "curves", "all"}
 
 def format_weights_spec(param_dict: Dict[str, float]) -> str:
     """Formats a parameter dictionary into a comma-delimited PolicyWeights string."""
@@ -183,7 +207,15 @@ def run_tier2_headless_sweep(
     out_jsonl: Path,
     timeout_sec: float = 300.0
 ) -> Tuple[bool, List[Dict[str, Any]], str]:
-    """Runs sweep.ps1 under -Weights and parses JSONL output."""
+    """Runs sweep.ps1 under -Weights and parses JSONL output.
+
+    Note: sweep.ps1 forwards -Weights as -Dfrc.jev.weights, the key
+    PolicyWeights.loadFromSystemProperties() actually reads. Do NOT pass
+    -Force here: the sweep's dashboard pre-flight must stay armed, otherwise a
+    live dashboard silently shares each worker's NT namespace (see sweep.ps1).
+    The sweep self-acquires the `sweep` lock; callers must not hold it already
+    via with-lock (that would deadlock on Enter-Lock).
+    """
     sweep_script = project_root / "tools" / "score" / "sweep.ps1"
     seed_str = ",".join(str(s) for s in seeds)
 
@@ -194,8 +226,7 @@ def run_tier2_headless_sweep(
         "-Variants", "candidate",
         "-Weights", weights_spec,
         "-OutFile", str(out_jsonl),
-        "-Fresh",
-        "-Force"
+        "-Fresh"
     ]
 
     try:
@@ -235,7 +266,8 @@ def evaluate_candidate(
     project_root: Path,
     tier1_only: bool = True,
     baseline_rows: Optional[List[Dict[str, Any]]] = None,
-    seeds: Optional[List[int]] = None
+    seeds: Optional[List[int]] = None,
+    fitness_kind: str = "classic",
 ) -> Tuple[float, Dict[str, Any]]:
     """
     Evaluates candidate parameters through the multi-tier fitness pipeline.
@@ -286,12 +318,16 @@ def evaluate_candidate(
     if not sweep_ok or not trial_rows:
         return -9999.0, {"tier": 2, "status": "SWEEP_FAILED", "message": sweep_msg}
 
-    # Evaluate paired δ-Fitness
-    conservative_fit, stats = evaluate_paired_fitness(trial_rows, baseline_rows)
+    # Evaluate paired δ-Fitness (classic mean-1.96SE, or robust median-bootstrap)
+    if fitness_kind == "robust":
+        conservative_fit, stats = evaluate_paired_robust(trial_rows, baseline_rows)
+    else:
+        conservative_fit, stats = evaluate_paired_fitness(trial_rows, baseline_rows)
 
     return conservative_fit, {
         "tier": 3,
         "status": "PAIRED_FITNESS_EVALUATED",
+        "fitness_kind": fitness_kind,
         "conservative_fitness": conservative_fit,
         "stats": stats,
         "spec": weights_spec
@@ -306,12 +342,21 @@ def run_optimization(
     n_trials: int,
     tier1_only: bool,
     project_root: Path,
-    out_dir: Path
+    out_dir: Path,
+    seeds: Optional[List[int]] = None,
+    baseline_rows: Optional[List[Dict[str, Any]]] = None,
+    fitness_kind: str = "classic",
 ):
     print(f"=== Jev Policy Optimization Engine ===")
     print(f"Subspace: {subspace_name}")
     print(f"Trials: {n_trials}")
     print(f"Tier 1 Only: {tier1_only}")
+    if tier1_only and subspace_name not in TIER1_VISIBLE_SUBSPACES:
+        print(f"WARNING: subspace '{subspace_name}' cannot move a Tier-1 cards "
+              f"verdict (inertia needs the commitment latch, scent needs fuel "
+              f"targeting) — every trial will score identically. Use the full "
+              f"pipeline (--seeds + --baseline-jsonl) for this subspace.")
+    print(f"Fitness: {fitness_kind}")
     print(f"Project Root: {project_root}")
     print("========================================")
 
@@ -348,7 +393,11 @@ def run_optimization(
             for param, (lo, hi, default_val) in param_bounds.items():
                 candidate[param] = trial.suggest_float(param, lo, hi)
 
-            score, meta = evaluate_candidate(candidate, project_root, tier1_only=tier1_only)
+            score, meta = evaluate_candidate(
+                candidate, project_root,
+                tier1_only=tier1_only,
+                baseline_rows=baseline_rows, seeds=seeds,
+                fitness_kind=fitness_kind)
             history.append({"trial": trial.number, "params": candidate, "score": score, "meta": meta})
 
             print(f"[trial {trial.number:2d}] score: {score:8.2f} | {meta.get('status')} | {meta.get('summary', '')}")
@@ -356,13 +405,21 @@ def run_optimization(
 
         study.optimize(objective, n_trials=n_trials)
         best_score = study.best_value
-        best_params = study.best_params
+        best_params = dict(study.best_params)
+        best_entry = next(
+            (h for h in history if h.get("trial") == study.best_trial.number),
+            None)
+        best_meta = best_entry.get("meta", {}) if best_entry else {}
     else:
         print("[optimizer] Optuna not found; using Adaptive Search with Tier 1 pruning")
 
         # Trial 0 is always the baseline default
         default_candidate = {k: v[2] for k, v in param_bounds.items()}
-        score0, meta0 = evaluate_candidate(default_candidate, project_root, tier1_only=tier1_only)
+        score0, meta0 = evaluate_candidate(
+            default_candidate, project_root,
+            tier1_only=tier1_only,
+            baseline_rows=baseline_rows, seeds=seeds,
+            fitness_kind=fitness_kind)
         best_score = score0
         best_params = default_candidate
         best_meta = meta0
@@ -384,7 +441,11 @@ def run_optimization(
                     val = random.uniform(lo, hi)
                 candidate[param] = val
 
-            score, meta = evaluate_candidate(candidate, project_root, tier1_only=tier1_only)
+            score, meta = evaluate_candidate(
+                candidate, project_root,
+                tier1_only=tier1_only,
+                baseline_rows=baseline_rows, seeds=seeds,
+                fitness_kind=fitness_kind)
             history.append({"trial": t, "params": candidate, "score": score, "meta": meta})
 
             if score > best_score:
@@ -404,6 +465,8 @@ def run_optimization(
     results_summary = {
         "subspace": subspace_name,
         "n_trials": n_trials,
+        "tier1_only": tier1_only,
+        "fitness_kind": fitness_kind,
         "best_score": best_score,
         "best_params": best_params,
         "best_spec": best_spec,
@@ -432,23 +495,58 @@ def run_optimization(
 # ---------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(description="Jev Policy & Utility Optimization Harness")
-    parser.add_argument("--subspace", choices=["inertia", "scent", "macro", "all"], default="inertia",
-                        help="Parameter subspace to tune")
+    parser.add_argument("--subspace", choices=["inertia", "scent", "macro", "curves", "all"],
+                        default="inertia", help="Parameter subspace to tune")
     parser.add_argument("--n-trials", type=int, default=10, help="Number of trials to run")
-    parser.add_argument("--tier1-only", action="store_true", default=True,
+    parser.add_argument("--tier1-only", action="store_true", default=False,
                         help="Only evaluate Tier 1 Decision Cards gate (<0.5 s)")
+    parser.add_argument("--seeds", type=str, default="",
+                        help="Comma-separated headless seeds for T2 sweeps (required unless --tier1-only)")
+    parser.add_argument("--baseline-jsonl", type=str, default="",
+                        help="Baseline (default-weights) sweep JSONL over the same --seeds for T3 paired fitness")
+    parser.add_argument("--fitness", choices=["classic", "robust"], default="classic",
+                        help="T3 paired-fitness evaluator: classic mean-1.96SE (default) "
+                             "or robust median-bootstrap from tools/tune/robust_fitness.py")
     parser.add_argument("--out-dir", type=str, default="results/tuning",
                         help="Output directory for study results")
 
     args = parser.parse_args()
     project_root = _PROJECT_ROOT
 
+    seeds: Optional[List[int]] = None
+    if args.seeds.strip():
+        seeds = [int(s.strip()) for s in args.seeds.split(",") if s.strip()]
+        if not seeds:
+            parser.error("--seeds was given but no valid seed integers parsed")
+
+    baseline_rows: Optional[List[Dict[str, Any]]] = None
+    if args.baseline_jsonl.strip():
+        baseline_path = Path(args.baseline_jsonl)
+        if not baseline_path.is_absolute():
+            baseline_path = project_root / baseline_path
+        baseline_rows = []
+        with open(baseline_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    baseline_rows.append(json.loads(line))
+        if not baseline_rows:
+            parser.error(f"--baseline-jsonl {baseline_path} contained no rows")
+
+    if not args.tier1_only and (not seeds or not baseline_rows):
+        parser.error("Full-pipeline mode requires --seeds and --baseline-jsonl "
+                     "(baseline must be a default-weights sweep over the same seeds); "
+                     "or pass --tier1-only for cards-only pruning")
+
     run_optimization(
         subspace_name=args.subspace,
         n_trials=args.n_trials,
         tier1_only=args.tier1_only,
         project_root=project_root,
-        out_dir=project_root / args.out_dir
+        out_dir=project_root / args.out_dir,
+        seeds=seeds,
+        baseline_rows=baseline_rows,
+        fitness_kind=args.fitness,
     )
 
 if __name__ == "__main__":

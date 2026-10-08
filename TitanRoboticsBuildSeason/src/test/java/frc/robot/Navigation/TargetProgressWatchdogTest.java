@@ -386,6 +386,61 @@ class TargetProgressWatchdogTest {
                 "churning target must not reset the suppressed-pinned fuse");
     }
 
+    /**
+     * Incident replay: seed 101 replica 1 (2026-09-28 archive), Blue Ally1
+     * (ADAPTIVE) sat at (3.81, 7.30) for 37.66 s of contiguous stall under
+     * VACUUM_MIDFIELD while its tour target churned among midfield pieces and
+     * the old distance-only window reset on every change. Four
+     * TARGET_UNREACHABLE fires moved nothing — no peers were near, so no
+     * contact recovery was ever active to blame. Current code must bound this
+     * stall: first rescue within one give-up window, escalation to blacklisting
+     * within a few windows.
+     */
+    @Test
+    void seed101WallBandChurnIsBoundedByRescueAndEscalation() {
+        Pose2d pinned = new Pose2d(3.81, 7.30, Rotation2d.fromDegrees(0));
+        ChassisSpeeds pushing = new ChassisSpeeds(1.5, 0.0, 0.0);
+        ChassisSpeeds notMoving = new ChassisSpeeds();
+        // Logged tour targets, retargeted every ~1 s in the replay.
+        Translation2d[] tourTargets = {
+                new Translation2d(4.59, 7.31),
+                new Translation2d(6.96, 4.98),
+                new Translation2d(8.05, 7.00),
+                new Translation2d(9.70, 3.85),
+                new Translation2d(6.14, 7.36),
+        };
+
+        double firstRescueSec = -1.0;
+        double blacklistSec = -1.0;
+        int steps = (int) (30.0 / DT);
+        for (int i = 0; i < steps; i++) {
+            Translation2d spot = tourTargets[(i / 50) % tourTargets.length];
+            Pose2d shifting = new Pose2d(spot.getX(), spot.getY(), Rotation2d.fromDegrees(0));
+            // suppress=false: no peers were near in the replay, so no contact
+            // recovery ever gated the progress timeouts.
+            TargetProgressWatchdog.Result r =
+                    watchdog.update(pinned, pushing, notMoving, shifting, false, DT);
+            double t = (i + 1) * DT;
+            if (r.recovering() && firstRescueSec < 0.0) {
+                firstRescueSec = t;
+                assertTrue(r.escapeVector().getNorm() > 0.5,
+                        "rescue must command real motion");
+                assertFalse(TargetProgressWatchdog.headsIntoWall(pinned, r.escapeVector()),
+                        "wall-band escape must not drive into the wall it is against");
+            }
+            if (blacklistSec < 0.0 && watchdog.blockedPoints().size() > 0) {
+                blacklistSec = t;
+            }
+        }
+
+        assertTrue(firstRescueSec > 0.0
+                        && firstRescueSec <= TargetProgressWatchdog.GIVEUP_SEC + 1.0,
+                "first rescue must fire within one give-up window, got " + firstRescueSec);
+        assertTrue(blacklistSec > 0.0 && blacklistSec <= 15.0,
+                "repeated failed rescues must escalate to blacklisting (bounding the "
+                        + "37.66 s incident), got " + blacklistSec);
+    }
+
     @Test
     void leavingSuppressionResetsFuse() {
         // 4 s suppressed-pinned (under the 9 s fuse) then unsuppress: the

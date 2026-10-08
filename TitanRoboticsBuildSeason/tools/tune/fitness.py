@@ -18,7 +18,7 @@ import statistics
 # Guardrail constants — mirrored from compare.py / sweep.ps1
 # ---------------------------------------------------------------------------
 GATE_MAX_LOOP_OVERRUNS = 8
-GATE_MAX_ROBOT_PERIODIC_MS = 35.0
+GATE_MAX_ROBOT_PERIODIC_MS = 60.0  # mirrored from sweep.ps1 -MaxRobotPeriodicMs / compare.py
 GATE_MAX_STALL_SEC = 6.0
 GATE_MAX_CONSEC_RECOVERIES = 3
 GATE_DEFENSIVE_PATH_M = 25.0

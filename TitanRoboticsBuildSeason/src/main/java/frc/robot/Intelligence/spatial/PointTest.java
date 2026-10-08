@@ -69,4 +69,35 @@ public interface PointTest {
             return Math.max(0.0, Math.cos(angleDiffRad));
         };
     }
+
+    /**
+     * Standoff-distance test scored through a Gaussian bell over raw metres:
+     * 1.0 at {@code midpointM}, falling with {@code sigmaM}. Soft score only, never a veto.
+     * Raw metres (not normalized) because the plan's bounds are in metres and
+     * {@link ResponseCurve#calculate} clamps its input to [0, 1].
+     */
+    static PointTest standoffDistance(
+            edu.wpi.first.math.geometry.Translation2d target, double midpointM, double sigmaM) {
+        return (candidate, context) -> {
+            if (candidate == null || target == null) {
+                return 0.0;
+            }
+            double dist = candidate.getTranslation().getDistance(target);
+            double s = (sigmaM > 1e-6) ? sigmaM : 0.5;
+            double diff = dist - midpointM;
+            return Math.exp(-(diff * diff) / (2.0 * s * s));
+        };
+    }
+
+    /**
+     * Hub-shell exclusion: hard veto (0.0) for candidates inside {@code shellM} of the hub.
+     */
+    static PointTest hubShellExclusion(edu.wpi.first.math.geometry.Translation2d hub, double shellM) {
+        return (candidate, context) -> {
+            if (candidate == null || hub == null) {
+                return 0.0;
+            }
+            return (candidate.getTranslation().getDistance(hub) < shellM) ? 0.0 : 1.0;
+        };
+    }
 }

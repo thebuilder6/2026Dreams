@@ -58,6 +58,110 @@ class PolicyWeightsTest {
         assertEquals(0.40, def.clusterDistanceFloor(), 1e-9);
         assertEquals(0.30, def.harvestHeadingAlignScale(), 1e-9);
         assertEquals(0.35, def.harvestReturnVectorBonus(), 1e-9);
+
+        // IAUS Consideration Curve Shapes (plan §4)
+        assertEquals(1.0, def.scoreHubPayloadExponent(), 1e-9);
+        assertEquals(8.0, def.shiftUrgencySigmoidSteepness(), 1e-9);
+        assertEquals(3.5, def.shiftUrgencyMidpointSec(), 1e-9);
+        assertEquals(2.8, def.optimalStandoffMidpointM(), 1e-9);
+        assertEquals(0.5, def.optimalStandoffSigmaM(), 1e-9);
+    }
+
+    @Test
+    void testCurveShapeOverrides() {
+        PolicyWeights custom = PolicyWeights.fromString(
+                "scoreHubPayloadExponent=1.80, shiftUrgencySigmoidSteepness=5.0, shiftUrgencyMidpointSec=4.0,"
+                        + " optimalStandoffMidpointM=3.0, optimalStandoffSigmaM=0.6");
+        assertEquals(1.80, custom.scoreHubPayloadExponent(), 1e-9);
+        assertEquals(5.0, custom.shiftUrgencySigmoidSteepness(), 1e-9);
+        assertEquals(4.0, custom.shiftUrgencyMidpointSec(), 1e-9);
+        assertEquals(3.0, custom.optimalStandoffMidpointM(), 1e-9);
+        assertEquals(0.6, custom.optimalStandoffSigmaM(), 1e-9);
+        // Unmodified retain default
+        assertEquals(PolicyWeights.DEFAULT.scoreHubScale(), custom.scoreHubScale(), 1e-9);
+        assertEquals(PolicyWeights.DEFAULT.stageShiftWindowSec(), custom.stageShiftWindowSec(), 1e-9);
+    }
+
+    @Test
+    void testLegacy53ArgConstructorDefaultsCurveShapes() {
+        PolicyWeights legacy = new PolicyWeights(
+                0.99, 0.01, 0.85, 0.13,
+                0.72, 0.26, 0.03, 0.99, 20.0, 16, 4, 4.0, 4.5,
+                0.80, 0.99, 0.95, 3.5, 18,
+                0.88, 0.10, 0.82, 0.14, 18, 6, 0.35,
+                0.86, 0.10,
+                0.96, 0.90, 0.08,
+                0.78, 6.0, 20,
+                0.87, 6.0, 16,
+                0.94, 0.86, 3.6, 6,
+                0.86, 6.5, 0.65, 0.75, 0.91, 0.89,
+                1.15, 1.10, 0.99, 0.98, 0.98, 0.95, 0.85);
+        assertEquals(1.0, legacy.scoreHubPayloadExponent(), 1e-9);
+        assertEquals(8.0, legacy.shiftUrgencySigmoidSteepness(), 1e-9);
+        assertEquals(3.5, legacy.shiftUrgencyMidpointSec(), 1e-9);
+        assertEquals(2.8, legacy.optimalStandoffMidpointM(), 1e-9);
+        assertEquals(0.5, legacy.optimalStandoffSigmaM(), 1e-9);
+    }
+
+    @Test
+    void testPayloadExponentShapesScoreUtility() {
+        JevDecisionEngine engine = JevDecisionEngine.getInstance();
+        WorldState world = new WorldState(
+                new Pose2d(9.0, 4.0, new Rotation2d()),
+                new ChassisSpeeds(),
+                18, // heldFuelCount: above the 16 teleop threshold, loadRatio 18/20 = 0.9 out of range
+                new Pose2d(10.0, 4.0, new Rotation2d()),
+                new ChassisSpeeds(),
+                100.0, // matchTimeRemaining
+                true, // isAllianceHubActive
+                false, // isOpponentHubActive
+                20.0, // timeUntilHubShift
+                false, // isRedAlliance
+                false // isAutonomous
+        );
+        Map<StrategicObjective, Double> linear = engine.evaluateUtilityScores(
+                world, Collections.emptySet(), ObservedKnowledge.selfOnly(),
+                Archetype.AUTONOMOUS_CYCLER, PolicyWeights.DEFAULT);
+        PolicyWeights convex = PolicyWeights.DEFAULT.toBuilder().scoreHubPayloadExponent(1.8).build();
+        Map<StrategicObjective, Double> shaped = engine.evaluateUtilityScores(
+                world, Collections.emptySet(), ObservedKnowledge.selfOnly(),
+                Archetype.AUTONOMOUS_CYCLER, convex);
+        // loadRatio 0.9: linear base 0.72+0.26*0.9=0.954; convex uses pow(0.9,1.8).
+        assertEquals(0.954, linear.get(StrategicObjective.CYCLE_SCORE_HUB), 1e-9);
+        assertEquals(0.72 + 0.26 * Math.pow(0.9, 1.8), shaped.get(StrategicObjective.CYCLE_SCORE_HUB), 1e-9);
+    }
+
+    @Test
+    void testShiftUrgencyLogisticMatchesLegacyStepOffWindow() {
+        JevDecisionEngine engine = JevDecisionEngine.getInstance();
+        WorldState midShift = new WorldState(
+                new Pose2d(3.0, 4.0, new Rotation2d()),
+                new ChassisSpeeds(),
+                20, new Pose2d(10.0, 4.0, new Rotation2d()), new ChassisSpeeds(),
+                100.0, false, true, 15.0, false, false);
+        WorldState imminent = new WorldState(
+                new Pose2d(3.0, 4.0, new Rotation2d()),
+                new ChassisSpeeds(),
+                20, new Pose2d(10.0, 4.0, new Rotation2d()), new ChassisSpeeds(),
+                100.0, false, true, 1.0, false, false);
+        WorldState noFlip = new WorldState(
+                new Pose2d(3.0, 4.0, new Rotation2d()),
+                new ChassisSpeeds(),
+                20, new Pose2d(10.0, 4.0, new Rotation2d()), new ChassisSpeeds(),
+                10.0, false, true, 0.0, false, false);
+        Map<StrategicObjective, Double> midScores = engine.evaluateUtilityScores(
+                midShift, Collections.emptySet(), ObservedKnowledge.selfOnly(),
+                Archetype.AUTONOMOUS_CYCLER, PolicyWeights.DEFAULT);
+        Map<StrategicObjective, Double> imminentScores = engine.evaluateUtilityScores(
+                imminent, Collections.emptySet(), ObservedKnowledge.selfOnly(),
+                Archetype.AUTONOMOUS_CYCLER, PolicyWeights.DEFAULT);
+        Map<StrategicObjective, Double> noFlipScores = engine.evaluateUtilityScores(
+                noFlip, Collections.emptySet(), ObservedKnowledge.selfOnly(),
+                Archetype.AUTONOMOUS_CYCLER, PolicyWeights.DEFAULT);
+        // Legacy step values preserved: base 0.80 off-window, 0.95 imminent, base when no flip is coming.
+        assertEquals(0.80, midScores.get(StrategicObjective.STAGE_STANDOFF), 1e-6);
+        assertEquals(0.95, imminentScores.get(StrategicObjective.STAGE_STANDOFF), 1e-6);
+        assertEquals(0.80, noFlipScores.get(StrategicObjective.STAGE_STANDOFF), 1e-9);
     }
 
     @Test

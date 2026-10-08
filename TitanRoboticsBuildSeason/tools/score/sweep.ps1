@@ -228,7 +228,7 @@ while ($pending.Count -gt 0) {
       "-Dfrc.headless.variant=$($job.variant)",
       "-Dfrc.headless.replica=$($job.replica)"
     )
-    if ($Weights) { $argList += "-Dfrc.policyWeights=$Weights" }
+    if ($Weights) { $argList += "-Dfrc.jev.weights=$Weights" }
     $argList += @("-cp", "`"$($cfg['classpath'])`"", $cfg['mainClass'])
     $p = Start-Process -FilePath $javaExe -ArgumentList $argList -WorkingDirectory $root `
                        -RedirectStandardOutput $stdout -RedirectStandardError $stderr `

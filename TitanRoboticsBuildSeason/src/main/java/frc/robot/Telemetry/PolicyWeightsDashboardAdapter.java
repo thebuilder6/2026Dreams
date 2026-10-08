@@ -42,6 +42,13 @@ public final class PolicyWeightsDashboardAdapter {
     private static final TunableNumber harvestHeadingAlignScale = new TunableNumber("JevAI/HarvestHeadingAlignScale", PolicyWeights.DEFAULT.harvestHeadingAlignScale());
     private static final TunableNumber harvestReturnVectorBonus = new TunableNumber("JevAI/HarvestReturnVectorBonus", PolicyWeights.DEFAULT.harvestReturnVectorBonus());
 
+    // IAUS Consideration Curve Shapes (plan §4)
+    private static final TunableNumber scoreHubPayloadExponent = new TunableNumber("JevAI/ScoreHubPayloadExponent", PolicyWeights.DEFAULT.scoreHubPayloadExponent());
+    private static final TunableNumber shiftUrgencySigmoidSteepness = new TunableNumber("JevAI/ShiftUrgencySteepness", PolicyWeights.DEFAULT.shiftUrgencySigmoidSteepness());
+    private static final TunableNumber shiftUrgencyMidpointSec = new TunableNumber("JevAI/ShiftUrgencyMidpointSec", PolicyWeights.DEFAULT.shiftUrgencyMidpointSec());
+    private static final TunableNumber optimalStandoffMidpointM = new TunableNumber("JevAI/StandoffMidpointM", PolicyWeights.DEFAULT.optimalStandoffMidpointM());
+    private static final TunableNumber optimalStandoffSigmaM = new TunableNumber("JevAI/StandoffSigmaM", PolicyWeights.DEFAULT.optimalStandoffSigmaM());
+
     private PolicyWeightsDashboardAdapter() {}
 
     /**
@@ -73,7 +80,12 @@ public final class PolicyWeightsDashboardAdapter {
                 || clusterDensityExponent.hasChanged(CALLER_ID)
                 || clusterDistanceFloor.hasChanged(CALLER_ID)
                 || harvestHeadingAlignScale.hasChanged(CALLER_ID)
-                || harvestReturnVectorBonus.hasChanged(CALLER_ID);
+                || harvestReturnVectorBonus.hasChanged(CALLER_ID)
+                || scoreHubPayloadExponent.hasChanged(CALLER_ID)
+                || shiftUrgencySigmoidSteepness.hasChanged(CALLER_ID)
+                || shiftUrgencyMidpointSec.hasChanged(CALLER_ID)
+                || optimalStandoffMidpointM.hasChanged(CALLER_ID)
+                || optimalStandoffSigmaM.hasChanged(CALLER_ID);
 
         if (changed) {
             PolicyWeights updated = PolicyWeights.getActive().toBuilder()
@@ -81,6 +93,11 @@ public final class PolicyWeightsDashboardAdapter {
                     .scoreHubScale(scoreHubScale.get())
                     .stageStandoffBase(stageStandoffBase.get())
                     .vacuumActiveBase(vacuumActiveBase.get())
+                    .vacuumInactiveBase(vacuumInactiveBase.get())
+                    .sweepAllianceZoneActive(sweepAllianceZoneActive.get())
+                    .laneDenialActiveUtility(laneDenialActiveUtility.get())
+                    .shadowMidlineBaseUtility(shadowMidlineBaseUtility.get())
+                    .interceptBaseUtility(interceptBaseUtility.get())
                     .commitmentMargin(commitmentMargin.get())
                     .commitmentDecisiveMargin(commitmentDecisiveMargin.get())
                     .commitmentMinHoldSec(commitmentMinHoldSec.get())
@@ -93,6 +110,11 @@ public final class PolicyWeightsDashboardAdapter {
                     .clusterDistanceFloor(clusterDistanceFloor.get())
                     .harvestHeadingAlignScale(harvestHeadingAlignScale.get())
                     .harvestReturnVectorBonus(harvestReturnVectorBonus.get())
+                    .scoreHubPayloadExponent(scoreHubPayloadExponent.get())
+                    .shiftUrgencySigmoidSteepness(shiftUrgencySigmoidSteepness.get())
+                    .shiftUrgencyMidpointSec(shiftUrgencyMidpointSec.get())
+                    .optimalStandoffMidpointM(optimalStandoffMidpointM.get())
+                    .optimalStandoffSigmaM(optimalStandoffSigmaM.get())
                     .build();
 
             PolicyWeights.setActive(updated);

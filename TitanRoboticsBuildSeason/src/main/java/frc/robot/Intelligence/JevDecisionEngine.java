@@ -479,8 +479,10 @@ public class JevDecisionEngine {
         double loadRatio = (archetype == Archetype.CO_PILOT || inShootingRange)
                 ? 1.0
                 : Math.min(1.0, (double) world.heldFuelCount() / capacityDivisor);
+        // IAUS polynomial payload consideration: exponent 1.0 reproduces the legacy linear load exactly.
+        double shapedLoad = Math.pow(loadRatio, weights.scoreHubPayloadExponent());
         ResponseCurve scoreLoadCurve = ResponseCurve.linear(weights.scoreHubScale(), 0.0, weights.scoreHubBase());
-        double baseScore = scoreLoadCurve.calculate(loadRatio);
+        double baseScore = scoreLoadCurve.calculate(shapedLoad);
 
         if (knowledge.scoreDifferential() < 0) {
             baseScore = Math.min(weights.scoreHubBehindMax(), baseScore + weights.scoreHubBehindBonus());
@@ -497,8 +499,17 @@ public class JevDecisionEngine {
         double targetStage = (archetype == Archetype.CO_PILOT)
                 ? weights.stageShiftImminentCoPilot()
                 : weights.stageShiftImminentNormal();
-        boolean shiftImminent = world.timeUntilHubShift() <= weights.stageShiftWindowSec() && world.timeUntilHubShift() > 0.0;
-        double stageBase = shiftImminent ? targetStage : weights.stageStandoffBase();
+        // IAUS logistic shift-urgency consideration over raw seconds: rises to 1 as the flip
+        // approaches, 0 when no flip is coming (timeUntilHubShift 0.0 is the no-flip sentinel,
+        // never "imminent"). Defaults (k=8, mid=3.5s) reproduce the legacy 3.5 s step to <1e-3
+        // everywhere except a ~0.75 s smoothing band around the midpoint — the plan's §4 tunable.
+        double shiftUrgency = 0.0;
+        if (world.timeUntilHubShift() > 0.0) {
+            shiftUrgency = 1.0 / (1.0 + Math.exp(-weights.shiftUrgencySigmoidSteepness()
+                    * (weights.shiftUrgencyMidpointSec() - world.timeUntilHubShift())));
+        }
+        double stageBase = weights.stageStandoffBase()
+                + (targetStage - weights.stageStandoffBase()) * shiftUrgency;
         ResponseCurve stageCurve = ResponseCurve.linear(0.0, 0.0, stageBase);
         double stageUtility = UtilityAction.evaluateProduct(stageCurve.calculate(1.0), stageShooterFactor, hubInactiveFactor, stageFuelFactor);
         utilities.put(StrategicObjective.STAGE_STANDOFF, stageUtility);
@@ -811,6 +822,22 @@ public class JevDecisionEngine {
             WorldState world, MatchKnowledge knowledge, Archetype archetype, String cloudContext,
             Set<Translation2d> blockedFuel, ObjectiveCommitment commitmentIn,
             FuelTargetMemory fuelTargetMemory, PolicyWeights weights) {
+        return evaluatePolicy(world, knowledge, archetype, cloudContext, blockedFuel,
+                commitmentIn, fuelTargetMemory, weights, Timer.getFPGATimestamp());
+    }
+
+    /**
+     * Sim-time evaluation for fast-forward runners, whose wall clock does not
+     * advance between ticks. Identical to the full overload except the
+     * commitment latch and inertia telemetry read {@code nowSeconds} instead of
+     * the FPGA clock. Production callers must keep the wall-clock overload.
+     *
+     * @param nowSeconds caller-owned time base (sim elapsed, seconds)
+     */
+    public AIActionIntent evaluatePolicy(
+            WorldState world, MatchKnowledge knowledge, Archetype archetype, String cloudContext,
+            Set<Translation2d> blockedFuel, ObjectiveCommitment commitmentIn,
+            FuelTargetMemory fuelTargetMemory, PolicyWeights weights, double nowSeconds) {
         if (weights == null) {
             weights = PolicyWeights.getActive();
         }
@@ -862,7 +889,7 @@ public class JevDecisionEngine {
         // agent) and handed back in via commitmentIn, so the engine keeps its
         // stateless contract and no two agents can share a decision.
         if (commitmentIn != null && frozen == null) {
-            bestObjective = commitmentIn.apply(bestObjective, utilities, weights);
+            bestObjective = commitmentIn.applyAt(bestObjective, utilities, weights, nowSeconds);
         }
         double maxUtility = utilities.getOrDefault(bestObjective, 0.0);
 
@@ -886,7 +913,6 @@ public class JevDecisionEngine {
                 ? cloudClient.getLatestDecision(cloudContext)
                 : null;
         boolean usedCloud = false;
-        double nowSeconds = System.nanoTime() / 1_000_000_000.0;
         if (cloudDecision != null
                 && nowSeconds - cloudDecision.timestamp() >= 0.0
                 && nowSeconds - cloudDecision.timestamp() <= CLOUD_DECISION_FRESHNESS_SEC
@@ -1189,7 +1215,7 @@ public class JevDecisionEngine {
         }
 
         double latencyMs = (System.nanoTime() - startNanos) / 1_000_000.0;
-        double activeInertia = (commitmentIn != null) ? commitmentIn.activeInertia(Timer.getFPGATimestamp()) : 0.0;
+        double activeInertia = (commitmentIn != null) ? commitmentIn.activeInertia(nowSeconds) : 0.0;
         Logger.recordOutput("JevAI/ActiveObjective", bestObjective.name());
         Logger.recordOutput("JevAI/Confidence", maxUtility);
         Logger.recordOutput("JevAI/Rationale", rationale);

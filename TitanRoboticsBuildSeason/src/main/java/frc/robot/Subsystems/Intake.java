@@ -94,10 +94,10 @@ public class Intake implements Subsystem {
     private ArmFeedforward feedforward;
 
     private double currentPosition = 128.0;
-    private double upPosition = Constants.INTAKE_UP_POSITION;
-    private double downPosition = Constants.INTAKE_DOWN_POSITION;
-    private volatile double goal = Constants.INTAKE_UP_POSITION;
-    private volatile double manualPosition = Constants.INTAKE_UP_POSITION;
+    private double upPosition = IntakeConstants.INTAKE_UP_POSITION;
+    private double downPosition = IntakeConstants.INTAKE_DOWN_POSITION;
+    private volatile double goal = IntakeConstants.INTAKE_UP_POSITION;
+    private volatile double manualPosition = IntakeConstants.INTAKE_UP_POSITION;
 
     // Jam detection & Alerts
     private final Debouncer stallDebouncer = new Debouncer(IntakeConstants.STALL_TIME, Debouncer.DebounceType.kRising);
@@ -106,7 +106,7 @@ public class Intake implements Subsystem {
     private final Alert intakeEncoderAlert = new Alert("Intake", "Absolute Encoder Disconnected: Fallback Active",
             AlertType.ERROR);
     private final Alert intakeJamAlert = new Alert("Intake", "Roller Jam Detected: Auto-Clearing", AlertType.WARNING);
-    private double lastValidPosition = Constants.INTAKE_UP_POSITION;
+    private double lastValidPosition = IntakeConstants.INTAKE_UP_POSITION;
     private double lastMotorRotations = 0.0;
 
     // Simulation state lives in IntakeIOSim (sole owner of ArmSim + MapleSim intake).
@@ -132,15 +132,15 @@ public class Intake implements Subsystem {
         this.io = io;
 
         feedforward = new ArmFeedforward(
-                Constants.INTAKE_ARM_KS,
-                Constants.INTAKE_ARM_KG,
-                Constants.INTAKE_ARM_KV,
-                Constants.INTAKE_ARM_KA);
+                IntakeConstants.INTAKE_ARM_KS_VAL,
+                IntakeConstants.INTAKE_ARM_KG_VAL,
+                IntakeConstants.INTAKE_ARM_KV_VAL,
+                IntakeConstants.INTAKE_ARM_KA_VAL);
 
         pivotProfiledPIDController = new ProfiledPIDController(
-                Constants.INTAKE_ARM_KP,
-                Constants.INTAKE_ARM_KI,
-                Constants.INTAKE_ARM_KD,
+                IntakeConstants.INTAKE_ARM_KP_VAL,
+                IntakeConstants.INTAKE_ARM_KI_VAL,
+                IntakeConstants.INTAKE_ARM_KD_VAL,
                 new TrapezoidProfile.Constraints(IntakeConstants.MAX_ARM_VELOCITY, IntakeConstants.MAX_ARM_ACCELERATION));
 
         // Tell the PID controller that 0 and 360 are continuous
@@ -178,8 +178,8 @@ public class Intake implements Subsystem {
         try {
             Pose2d robotPose = SwerveBase.getInstance().getPose();
             boolean inTrench = isPoseInTrenchLowClearanceZone(robotPose);
-            if (inTrench && goal > Constants.INTAKE_HORIZONTAL_POSITION) {
-                goal = Constants.INTAKE_HORIZONTAL_POSITION;
+            if (inTrench && goal > IntakeConstants.INTAKE_HORIZONTAL_POSITION) {
+                goal = IntakeConstants.INTAKE_HORIZONTAL_POSITION;
                 SmartDashboard.putBoolean("Intake/TrenchSafetyClamped", true);
             } else {
                 SmartDashboard.putBoolean("Intake/TrenchSafetyClamped", false);
@@ -193,21 +193,11 @@ public class Intake implements Subsystem {
         double targetVelocityRadians = Math.toRadians(pivotProfiledPIDController.getSetpoint().velocity);
 
         double ffOutput = feedforward.calculate(
-                Math.toRadians(currentPosition - Constants.INTAKE_HORIZONTAL_POSITION),
+                Math.toRadians(currentPosition - IntakeConstants.INTAKE_HORIZONTAL_POSITION),
                 targetVelocityRadians);
 
         armVoltage = pidOutput + ffOutput;
         io.setArmVoltage(armVoltage);
-    }
-
-    /**
-     * Sets the state using a string identifier.
-     *
-     * @deprecated Use canonical {@link #setState(IntakeState)} instead for type safety.
-     */
-    @Deprecated(since = "2026.2", forRemoval = false)
-    public void setState(String stateName) {
-        setState(IntakeState.fromString(stateName));
     }
 
     /**
@@ -240,11 +230,11 @@ public class Intake implements Subsystem {
     public void manualIntakeControl(double manualInput) {
         this.state = IntakeState.MANUAL;
         double normalizedInput = (manualInput + 1.0) / 2.0;
-        double modifiedManualPosition = Constants.INTAKE_DOWN_POSITION
-                + (normalizedInput * (Constants.INTAKE_UP_POSITION - Constants.INTAKE_DOWN_POSITION));
+        double modifiedManualPosition = IntakeConstants.INTAKE_DOWN_POSITION
+                + (normalizedInput * (IntakeConstants.INTAKE_UP_POSITION - IntakeConstants.INTAKE_DOWN_POSITION));
         this.manualPosition = MathUtil.clamp(modifiedManualPosition,
-                Math.min(Constants.INTAKE_DOWN_POSITION, Constants.INTAKE_UP_POSITION),
-                Math.max(Constants.INTAKE_DOWN_POSITION, Constants.INTAKE_UP_POSITION));
+                Math.min(IntakeConstants.INTAKE_DOWN_POSITION, IntakeConstants.INTAKE_UP_POSITION),
+                Math.max(IntakeConstants.INTAKE_DOWN_POSITION, IntakeConstants.INTAKE_UP_POSITION));
     }
 
     /**

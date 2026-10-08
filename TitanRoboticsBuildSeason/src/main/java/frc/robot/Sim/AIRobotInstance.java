@@ -32,6 +32,7 @@ import frc.robot.Intelligence.WorldStateBuilder;
 import frc.robot.Navigation.FieldMap;
 import frc.robot.Subsystems.Intake.IntakeState;
 import frc.robot.Subsystems.intake.IntakeConstants;
+import frc.robot.Subsystems.shooter.ShooterConstants;
 import frc.robot.Subsystems.SwerveBase;
 import org.littletonrobotics.junction.Logger;
 import swervelib.simulation.ironmaple.simulation.IntakeSimulation;
@@ -934,7 +935,7 @@ public class AIRobotInstance {
 
         double distance = botPos.getDistance(compensatedTarget);
         double g = 9.81;
-        double theta = Constants.FIRING_ANGLE;
+        double theta = ShooterConstants.FIRING_ANGLE;
         double h = funnelTarget.getZ() - 0.53;
         double denom = 2.0 * (distance * Math.tan(theta) - h);
         double exitVel = denom > 0.1 ? (distance / Math.cos(theta)) * Math.sqrt(g / denom) : 6.8;

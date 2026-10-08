@@ -92,12 +92,8 @@ public class SysIdManagerTest {
     }
 
     @Test
-    @SuppressWarnings("deprecation")
-    public void testSysIDLegacyWrapperDelegatesSafely() {
-        Shooter shooter = Shooter.getInstance();
-        Intake intake = Intake.getInstance();
-        SwerveBase swerve = SwerveBase.getInstance();
-        SysID legacy = new SysID(shooter, intake, swerve);
-        assertNotNull(legacy);
+    public void testSysIDManagerDirectAccess() {
+        SysIdManager manager = SysIdManager.getInstance();
+        assertNotNull(manager);
     }
 }

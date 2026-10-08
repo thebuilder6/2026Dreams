@@ -22,6 +22,7 @@ import frc.robot.Telemetry.Dashboard;
 import frc.robot.Telemetry.TelemetryKeys;
 import frc.robot.Subsystems.Intake;
 import frc.robot.Subsystems.Intake.IntakeState;
+import frc.robot.Subsystems.intake.IntakeConstants;
 import frc.robot.Subsystems.Shooter;
 import frc.robot.Subsystems.Shooter.ShootingSolution;
 import frc.robot.Subsystems.shooter.ShooterConstants;
@@ -271,10 +272,10 @@ public class Teleop {
             if (opConnected) {
                 int opPOV = operatorController.getPOV();
                 if (opPOV == 0) {
-                    intake.setArmPosition(Constants.INTAKE_UP_POSITION);
+                    intake.setArmPosition(IntakeConstants.INTAKE_UP_POSITION);
                     armDeployed = false;
                 } else if (opPOV == 180) {
-                    intake.setArmPosition(Constants.INTAKE_DOWN_POSITION);
+                    intake.setArmPosition(IntakeConstants.INTAKE_DOWN_POSITION);
                     armDeployed = true;
                 }
             }

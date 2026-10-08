@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
-import frc.robot.Data.Constants;
+import frc.robot.Subsystems.intake.IntakeConstants;
 import frc.robot.Intelligence.Archetype;
 import frc.robot.Navigation.FieldMap;
 
@@ -77,7 +77,7 @@ class TrainingMatchScenarioTest {
                 () -> robot(Archetype.AUTONOMOUS_CYCLER, FieldMap.FIELD_LENGTH + 0.1, 2.0, 0));
         assertThrows(IllegalArgumentException.class,
                 () -> robot(Archetype.AUTONOMOUS_CYCLER, 1.0, 2.0,
-                        Constants.IntakeConstants.MAX_HELD_BALLS + 1));
+                        IntakeConstants.MAX_HELD_BALLS + 1));
     }
 
     @Test

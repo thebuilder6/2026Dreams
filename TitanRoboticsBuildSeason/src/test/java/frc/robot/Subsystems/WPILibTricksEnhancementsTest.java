@@ -15,7 +15,8 @@ import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import edu.wpi.first.wpilibj.simulation.BatterySim;
 import edu.wpi.first.wpilibj.simulation.RoboRioSim;
 import frc.robot.Data.Constants;
-import frc.robot.Data.Constants.IntakeConstants;
+import frc.robot.Subsystems.intake.IntakeConstants;
+import frc.robot.Subsystems.shooter.ShooterConstants;
 import frc.robot.Subsystems.vision.VisionIOSim;
 
 /**
@@ -364,12 +365,12 @@ public class WPILibTricksEnhancementsTest {
                 Constants.MAX_SPEED_MEASURE.in(edu.wpi.first.units.Units.MetersPerSecond), 1e-4);
         assertEquals(Constants.MAX_ROTATION_SPEED,
                 Constants.MAX_ROTATION_SPEED_MEASURE.in(edu.wpi.first.units.Units.RadiansPerSecond), 1e-4);
-        assertEquals(Constants.KICKER_VOLTAGE,
-                Constants.KICKER_VOLTAGE_MEASURE.in(edu.wpi.first.units.Units.Volts), 1e-4);
-        assertEquals(Constants.INTAKE_UP_POSITION,
-                Constants.INTAKE_UP_POSITION_MEASURE.in(edu.wpi.first.units.Units.Degrees), 1e-4);
-        assertEquals(Constants.INTAKE_DOWN_POSITION,
-                Constants.INTAKE_DOWN_POSITION_MEASURE.in(edu.wpi.first.units.Units.Degrees), 1e-4);
+        assertEquals(ShooterConstants.KICKER_VOLTAGE,
+                ShooterConstants.KICKER_VOLTAGE_MEASURE.in(edu.wpi.first.units.Units.Volts), 1e-4);
+        assertEquals(IntakeConstants.INTAKE_UP_POSITION,
+                IntakeConstants.INTAKE_UP_POSITION_MEASURE.in(edu.wpi.first.units.Units.Degrees), 1e-4);
+        assertEquals(IntakeConstants.INTAKE_DOWN_POSITION,
+                IntakeConstants.INTAKE_DOWN_POSITION_MEASURE.in(edu.wpi.first.units.Units.Degrees), 1e-4);
 
         // Verify Intake public API with Units measures
         Intake intake = Intake.getInstance();

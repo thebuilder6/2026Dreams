@@ -50,9 +50,9 @@ public class IntakeTestingTest {
     @Test
     public void testIntakeArmSetpointsValid() {
         // Confirm Intake constants are consistent
-        assertTrue(frc.robot.Data.Constants.INTAKE_UP_POSITION > frc.robot.Data.Constants.INTAKE_DOWN_POSITION,
+        assertTrue(frc.robot.Subsystems.intake.IntakeConstants.INTAKE_UP_POSITION > frc.robot.Subsystems.intake.IntakeConstants.INTAKE_DOWN_POSITION,
                 "Up position must be greater than down position");
-        assertEquals(250.0, frc.robot.Data.Constants.INTAKE_HORIZONTAL_POSITION, 0.01,
+        assertEquals(250.0, frc.robot.Subsystems.intake.IntakeConstants.INTAKE_HORIZONTAL_POSITION, 0.01,
                 "Horizontal datum position must be 250 degrees");
     }
 }

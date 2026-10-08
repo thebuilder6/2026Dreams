@@ -45,7 +45,7 @@ public class AutonomousTeleopAgent {
     private final Intake intake = Intake.getInstance();
     private final Shooter shooter = Shooter.getInstance();
 
-    private static final int MAX_FUEL_CAPACITY = frc.robot.Data.Constants.IntakeConstants.MAX_HELD_BALLS; // 30
+    private static final int MAX_FUEL_CAPACITY = frc.robot.Subsystems.intake.IntakeConstants.MAX_HELD_BALLS; // 30
     private int estimatedHeldBalls = 0;
 
     // Single owner for shared-authority thresholds (Teleop mirrors these —

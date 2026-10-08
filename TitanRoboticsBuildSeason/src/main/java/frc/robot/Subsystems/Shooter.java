@@ -124,11 +124,11 @@ public class Shooter implements Subsystem {
         this.io = io;
 
         // Feedforward & PID controllers
-        flywheelFeedForwardLeft = new SimpleMotorFeedforward(Constants.FLYWHEEL_KS, Constants.FLYWHEEL_KV, Constants.FLYWHEEL_KA);
-        flywheelFeedForwardRight = new SimpleMotorFeedforward(Constants.FLYWHEEL_KS, Constants.FLYWHEEL_KV, Constants.FLYWHEEL_KA);
+        flywheelFeedForwardLeft = new SimpleMotorFeedforward(ShooterConstants.FLYWHEEL_KS_VAL, ShooterConstants.FLYWHEEL_KV_VAL, ShooterConstants.FLYWHEEL_KA_VAL);
+        flywheelFeedForwardRight = new SimpleMotorFeedforward(ShooterConstants.FLYWHEEL_KS_VAL, ShooterConstants.FLYWHEEL_KV_VAL, ShooterConstants.FLYWHEEL_KA_VAL);
 
-        flywheelPidLeft = new PIDController(Constants.FLYWHEEL_KP, Constants.FLYWHEEL_KI, Constants.FLYWHEEL_KD);
-        flywheelPidRight = new PIDController(Constants.FLYWHEEL_KP, Constants.FLYWHEEL_KI, Constants.FLYWHEEL_KD);
+        flywheelPidLeft = new PIDController(ShooterConstants.FLYWHEEL_KP_VAL, ShooterConstants.FLYWHEEL_KI_VAL, ShooterConstants.FLYWHEEL_KD_VAL);
+        flywheelPidRight = new PIDController(ShooterConstants.FLYWHEEL_KP_VAL, ShooterConstants.FLYWHEEL_KI_VAL, ShooterConstants.FLYWHEEL_KD_VAL);
 
         // Anti-windup clamping on integral term
         flywheelPidLeft.setIntegratorRange(-1.5, 1.5);
@@ -175,11 +175,11 @@ public class Shooter implements Subsystem {
         Translation2d robotTranslation = robotPose.getTranslation();
 
         Translation2d shooterLoc = robotTranslation.plus(
-                new Translation2d(Constants.SHOOTER_OFFSET, 0).rotateBy(robotPose.getRotation()));
+                new Translation2d(ShooterConstants.SHOOTER_OFFSET, 0).rotateBy(robotPose.getRotation()));
         Translation2d distanceToHub = goalLoc.minus(shooterLoc);
         normalDistanceToHub = distanceToHub.getNorm();
 
-        double possibilityDeterminator = normalDistanceToHub * Math.tan(Constants.FIRING_ANGLE) - Constants.HEIGHT_DIFFERENCE;
+        double possibilityDeterminator = normalDistanceToHub * Math.tan(ShooterConstants.FIRING_ANGLE) - ShooterConstants.HEIGHT_DIFFERENCE;
         Rotation2d shootingAngle = distanceToHub.getAngle();
 
         double rpmLeft = leftRpmTable.get(normalDistanceToHub);
@@ -216,7 +216,7 @@ public class Shooter implements Subsystem {
         Translation2d goalLoc = goalLocation().toTranslation2d();
         Translation2d robotTranslation = robotPose.getTranslation();
         Translation2d shooterLoc = robotTranslation.plus(
-                new Translation2d(Constants.SHOOTER_OFFSET, 0).rotateBy(robotPose.getRotation()));
+                new Translation2d(ShooterConstants.SHOOTER_OFFSET, 0).rotateBy(robotPose.getRotation()));
 
         Translation2d vel = new Translation2d(robotVel.vxMetersPerSecond, robotVel.vyMetersPerSecond);
 
@@ -233,7 +233,7 @@ public class Shooter implements Subsystem {
         Translation2d distanceToVirtualGoal = virtualGoal.minus(shooterLoc);
         double effectiveDist = distanceToVirtualGoal.getNorm();
 
-        double possibility = effectiveDist * Math.tan(Constants.FIRING_ANGLE) - Constants.HEIGHT_DIFFERENCE;
+        double possibility = effectiveDist * Math.tan(ShooterConstants.FIRING_ANGLE) - ShooterConstants.HEIGHT_DIFFERENCE;
         Rotation2d compensatedAngle = distanceToVirtualGoal.getAngle();
 
         double rpmLeft = leftRpmTable.get(effectiveDist);
@@ -550,7 +550,7 @@ public class Shooter implements Subsystem {
             case MANUAL_PREP:
                 updateFlywheelVoltages();
                 if (isAtCorrectSpeed() || targetRpmLeft < 0 || targetRpmRight < 0) {
-                    io.setKickerVoltage(Constants.KICKER_VOLTAGE);
+                    io.setKickerVoltage(ShooterConstants.KICKER_VOLTAGE);
                 } else {
                     io.setKickerVoltage(0);
                 }
@@ -560,7 +560,7 @@ public class Shooter implements Subsystem {
             case SHOOTING:
                 updateFlywheelVoltages();
                 if (isAtCorrectSpeed()) {
-                    io.setKickerVoltage(Constants.KICKER_VOLTAGE);
+                    io.setKickerVoltage(ShooterConstants.KICKER_VOLTAGE);
                 } else {
                     io.setKickerVoltage(0);
                 }
@@ -628,8 +628,8 @@ public class Shooter implements Subsystem {
         SmartDashboard.putNumber("Shooter/Left Motor voltage calc", leftShooterVoltageCalc);
 
         // 3D Visualizer for AdvantageScope / Elastic
-        Translation3d shooterRoot = new Translation3d(Constants.SHOOTER_OFFSET, 0, 0.53);
-        Rotation3d shooterRot = new Rotation3d(0, -Constants.FIRING_ANGLE, 0);
+        Translation3d shooterRoot = new Translation3d(ShooterConstants.SHOOTER_OFFSET, 0, 0.53);
+        Rotation3d shooterRot = new Rotation3d(0, -ShooterConstants.FIRING_ANGLE, 0);
         Pose3d shooterPose = new Pose3d(shooterRoot, shooterRot);
 
         SmartDashboard.putNumberArray("Subsystems/Shooter/ShooterPose3d", new double[] {

@@ -500,7 +500,7 @@ public class JevDecisionEngineTest {
     public void testCapacitiesAndCadenceConstants() {
         assertEquals(30, WorldState.CO_PILOT_CAPACITY, "Co-pilot capacity should be 30");
         assertEquals(30, WorldState.DEFAULT_MAX_CAPACITY, "Default max capacity should be 30");
-        assertEquals(0.12, Constants.ShooterConstants.BALL_SPAWN_INTERVAL, 1e-4, "Ball spawn interval should be 0.12s");
+        assertEquals(0.12, frc.robot.Subsystems.shooter.ShooterConstants.BALL_SPAWN_INTERVAL, 1e-4, "Ball spawn interval should be 0.12s");
 
         assertTrue(Archetype.DEFENSE_BULLY.isDefensive());
         assertTrue(Archetype.TACTICAL_DEFENDER.isDefensive());

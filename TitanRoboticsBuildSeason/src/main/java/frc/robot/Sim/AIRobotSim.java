@@ -41,6 +41,7 @@ import frc.robot.Intelligence.JevDecisionEngine;
 import frc.robot.Telemetry.Dashboard;
 import frc.robot.Subsystems.SubsystemManager;
 import frc.robot.Subsystems.intake.IntakeConstants;
+import frc.robot.Subsystems.shooter.ShooterConstants;
 import frc.robot.Subsystems.SwerveBase;
 import frc.robot.Utils.AllianceFlipUtil;
 import org.littletonrobotics.junction.Logger;
@@ -1091,7 +1092,7 @@ public class AIRobotSim implements Subsystem {
 
         double distance = botPos.getDistance(compensatedTarget);
         double g = 9.81;
-        double theta = Constants.FIRING_ANGLE;
+        double theta = ShooterConstants.FIRING_ANGLE;
         double h = funnelTarget.getZ() - 0.53;
         double denom = 2.0 * (distance * Math.tan(theta) - h);
         double exitVel = denom > 0.1 ? (distance / Math.cos(theta)) * Math.sqrt(g / denom) : 6.8;

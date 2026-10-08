@@ -20,7 +20,7 @@ public class IntakeIOSparkMax implements IntakeIO {
     public IntakeIOSparkMax() {
         armMotor = new NeoSparkMaxMotor(PortMap.INTAKE_ARM_MOTOR_ID);
         com.revrobotics.spark.config.SparkMaxConfig armConfig = new com.revrobotics.spark.config.SparkMaxConfig();
-        armConfig.inverted(Constants.INTAKE_ARM_INVERTED);
+        armConfig.inverted(IntakeConstants.INTAKE_ARM_INVERTED);
         armConfig.idleMode(com.revrobotics.spark.config.SparkBaseConfig.IdleMode.kBrake);
         armConfig.smartCurrentLimit(40);
         NeoSparkMaxMotor.optimizeCanBusUtilization(armConfig, true, true);
@@ -28,7 +28,7 @@ public class IntakeIOSparkMax implements IntakeIO {
 
         wheelsMotor = new NeoSparkMaxMotor(PortMap.INTAKE_WHEELS_MOTOR_ID);
         com.revrobotics.spark.config.SparkMaxConfig wheelsConfig = new com.revrobotics.spark.config.SparkMaxConfig();
-        wheelsConfig.inverted(Constants.INTAKE_WHEELS_INVERTED);
+        wheelsConfig.inverted(IntakeConstants.INTAKE_WHEELS_INVERTED);
         wheelsConfig.idleMode(com.revrobotics.spark.config.SparkBaseConfig.IdleMode.kCoast);
         wheelsConfig.smartCurrentLimit((int) IntakeConstants.STALL_CURRENT_LIMIT);
         NeoSparkMaxMotor.optimizeCanBusUtilization(wheelsConfig, false, true);
@@ -49,7 +49,7 @@ public class IntakeIOSparkMax implements IntakeIO {
     public void updateInputs(IntakeIOInputs inputs) {
         inputs.encoderConnected = pivotEncoder.isConnected();
         double unmodified = pivotEncoder.get() * 360.0;
-        inputs.armPositionDeg = MathUtil.inputModulus(Constants.INTAKE_POSITION_OFFSET - unmodified, 0, 360);
+        inputs.armPositionDeg = MathUtil.inputModulus(IntakeConstants.INTAKE_POSITION_OFFSET - unmodified, 0, 360);
         inputs.armVelocityDegPerSec = armMotor.getSpeed() * 6.0; // Estimate
         inputs.armAppliedVolts = armMotor.getAppliedVoltage();
         inputs.armCurrentAmps = armMotor.getOutputCurrent();

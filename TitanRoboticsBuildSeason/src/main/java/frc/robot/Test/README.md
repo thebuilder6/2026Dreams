@@ -2,7 +2,7 @@
 title: Test Mode
 audience: [human, ai]
 owner: test-owner
-last_verified: 2026-10-06
+last_verified: 2026-10-07
 status: authoritative
 ---
 
@@ -52,6 +52,7 @@ Default category is `SYSID_CHARACTERIZATION` (`TestMode.java:20-29`).
    - Motor direction verification
    - Encoder functionality checks
    - CAN communication testing
+   - Rio log-fault health audit (`Power_PDH` live current read, `Storage_Logs` `/U` + internal free-space check, `Memory_Heap` headroom check — all in the CAN & Power step via `Diagnostics.auditSystemHealth()`)
    - Automated test sequences
 
 6. **Vision Testing**

@@ -100,6 +100,14 @@ public class SwerveBase implements Subsystem {
     private double lastPowerBudgetTimestamp = -1.0;
     private double simBatteryVoltage = -1.0;
     private double simTotalCurrent = -1.0;
+    // Guarded PD read state: the 2026-10-07 Rio log showed getTotalCurrent()
+    // throwing CAN: Message not found twice per 20 ms loop (update + log),
+    // each failure printing a full stack trace and feeding loop overruns.
+    private double cachedTotalCurrentAmps = 0.0;
+    private int pdConsecutiveFailures = 0;
+    private double pdRetryAfter = 0.0;
+    private static final int PD_MAX_CONSECUTIVE_FAILURES = 5;
+    private static final double PD_RETRY_SEC = 5.0;
     private final Alert brownoutAlert = new Alert("Power", "Brownout Protection Active: Throttling Drive",
             AlertType.WARNING);
 
@@ -699,6 +707,36 @@ public class SwerveBase implements Subsystem {
         return isVisionDegraded;
     }
 
+    /**
+     * Guarded total-current read. Never throws: on consecutive CAN failures it
+     * backs off for {@code PD_RETRY_SEC} and serves the last-good value, so a
+     * missing/dead PDH degrades to fail-open current sensing (voltage-based
+     * throttling stays live) instead of spamming two stack traces per loop.
+     */
+    double readTotalCurrentSafe() {
+        if (powerDistribution == null || edu.wpi.first.wpilibj.RobotBase.isSimulation()) {
+            return getSimulationCurrentDraw();
+        }
+        if (Timer.getTimestamp() < pdRetryAfter) {
+            return cachedTotalCurrentAmps;
+        }
+        try {
+            double amps = powerDistribution.getTotalCurrent();
+            cachedTotalCurrentAmps = amps;
+            pdConsecutiveFailures = 0;
+            return amps;
+        } catch (Throwable t) {
+            if (++pdConsecutiveFailures >= PD_MAX_CONSECUTIVE_FAILURES) {
+                pdConsecutiveFailures = 0;
+                pdRetryAfter = Timer.getTimestamp() + PD_RETRY_SEC;
+                System.out.println("[SwerveBase] PowerDistribution unreachable (x"
+                        + PD_MAX_CONSECUTIVE_FAILURES + "); pausing current reads for "
+                        + (int) PD_RETRY_SEC + "s");
+            }
+            return cachedTotalCurrentAmps;
+        }
+    }
+
     @Override
     public void update() {
         io.updateInputs(inputs);
@@ -713,8 +751,8 @@ public class SwerveBase implements Subsystem {
                 : RobotController.getBatteryVoltage();
         double totalCurrentAmps = (simTotalCurrent >= 0)
                 ? simTotalCurrent
-                : ((powerDistribution != null && !edu.wpi.first.wpilibj.RobotBase.isSimulation())
-                        ? powerDistribution.getTotalCurrent()
+                : ((!edu.wpi.first.wpilibj.RobotBase.isSimulation())
+                        ? readTotalCurrentSafe()
                         : getSimulationCurrentDraw());
 
         // Incipient brownout risk thresholds:
@@ -822,8 +860,7 @@ public class SwerveBase implements Subsystem {
 
         // PowerDistribution & Dynamic Brownout Telemetry
         SmartDashboard.putNumber("Power/BatteryVoltage", RobotController.getBatteryVoltage());
-        SmartDashboard.putNumber("Power/TotalCurrent",
-                (powerDistribution != null) ? powerDistribution.getTotalCurrent() : getSimulationCurrentDraw());
+        SmartDashboard.putNumber("Power/TotalCurrent", readTotalCurrentSafe());
         SmartDashboard.putNumber("Power/BrownoutSpeedScale", brownoutSpeedScale);
         SmartDashboard.putBoolean("Power/IsBrownoutRisk", brownoutSpeedScale < 0.95);
     }

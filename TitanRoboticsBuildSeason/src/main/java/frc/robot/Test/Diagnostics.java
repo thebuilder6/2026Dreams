@@ -7,6 +7,7 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 import edu.wpi.first.hal.can.CANStatus;
+import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.RobotBase;
 import edu.wpi.first.wpilibj.RobotController;
 import edu.wpi.first.wpilibj.Timer;
@@ -61,6 +62,13 @@ public class Diagnostics implements Subsystem {
     private static final double DIAGNOSTIC_VOLTAGE = 1.5; // Volts for manual single-pulse
     private static final double TEST_DURATION = 1.0; // seconds for single test
 
+    // Pre-flight pass/fail thresholds (single-owned here, not duplicated per step)
+    static final double INTAKE_MIN_MOVEMENT_DEG = 2.0;
+    static final double CAN_UTIL_WARN = 0.70;
+    static final double CAN_UTIL_FAIL = 0.90;
+    static final double VISION_FRESHNESS_SEC = 1.0;
+    static final double VISION_MAX_LATENCY_MS = 500.0;
+
     // ── Pre-Flight Pit Check Steps ───────────────────────────────────────────
     public enum PreFlightStep {
         IDLE("Idle"),
@@ -111,6 +119,9 @@ public class Diagnostics implements Subsystem {
 
     public void resetScorecard() {
         scorecard.put("CAN_Bus", "PENDING");
+        scorecard.put("Power_PDH", "PENDING");
+        scorecard.put("Storage_Logs", "PENDING");
+        scorecard.put("Memory_Heap", "PENDING");
         scorecard.put("Swerve_Drive", "PENDING");
         scorecard.put("Steer_Alignment", "PENDING");
         scorecard.put("Intake", "PENDING");
@@ -163,6 +174,20 @@ public class Diagnostics implements Subsystem {
     public void update() {
         registerTests();
 
+        // Safety: pre-flight + manual jogs are disabled-only on real hardware.
+        // If the robot is enabled mid-sequence (e.g. DS enable during pit check),
+        // abort and stop actuators rather than fighting the enabled loop.
+        if (!RobotBase.isSimulation() && !DriverStation.isDisabled()) {
+            if (preFlightRunning) {
+                cancelPreFlightCheck();
+            }
+            if (isRunning && activeTest != null) {
+                activeTest.motorSetter.accept(0.0);
+                isRunning = false;
+            }
+            return;
+        }
+
         // 1. Process automated Pre-Flight sequence
         if (preFlightRunning) {
             updatePreFlightSequence();
@@ -194,15 +219,25 @@ public class Diagnostics implements Subsystem {
                     double batteryVolts = RobotController.getBatteryVoltage();
                     boolean brownout = RobotController.isBrownedOut();
 
-                    boolean pass = RobotBase.isSimulation() || 
-                            (canStatus.percentBusUtilization < 0.90 && canStatus.busOffCount == 0 && batteryVolts >= 12.0 && !brownout);
-                    
-                    if (pass) {
+                    if (RobotBase.isSimulation()) {
                         scorecard.put("CAN_Bus", "PASS");
+                    } else if (canStatus.busOffCount > 0) {
+                        scorecard.put("CAN_Bus", "FAIL (Bus-Off: " + canStatus.busOffCount + ")");
+                    } else if (canStatus.txFullCount > 0) {
+                        scorecard.put("CAN_Bus", "FAIL (TX Full: " + canStatus.txFullCount + " overflow)");
+                    } else if (brownout) {
+                        scorecard.put("CAN_Bus", "FAIL (Brownout)");
                     } else if (batteryVolts < 12.0) {
                         scorecard.put("CAN_Bus", "WARN (Low Battery: " + String.format("%.1fV", batteryVolts) + ")");
-                    } else {
+                    } else if (canStatus.percentBusUtilization >= CAN_UTIL_FAIL) {
                         scorecard.put("CAN_Bus", "FAIL (Bus Util: " + (int)(canStatus.percentBusUtilization * 100) + "%)");
+                    } else if (canStatus.percentBusUtilization >= CAN_UTIL_WARN) {
+                        scorecard.put("CAN_Bus", "WARN (Bus Util: " + (int)(canStatus.percentBusUtilization * 100) + "%)");
+                    } else if (canStatus.receiveErrorCount > 0 || canStatus.transmitErrorCount > 0) {
+                        scorecard.put("CAN_Bus", "WARN (RX Err: " + canStatus.receiveErrorCount
+                                + " TX Err: " + canStatus.transmitErrorCount + ")");
+                    } else {
+                        scorecard.put("CAN_Bus", "PASS");
                     }
 
                     // Prepare Step 2: Swerve Drive Pulse
@@ -210,6 +245,7 @@ public class Diagnostics implements Subsystem {
                         swerveDriveStartVel[i] = swerve.getModuleDriveVelocity(i);
                         swerve.setModuleDriveVoltage(i, 1.5); // +1.5V forward pulse
                     }
+                    auditSystemHealth();
                     preFlightStep = PreFlightStep.SWERVE_PULSE;
                     stepStartTime = now;
                 }
@@ -276,10 +312,17 @@ public class Diagnostics implements Subsystem {
                     intake.setArmVoltage(0.0);
                     intake.stop();
 
-                    boolean pass = true;
-                    if (!RobotBase.isSimulation() && intakePeakCurrent > 25.0) {
+                    double intakeEndPos = intake.getArmPosition();
+                    double rawDelta = Math.abs(intakeEndPos - intakeStartPos);
+                    double intakeDelta = Math.min(rawDelta, 360.0 - rawDelta);
+                    boolean encoderOk = RobotBase.isSimulation() || intake.getInputs().encoderConnected;
+
+                    if (!RobotBase.isSimulation() && !encoderOk) {
+                        scorecard.put("Intake", "FAIL (Encoder Disconnected)");
+                    } else if (!RobotBase.isSimulation() && intakeDelta < INTAKE_MIN_MOVEMENT_DEG) {
+                        scorecard.put("Intake", "FAIL (No Movement: " + String.format("%.1f deg", intakeDelta) + ")");
+                    } else if (!RobotBase.isSimulation() && intakePeakCurrent > 25.0) {
                         scorecard.put("Intake", "FAIL (Binding: " + String.format("%.1fA", intakePeakCurrent) + ")");
-                        pass = false;
                     } else {
                         scorecard.put("Intake", "PASS");
                     }
@@ -311,16 +354,45 @@ public class Diagnostics implements Subsystem {
 
             case VISION_LINK:
                 // Step 6: Vision Link Check (14 to 15 seconds total)
+                // A live IO object is not a live stream: require a fresh timestamp
+                // (or a current target) instead of getIO() != null.
                 if (elapsedStep >= 1.0) {
-                    boolean pass = RobotBase.isSimulation() || (vision.isAllCamerasConnected() && !vision.getCameras().isEmpty());
-                    int onlineCount = 0;
-                    for (var c : vision.getCameras()) {
-                        if (c.isConnected()) onlineCount++;
+                    // Link-first gate (merged 2026-10-07): the pre-flight Vision step
+                    // verifies the camera *link*, not tag visibility — a tag-less pit
+                    // is normal. PASS requires every enabled camera to report
+                    // connected via its heartbeat watchdog
+                    // (Vision.isAllCamerasConnected). Freshness (hasTarget or a
+                    // timestamp <1.0 s old with latency <500 ms) is reported as
+                    // detail so a live tag sighting is visible, but a healthy
+                    // link with nothing in view still passes.
+                    boolean pass;
+                    String status;
+                    if (RobotBase.isSimulation()) {
+                        pass = true;
+                        status = "PASS";
+                    } else {
+                        int totalCount = vision.getCameras().size();
+                        int onlineCount = 0;
+                        for (var c : vision.getCameras()) {
+                            if (c.isConnected()) onlineCount++;
+                        }
+                        boolean connected = !vision.getCameras().isEmpty()
+                                && vision.isAllCamerasConnected();
+                        boolean liveTarget = vision.hasTarget()
+                                || isVisionInputFresh(vision.getInputs(), now)
+                                || (vision.getSecondaryInputs() != null
+                                        && isVisionInputFresh(vision.getSecondaryInputs(), now));
+                        if (!connected) {
+                            pass = false;
+                            status = "WARN (" + onlineCount + "/" + totalCount + " Online)";
+                        } else if (liveTarget) {
+                            pass = true;
+                            status = "PASS (" + onlineCount + "/" + totalCount + " Online, Target/Fresh)";
+                        } else {
+                            pass = true;
+                            status = "PASS (" + onlineCount + "/" + totalCount + " Online, No Target In View)";
+                        }
                     }
-                    int totalCount = vision.getCameras().size();
-                    String status = pass
-                            ? "PASS (" + onlineCount + "/" + totalCount + " Online)"
-                            : "WARN (" + onlineCount + "/" + totalCount + " Online)";
                     scorecard.put("Vision", status);
 
                     // Complete Sequence
@@ -333,6 +405,80 @@ public class Diagnostics implements Subsystem {
             default:
                 break;
         }
+    }
+
+    /**
+     * System-health audit covering the Rio log faults of 2026-10-07: PDH
+     * {@code getTotalCurrent()} throwing {@code CAN: Message not found}
+     * (SwerveBase update/log), missing {@code /U} USB log target plus
+     * {@code /home/lvuser/logs} below 50 MB free, and JVM heap exhaustion
+     * ({@code std::bad_alloc} / {@code commit_memory failed}). Runs inside the
+     * CAN &amp; Power step so it needs no mechanism motion. All probes are
+     * sim-safe and never throw.
+     */
+    public void auditSystemHealth() {
+        // 1. Power distribution current read (live CAN probe).
+        if (RobotBase.isSimulation()) {
+            scorecard.put("Power_PDH", "SKIP (Sim)");
+        } else {
+            try {
+                edu.wpi.first.wpilibj.PowerDistribution pd = SwerveBase.getInstance().getPowerDistribution();
+                if (pd == null) {
+                    scorecard.put("Power_PDH", "FAIL (PD uninitialized)");
+                } else {
+                    double amps = pd.getTotalCurrent();
+                    scorecard.put("Power_PDH", "PASS (" + String.format("%.1fA", amps) + ")");
+                }
+            } catch (Throwable t) {
+                scorecard.put("Power_PDH", "FAIL (PD CAN: Message not found)");
+            }
+        }
+
+        // 2. Log storage: /U USB stick plus internal fallback dir.
+        try {
+            java.io.File usb = new java.io.File("/U");
+            java.io.File internal = new java.io.File("/home/lvuser/logs");
+            long usbFree = usb.exists() ? usb.getUsableSpace() : -1L;
+            long internalFree = internal.exists() ? internal.getUsableSpace()
+                    : new java.io.File("/tmp").getUsableSpace();
+            final long lowBytes = 50L * 1024L * 1024L;
+            if (!usb.exists()) {
+                scorecard.put("Storage_Logs", "WARN (No /U USB; AdvantageKit falls back to internal)");
+            } else if (usbFree >= 0 && usbFree < lowBytes) {
+                scorecard.put("Storage_Logs",
+                        "WARN (/U low: " + (usbFree / 1024 / 1024) + " MB free)");
+            } else if (internal.exists() && internalFree < lowBytes) {
+                scorecard.put("Storage_Logs",
+                        "WARN (internal logs low: " + (internalFree / 1024 / 1024) + " MB free)");
+            } else {
+                scorecard.put("Storage_Logs", "PASS");
+            }
+        } catch (Throwable t) {
+            scorecard.put("Storage_Logs", "WARN (storage check unavailable)");
+        }
+
+        // 3. JVM heap headroom (OOM precursor, not a guarantee).
+        try {
+            Runtime rt = Runtime.getRuntime();
+            long headroomMb = (rt.maxMemory() - (rt.totalMemory() - rt.freeMemory())) / 1024 / 1024;
+            if (headroomMb < 50) {
+                scorecard.put("Memory_Heap", "WARN (heap headroom " + headroomMb + " MB)");
+            } else {
+                scorecard.put("Memory_Heap", "PASS (" + headroomMb + " MB headroom)");
+            }
+        } catch (Throwable t) {
+            scorecard.put("Memory_Heap", "WARN (heap check unavailable)");
+        }
+        scorecardDirty = true;
+    }
+
+    static boolean isVisionInputFresh(frc.robot.Subsystems.vision.VisionIO.VisionIOInputs inputs, double now) {
+        if (inputs == null || inputs.timestamp <= 0) {
+            return false;
+        }
+        double ageSec = now - inputs.timestamp;
+        return ageSec >= 0 && ageSec < VISION_FRESHNESS_SEC
+                && inputs.latencyMs >= 0 && inputs.latencyMs < VISION_MAX_LATENCY_MS;
     }
 
     private void finalizePreFlight() {
@@ -442,6 +588,12 @@ public class Diagnostics implements Subsystem {
         if (preFlightRunning || isRunning) {
             return;
         }
+        if (!RobotBase.isSimulation() && !DriverStation.isDisabled()) {
+            System.out.println("[Diagnostics] Pre-Flight REFUSED - robot must be disabled.");
+            preFlightAlert.setText("Pre-Flight REFUSED - robot must be disabled");
+            preFlightAlert.set(true);
+            return;
+        }
         resetScorecard();
         preFlightRunning = true;
         preFlightStep = PreFlightStep.CAN_BUS_AUDIT;
@@ -486,6 +638,10 @@ public class Diagnostics implements Subsystem {
 
     public void startTest(String name) {
         if (isRunning || preFlightRunning) return;
+        if (!RobotBase.isSimulation() && !DriverStation.isDisabled()) {
+            System.out.println("[Diagnostics] Manual test REFUSED - robot must be disabled: " + name);
+            return;
+        }
         registerTests();
         DiagTest test = tests.get(name);
         if (test == null) {

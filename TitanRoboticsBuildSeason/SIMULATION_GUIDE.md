@@ -2,7 +2,7 @@
 title: Simulation Setup
 audience: [human, ai]
 owner: sim-owner
-last_verified: 2026-10-06
+last_verified: 2026-10-08
 status: authoritative
 ---
 
@@ -102,7 +102,7 @@ Our robot code serves the official layout directly over HTTP port 5800 (`edu.wpi
 
 ### Manual Setup (Alternative)
 1. In Elastic Dashboard, click the layout dropdown (or File menu) and select **Open Layout File**.
-2. Open `TitanRoboticsBuildSeason/elastic-layout.json` (or `src/main/deploy/elastic-layout.json`).
+2. Open `TitanRoboticsBuildSeason/src/main/deploy/elastic-layout.json`.
 
 ### Widget Features Across Tabs
 - **Tab 1: Driver Dashboard**: Dedicated `Match Time` countdown clock (red at 15 s, yellow at 30 s per `elastic-layout.json:42-43`), 2D `Field` widget (`/SmartDashboard/Field`), live Hub active indicator, `Graph` widget displaying live Flywheel RPM response, held fuel `Number Bar`, and clickable `Toggle Switch` controls for Snap Turn, Auto Aim, Ball Hunt, Glide Points, and Slow Mode.

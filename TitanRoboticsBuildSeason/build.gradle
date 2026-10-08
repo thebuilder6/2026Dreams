@@ -43,6 +43,31 @@ deploy {
 
 def deployArtifact = deploy.targets.roborio.artifacts.frcJava
 
+// Keep the Elastic dashboard layout as the single deployable source. A root copy
+// is treated as a drift risk and is rejected even when its bytes match.
+tasks.register('verifyElasticLayoutSync') {
+    def rootLayout = file('elastic-layout.json')
+    def deployLayout = file('src/main/deploy/elastic-layout.json')
+
+    inputs.file(deployLayout)
+    outputs.upToDateWhen { true }
+
+    doLast {
+        if (!deployLayout.isFile()) {
+            throw new GradleException("Missing Elastic layout: ${deployLayout}")
+        }
+        if (rootLayout.exists()) {
+            throw new GradleException(
+                    "Root Elastic layout must not exist; use ${deployLayout} as the only source."
+            )
+        }
+    }
+}
+
+// Run before compile and test flows so a stale duplicate is caught before building.
+tasks.named('compileJava') { dependsOn 'verifyElasticLayoutSync' }
+tasks.named('check') { dependsOn 'verifyElasticLayoutSync' }
+
 // Set to true to use debug for all targets including JNI, which will drastically impact
 // performance.
 wpi.java.debugJni = false

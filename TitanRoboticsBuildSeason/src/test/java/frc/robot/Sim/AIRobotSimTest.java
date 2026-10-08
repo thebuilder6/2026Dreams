@@ -580,7 +580,7 @@ public class AIRobotSimTest {
         Pose2d redOpponentPose = new Pose2d(14.0, 4.0, Rotation2d.fromDegrees(180));
         Pose2d redFallback = aiSim.findBestFuelTarget(redOpponentPose, true);
         assertNotNull(redFallback);
-        assertEquals(180.0, redFallback.getRotation().getDegrees(), 5.0,
+        assertEquals(180.0, Math.abs(redFallback.getRotation().getDegrees()), 5.0,
                 "Red opponent fallback midline patrol must face inward toward midfield (180 deg)");
 
         // When opponent is Blue (on Blue side at X ~ 2.0m), fallback midline target must face 0 deg (toward Red / midfield)

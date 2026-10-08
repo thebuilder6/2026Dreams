@@ -54,6 +54,10 @@ public class Robot extends LoggedRobot {
    * initialization code.
    */
   public Robot() {
+    // Free Rio log disk before AdvantageKit opens its wpilog: on 2026-10-07
+    // /home/lvuser/logs below 50 MB free caused a wpilog open failure plus a
+    // REV self-delete loop. Oldest *.wpilog/*.revlog go first; no-op off-Rio.
+    frc.robot.Telemetry.LogStorage.ensureLogSpace();
     // AdvantageKit Logger Configuration for AdvantageScope & Deterministic Replay
     Logger.recordMetadata("ProjectName", BuildConstants.ROBOT_NAME);
     Logger.recordMetadata("GitSHA", BuildConstants.GIT_SHA);

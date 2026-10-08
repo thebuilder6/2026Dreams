@@ -2,7 +2,7 @@
 title: Changelog
 audience: [human, ai]
 owner: any-agent
-last_verified: 2026-10-06
+last_verified: 2026-10-07
 status: living
 ---
 
@@ -13,6 +13,12 @@ Newest first. One bullet per behavior-affecting change. Format:
 `- YYYY-MM-DD — <area>: <what changed> (<test evidence>) [docs touched]`
 
 ## Unreleased
+
+- 2026-10-07 — power/storage: **automatic Rio log-disk cleanup + guarded PDH current read.** The 2026-10-07 match log showed `/home/lvuser/logs` below 50 MB free (AdvantageKit wpilog open failure, REV self-delete loop) and `PowerDistribution.getTotalCurrent()` throwing `CAN: Message not found` twice per 20 ms loop (`SwerveBase.java:718/830`), each failure printing a stack trace. (1) New `Telemetry/LogStorage.ensureLogSpace()`, called at the top of the `Robot` constructor before `Logger.start()`, deletes oldest-first `*.wpilog`/`*.revlog` in `/U/logs` and `/home/lvuser/logs` until 200 MB is free; never throws, never touches other files, no-op off-Rio. (2) New `SwerveBase.readTotalCurrentSafe()` wraps both call sites: 5 consecutive CAN failures pause reads for 5 s and serve the last-good value (fail-open current, voltage throttle stays live), then retry. (`LogStorageTest` 6/6, `SwerveBasePowerGuardTest` 2/2, `DiagnosticsTest` green; targeted run `BUILD SUCCESSFUL`) [CHANGELOG.md]
+
+- 2026-10-07 — test/diagnostics: **Pre-flight intake movement check, vision freshness gate, disabled-only guards, tiered CAN audit.** (1) Intake step now fails on disconnected encoder and on <2.0 deg movement (wrap-safe), closing the disconnected-passes case. (2) Vision step requires a fresh target or a timestamp <1.0 s old with latency <500 ms instead of `getIO() != null`. (3) `startPreFlightCheck`/`startTest` refuse when enabled on real hardware and `update()` aborts mid-sequence if enabled. (4) CAN audit now distinguishes bus-off/TX-full/brownout FAIL, low-battery/high-util/RX-TX-error WARN tiers (70%/90%). (`DiagnosticsTest` 8/8 green incl. new threshold + freshness tests) [src/main/java/frc/robot/Test/README.md, CHANGELOG.md]
+
+- 2026-10-07 — test/diagnostics: **Rio log-fault health audit in pre-flight CAN & Power step.** The 2026-10-07 Rio log showed three faults invisible to the existing scorecard: PDH `getTotalCurrent()` throwing `CAN: Message not found` every loop (`SwerveBase.java:718/830`), missing `/U` USB log target plus `/home/lvuser/logs` below 50 MB free, and JVM heap exhaustion (`std::bad_alloc` / `commit_memory failed` crash loop). Added `Diagnostics.auditSystemHealth()` run at the end of the `CAN_BUS_AUDIT` step with three new scorecard keys — `Power_PDH` (live guarded current read; `SKIP (Sim)` in sim), `Storage_Logs` (`WARN` when `/U` absent or either volume below 50 MB), `Memory_Heap` (`WARN` when JVM headroom below 50 MB) — all sim-safe, never throwing, and automatically included in `finalizePreFlight()` overall verdict. (`DiagnosticsTest` 5/5 green incl. new `testSystemHealthAuditIsSimSafe`) [src/main/java/frc/robot/Test/README.md, CHANGELOG.md]
 
 - 2026-10-06 — dashboard/elastic: **Build & Git metadata widgets in `elastic-layout.json`.** Added `Build & Git Metadata` (`/SmartDashboard/Build/Summary`) and `Git Commit SHA` (`/SmartDashboard/Build/GitSHA`) Text Display widgets at y=640 on two existing tabs, surfacing the keys already published by `Telemetry/Dashboard.java` so pit crew can confirm which build is deployed. Layout-only; no NT keys or code changed. (JSON parses; both topics verified published in `Dashboard.java:100-105`) [CHANGELOG.md]
 

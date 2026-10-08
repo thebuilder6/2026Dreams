@@ -2,7 +2,7 @@
 title: Match Knowledge Model
 audience: [human, ai]
 owner: programming-leads
-last_verified: 2026-10-07
+last_verified: 2026-10-08
 status: current
 ---
 
@@ -125,8 +125,11 @@ observed tier (`ObservedKnowledge.selfOnly()`). The summary table carries an
 observed tier is flagged `TIER DIFFERS`. The verdict is judged against Blue
 clairvoyant, so this is measurement rather than a second opinion on the answer.
 
-Current result across 39 cards: **6 tier diffs, five of them defender cards**
-(`C5`, `F1`-`F4`; the sixth, `D3`, is an `ADAPTIVE_COMPETITOR` card). Defensive objectives read `world.opponentPose()`
+Current result across 97 cards (2026-10-08 re-run): **27 tier diffs**,
+predominantly defender cards (`C5`, `F1`-`F6`, `H3`, `J4`, `L1`-`L4`, `P3`,
+`R1`-`R3`; plus `D3`, `O6` as `ADAPTIVE_COMPETITOR` cards) and sweep-gated
+harvest cards (`B1`, `D1`, `D4`-`D5`, `K1`, `N1`, `O12`, `Q1`) where the
+clairvoyant tier sees zone fuel and the observed tier sees none. Defensive objectives read `world.opponentPose()`
 (`DENY_SHOOTING_LANE`) or gate on `opponentObserved` (`LEAD_INTERCEPT`,
 `CHOKE_TRENCH`), so with no poses the tier-1 gate at
 `JevDecisionEngine.java:552-556` zeroes lane denial / shadow / intercept (the
@@ -135,8 +138,21 @@ post-argmax fallback covering it is at `:664-671`) and the defender falls back t
 `VACUUM_MIDFIELD` or `STAGE_STANDOFF`. That is the intended, honest consequence of the observed tier
 rather than a bug — but it means **a defensive card can look correct while the
 objective it chose is unreachable for a real robot**, which is precisely what a
-single-tier suite cannot show. 33 of 39 cards are tier-invariant, so the split is
-specific to vision-dependent branches and not a general property.
+single-tier suite cannot show. 70 of 97 cards are tier-invariant, so the split is
+specific to vision-dependent branches and fuel-gated harvest branches, not a
+general property.
+
+Cards now carry the full knowledge/world inputs: the three global zone-fuel
+counts (`allianceZoneFuel`, `midfieldFuel`, `opponentZoneFuel`, appended after
+`notes` so 19-col rows still parse with an empty field) feed clairvoyant
+knowledge, the three hardware capabilities (`hasShooter`, `ballCapacity`,
+`hasClimber`; defaults `true`/`30`/`false`) feed `WorldState`, and the full
+ally/opponent pose lists are authorable per card (`allyPoses` / `oppExtras` as
+`"x,y;x,y"` Blue-origin, mirrored for Red; blank keeps the legacy derivation,
+and the tracked opponent from `oppObserved` is untouched). The per-card report
+prints the resulting roster lists alongside zone fuel and hardware. The
+observed tier still sees `0/0/0` with no rosters regardless of what a card
+claims.
 
 ### The `oppObserved` column was dead, and that was a real defect
 
@@ -180,8 +196,15 @@ through `MatchKnowledge.fieldFuel()`:
     `shuttlePassStillAllowedWhenOpponentHubIsLiveNow`) are now green. Re-run on the
     current binary before citing any count — the suite is not hermetic and a stale
     figure here is worse than a red one, because it is trusted.
-- `tools/score/run-cards.ps1` re-run the same day: 39 cards, 6 `TIER DIFFERS`,
-  alliance-symmetric, `0 PASS / 0 MISMATCH / 39 UNREVIEWED`.
+- `tools/score/run-cards.ps1` re-run 2026-10-08: 97 cards,
+  `73 PASS / 24 MISMATCH / 0 UNREVIEWED`, 27 `TIER DIFFERS`, alliance-symmetric
+  except where flagged. Card data now backfills zone fuel and hardware tail
+  columns, so sweep-gated harvest cards (B1, D1/D4/D5, K1, N1, O12, Q1) newly
+  diverge by tier — the honest consequence of feeding the clairvoyant tier
+  real counts. Same-day harness fixes: the `auto` flag is now read from
+  its own column (it was read from the `scoreDiff` column, so AUTO cards
+  evaluated as teleop), and the eight appended card columns are parsed with
+  backward-compatible defaults.
 - **The knowledge model is not the cause of the 2 failures**, and the two concerns
   should not be conflated when either is fixed.
 - Next review due: 2026-10-28

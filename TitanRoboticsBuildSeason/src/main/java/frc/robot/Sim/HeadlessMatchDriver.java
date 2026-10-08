@@ -69,6 +69,7 @@ public final class HeadlessMatchDriver {
             String logDir,
             String reportDir,
             String resultJsonl,
+            String snapshotCards,
             String variant,
             int replica) {
         /** Teleop phase length derived from the scenario clock minus autonomous. */
@@ -182,6 +183,10 @@ public final class HeadlessMatchDriver {
         String variant = System.getProperty(PROP_PREFIX + "variant", "baseline").trim();
         if (variant.isEmpty()) variant = "baseline";
         int replica = getIntProperty("replica", 0);
+        // Snapshot-sampled decision cards. Unset (blank) means off; when set,
+        // CardSnapshotSampler appends one TSV row per interesting bot-moment
+        // (objective transitions, stall onsets, shift boundaries, 30 s floor).
+        String snapshotCards = System.getProperty(PROP_PREFIX + "snapshotCards", "").trim();
 
         if (!Double.isFinite(durationSec) || durationSec <= 0.0) {
             throw new IllegalArgumentException("frc.headless.durationSec must be finite and positive");
@@ -207,7 +212,8 @@ public final class HeadlessMatchDriver {
             throw new IllegalArgumentException("frc.headless.replica must be non-negative");
         }
         return new Options(seed, durationSec, autoSec, disabledGapSec, bootWaitSec, fieldFuelCount, logDir,
-                reportDir, resultJsonl.isEmpty() ? null : resultJsonl, variant, replica);
+                reportDir, resultJsonl.isEmpty() ? null : resultJsonl,
+                snapshotCards.isEmpty() ? null : snapshotCards, variant, replica);
     }
 
     /**
@@ -236,7 +242,7 @@ public final class HeadlessMatchDriver {
             } catch (IllegalArgumentException e) {
                 options = new Options(DEFAULT_SEED, DEFAULT_DURATION_SEC, DEFAULT_AUTO_SEC,
                         DEFAULT_DISABLED_GAP_SEC, DEFAULT_BOOT_WAIT_SEC, DEFAULT_FIELD_FUEL_COUNT,
-                        DEFAULT_LOG_DIR, DEFAULT_REPORT_DIR, null, "baseline", 0);
+                        DEFAULT_LOG_DIR, DEFAULT_REPORT_DIR, null, null, "baseline", 0);
             }
             String stamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"));
             cachedLogPath = options.logDir() + "/headless_3v3" + logTag(options)
@@ -296,6 +302,8 @@ public final class HeadlessMatchDriver {
 
             TrainingMatchScenario scenario = buildScenario(options);
             GameSim.getInstance().resetGame(scenario);
+            CardSnapshotSampler.arm(options.snapshotCards(), options.seed(),
+                    options.replica(), options.variant());
             if (!AIRobotSim.getInstance().isTrainingScenarioActive()) {
                 throw new IllegalStateException("Training scenario did not activate after resetGame");
             }
@@ -660,6 +668,7 @@ public final class HeadlessMatchDriver {
         String stallCauses = formatStallCauseSection();
         Files.writeString(report, formatReport(result) + stallCauses);
         writeResultJsonl(options, result);
+        CardSnapshotSampler.flush();
         System.out.println("[Headless] report: " + report);
         System.out.println("[Headless] replay log: " + result.logPath());
         System.out.print(stallCauses);

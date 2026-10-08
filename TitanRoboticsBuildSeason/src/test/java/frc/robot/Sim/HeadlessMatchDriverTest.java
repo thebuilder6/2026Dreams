@@ -23,7 +23,7 @@ import frc.robot.Intelligence.Archetype;
 class HeadlessMatchDriverTest {
     private static final String[] PROP_KEYS = {
             "seed", "durationSec", "autoSec", "disabledGapSec", "bootWaitSec", "fieldFuelCount", "logDir",
-            "reportDir", "resultJsonl", "variant", "replica"
+            "reportDir", "resultJsonl", "snapshotCards", "variant", "replica"
     };
 
     @BeforeEach

@@ -77,6 +77,12 @@ import frc.robot.Intelligence.WorldState;
  * settle-gate behaviour is not exercised — these cards test objective choice,
  * not the shoot gate.
  *
+ * <p>Rows with {@code S<seed>r<replica>-<label>-<t>s} ids are snapshots sampled
+ * from a live sim match by {@code Sim/CardSnapshotSampler} (opt-in
+ * {@code -PsnapshotCards}), not hand-authored situations. Their
+ * {@code situation} text records the provenance and the situated objective;
+ * {@code expected} is blank until a human reviews them.
+ *
  * <p>This is a development tool. It is not robot code and is not on the roboRIO
  * path.
  */
@@ -87,17 +93,29 @@ public final class DecisionCards {
     private static final double BLUE_HUB_Y = 4.0346;
 
     /**
-     * TSV column order. The three zone-fuel columns are appended after
-     * {@code alliesHeldFuel} and before the prose columns, and are optional: a TSV
-     * written before the clairvoyant/observed split still parses, defaulting the
-     * counts to 0.
+     * TSV column order. The 19 base columns (id through notes) match the
+     * on-disk {@code decision_cards.tsv}. Eight optional columns are appended
+     * after {@code notes} so pre-existing 19-col rows still parse, defaulting
+     * to honest zeros / default hardware / legacy rosters:
+     * allianceZoneFuel, midfieldFuel, opponentZoneFuel (global zone fuel fed
+     * to clairvoyant knowledge), hasShooter, ballCapacity, hasClimber
+     * (WorldState hardware capabilities), allyPoses, oppExtras (explicit
+     * roster pose lists).
+     *
+     * <p>Roster lists need no new columns: ally poses derive from
+     * {@code alliesHeldFuel} and opponent poses from {@code oppObserved} plus
+     * {@code oppZonePieces}. The report prints the resulting lists per card.
+     * Two optional explicit-pose columns ({@code allyPoses}, {@code oppExtras},
+     * {@code "x,y;x,y"} Blue-origin) override that derivation when non-blank.
      */
     private static final String[] COLUMNS = {
             "id", "archetype", "selfX", "selfY", "heldFuel", "matchTime",
             "hubActive", "oppHubActive", "timeToShift",
             "oppX", "oppY", "auto", "oppObserved", "scoreDiff", "oppZonePieces", "alliesHeldFuel",
+            "situation", "expected", "notes",
             "allianceZoneFuel", "midfieldFuel", "opponentZoneFuel",
-            "situation", "expected", "notes"
+            "hasShooter", "ballCapacity", "hasClimber",
+            "allyPoses", "oppExtras"
     };
 
     /** One evaluatable situation plus the human's answer. */
@@ -118,19 +136,33 @@ public final class DecisionCards {
             int scoreDiff,
             int oppZonePieces,
             int alliesHeldFuel,
-            // Zone fuel counts, reported to the engine as part of clairvoyant
-            // knowledge. `oppZonePieces` above is only how many synthetic
-            // opponent-zone *poses* are fabricated for target selection; these are
-            // the counts the harvest objectives actually consume. Before the
-            // clairvoyant/observed split the engine read these from SimulatedArena
-            // directly, so a card verdict silently depended on whatever arena
-            // happened to be live rather than on the card.
+            String situation,
+            String expected,
+            String notes,
+            // Global zone fuel, fed to clairvoyant knowledge. `oppZonePieces`
+            // above is only how many synthetic opponent-zone *poses* are
+            // fabricated; these are the counts the harvest objectives actually
+            // consume. Default 0 so pre-existing 19-col rows evaluate with an
+            // empty field, matching the old arena-read fallback.
             int allianceZoneFuel,
             int midfieldFuel,
             int opponentZoneFuel,
-            String situation,
-            String expected,
-            String notes) {}
+            // WorldState hardware capabilities (added to WorldState 2026-10-07).
+            // Defaults match WorldState.DEFAULT_* so old rows are unaffected.
+            boolean hasShooter,
+            int ballCapacity,
+            boolean hasClimber,
+            // Explicit roster pose lists, Blue-origin "x,y;x,y" (mirrored for
+            // the Red pass like every other pose column). Blank means legacy
+            // derivation: one ally at (3,2) iff alliesHeldFuel > 0, and
+            // oppZonePieces synthetics from (12.0, 2.0). Non-blank replaces
+            // that derivation exactly, so a card can place two allies, put
+            // extras somewhere other than the synthetic line, or assert an
+            // empty roster while holding fuel. The tracked opponent
+            // (oppX, oppY iff oppObserved) is unaffected: it stays the
+            // vision-tracked mark that derives opponentObserved.
+            String allyPoses,
+            String oppExtras) {}
 
     private DecisionCards() {}
 
@@ -316,6 +348,14 @@ public final class DecisionCards {
                     describeTransition(c)));
             md.append(String.format("observed opp %-5s  score diff %+d  opp-zone pieces %d  allies holding %d%n",
                     c.oppObserved(), c.scoreDiff(), c.oppZonePieces(), c.alliesHeldFuel()));
+            md.append(String.format("zone fuel       alliance %d  midfield %d  opponent %d  (clairvoyant; observed tier sees 0/0/0)%n",
+                    c.allianceZoneFuel(), c.midfieldFuel(), c.opponentZoneFuel()));
+            md.append(String.format("rosters         ally %s  opponent %s%n",
+                    allyRosterSummary(c), rosterSummary(c)));
+            md.append(String.format("hardware        shooter %s  capacity %d  climber %s%n",
+                    c.hasShooter() ? "yes" : "NO",
+                    c.ballCapacity(),
+                    c.hasClimber() ? "yes" : "no"));
             md.append("```\n\n");
 
             List<String> issues = consistencyIssues(c);
@@ -531,12 +571,21 @@ public final class DecisionCards {
         }
         // Additional synthetic opponents in the opponent zone. These exist so
         // zone-scoring objectives are reachable at all, not to represent vision.
-        for (int i = 0; i < c.oppZonePieces(); i++) {
-            Pose2d p = new Pose2d(12.0 + 0.4 * i, 2.0 + 0.6 * i, new Rotation2d());
-            oppPoses.add(asRed ? AllianceFlipUtil.apply(p, true) : p);
+        // An explicit oppExtras list replaces this synthesis exactly.
+        if (!c.oppExtras().isBlank()) {
+            for (Pose2d p : parsePoseList(c.oppExtras(), false, "oppExtras", c.id())) {
+                oppPoses.add(asRed ? AllianceFlipUtil.apply(p, true) : p);
+            }
+        } else {
+            for (int i = 0; i < c.oppZonePieces(); i++) {
+                Pose2d p = new Pose2d(12.0 + 0.4 * i, 2.0 + 0.6 * i, new Rotation2d());
+                oppPoses.add(asRed ? AllianceFlipUtil.apply(p, true) : p);
+            }
         }
         List<Pose2d> allyPoses;
-        if (c.alliesHeldFuel() > 0) {
+        if (!c.allyPoses().isBlank()) {
+            allyPoses = parsePoseList(c.allyPoses(), asRed, "allyPoses", c.id());
+        } else if (c.alliesHeldFuel() > 0) {
             Pose2d a = new Pose2d(3.0, 2.0, new Rotation2d());
             allyPoses = List.of(asRed ? AllianceFlipUtil.apply(a, true) : a);
         } else {
@@ -548,7 +597,8 @@ public final class DecisionCards {
                 opp, still, c.matchTime(),
                 mine, theirs, c.timeToShift(),
                 /* isRedAlliance */ asRed, c.auto(),
-                mineAfter, theirsAfter);
+                mineAfter, theirsAfter,
+                c.hasShooter(), c.ballCapacity(), c.hasClimber());
 
         // Knowledge tier is a real axis, not a comment. A card evaluated only as
         // clairvoyant can look correct while the objective it chose is unreachable
@@ -586,6 +636,63 @@ public final class DecisionCards {
     /** Formats a nav target as a coordinate pair, or a dash when there is none. */
     private static String pose(Pose2d p) {
         return p == null ? "—" : String.format("%.2f, %.2f", p.getX(), p.getY());
+    }
+
+    /**
+     * Parses a Blue-origin pose list of the form {@code "x,y;x,y"} (whitespace
+     * tolerant, rotation always zero). A blank spec yields an empty list; the
+     * caller decides the legacy-derivation fallback. Mirroring is applied by
+     * the caller per pose so explicit and legacy paths share one rule.
+     */
+    private static List<Pose2d> parsePoseList(String spec, boolean asRed, String column, String cardId) {
+        List<Pose2d> out = new ArrayList<>();
+        if (spec == null || spec.isBlank()) {
+            return out;
+        }
+        for (String pair : spec.split(";", -1)) {
+            if (pair.isBlank()) continue;
+            String[] xy = pair.split(",", -1);
+            if (xy.length != 2) {
+                throw new IllegalArgumentException(
+                        "card " + cardId + " column " + column + ": expected \"x,y\" but got \"" + pair.trim() + "\"");
+            }
+            Pose2d p = new Pose2d(Double.parseDouble(xy[0].trim()), Double.parseDouble(xy[1].trim()),
+                    new Rotation2d());
+            out.add(asRed ? AllianceFlipUtil.apply(p, true) : p);
+        }
+        return out;
+    }
+
+    /**
+     * One-line roster summary matching the poses {@link #evaluate} synthesizes:
+     * the tracked opponent at (oppX, oppY) iff oppObserved, plus the extras
+     * (explicit oppExtras list, else oppZonePieces synthetics from (12.0, 2.0)).
+     * Keeps the report honest about what clairvoyant knowledge actually carried.
+     */
+    private static String rosterSummary(Card c) {
+        StringBuilder sb = new StringBuilder();
+        if (c.oppObserved()) {
+            sb.append(String.format("tracked at (%.2f, %.2f)", c.oppX(), c.oppY()));
+        } else {
+            sb.append("tracked none");
+        }
+        if (!c.oppExtras().isBlank()) {
+            sb.append(" + explicit [").append(c.oppExtras().trim()).append("]");
+        } else if (c.oppZonePieces() > 0) {
+            sb.append(String.format(" + %d synthetic from (12.00, 2.00)", c.oppZonePieces()));
+        }
+        return sb.toString();
+    }
+
+    /**
+     * One-line ally roster summary: the explicit allyPoses list when present,
+     * else the legacy derivation (one ally at (3,2) iff alliesHeldFuel > 0).
+     */
+    private static String allyRosterSummary(Card c) {
+        if (!c.allyPoses().isBlank()) {
+            return "explicit [" + c.allyPoses().trim() + "]";
+        }
+        return c.alliesHeldFuel() > 0 ? "1 at (3.00, 2.00)" : "none";
     }
 
     // ------------------------------------------------------------------
@@ -682,9 +789,13 @@ public final class DecisionCards {
             if (line.isBlank() || line.startsWith("#")) continue;
             String[] f = line.split("\t", -1);
             if (f.length > 0 && f[0].trim().equalsIgnoreCase("id")) continue;  // header
-            // Minimum is 19 columns (up to `notes`); the three zone-fuel columns are
-            // optional so TSVs written before the clairvoyant/observed split still
-            // parse, defaulting to 0.
+            // Minimum is 19 columns (id through notes). Eight optional columns
+            // may follow notes: allianceZoneFuel, midfieldFuel,
+            // opponentZoneFuel, hasShooter, ballCapacity, hasClimber,
+            // allyPoses, oppExtras.
+            // A 19-col row predates those inputs and gets honest defaults
+            // (empty field, default hardware, legacy roster derivation),
+            // matching the old behaviour.
             if (f.length < 19) {
                 System.out.println("[cards] skipping short line (" + f.length + " cols): " + line);
                 continue;
@@ -695,7 +806,12 @@ public final class DecisionCards {
                 // evaluation time hub state is derived from (phase, seed) per pass,
                 // because that is the only way both alliance passes can be true
                 // mirrors of each other. The after-shift flags are derived outright.
-                HubSchedule.Phase phase = HubSchedule.phaseFor(d(f[5]), b(f[13]));
+                // NOTE: auto is column 11 (f[11]), not f[13] (scoreDiff).
+                HubSchedule.Phase phase = HubSchedule.phaseFor(d(f[5]), b(f[11]));
+                // Validate explicit pose specs now so a typo skips its row with
+                // a message instead of aborting the whole run mid-evaluation.
+                parsePoseList(f.length > 25 ? f[25].trim() : "", false, "allyPoses", f[0].trim());
+                parsePoseList(f.length > 26 ? f[26].trim() : "", false, "oppExtras", f[0].trim());
                 cards.add(new Card(
                         f[0].trim(),
                         Archetype.valueOf(f[1].trim()),
@@ -709,14 +825,17 @@ public final class DecisionCards {
                         d(f[9]), d(f[10]),
                         b(f[11]), b(f[12]),
                         i(f[13]), i(f[14]), i(f[15]),
-                        // Zone fuel counts, defaulting to 0 when the TSV predates
-                        // these columns. A card written before the split gets the
-                        // same counts the engine used to read from the arena by
-                        // accident, which was no fuel at all unless a match was live.
-                        f.length > 21 ? i(f[19]) : 0,
-                        f.length > 22 ? i(f[20]) : 0,
-                        f.length > 23 ? i(f[21]) : 0,
-                        f[16].trim(), f[17].trim(), f[18].trim()));
+                        f[16].trim(), f[17].trim(), f[18].trim(),
+                        // Optional tail columns (indices 19-24). Guard each
+                        // individually so a partially-extended row still parses.
+                        f.length > 19 && !f[19].isBlank() ? i(f[19]) : 0,
+                        f.length > 20 && !f[20].isBlank() ? i(f[20]) : 0,
+                        f.length > 21 && !f[21].isBlank() ? i(f[21]) : 0,
+                        f.length > 22 && !f[22].isBlank() ? b(f[22]) : true,
+                        f.length > 23 && !f[23].isBlank() ? i(f[23]) : 30,
+                        f.length > 24 && !f[24].isBlank() ? b(f[24]) : false,
+                        f.length > 25 ? f[25].trim() : "",
+                        f.length > 26 ? f[26].trim() : ""));
             } catch (IllegalArgumentException e) {
                 System.out.println("[cards] skipping unparseable line '" + f[0] + "': " + e.getMessage());
             }
@@ -763,6 +882,16 @@ public final class DecisionCards {
         sb.append("#   oppZonePieces synthetic opponent poses in the opponent zone, so POACH and\n");
         sb.append("#                 zone-scoring objectives are reachable at all (0 = none).\n");
         sb.append("#   alliesHeldFuel feeds SCREEN_FOR_ALLY; >0 also places one ally at (3,2).\n");
+        sb.append("#   allianceZoneFuel / midfieldFuel / opponentZoneFuel feed clairvoyant\n");
+        sb.append("#                 knowledge (harvest objectives consume them). Default 0.\n");
+        sb.append("#   hasShooter / ballCapacity / hasClimber feed WorldState hardware\n");
+        sb.append("#                 gates. Defaults true / 30 / false (WorldState.DEFAULT_*).\n");
+        sb.append("#   allyPoses     explicit ally roster as \"x,y;x,y\" Blue-origin (max 2).\n");
+        sb.append("#                 Blank = legacy: one ally at (3,2) iff alliesHeldFuel > 0.\n");
+        sb.append("#   oppExtras     explicit extra opponent poses as \"x,y;x,y\" Blue-origin.\n");
+        sb.append("#                 Blank = legacy: oppZonePieces synthetics from (12.0, 2.0).\n");
+        sb.append("#                 The tracked opponent (oppX,oppY iff oppObserved) is separate\n");
+        sb.append("#                 and unaffected by either column.\n");
         sb.append("#   expected      YOUR ANSWER, judged against the BLUE pass. Blank = UNREVIEWED.\n");
         sb.append("#   notes         why this card matters (shown in the report).\n");
         sb.append(String.join("\t", COLUMNS)).append('\n');
@@ -1002,8 +1131,12 @@ public final class DecisionCards {
             boolean hub, boolean oppHub, double shift, double ox, double oy, boolean auto,
             boolean obs, int diff, int oppPieces, int alliesHeld, String situation,
             String expected, String notes) {
+        // Template rows use honest defaults: empty field, default hardware,
+        // legacy roster derivation. Hand-authored rows can append eight tail
+        // columns to override.
         return new Object[] {id, arch, x, y, held, t, hub, oppHub, shift, ox, oy, auto, obs,
-                diff, oppPieces, alliesHeld, situation, expected, notes};
+                diff, oppPieces, alliesHeld, situation, expected, notes,
+                0, 0, 0, true, 30, false, "", ""};
     }
 
     private static String[] str(Object[] row) {

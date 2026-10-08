@@ -131,7 +131,7 @@ if (project.hasProperty('headless')) {
                     project.hasProperty('realShiftClock') ? 'true' : 'false'
             for (String key : ['seed', 'durationSec', 'autoSec', 'disabledGapSec',
                                'bootWaitSec', 'fieldFuelCount', 'logDir', 'reportDir',
-                               'resultJsonl', 'variant', 'replica']) {
+                               'resultJsonl', 'snapshotCards', 'variant', 'replica']) {
                 if (project.hasProperty(key)) {
                     systemProperty "frc.headless.${key}", "${project.property(key)}"
                 }

@@ -394,6 +394,9 @@ public class AIRobotInstance {
 
         currentAIStateDetail = intent.objective().name() + " (" + intent.rationale() + ")";
         boolean stalled = isStalled();
+        CardSnapshotSampler.maybeSample(
+                isAlly ? "Ally" + (botId - 100) : "Bot" + botId,
+                archetype, worldState, knowledge, intent.objective(), stalled, heldPieces);
         currentTargetSpeeds = trajectoryController.calculate(
                 currentPose, currentTargetSpeeds, driveTargetPose, maxSpeed, stalled, true);
 

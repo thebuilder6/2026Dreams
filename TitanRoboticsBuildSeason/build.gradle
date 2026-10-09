@@ -293,6 +293,20 @@ task(replayWatch, type: JavaExec) {
     classpath = sourceSets.main.runtimeClasspath
 }
 
+// Headless standalone match: `.\gradlew runStandalone --args="--seed 42 --log logs/standalone_seed42.wpilog"`
+// (no SimGUI/DS). Writes a replayable .wpilog for AdvantageScope plus console score.
+task(runStandalone, type: JavaExec) {
+    mainClass = "frc.robot.Sim.StandaloneMatchRunner"
+    classpath = sourceSets.main.runtimeClasspath
+    dependsOn 'extractReleaseNative'
+    // Same natives recipe as dumpSimLaunch documents: the JVM needs
+    // build/jni/release on java.library.path, and the OS loader needs it on
+    // PATH (HAL_LoadExtension ignores java.library.path).
+    def jniDir = new File(project.layout.buildDirectory.get().asFile, 'jni/release')
+    systemProperty 'java.library.path', jniDir.absolutePath
+    environment 'PATH', "${jniDir.absolutePath}${File.pathSeparator}${System.getenv('PATH')}"
+}
+
 // Automatically generate BuildConstants.java and deploy/git_info.json containing Git & build metadata
 task generateBuildConstants {
     def buildConstantsFile = file("src/main/java/frc/robot/BuildConstants.java")

@@ -22,7 +22,9 @@ import frc.robot.Intelligence.JevDecisionEngine;
 import frc.robot.Intelligence.ObjectiveCommitment;
 import frc.robot.Intelligence.StrategicObjective;
 import frc.robot.Intelligence.WorldState;
+import frc.robot.Navigation.DynamicRouter;
 import frc.robot.Navigation.FieldMap;
+import frc.robot.Navigation.StaticPathfinder;
 import frc.robot.Navigation.TargetProgressWatchdog;
 import frc.robot.Subsystems.Intake.IntakeState;
 import frc.robot.Subsystems.shooter.ShooterConstants;
@@ -71,11 +73,16 @@ import frc.robot.Subsystems.intake.IntakeConstants;
  *   after {@link FuelStore#RECYCLE_SETTLE_SEC}, mirroring {@code RebuiltHub}'s
  *   chutes so the field is conserved instead of drained. The exact chute
  *   trajectory and post-landing roll are not simulated.</li>
- *   <li>No static-obstacle collision or trench handling — drive is a straight
- *   line to the target, and the runner applies only a positional peer push-out
- *   after each tick.</li>
- *   <li>The defensive mark is the nearest opponent, not the threat-weighted
- *   assignment ({@code AIRobotSim.selectMarkExcluding}).</li>
+ *   <li>Drive follows cached {@code StaticPathfinder} routes (replanned when the
+ *   target moves) with the full sim's braking curve ({@link #ROUTE_DECEL_MPS2}),
+ *   shaped by the same APF peer avoidance ({@code DynamicRouter}, 0.55 m /
+ *   0.35 s self-registration like {@code AIRobotInstance}) — the runner's
+ *   positional push-out stays as the overlap guard. No trench handling. Aiming
+ *   follows the engine's {@code aimOverride} at {@link #HEADING_MAX_RAD_S} (SOTF
+ *   parity — without it the &lt;8 deg fire gate never opens and bots hold fuel
+ *   at a live hub).</li>
+ *   <li>Defensive marks use the same threat weights ({@code selectMarkExcluding})
+ *   but resolve in the runner (no player entry — MapleSim-free has no player).</li>
  * </ul>
  */
 public final class StandaloneBot {
@@ -136,6 +143,67 @@ public final class StandaloneBot {
     private final ObjectiveCommitment commitment = new ObjectiveCommitment();
     private final FuelTargetMemory fuelTargetMemory = new FuelTargetMemory();
     private final TargetProgressWatchdog progressWatchdog = new TargetProgressWatchdog();
+    /** Cached static route to the current navigation target (replanned on moves). */
+    private final List<Pose2d> route = new ArrayList<>();
+    /** Target translation the cached route was planned against. */
+    private Translation2d routedTarget = null;
+    /**
+     * Goal the bot is actually pursuing. The engine's pick can flip between
+     * tied pieces every tick (measured: 1.5 m A/B flips every ~3 s); chasing
+     * flips ping-pongs forever and resets the watchdog's no-progress window
+     * each flip, so nothing ever fires. The pursued goal only changes when
+     * the engine moves it beyond {@link #PURSUE_HYST_M}, on arrival, or when
+     * it lands on a blacklisted point.
+     */
+    private Translation2d pursuedTarget = null;
+    /** Engine-target move that adopts a new pursued goal. */
+    static final double PURSUE_HYST_M = 1.0;
+    /** Arrival radius that releases the pursued goal. */
+    static final double PURSUE_ARRIVED_M = 0.35;
+    /** Target move that invalidates the cached route. */
+    static final double ROUTE_REPLAN_M = 0.50;
+    /** Waypoint reach radius while following the cached route. Small on purpose:
+     * the smoothed path only guarantees clearance for exact following, and a
+     * wide radius cuts inside corners (measured: 0.35 m clips the Red ramp). */
+    static final double ROUTE_WP_RADIUS_M = 0.15;
+    /**
+     * Braking rate for the route-follow velocity profile. Duplicates
+     * {@code TrajectoryController.MAX_DECELERATION_MPS2} (single-owned there
+     * for the full sim; duplicated so the MapleSim-free runner needs no
+     * drive controller — same pattern as {@link #CLIMB_RADIUS_M}).
+     */
+    static final double ROUTE_DECEL_MPS2 = 3.50;
+    /**
+     * Max yaw rate for every heading change, travel and aim alike (full-sim
+     * parity: the sim clamps omega to ±4.5 rad/s). One cap, not two: instant
+     * travel snaps and overhasty aim both inflate fire cadence, and replays
+     * should show robots turning, not teleporting their headings.
+     */
+    static final double HEADING_MAX_RAD_S = 4.5;
+    /**
+     * Fire only when near-settled. The analytic lead compensation (tof =
+     * 0.12 + 0.18 d) underestimates the true ~1.1 s lob, so the residual
+     * (tof error x speed) must stay inside the 0.38 m funnel box: 0.5 m/s
+     * keeps it there, 1.0 already misses. Matches the full sim, whose misses
+     * also come from firing while moving.
+     */
+    static final double FIRE_MAX_SPEED_MPS = 0.5;
+    /** APF-chatter blend: weight of the fresh shaped velocity vs last tick. */
+    static final double BLEND_ALPHA = 0.5;
+    /** Aim dropout coast, ticks: bridges sub-second aim flicker (lane/range
+     * edges) so the heading doesn't ping-pong travel↔aim every tick. */
+    static final int AIM_COAST_TICKS = 10;
+    /** Last engine aim, for coasting through dropouts. */
+    private Rotation2d latchedAim = null;
+    /** Ticks since the engine last provided an aim. */
+    private int aimCoast = 0;
+
+    /** Rate-limited turn toward the engine's aim. Pure; unit-tested. */
+    static Rotation2d slewToward(Rotation2d from, Rotation2d to, double maxStepRad) {
+        double err = to.minus(from).getRadians();
+        double step = Math.max(-maxStepRad, Math.min(maxStepRad, err));
+        return from.plus(new Rotation2d(step));
+    }
     private StrategicObjective lastObjective;
     private final double maxSpeedMps;
 
@@ -166,7 +234,7 @@ public final class StandaloneBot {
 
     /** Package-private: the runner's peer push-out writes back here. */
     void setPose(Pose2d pose) {
-        this.pose = pose;
+        this.pose = placePose(pose);
     }
 
     /** Package-private test seam: set the commanded velocity the referee reads. */
@@ -289,10 +357,13 @@ public final class StandaloneBot {
      * @param markPose  defensive mark (nearest opponent from the runner)
      * @param elapsedSec sim elapsed (the latches' time base — wall clock is frozen
      *                   in a fast loop)
+     * @param avoidDurationSec wall-validity for peer-avoidance registration;
+     *      pass the match duration so nothing expires mid-run (see registration)
      */
     public void step(double dtSec, double matchTimeRemaining, boolean isAuto,
             FuelStore fuel, char shiftSeed, int scoreDifferential, double timeUntilShift,
-            List<BotView> allies, List<BotView> opponents, Pose2d markPose, double elapsedSec) {
+            List<BotView> allies, List<BotView> opponents, Pose2d markPose, double elapsedSec,
+            double avoidDurationSec) {
         HubSchedule.Phase phase = HubSchedule.phaseFor(matchTimeRemaining, isAuto);
         boolean myHub = HubSchedule.isHubActive(isRed, phase, shiftSeed);
         boolean oppHub = HubSchedule.isHubActive(!isRed, phase, shiftSeed);
@@ -358,9 +429,53 @@ public final class StandaloneBot {
             hubActiveTeleopSec += dtSec;
         }
 
+        // Aim with dropout coast: the engine's aim flickers at lane/range
+        // edges, and chasing every flicker ping-pongs the heading. Coast the
+        // last aim briefly; travel heading otherwise.
+        Rotation2d followAim = intent.aimOverride();
+        if (followAim != null) {
+            latchedAim = followAim;
+            aimCoast = 0;
+        } else if (latchedAim != null && aimCoast < AIM_COAST_TICKS) {
+            followAim = latchedAim;
+            aimCoast++;
+        } else {
+            latchedAim = null;
+        }
+
         // Kinematic command toward the intent target (does not move the pose yet;
         // the watchdog arbitrates between this command and an escape).
         Pose2d target = intent.navigationTarget();
+        // Pursue-goal hysteresis (see field doc): adopt the engine's pick only
+        // when it moves, on arrival, or when the pursued point is blacklisted.
+        // Everything downstream (command, watchdog, route) runs on the pursued
+        // goal, so flips never reset progress tracking.
+        if (target == null) {
+            pursuedTarget = null;
+        } else {
+            Translation2d g = target.getTranslation();
+            boolean blacklisted = false;
+            if (pursuedTarget != null) {
+                for (Translation2d b : blockedUntil.keySet()) {
+                    if (b.getDistance(pursuedTarget)
+                            <= TargetProgressWatchdog.BLACKLIST_RADIUS_M) {
+                        blacklisted = true;
+                        break;
+                    }
+                }
+            }
+            Translation2d anchor = pursuedTarget == null ? g : pursuedTarget;
+            double arrivedDist = anchor.getDistance(pose.getTranslation());
+            if (pursuedTarget == null
+                    || pursuedTarget.getDistance(g) > PURSUE_HYST_M
+                    || arrivedDist < PURSUE_ARRIVED_M
+                    || blacklisted) {
+                pursuedTarget = g;
+                routedTarget = null;
+            } else {
+                target = new Pose2d(pursuedTarget, target.getRotation());
+            }
+        }
         double vx = 0.0;
         double vy = 0.0;
         double dist = 0.0;
@@ -397,22 +512,113 @@ public final class StandaloneBot {
         if (escaping) {
             // Escape vector is a field-relative velocity (ESCAPE_SPEED_MPS).
             Translation2d esc = progress.escapeVector();
-            pose = clampOnField(pose.getTranslation().plus(esc.times(dtSec)), pose);
+            pose = placePose(clampOnField(pose.getTranslation().plus(esc.times(dtSec)), pose));
             pathLengthM += esc.getNorm() * dtSec;
             velocity = new ChassisSpeeds(esc.getX(), esc.getY(), 0.0);
             escapes++;
+            // Pose moved off-route: force a replan once the escape ends.
+            routedTarget = null;
         } else {
             if (delta != null && dist > 1e-6) {
-                double step = Math.min(dist, maxSpeedMps * dtSec);
-                Translation2d next2d = pose.getTranslation().plus(delta.times(step / dist));
-                pose = new Pose2d(next2d, new Rotation2d(Math.atan2(delta.getY(), delta.getX())));
+                // Static route instead of a straight line: the full sim drives
+                // roadmap routes, and a straight cut through the hub/ramps both
+                // looks wrong in replay and inflates standalone throughput.
+                // Replan only when the target actually moves; an empty route
+                // (unreachable) falls back to the straight line so the
+                // watchdog can still give up and blacklist as before.
+                Translation2d goal = target.getTranslation();
+                if (routedTarget == null
+                        || routedTarget.getDistance(goal) > ROUTE_REPLAN_M) {
+                    routedTarget = goal;
+                    route.clear();
+                    route.addAll(StaticPathfinder.findPath(pose, target));
+                }
+                while (route.size() > 1
+                        && route.get(0).getTranslation().getDistance(pose.getTranslation())
+                                < ROUTE_WP_RADIUS_M) {
+                    route.remove(0);
+                }
+                Translation2d aim = route.isEmpty() ? goal : route.get(0).getTranslation();
+                Translation2d leg = aim.minus(pose.getTranslation());
+                double legDist = leg.getNorm();
+                Translation2d dir = legDist > 1e-6 ? leg.div(legDist) : delta.div(dist);
+                // Full-sim parity: kinematic braking curve into the target
+                // (TrajectoryController: v = min(v_max, sqrt(2 a d))). Profiled
+                // on distance-to-target while steering waypoint-to-waypoint,
+                // like its lookahead: full speed mid-route, settle on arrival.
+                // Constant cruise + dead stop mistimed every arrival and kept
+                // the fire gate shut until the stop tick. The min() cap below
+                // still guarantees arrival (never overshoots).
+                double vc = Math.min(maxSpeedMps, Math.sqrt(2.0 * ROUTE_DECEL_MPS2 * dist));
+                // Peer avoidance parity (TrajectoryController parity): shape the
+                // route velocity through the same APF the full sim uses, then
+                // integrate. The runner's positional push-out stays as the
+                // overlap guard, mirroring the arbiter's separation tier.
+                ChassisSpeeds desired =
+                        new ChassisSpeeds(dir.getX() * vc, dir.getY() * vc, 0.0);
+                ChassisSpeeds shaped = DynamicRouter.computeAvoidanceSpeeds(pose, desired, aim);
+                Translation2d sv = new Translation2d(
+                        shaped.vxMetersPerSecond, shaped.vyMetersPerSecond);
+                // The full sim desaturates downstream (swerve kinematics cap);
+                // here the raw APF sum is the wheel command, so cap it at the
+                // bot's max — unclamped repulsion sums teleport the bot.
+                if (sv.getNorm() > maxSpeedMps) {
+                    sv = sv.div(sv.getNorm()).times(maxSpeedMps);
+                }
+                // Damp scrum chatter: peer geometry flips the APF slide side
+                // faster than the 20 ms tick, so raw shaped velocity oscillates
+                // (measured: ~2.5k heading flips/match, ~130 m lateral slide).
+                // One-pole blend kills the alternation, passes steady motion
+                // with a tick of lag. Deterministic (pure state, no clock).
+                Translation2d prevV = new Translation2d(
+                        velocity.vxMetersPerSecond, velocity.vyMetersPerSecond);
+                Translation2d stepVec = sv.times(BLEND_ALPHA).plus(prevV.times(1.0 - BLEND_ALPHA))
+                        .times(dtSec);
+                if (stepVec.getNorm() > dist && dist > 1e-9) {
+                    stepVec = stepVec.div(stepVec.getNorm()).times(dist);
+                }
+                double step = stepVec.getNorm();
+                Translation2d next2d = pose.getTranslation().plus(stepVec);
+                // Follow the engine's aim when it wants to shoot: without this
+                // the heading stays frozen on the travel direction and the
+                // <8 deg fire gate never opens (dead holds at a live hub).
+                // Every heading change slews at the shared cap — travel turns
+                // too, so replays show rotation instead of snaps.
+                Rotation2d travelHeading = slewToward(pose.getRotation(),
+                        new Rotation2d(Math.atan2(dir.getY(), dir.getX())),
+                        HEADING_MAX_RAD_S * dtSec);
+                Rotation2d rawTarget = followAim != null ? followAim : travelHeading;
+                Rotation2d newHeading = slewToward(pose.getRotation(), rawTarget,
+                        HEADING_MAX_RAD_S * dtSec);
+                pose = placePose(new Pose2d(next2d, newHeading));
                 pathLengthM += step;
-                velocity = new ChassisSpeeds(delta.getX() / dist * step / dtSec,
-                        delta.getY() / dist * step / dtSec, 0.0);
+                velocity = step > 1e-9
+                        ? new ChassisSpeeds(stepVec.getX() / dtSec, stepVec.getY() / dtSec, 0.0)
+                        : new ChassisSpeeds();
             } else {
+                route.clear();
+                routedTarget = null;
+                // Arrived but aiming (the dead-hold case): turn in place so the
+                // fire gate can open.
+                if (followAim != null) {
+                    pose = new Pose2d(pose.getTranslation(),
+                            slewToward(pose.getRotation(), followAim,
+                                    HEADING_MAX_RAD_S * dtSec));
+                }
                 velocity = commanded;
             }
         }
+
+        // Presence for peers' avoidance (full-sim step-5 parity: same radius
+        // and non-proprioceptive flag as AIRobotInstance). Validity covers the
+        // whole run on purpose: the full sim's 0.35 s assumes 20 ms real-time
+        // ticks, but fast-forward ticks are sub-millisecond wall, so wall-clock
+        // expiry would race tick timing under load and break rerun equality.
+        // Debounce refreshes every tick anyway; run() clears across matches.
+        DynamicRouter.registerObstacle(
+                pose.getTranslation(),
+                new Translation2d(velocity.vxMetersPerSecond, velocity.vyMetersPerSecond),
+                0.55, avoidDurationSec, false);
 
         if (escaping) {
             return; // recovery maneuver: no pickup or shot this tick
@@ -431,7 +637,9 @@ public final class StandaloneBot {
         // accounted as wasted fuel; a SHUTTLE_PASS lob is deliberately aimed home
         // (legal) and is tracked separately. `attemptedShots`/`missedShots` keep
         // their original meaning: scoring-capable volleys only.
-        if (intent.triggerFeedKicker() && held > 0) {
+        if (intent.triggerFeedKicker() && held > 0
+                && Math.hypot(velocity.vxMetersPerSecond, velocity.vyMetersPerSecond)
+                        < FIRE_MAX_SPEED_MPS) {
             int fired = held;
             boolean inZone = FieldMap.AllianceZones.isInAllianceZone(pose, isRed);
             boolean inRange = hubTranslation().getDistance(pose.getTranslation())
@@ -486,13 +694,25 @@ public final class StandaloneBot {
      * chutes: each chute sits {@code GoalRadius} (0.5969 m) off the hub centre
      * with a ±0.149 / ±0.448 m lateral offset, launching at 2.2 m/s, −5° pitch,
      * and a yaw of ±11.25° / ±33.75° from the field-centre axis. Ballistic
-     * flight puts the piece roughly 0.8–1.6 m into the neutral midfield; the
-     * post-landing roll is not simulated. Seeded, so runs stay exact.
+     * flight puts the piece roughly a metre into the neutral midfield; the
+     * box below deliberately spreads several times wider than that footprint
+     * so recycled balls re-enter the harvest game across the midfield instead
+     * of piling at the chute mouths (widening the box shifts harvest density;
+     * re-run the A/B before quoting fidelity figures). The post-landing roll
+     * is not simulated. Seeded, so runs stay exact.
      */
+    /** Nearest edge of the recycle landing box from the hub plane, m. */
+    static final double RECYCLE_OUT_MIN_M = 0.8;
+    /** Farthest edge of the recycle landing box from the hub plane, m. */
+    static final double RECYCLE_OUT_MAX_M = 2.6;
+    /** Half-width of the recycle landing box along the hub line, m. */
+    static final double RECYCLE_LATERAL_HALF_M = 1.4;
+
     static Translation2d recycleLanding(boolean isRed, Random rng) {
         double hubX = isRed ? FieldMap.Hubs.RED_HUB_X : FieldMap.Hubs.BLUE_HUB_X;
-        double out = 0.8 + rng.nextDouble() * 0.8;
-        double lateral = (rng.nextDouble() - 0.5) * 1.2;
+        double out = RECYCLE_OUT_MIN_M
+                + rng.nextDouble() * (RECYCLE_OUT_MAX_M - RECYCLE_OUT_MIN_M);
+        double lateral = (rng.nextDouble() - 0.5) * 2.0 * RECYCLE_LATERAL_HALF_M;
         double x = isRed ? hubX - out : hubX + out;
         return new Translation2d(x, FieldMap.Hubs.HUB_Y + lateral);
     }
@@ -581,5 +801,21 @@ public final class StandaloneBot {
         double x = Math.min(Math.max(at.getX(), 0.3), FieldMap.FIELD_LENGTH - 0.3);
         double y = Math.min(Math.max(at.getY(), 0.3), FieldMap.FIELD_WIDTH - 0.3);
         return new Pose2d(x, y, keepHeading.getRotation());
+    }
+
+    /**
+     * Every pose write goes through here: bots cannot exist inside static
+     * geometry, no matter which update (route drive, watchdog escapes, peer
+     * push-outs) moved them. Static check ONLY — the shared
+     * {@code ensurePoseOutsideObstacles} also resolves <i>dynamic</i> (peer)
+     * obstacles, and since every bot registers itself, that flings each bot
+     * ~0.9 m east every tick (measured: 200–400 m per 10 s). Peers are
+     * APF/push-out business, never projection business.
+     */
+    private static Pose2d placePose(Pose2d p) {
+        if (!StaticPathfinder.isPointInStaticObstacle(p.getTranslation())) {
+            return p;
+        }
+        return StaticPathfinder.ensurePoseOutsideObstacles(p);
     }
 }

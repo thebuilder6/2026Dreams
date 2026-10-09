@@ -26,6 +26,20 @@ public final class StandaloneReplay {
     private static DoubleLogEntry blueScoreEntry;
     private static DoubleLogEntry redScoreEntry;
     private static StructArrayLogEntry<Pose3d> fuelEntry;
+    // Flush cadence. Array appends crash the JVM with an uncaught C++ exception
+    // once ~3 MB sits unflushed (bisected Oct 08: Pose3d[108] x500 ticks crashes,
+    // same x500 with a flush every 50 passes; wpiutil 2026.2.1). 100 ticks at the
+    // standalone 50 Hz rate keeps the buffer far below that ceiling.
+    private static final int FLUSH_EVERY_TICKS = 100;
+    private static long tickCount;
+    // Wall-clock base (us) + elapsed sim time. Data records must share an epoch
+    // with the entry start/schema records (timestamp 0 = wall-clock "now"): the
+    // old synthetic 0-based clock mixed wall-clock stamps (tick 0 lands on
+    // timestamp 0 = now) with 0..150M us data, so AdvantageScope showed a
+    // billion-second timeline. Elapsed derives from the observed remaining-time
+    // drop, so any duration works (the old code also hardcoded 150 s).
+    private static long timeBaseUs;
+    private static double startRemainingSec;
 
     private static List<StructLogEntry<Pose2d>> botPoseEntries;
     private static List<DoubleLogEntry> botHeldEntries;
@@ -39,6 +53,9 @@ public final class StandaloneReplay {
         if (writer != null) {
             return false;
         }
+        tickCount = 0;
+        timeBaseUs = System.currentTimeMillis() * 1000L;
+        startRemainingSec = Double.NaN;
         try {
             File f = new File(logPath);
             if (f.getParentFile() != null) {
@@ -69,7 +86,11 @@ public final class StandaloneReplay {
         if (writer == null) {
             return;
         }
-        long nowUs = (long) ((150.0 - timeRemainingSec) * 1_000_000L);
+        if (Double.isNaN(startRemainingSec)) {
+            startRemainingSec = timeRemainingSec;
+        }
+        double elapsedSec = Math.max(0.0, startRemainingSec - timeRemainingSec);
+        long nowUs = timeBaseUs + (long) (elapsedSec * 1_000_000L);
 
         timeRemainingEntry.append(timeRemainingSec, nowUs);
         blueScoreEntry.append(blueScored, nowUs);
@@ -107,6 +128,10 @@ public final class StandaloneReplay {
             cloud[i] = new Pose3d(at.getX(), at.getY(), 0.075, new Rotation3d());
         }
         fuelEntry.append(cloud, nowUs);
+
+        if (++tickCount % FLUSH_EVERY_TICKS == 0) {
+            writer.flush();
+        }
     }
 
     /** Flushes and closes the log. */

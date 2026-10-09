@@ -11,7 +11,6 @@ import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import frc.robot.Navigation.DynamicRouter;
-import frc.robot.Navigation.DynamicRouter.AvoidanceAlgorithm;
 import frc.robot.Navigation.DynamicObstacle;
 import frc.robot.Data.Constants;
 import frc.robot.Subsystems.Vision;
@@ -23,7 +22,6 @@ public class DynamicRouterTest {
     public void setup() {
         HAL.initialize(500, 0);
         DynamicRouter.clearObstacles();
-        DynamicRouter.setAlgorithm(AvoidanceAlgorithm.POTENTIAL_FIELDS);
     }
 
     @Test
@@ -42,14 +40,7 @@ public class DynamicRouterTest {
     }
 
     @Test
-    public void testAlgorithmSwitching() {
-        DynamicRouter.setAlgorithm(AvoidanceAlgorithm.POTENTIAL_FIELDS);
-        assertEquals(AvoidanceAlgorithm.POTENTIAL_FIELDS, DynamicRouter.getAlgorithm());
-    }
-
-    @Test
     public void testPotentialFieldsAvoidanceDeflection() {
-        DynamicRouter.setAlgorithm(AvoidanceAlgorithm.POTENTIAL_FIELDS);
 
         // Robot at (4.0, 3.0) heading along +X (towards (6.0, 3.0))
         Pose2d currentPose = new Pose2d(4.0, 3.0, new Rotation2d());
@@ -77,7 +68,6 @@ public class DynamicRouterTest {
 
     @Test
     public void testPotentialFieldsHeadOnAvoidance() {
-        DynamicRouter.setAlgorithm(AvoidanceAlgorithm.POTENTIAL_FIELDS);
 
         Pose2d currentPose = new Pose2d(4.0, 3.0, new Rotation2d());
         ChassisSpeeds nominalSpeeds = new ChassisSpeeds(2.5, 0.0, 0.0);
@@ -98,7 +88,6 @@ public class DynamicRouterTest {
 
     @Test
     public void testPotentialFieldsCorridorAvoidance() {
-        DynamicRouter.setAlgorithm(AvoidanceAlgorithm.POTENTIAL_FIELDS);
 
         Pose2d currentPose = new Pose2d(3.0, 4.0, new Rotation2d());
         ChassisSpeeds nominalSpeeds = new ChassisSpeeds(2.0, 0.0, 0.0);
@@ -117,7 +106,6 @@ public class DynamicRouterTest {
 
     @Test
     public void testProprioceptiveBumperRepulsionBoost() {
-        DynamicRouter.setAlgorithm(AvoidanceAlgorithm.POTENTIAL_FIELDS);
 
         Pose2d currentPose = new Pose2d(4.0, 3.0, new Rotation2d());
         ChassisSpeeds nominalSpeeds = new ChassisSpeeds(2.0, 0.0, 0.0);

@@ -154,27 +154,6 @@ public final class FieldMap {
         public static final double RED_SOUTH_RAMP_MIN_Y = BLUE_SOUTH_RAMP_MIN_Y;
         public static final double RED_SOUTH_RAMP_MAX_Y = BLUE_SOUTH_RAMP_MAX_Y;
 
-        /**
-         * Legacy union bounds across the Hub and its two ramp pieces. Prefer the
-         * per-piece bounds above.
-         */
-        @Deprecated
-        public static final double BLUE_RAMP_MIN_X = BLUE_NORTH_RAMP_MIN_X;
-        @Deprecated
-        public static final double BLUE_RAMP_MAX_X = BLUE_NORTH_RAMP_MAX_X;
-        @Deprecated
-        public static final double BLUE_RAMP_MIN_Y = BLUE_SOUTH_RAMP_MIN_Y;
-        @Deprecated
-        public static final double BLUE_RAMP_MAX_Y = BLUE_NORTH_RAMP_MAX_Y;
-        @Deprecated
-        public static final double RED_RAMP_MIN_X = RED_NORTH_RAMP_MIN_X;
-        @Deprecated
-        public static final double RED_RAMP_MAX_X = RED_NORTH_RAMP_MAX_X;
-        @Deprecated
-        public static final double RED_RAMP_MIN_Y = RED_SOUTH_RAMP_MIN_Y;
-        @Deprecated
-        public static final double RED_RAMP_MAX_Y = RED_NORTH_RAMP_MAX_Y;
-
         public static boolean isPoseOnRamp(Translation2d point) {
             if (point == null)
                 return false;

@@ -10,7 +10,6 @@ import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import edu.wpi.first.wpilibj.Timer;
-import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import frc.robot.Data.Constants;
 
 import org.littletonrobotics.junction.Logger;
@@ -22,12 +21,6 @@ import org.littletonrobotics.junction.Logger;
  * {@link #isZoneBlocked} queries for trench edge-masking in {@link StaticPathfinder}.
  */
 public class DynamicRouter {
-
-    public enum AvoidanceAlgorithm {
-        POTENTIAL_FIELDS
-    }
-
-    private static AvoidanceAlgorithm activeAlgorithm = AvoidanceAlgorithm.POTENTIAL_FIELDS;
 
     private static final List<DynamicObstacle> activeObstacles = new ArrayList<>();
     /** Radius within which a peer exerts repulsion. Public so tests can pin the curve. */
@@ -127,16 +120,6 @@ public class DynamicRouter {
     public static final Translation2d BLUE_CLIMB_POLE = FieldMap.ClimbingTowers.BLUE_TOWER_POLE;
     public static final Translation2d RED_CLIMB_POLE = FieldMap.ClimbingTowers.RED_TOWER_POLE;
     public static final double POLE_RADIUS = FieldMap.ClimbingTowers.POLE_RADIUS;
-
-    public static synchronized void setAlgorithm(AvoidanceAlgorithm algorithm) {
-        activeAlgorithm = algorithm;
-        SmartDashboard.putString("DynamicAvoidance/Algorithm", algorithm.name());
-        Logger.recordOutput("DynamicAvoidance/ActiveAlgorithm", algorithm.name());
-    }
-
-    public static synchronized AvoidanceAlgorithm getAlgorithm() {
-        return activeAlgorithm;
-    }
 
     public static synchronized void registerObstacle(Translation2d pos, Translation2d vel, double radius, double durationSec, boolean isProprioceptive) {
         if (pos == null) return;
@@ -254,13 +237,6 @@ public class DynamicRouter {
 
         if (activeObstacles.isEmpty()) {
             return nominalSpeeds;
-        }
-
-        // Phase 2: APF-only. Legacy dashboard algorithm keys resolve to POTENTIAL_FIELDS.
-        String dashAlgo = SmartDashboard.getString("DynamicAvoidance/Algorithm", activeAlgorithm.name());
-        try {
-            activeAlgorithm = AvoidanceAlgorithm.valueOf(dashAlgo);
-        } catch (IllegalArgumentException ignored) {
         }
 
         ChassisSpeeds resultSpeeds = computePotentialFields(currentPose, nominalSpeeds);

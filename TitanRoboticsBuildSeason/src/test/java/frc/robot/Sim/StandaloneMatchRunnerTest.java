@@ -7,14 +7,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.List;
 import java.util.Random;
 
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.kinematics.ChassisSpeeds;
+import edu.wpi.first.util.datalog.DataLogReader;
+import edu.wpi.first.util.datalog.DataLogRecord;
+import edu.wpi.first.util.struct.StructBuffer;
 import frc.robot.Intelligence.Archetype;
 import frc.robot.Navigation.FieldMap;
+import frc.robot.Navigation.StaticPathfinder;
 
 /**
  * Smoke coverage for the standalone (MapleSim-free) runner: deterministic,
@@ -157,7 +160,6 @@ public class StandaloneMatchRunnerTest {
                         + result.pickedUp() + " pool=" + config.fuelCount());
     }
 
-    @Disabled("Native DataLogWriter crashes JVM in headless test runner")
     @Test
     void testStandaloneLoggingCreatesWpilog() throws Exception {
         java.io.File tempLog = java.io.File.createTempFile("standalone_test_", ".wpilog");
@@ -174,6 +176,54 @@ public class StandaloneMatchRunnerTest {
         } finally {
             tempLog.delete();
         }
+    }
+
+    @Test
+    void botsNeverEnterHardObstaclesInLoggedMatch() throws Exception {
+        // Tripwire for straight-line hub/rail cuts: every logged bot pose over a
+        // full short match must clear the hard footprint (hub cores, ramps,
+        // tower posts). Bot poses are Pose2d structs under Standalone/<A><i>/Pose.
+        java.io.File tempLog = java.io.File.createTempFile("standalone_test_", ".wpilog");
+        tempLog.deleteOnExit();
+        try {
+            StandaloneMatchRunner.Config base = short3v3(7);
+            StandaloneMatchRunner.Config config = new StandaloneMatchRunner.Config(
+                    base.seed(), base.durationSec(), base.autoSec(),
+                    base.fuelCount(), base.shiftSeed(), base.bots(), tempLog.getAbsolutePath());
+            StandaloneMatchRunner.run(config);
+            java.util.Map<Integer, String> names = new java.util.HashMap<>();
+            StructBuffer<Pose2d> poseBuf = StructBuffer.create(Pose2d.struct);
+            int checked = 0;
+            DataLogReader reader = new DataLogReader(tempLog.getAbsolutePath());
+            for (DataLogRecord rec : reader) {
+                if (rec.isControl()) {
+                    if (rec.isStart()) {
+                        names.put(rec.getStartData().entry, rec.getStartData().name);
+                    }
+                    continue;
+                }
+                String name = names.getOrDefault(rec.getEntry(), "");
+                if (!name.endsWith("/Pose")) {
+                    continue;
+                }
+                byte[] raw = rec.getRaw();
+                Pose2d p = poseBuf.read(java.nio.ByteBuffer.wrap(raw));
+                checked++;
+                assertTrue(!StaticPathfinder.isPointInHardObstacle(p.getTranslation()),
+                        name + " inside hard obstacle at " + p.getTranslation());
+            }
+            assertTrue(checked > 0, "log should hold bot poses");
+        } finally {
+            tempLog.delete();
+        }
+    }
+
+    @Test
+    void aimSlewConvergesAtCappedRate() {
+        Rotation2d from = new Rotation2d(0.0);
+        Rotation2d to = Rotation2d.fromDegrees(90.0);
+        assertEquals(0.1, StandaloneBot.slewToward(from, to, 0.1).getRadians(), 1e-9);
+        assertEquals(Math.PI / 2, StandaloneBot.slewToward(from, to, 10.0).getRadians(), 1e-9);
     }
 
     @Test

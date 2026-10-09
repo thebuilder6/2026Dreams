@@ -11,9 +11,11 @@ import java.util.List;
 
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Translation2d;
+import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import frc.robot.Intelligence.Archetype;
 import frc.robot.Intelligence.PolicyWeights;
 import frc.robot.Intelligence.StrategicObjective;
+import frc.robot.Navigation.DynamicRouter;
 import frc.robot.Navigation.FieldMap;
 import frc.robot.Sim.StandaloneBot.BotView;
 
@@ -197,6 +199,9 @@ public final class StandaloneMatchRunner {
 
     public static Result run(Config config) {
         long wallStart = System.currentTimeMillis();
+        // The avoidance registry is process-global: never carry another
+        // match's (or test's) peer ghosts into this run.
+        DynamicRouter.clearObstacles();
         char savedSeed = HubSchedule.getShiftSeed();
         MatchDeterminism.seed(config.seed());
         boolean logging = config.logPath() != null && !config.logPath().isBlank();
@@ -217,8 +222,18 @@ public final class StandaloneMatchRunner {
             }
             StandaloneReferee referee = new StandaloneReferee();
             double[][] markSeconds = new double[bots.size()][bots.size()];
+            // Last-tick mark indices + whether that bot was on a marking
+            // objective: greedy exclusion across same-alliance defenders
+            // mirrors AIRobotSim's lastMarkByDefender bookkeeping. Decisions
+            // within a tick all read last tick's snapshot (copied at the end
+            // of the loop); this tick's choices land in tickMark/*.
+            int[] lastMarkIdx = new int[bots.size()];
+            boolean[] lastMarking = new boolean[bots.size()];
+            java.util.Arrays.fill(lastMarkIdx, -1);
 
             long ticks = Math.round(config.durationSec() / DT_SEC);
+            int[] tickMark = new int[bots.size()];
+            boolean[] tickMarking = new boolean[bots.size()];
             for (long tick = 0; tick < ticks; tick++) {
                 double elapsed = tick * DT_SEC;
                 double remaining = Math.max(0.0, config.durationSec() - elapsed);
@@ -264,11 +279,13 @@ public final class StandaloneMatchRunner {
                         }
                     }
                     int diff = bot.isRed() ? red - blue : blue - red;
-                    int markIdx = nearestOpponentIndex(
-                            bot.getPose().getTranslation(), opponents, opponentIndices);
+                    int markIdx = threatMarkIndex(
+                            i, bot, opponents, opponentIndices, lastMarkIdx, lastMarking,
+                            bots);
                     Pose2d markPose = markIdx >= 0 ? views.get(markIdx).pose() : bot.getPose();
                     bot.step(DT_SEC, remaining, isAuto, fuel, shiftSeed,
-                            diff, timeUntilShift, allies, opponents, markPose, elapsed);
+                            diff, timeUntilShift, allies, opponents, markPose, elapsed,
+                            config.durationSec());
 
                     // Teleop defensive attribution: credit the defender for the
                     // time it spent marking an opponent whose hub was live — the
@@ -277,8 +294,13 @@ public final class StandaloneMatchRunner {
                             && HubSchedule.isHubActive(bots.get(markIdx).isRed(), phase, shiftSeed)) {
                         markSeconds[i][markIdx] += DT_SEC;
                     }
+                    tickMark[i] = markIdx;
+                    tickMarking[i] = isMarkingObjective(bot.getObjective());
                 }
                 referee.update(bots, DT_SEC);
+                // Publish this tick's marks for next tick's exclusion decisions.
+                System.arraycopy(tickMark, 0, lastMarkIdx, 0, bots.size());
+                System.arraycopy(tickMarking, 0, lastMarking, 0, bots.size());
                 if (logging) {
                     StandaloneReplay.recordTick(remaining, bots, fuel, blue, red);
                 }
@@ -352,6 +374,53 @@ public final class StandaloneMatchRunner {
             }
         }
         return best;
+    }
+
+    /**
+     * Threat-weighted mark (AIRobotSim parity: held fuel x3 + scored x1 -
+     * distance x0.25, greedy exclusion of carriers fellow defenders marked
+     * last tick). Falls back to nearest when there are no opponents.
+     */
+    private static int threatMarkIndex(
+            int selfIdx, StandaloneBot bot,
+            List<BotView> opponents, List<Integer> opponentIndices,
+            int[] lastMarkIdx, boolean[] lastMarking, List<StandaloneBot> bots) {
+        if (opponents.isEmpty()) {
+            return -1;
+        }
+        List<AIRobotSim.MarkCandidate> candidates = new ArrayList<>();
+        for (int k = 0; k < opponents.size(); k++) {
+            BotView o = opponents.get(k);
+            int j = opponentIndices.get(k);
+            candidates.add(new AIRobotSim.MarkCandidate(
+                    (bots.get(j).isRed() ? "R" : "B") + j,
+                    o.pose(), o.velocity(), o.held(), o.scored()));
+        }
+        java.util.Set<String> taken = new java.util.HashSet<>();
+        for (int m = 0; m < bots.size(); m++) {
+            if (m != selfIdx && bots.get(m).isRed() == bot.isRed()
+                    && lastMarking[m] && lastMarkIdx[m] >= 0) {
+                taken.add((bots.get(lastMarkIdx[m]).isRed() ? "R" : "B") + lastMarkIdx[m]);
+            }
+        }
+        AIRobotSim.MarkCandidate fallback = new AIRobotSim.MarkCandidate(
+                "near", bot.getPose(), new ChassisSpeeds(), 0, 0);
+        AIRobotSim.MarkCandidate pick = AIRobotSim.selectMarkExcluding(
+                bot.getPose(), candidates, fallback, taken);
+        if (pick == null || pick.label() == null || pick.label().length() < 2) {
+            return nearestOpponentIndex(
+                    bot.getPose().getTranslation(), opponents, opponentIndices);
+        }
+        try {
+            int idx = Integer.parseInt(pick.label().substring(1));
+            if (idx >= 0 && idx < bots.size()
+                    && bots.get(idx).isRed() != bot.isRed()) {
+                return idx;
+            }
+        } catch (NumberFormatException ignored) {
+        }
+        return nearestOpponentIndex(
+                bot.getPose().getTranslation(), opponents, opponentIndices);
     }
 
     /** Defensive postures whose intent is to physically mark an opponent. */

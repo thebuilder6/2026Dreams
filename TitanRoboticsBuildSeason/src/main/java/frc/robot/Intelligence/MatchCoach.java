@@ -264,7 +264,7 @@ public class MatchCoach implements Subsystem {
         try {
             int heldFuelEstimate = intake.hasFuel() ? 6 : 0;
             WorldState world = WorldStateBuilder.buildForPlayerRobot(heldFuelEstimate);
-            AIActionIntent intent = JevDecisionEngine.getInstance().evaluatePolicy(
+            AIActionIntent intent = JevDecisionEngine.getPolicy().evaluatePolicy(
                     world, frc.robot.Intelligence.ObservedKnowledge.selfOnly(), Archetype.CO_PILOT);
 
             switch (intent.objective()) {

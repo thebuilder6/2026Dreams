@@ -369,7 +369,7 @@ public class AIRobotInstance {
         // 2. Evaluate unified Jev policy (stateless System 2 + System 1).
         // Fuel the watchdog has abandoned this match is excluded so a selector
         // cannot re-pick an unreachable piece every cycle.
-        AIActionIntent intent = JevDecisionEngine.getInstance().evaluatePolicy(
+        AIActionIntent intent = JevDecisionEngine.getPolicy().evaluatePolicy(
                 worldState, knowledge, archetype,
                 "Sim/" + (isAlly ? "Alliance/Ally" + (botId - 100) : "Opponents/Bot" + botId),
                 targetProgressWatchdog.blockedPoints(), objectiveCommitment, fuelTargetMemory);

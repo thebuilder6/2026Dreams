@@ -40,7 +40,7 @@ import org.littletonrobotics.junction.Logger;
  * - System 1: High-frequency (<1ms) tactical policy generating concrete
  * mechanism and drive intents.
  */
-public class JevDecisionEngine {
+public class JevDecisionEngine implements JevPolicy {
 
     public enum DecisionMode {
         LOCAL_HEURISTIC,
@@ -148,6 +148,28 @@ public class JevDecisionEngine {
             instance = new JevDecisionEngine();
         }
         return instance;
+    }
+
+    // shortcut: process-wide holder, not per-bot injection — upgrade when heterogeneous bot policies are needed.
+    private static volatile JevPolicy activePolicy = null;
+
+    /**
+     * Active decision policy. Defaults to the local engine singleton; a training
+     * repo substitutes its own via {@link #setPolicy} without forking callers.
+     */
+    public static JevPolicy getPolicy() {
+        JevPolicy p = activePolicy;
+        return p != null ? p : getInstance();
+    }
+
+    /** Overrides the active policy (tests, training harness). Null clears it. */
+    public static void setPolicy(JevPolicy policy) {
+        activePolicy = policy;
+    }
+
+    /** Restores the default local-engine policy. */
+    public static void resetPolicy() {
+        activePolicy = null;
     }
 
     private DecisionResult lastDecision = null;
@@ -860,6 +882,7 @@ public class JevDecisionEngine {
      *
      * @param nowSeconds caller-owned time base (sim elapsed, seconds)
      */
+    @Override
     public AIActionIntent evaluatePolicy(
             WorldState world, MatchKnowledge knowledge, Archetype archetype, String cloudContext,
             Set<Translation2d> blockedFuel, ObjectiveCommitment commitmentIn,

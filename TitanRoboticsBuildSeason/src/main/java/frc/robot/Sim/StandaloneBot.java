@@ -421,7 +421,7 @@ public final class StandaloneBot {
         // key TTL reads the wall clock, which is frozen here).
         blockedUntil.keySet().removeIf(p -> blockedUntil.get(p) <= elapsedSec);
 
-        AIActionIntent intent = JevDecisionEngine.getInstance()
+        AIActionIntent intent = JevDecisionEngine.getPolicy()
                 .evaluatePolicy(world, knowledge, archetype, null,
                         new HashSet<>(blockedUntil.keySet()), commitment, fuelTargetMemory, null, elapsedSec);
         lastObjective = intent.objective();

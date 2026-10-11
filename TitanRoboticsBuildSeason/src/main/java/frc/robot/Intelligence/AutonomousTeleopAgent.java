@@ -78,7 +78,7 @@ public class AutonomousTeleopAgent {
      */
     public AIActionIntent getCoPilotIntent(int heldBalls) {
         WorldState world = WorldStateBuilder.buildForPlayerRobot(heldBalls, hasShooter, ballCapacity, hasClimber);
-        latestIntent = JevDecisionEngine.getInstance().evaluatePolicy(
+        latestIntent = JevDecisionEngine.getPolicy().evaluatePolicy(
                 world, ObservedKnowledge.selfOnly(), Archetype.CO_PILOT, null, null,
                 objectiveCommitment, fuelTargetMemory);
         activeObjective = latestIntent.objective();

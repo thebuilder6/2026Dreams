@@ -46,7 +46,23 @@ public enum Terminal {
     /** 1 when an ally is within 3 m (needs ally poses). */
     ALLY_NEAR_ME(Tier.CLAIRVOYANT),
     /** 1 when the opponent is in a low-clearance trench (needs opponent pose). */
-    OPP_IN_TRENCH(Tier.CLAIRVOYANT);
+    OPP_IN_TRENCH(Tier.CLAIRVOYANT),
+    /** 1 when this robot carries a fitted shooter (own hardware). */
+    HAS_SHOOTER(Tier.OBSERVED),
+    /** 1 when this robot carries a climber (own hardware). */
+    HAS_CLIMBER(Tier.OBSERVED),
+    /** 1 while the match clock is in autonomous (FMS phase). */
+    IS_AUTONOMOUS(Tier.OBSERVED),
+    /** 1 when our bumpers are inside a low-clearance trench band (odometry). */
+    IN_LOW_CLEARANCE(Tier.OBSERVED),
+    /** 1 when opponent tracks exist (derived from the knowledge kind, both tiers). */
+    OPPONENT_OBSERVED(Tier.OBSERVED),
+    /** 1 when a tracked opponent is within 2.4 m of our hub (shot-contest range). */
+    OPP_NEAR_MY_HUB(Tier.CLAIRVOYANT),
+    /** Ally-side held fuel, squashed over 0-30 (screen thresholds at 12/20). */
+    ALLIES_HELD_FUEL(Tier.CLAIRVOYANT),
+    /** 1 when an ally sits within 3.8 m of an opponent (screen-distress range). */
+    ALLY_IN_DISTRESS(Tier.CLAIRVOYANT);
 
     /** Which knowledge kind can honestly produce this terminal. */
     public enum Tier {

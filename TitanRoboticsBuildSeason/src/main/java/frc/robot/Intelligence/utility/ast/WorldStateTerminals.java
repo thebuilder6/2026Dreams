@@ -88,8 +88,35 @@ public final class WorldStateTerminals {
                 .set(Terminal.OPPONENT_FUEL, clamp01(k.opponentZoneFuel() / FUEL_NORM))
                 .set(Terminal.ALLY_NEAR_ME, allyNear)
                 .set(Terminal.OPP_IN_TRENCH, oppInTrench)
+                .setFlag(Terminal.HAS_SHOOTER, world.hasShooter())
+                .setFlag(Terminal.HAS_CLIMBER, world.hasClimber())
+                .setFlag(Terminal.IS_AUTONOMOUS, world.isAutonomous())
+                .setFlag(Terminal.IN_LOW_CLEARANCE,
+                        FieldMap.Trenches.isLowClearance(world.selfPose()))
+                .setFlag(Terminal.OPPONENT_OBSERVED, k.opponentObserved())
+                // Mirrors the engine's snipe close/far branch exactly: the tracked
+                // opponent pose against our hub, gated by the knowledge carrying
+                // tracks. (The 2.4 m contest range is single-owned by the engine.)
+                .setFlag(Terminal.OPP_NEAR_MY_HUB, k.opponentObserved()
+                        && world.opponentPose().getTranslation().getDistance(selfHub) <= 2.4)
+                // Mirrors the engine's screen-distress loop exactly: any ally within
+                // 3.8 m of any opponent. (The range is single-owned by the engine;
+                // the hub/fuel/observed gates stay separate tree factors.)
+                .setFlag(Terminal.ALLY_IN_DISTRESS, allyInDistress(k))
+                .set(Terminal.ALLIES_HELD_FUEL, clamp01((double) k.alliesHeldFuel() / FUEL_NORM))
                 .observed(observed)
                 .build();
+    }
+
+    private static boolean allyInDistress(MatchKnowledge k) {
+        for (Pose2d ally : k.allyPoses()) {
+            for (Pose2d opponent : k.opponentPoses()) {
+                if (ally.getTranslation().getDistance(opponent.getTranslation()) <= 3.8) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private static double nearness(double meters, double norm) {

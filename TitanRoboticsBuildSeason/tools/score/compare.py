@@ -25,6 +25,13 @@ So a rising blueTotal currently means exactly "Blue scored more fuel". This tool
 therefore requires a win to be **fuel-driven** and reports the decomposition, so
 a gain can never be quietly attributed to penalty points that Red conceded.
 
+Standalone rows differ: since Oct 09 their ``blueTotal`` is the full rulebook
+total (fuel + 10/climb + opponent-credited penalties), and matches run with
+``--climb`` or real pin contact carry nonzero climb/penalty terms. The
+fuel-driven gate above already compares ``blueFuel``/``bluePenaltyPoints``
+explicitly, so it holds for both row kinds — but read ``blueTotal`` on a
+standalone row as the match score, never as fuel.
+
 **Guardrails are role-aware.** A defender is *designed* not to score:
 ``JevDecisionEngine`` zeroes ``scoreUtility`` for TACTICAL_DEFENDER and
 DEFENSE_BULLY. A fuel-share gate applied to them is meaningless - in the

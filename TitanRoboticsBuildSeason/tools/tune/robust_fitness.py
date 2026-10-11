@@ -15,9 +15,12 @@ split, and a discrete Blue-collapse mode (same seed: 7 vs 240). The classic
   2. Scores **efficiency** (teleop fuel per path metre) plus waste / motion /
      foul terms. Efficiency varies far less seed-to-seed than absolute fuel
      because seed difficulty (how much fuel the field offers) cancels out.
-  3. Pairs per seed and takes the **median** delta with a bootstrap CI;
-     replica-aligned (optimizer sweeps share replica numbering; archive
-     cross-replica analysis zips by replica order).
+  3. Scores **winning first**: per clean pair +1/0/-1 on the match result
+     (ties half), then maximized ``WIN_WEIGHT * win edge + capped median
+     rulebook-margin delta``. Margin only breaks ties among equal-win
+     candidates — no blowout outranks a win. Pairs are replica-aligned
+     (optimizer sweeps share replica numbering; archive cross-replica
+     analysis zips by replica order).
   4. **Refuses** to certify on fewer than ``MIN_PAIRED_SEEDS`` clean pairs.
 
 Status: experimental candidate. ``fitness.py`` stays authoritative and is still
@@ -74,6 +77,14 @@ COLLAPSE_PATH_M = 25.0
 # effect needs hundreds of matches; below this many clean pairs the CI is
 # theatre, so return -inf with a LOW_N reason instead of a number.
 MIN_PAIRED_SEEDS = 4
+
+# Win-led scalar: matches are won by winning. WIN_WEIGHT prices one full
+# point of paired win edge (e.g. flipping every pair from loss to win moves
+# the edge by 2.0); MARGIN_CAP bounds the margin tiebreak so no blowout can
+# outrank a win (3.0 ≈ 2x a healthy efficiency score, same scale as MOTION_CAP
+# below). Margin never decides against the win edge — that is the point.
+WIN_WEIGHT = 10.0
+MARGIN_CAP = 3.0
 
 CLEAN = "CLEAN"
 COLLAPSED = "COLLAPSED"
@@ -215,11 +226,14 @@ def evaluate_paired_robust(
     min_seeds: int = MIN_PAIRED_SEEDS,
     strict_provenance: bool = True,
 ) -> Tuple[float, Dict[str, Any]]:
-    """Median paired-delta fitness with bootstrap-CI lower bound.
+    """Win-led paired fitness with a capped margin tiebreak.
 
-    Returns (conservative, stats). conservative = bootstrap lower bound of the
-    median delta — the number to maximize. -inf with a reason when there is
-    nothing certifiable (no clean pairs, or fewer than min_seeds).
+    Per clean pair: +1 trial-won-baseline-lost, 0 same result, -1 the reverse
+    (ties count half a win each side). The maximized scalar is
+    ``WIN_WEIGHT * mean(win points) + clamp(median(rulebook-margin delta))`` —
+    winning decides; margin only breaks ties among equal-win candidates.
+    Returns (conservative, stats). -inf with a reason when there is nothing
+    certifiable (no clean pairs, or fewer than min_seeds).
     """
     # Pair per seed, replica-aligned: optimizer sweeps number replicas from 0
     # on both sides so pairs are (seed, replica); archive analysis (e.g.
@@ -228,6 +242,8 @@ def evaluate_paired_robust(
     base_groups = _seed_groups(baseline_rows)
 
     deltas: List[float] = []
+    win_points: List[float] = []
+    margin_deltas: List[float] = []
     pairs: List[Tuple[Any, Any, Any]] = []
     n_collapsed = 0
     n_contaminated = 0
@@ -247,6 +263,8 @@ def evaluate_paired_robust(
                 continue
             deltas.append(robust_single_score(r, strict_provenance)
                           - robust_single_score(b, strict_provenance))
+            win_points.append(_row_win(r) - _row_win(b))
+            margin_deltas.append(_row_margin(r) - _row_margin(b))
             pairs.append(key)
 
     stats: Dict[str, Any] = {
@@ -256,6 +274,9 @@ def evaluate_paired_robust(
         "provenance_relaxed": not strict_provenance,
         "pairs": pairs,
         "raw_deltas": deltas,
+        "pairs_won": sum(1 for w in win_points if w > 0),
+        "pairs_even": sum(1 for w in win_points if w == 0),
+        "pairs_lost": sum(1 for w in win_points if w < 0),
     }
     if not deltas:
         stats["reason"] = "NO_CLEAN_PAIRS"
@@ -269,6 +290,9 @@ def evaluate_paired_robust(
     mean_delta = sum(deltas) / len(deltas)
     lo, hi = bootstrap_ci(deltas)
     sign_rate = sum(1 for d in deltas if d > 0) / len(deltas)
+    win_edge = sum(win_points) / len(win_points)
+    margin_median = float(statistics.median(margin_deltas))
+    conservative = WIN_WEIGHT * win_edge + max(-MARGIN_CAP, min(MARGIN_CAP, margin_median))
     stats.update(
         {
             "median": median_delta,
@@ -276,7 +300,41 @@ def evaluate_paired_robust(
             "bootstrap_lo": lo,
             "bootstrap_hi": hi,
             "sign_rate": sign_rate,
+            "win_edge": win_edge,
+            "margin_median": margin_median,
             "reason": "OK",
         }
     )
-    return lo, stats
+    return conservative, stats
+
+
+def _row_win(row: Dict[str, Any]) -> float:
+    """Blue's match points: 1 win, 0.5 tie, 0 loss.
+
+    Reads the row's ``winner`` field (what each engine reports); rows
+    predating it fall back to comparing ``blueTotal``/``redTotal``; rows
+    with neither count as tied (neutral — they cannot move the edge).
+    """
+    w = row.get("winner")
+    if w == "Blue":
+        return 1.0
+    if w == "Tie":
+        return 0.5
+    if w == "Red":
+        return 0.0
+    bt = row.get("blueTotal")
+    rt = row.get("redTotal")
+    if bt is None or rt is None:
+        return 0.5
+    if bt > rt:
+        return 1.0
+    if bt == rt:
+        return 0.5
+    return 0.0
+
+
+def _row_margin(row: Dict[str, Any]) -> float:
+    """Rulebook margin (Blue − Red) from the row totals; 0.0 when absent."""
+    bt = row.get("blueTotal", 0) or 0
+    rt = row.get("redTotal", 0) or 0
+    return float(bt) - float(rt)

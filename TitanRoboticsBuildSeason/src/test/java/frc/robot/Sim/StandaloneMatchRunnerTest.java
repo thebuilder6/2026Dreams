@@ -297,8 +297,7 @@ public class StandaloneMatchRunnerTest {
     }
 
     @Test
-    void climberOnTheTowerInsideTheEndgameWindowIsCredited() {
-        Pose2d onTower = new Pose2d(FieldMap.ClimbingTowers.BLUE_TOWER_POLE, Rotation2d.fromDegrees(0));
+    void climberOnTheTowerInsideTheEndgameWindowIsCredited() {        Pose2d onTower = new Pose2d(FieldMap.ClimbingTowers.BLUE_TOWER_POLE, Rotation2d.fromDegrees(0));
         StandaloneMatchRunner.BotSpec spec = new StandaloneMatchRunner.BotSpec(
                 Archetype.AUTONOMOUS_CYCLER, false, onTower, 0, true);
         StandaloneMatchRunner.Config config = new StandaloneMatchRunner.Config(
@@ -307,6 +306,41 @@ public class StandaloneMatchRunnerTest {
         assertTrue(result.botTelemetry()[0].climbed(),
                 "a climber sitting on the tower inside the endgame window must be credited");
         assertTrue(result.botTelemetry()[0].climbArrivalSec() >= 0.0);
+    }
+
+    @Test
+    void totalsFollowTheRulebookNotFuelAlone() {
+        StandaloneMatchRunner.Result result =
+                StandaloneMatchRunner.run(StandaloneMatchRunner.default3v3(42));
+        int blueClimbs = 0;
+        int redClimbs = 0;
+        int blueMinor = 0;
+        int blueMajor = 0;
+        int redMinor = 0;
+        int redMajor = 0;
+        for (StandaloneMatchRunner.BotTelemetry t : result.botTelemetry()) {
+            if (t.isRed()) {
+                redMinor += t.minorFouls();
+                redMajor += t.majorFouls();
+                if (t.climbed()) {
+                    redClimbs++;
+                }
+            } else {
+                blueMinor += t.minorFouls();
+                blueMajor += t.majorFouls();
+                if (t.climbed()) {
+                    blueClimbs++;
+                }
+            }
+        }
+        // Mirror of MatchScoreTracker: fuel + 10 per climb + opponent-credited penalties.
+        assertEquals(result.blueScored() + 10 * blueClimbs + 5 * redMinor + 15 * redMajor,
+                result.blueTotal());
+        assertEquals(result.redScored() + 10 * redClimbs + 5 * blueMinor + 15 * blueMajor,
+                result.redTotal());
+        String expect = result.blueTotal() > result.redTotal() ? "Blue"
+                : result.redTotal() > result.blueTotal() ? "Red" : "Tie";
+        assertEquals(expect, result.winner(), "winner follows the rulebook totals");
     }
 
     @Test

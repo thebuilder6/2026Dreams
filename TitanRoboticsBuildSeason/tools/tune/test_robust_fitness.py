@@ -11,9 +11,11 @@ from tools.tune.robust_fitness import (
 
 
 def row(seed, replica=0, blue_tele=200, red_tele=180, path=450.0,
-        dirty=0, overruns=0, max_ms=20.0, resid=0, wasted=0, fouls=0):
+        dirty=0, overruns=0, max_ms=20.0, resid=0, wasted=0, fouls=0,
+        winner="Blue", blueTotal=200, redTotal=180):
     return {
         "schemaVersion": 2, "seed": seed, "replica": replica, "dirty": dirty,
+        "winner": winner, "blueTotal": blueTotal, "redTotal": redTotal,
         "blueTeleopFuel": blue_tele, "redTeleopFuel": red_tele,
         "blueWastedFuel": wasted, "redPenaltyPoints": fouls,
         "blueReconciliationResidual": resid, "redReconciliationResidual": 0,
@@ -52,16 +54,17 @@ check("unknown provenance censored",
 check("health censored", classify_row(row(1, overruns=99))[0] == CONTAMINATED)
 check("canary censored", classify_row(row(1, resid=5))[0] == CONTAMINATED)
 
-# 4. LOW_N refusal, then OK at 4 pairs
+# 4. LOW_N refusal, then OK at 4 pairs (margin +10/pair, capped at +3)
 seeds = [7, 11, 42]
 base = [row(s, blue_tele=135) for s in seeds]
-trial = [row(s, blue_tele=148) for s in seeds]
+trial = [row(s, blue_tele=148, blueTotal=210) for s in seeds]
 fit, st = evaluate_paired_robust(trial, base)
 check("low-n refused", fit == float("-inf") and st["reason"] == "LOW_N")
 base.append(row(101, blue_tele=135))
-trial.append(row(101, blue_tele=148))
+trial.append(row(101, blue_tele=148, blueTotal=210))
 fit, st = evaluate_paired_robust(trial, base)
-check("n=4 certified", st["reason"] == "OK" and fit > 0 and st["sign_rate"] == 1.0)
+check("n=4 certified", st["reason"] == "OK" and fit == 3.0 and st["sign_rate"] == 1.0
+      and st["win_edge"] == 0.0 and st["margin_median"] == 10.0)
 
 # 5. outlier robustness: 4× +1 delta, 1× clean -10 (collapsed would censor, so
 #    use a legit bad-but-clean row): median stays +1, mean goes negative.
@@ -86,5 +89,26 @@ check("unknown provenance relaxed", classify_row(nodirty, False)[0] == CLEAN)
 fit7, st7 = evaluate_paired_robust(
     [nodirty], [dict(nodirty, seed=7, blue_tele=135)], strict_provenance=False)
 check("relaxed flag recorded", st7["provenance_relaxed"] is True and st7["reason"] == "LOW_N")
+
+# 8. winning decides: trial wins every pair while scoring worse on fuel —
+#    the scalar stays positive on the win edge alone.
+seeds8 = [7, 11, 42, 101]
+trial8 = [row(s, blue_tele=50, winner="Blue") for s in seeds8]
+base8 = [row(s, blue_tele=200, winner="Red") for s in seeds8]
+fit8, st8 = evaluate_paired_robust(trial8, base8)
+check("wins outrank efficiency", fit8 == 10.0 and st8["win_edge"] == 1.0
+      and st8["median"] < 0)
+
+# 9. ties count half: all-tied pairs score the capped margin only.
+trial9 = [row(s, winner="Tie", blueTotal=200) for s in seeds8]
+base9 = [row(s, winner="Tie", blueTotal=190) for s in seeds8]
+fit9, st9 = evaluate_paired_robust(trial9, base9)
+check("ties halve out", fit9 == 3.0 and st9["pairs_even"] == 4 and st9["win_edge"] == 0.0)
+
+# 10. winner missing falls back to totals (win counts accrue even on LOW_N).
+trial10 = [dict(row(s, blueTotal=210, winner=None)) for s in [7, 11, 42]]
+base10 = [dict(row(s, blueTotal=170, winner=None)) for s in [7, 11, 42]]
+fit10, st10 = evaluate_paired_robust(trial10, base10)
+check("totals fallback", st10["reason"] == "LOW_N" and st10["pairs_won"] == 3)
 
 print("ALL ROBUST_FITNESS TESTS PASS")

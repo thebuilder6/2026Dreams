@@ -5,7 +5,7 @@ import java.util.List;
 import java.util.Map;
 
 import edu.wpi.first.math.geometry.Translation2d;
-
+import edu.wpi.first.math.kinematics.ChassisSpeeds;
 /**
  * Minimal, deterministic G418 pin referee for the standalone runner.
  *
@@ -27,8 +27,14 @@ import edu.wpi.first.math.geometry.Translation2d;
  * correct, not fabricated.
  */
 final class StandaloneReferee {
-    /** Center distance below which two robots are in contact, m. */
-    static final double CONTACT_DIST_M = 1.10;
+    /**
+     * Center distance below which two robots are in contact, m: exactly the
+     * push-out equilibrium, so pairs resting at the separation floor never
+     * accrue — only real overlap plus active closing counts. (A wider gate
+     * kept chasing defenders perpetually "in contact"; running after
+     * separation instead would zero the channel entirely, including true pins.)
+     */
+    static final double CONTACT_DIST_M = StandaloneMatchRunner.PEER_MIN_DISTANCE_M;
     /** Pin duration that draws the first (minor) foul, s. */
     static final double PIN_MAX_SEC = 3.0;
     /** Additional uncorrected duration per escalating major foul, s. */
@@ -37,6 +43,8 @@ final class StandaloneReferee {
     static final double PIN_SEPARATION_M = 1.83;
     /** Speed projection toward the opponent above which a bot is actively pinning, m/s. */
     static final double AGGRESSOR_DOT_MPS = 0.15;
+    /** Victim speed below which it counts as held rather than contesting free, m/s. */
+    static final double VICTIM_HELD_MPS = 0.30;
     /** Maximum escalations per contact engagement; separation is required to reset. */
     static final int MAX_PIN_VIOLATIONS = 3;
 
@@ -67,11 +75,17 @@ final class StandaloneReferee {
                 }
                 double aInto = projectionToward(a, b);
                 double bInto = projectionToward(b, a);
+                StandaloneBot aggressor = aInto >= bInto ? a : b;
+                StandaloneBot victim = aggressor == a ? b : a;
                 double closing = Math.max(aInto, bInto);
-                if (dist >= CONTACT_DIST_M || closing <= AGGRESSOR_DOT_MPS) {
-                    // Touching without driving in, or between contact and
-                    // separation: hold the count, no accrual. Passive proximity
-                    // is not a PIN; only active contact is.
+                // A pin traps someone: the aggressor drives in AND the victim
+                // cannot get away. A fleeing victim (full speed, glued chaser)
+                // is a chase, not a pin — the old max-only gate counted those.
+                if (dist >= CONTACT_DIST_M || closing <= AGGRESSOR_DOT_MPS
+                        || victimSpeed(victim) >= VICTIM_HELD_MPS) {
+                    // Touching without driving in, a free victim, or between
+                    // contact and separation: hold the count, no accrual.
+                    // Passive proximity is not a PIN; only trapping contact is.
                     decay(key, dtSec);
                     continue;
                 }
@@ -87,7 +101,6 @@ final class StandaloneReferee {
                 if (deserved <= already) {
                     continue;
                 }
-                StandaloneBot aggressor = aInto >= bInto ? a : b;
                 for (int v = already; v < deserved; v++) {
                     if (v == 0) {
                         aggressor.recordMinorFoul();
@@ -112,6 +125,12 @@ final class StandaloneReferee {
         } else {
             pinTimes.put(key, decayed);
         }
+    }
+
+    /** Speed norm of a bot, m/s. */
+    private static double victimSpeed(StandaloneBot bot) {
+        ChassisSpeeds v = bot.getVelocity();
+        return Math.hypot(v.vxMetersPerSecond, v.vyMetersPerSecond);
     }
 
     /** Speed of {@code from} along the unit vector toward {@code to}, m/s. */

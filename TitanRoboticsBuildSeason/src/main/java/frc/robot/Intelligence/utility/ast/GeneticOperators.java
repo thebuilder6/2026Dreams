@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Random;
 
 import frc.robot.Intelligence.utility.ast.ExpressionNode.Constant;
+import frc.robot.Intelligence.utility.ast.ExpressionNode.Affine;
 import frc.robot.Intelligence.utility.ast.ExpressionNode.Gaussian;
 import frc.robot.Intelligence.utility.ast.ExpressionNode.IfThenElse;
 import frc.robot.Intelligence.utility.ast.ExpressionNode.Max;
@@ -53,7 +54,7 @@ public final class GeneticOperators {
             return randomLeaf(rng);
         }
         int d = maxDepth - 1;
-        return switch (rng.nextInt(10)) {
+        return switch (rng.nextInt(11)) {
             case 0 -> new Product(children(rng, d, 2 + rng.nextInt(2)));
             case 1 -> new Sum(children(rng, d, 2));
             case 2 -> new Min(children(rng, d, 2));
@@ -63,7 +64,8 @@ public final class GeneticOperators {
             case 6 -> new Sigmoid(randomTree(rng, d), 1.0 + rng.nextDouble() * 9.0, rng.nextDouble());
             case 7 -> new Gaussian(randomTree(rng, d), rng.nextDouble(), 0.05 + rng.nextDouble() * 0.45);
             case 8 -> new Power(randomTree(rng, d), 0.5 + rng.nextDouble() * 2.5);
-            default -> new Not(randomTree(rng, d));
+            case 9 -> new Not(randomTree(rng, d));
+            default -> new Affine(randomTree(rng, d), randomConstant(rng), rng.nextDouble());
         };
     }
 

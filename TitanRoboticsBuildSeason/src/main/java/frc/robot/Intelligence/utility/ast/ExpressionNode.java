@@ -383,9 +383,32 @@ public sealed interface ExpressionNode {
         }
     }
 
-    /** Logical negation on the {@code [0,1]} domain: {@code 1 - x}. */
-    record Not(ExpressionNode x) implements ExpressionNode {
+    /**
+     * Affine ramp {@code slope * x + intercept}, mirroring a
+     * {@code ResponseCurve.linear} segment: the input is clamped to
+     * {@code [0,1]} before shaping and the result is clamped after, so the
+     * node is total and bounded for any constants. Exists because some engine
+     * ramps (e.g. the climb late arm) carry an intercept above 1, which no
+     * combination of the clamping {@code Scale} / {@code Sum} nodes can hold.
+     */
+    record Affine(ExpressionNode x, double slope, double intercept) implements ExpressionNode {
         @Override public double evaluate(EvalContext ctx) {
+            return clamp01(slope * clamp01(x.evaluate(ctx)) + intercept);
+        }
+        @Override public List<ExpressionNode> children() {
+            return List.of(x);
+        }
+        @Override public ExpressionNode withChildren(List<ExpressionNode> children) {
+            require(children, 1, "Affine");
+            return new Affine(children.get(0), slope, intercept);
+        }
+        @Override public String toReadableString() {
+            return "affine(" + x.toReadableString() + ", " + fmt(slope) + ", " + fmt(intercept) + ")";
+        }
+    }
+
+    /** Logical negation on the {@code [0,1]} domain: {@code 1 - x}. */
+    record Not(ExpressionNode x) implements ExpressionNode {        @Override public double evaluate(EvalContext ctx) {
             return 1.0 - clamp01(x.evaluate(ctx));
         }
         @Override public List<ExpressionNode> children() {

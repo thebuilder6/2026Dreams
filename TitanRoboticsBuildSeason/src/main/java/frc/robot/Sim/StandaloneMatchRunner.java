@@ -128,6 +128,8 @@ public final class StandaloneMatchRunner {
             int redAutoFuel,
             int blueTeleopFuel,
             int redTeleopFuel,
+            int blueTotal,
+            int redTotal,
             String winner,
             int pickedUp,
             int fuelRemaining,
@@ -149,7 +151,7 @@ public final class StandaloneMatchRunner {
                 double[] pathLengthM,
                 int[] botScored,
                 long wallMs) {
-            this(ticks, blueScored, redScored, 0, 0, blueScored, redScored,
+            this(ticks, blueScored, redScored, 0, 0, blueScored, redScored, blueScored, redScored,
                     winner, pickedUp, fuelRemaining, 0, 0, 0,
                     pathLengthM, botScored, new BotTelemetry[0], new double[0][0], wallMs);
         }
@@ -313,6 +315,12 @@ public final class StandaloneMatchRunner {
             int redAuto = 0;
             int blueTeleop = 0;
             int redTeleop = 0;
+            int blueClimbs = 0;
+            int redClimbs = 0;
+            int blueMinor = 0;
+            int blueMajor = 0;
+            int redMinor = 0;
+            int redMajor = 0;
             int pickedUp = 0;
             int attemptedShots = 0;
             int missedShots = 0;
@@ -326,10 +334,20 @@ public final class StandaloneMatchRunner {
                     red += bot.getScored();
                     redAuto += bot.getAutoScored();
                     redTeleop += bot.getTeleopScored();
+                    redMinor += bot.getMinorFouls();
+                    redMajor += bot.getMajorFouls();
+                    if (bot.isClimbed()) {
+                        redClimbs++;
+                    }
                 } else {
                     blue += bot.getScored();
                     blueAuto += bot.getAutoScored();
                     blueTeleop += bot.getTeleopScored();
+                    blueMinor += bot.getMinorFouls();
+                    blueMajor += bot.getMajorFouls();
+                    if (bot.isClimbed()) {
+                        blueClimbs++;
+                    }
                 }
                 pickedUp += bot.getPickedUp();
                 attemptedShots += bot.getAttemptedShots();
@@ -347,9 +365,14 @@ public final class StandaloneMatchRunner {
                         bot.getMinorFouls(), bot.getMajorFouls(),
                         bot.getHubActiveTeleopSec());
             }
-            String winner = blue > red ? "Blue" : red > blue ? "Red" : "Tie";
+            // Rulebook totals mirror MatchScoreTracker: fuel + climb points +
+            // opponent-credited penalties (5 per minor, 15 per major).
+            int blueTotal = blue + POINTS_PER_CLIMB_MIRROR * blueClimbs + 5 * redMinor + 15 * redMajor;
+            int redTotal = red + POINTS_PER_CLIMB_MIRROR * redClimbs + 5 * blueMinor + 15 * blueMajor;
+            String winner = blueTotal > redTotal ? "Blue" : redTotal > blueTotal ? "Red" : "Tie";
             long wallMs = System.currentTimeMillis() - wallStart;
             return new Result(ticks, blue, red, blueAuto, redAuto, blueTeleop, redTeleop,
+                    blueTotal, redTotal,
                     winner, pickedUp, fuel.size(), attemptedShots, missedShots, escapes,
                     path, scored, telemetry, markSeconds, wallMs);
         } finally {
@@ -489,9 +512,9 @@ public final class StandaloneMatchRunner {
         sb.append(",\"missedShots\":").append(result.missedShots());
         sb.append(",\"escapes\":").append(result.escapes());
         sb.append(",\"winner\":\"").append(result.winner()).append('"');
-        sb.append(",\"blueTotal\":").append(result.blueScored());
-        sb.append(",\"redTotal\":").append(result.redScored());
-        sb.append(",\"margin\":").append(Math.abs(result.blueScored() - result.redScored()));
+        sb.append(",\"blueTotal\":").append(result.blueTotal());
+        sb.append(",\"redTotal\":").append(result.redTotal());
+        sb.append(",\"margin\":").append(Math.abs(result.blueTotal() - result.redTotal()));
         sb.append(",\"blueAutoFuel\":").append(result.blueAutoFuel());
         sb.append(",\"redAutoFuel\":").append(result.redAutoFuel());
         sb.append(",\"blueTeleopFuel\":").append(result.blueTeleopFuel());

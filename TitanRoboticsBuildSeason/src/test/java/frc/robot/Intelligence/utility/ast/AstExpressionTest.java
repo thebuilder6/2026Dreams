@@ -11,6 +11,7 @@ import java.util.Random;
 import org.junit.jupiter.api.Test;
 
 import frc.robot.Intelligence.utility.ast.ExpressionNode.Constant;
+import frc.robot.Intelligence.utility.ast.ExpressionNode.Affine;
 import frc.robot.Intelligence.utility.ast.ExpressionNode.Product;
 import frc.robot.Intelligence.utility.ast.ExpressionNode.Sigmoid;
 import frc.robot.Intelligence.utility.ast.ExpressionNode.TerminalNode;
@@ -46,6 +47,14 @@ public class AstExpressionTest {
         // threshold
         assertEquals(1.0, new Threshold(new Constant(0.6), 0.5, 0.0, 1.0).evaluate(c), 1e-12);
         assertEquals(0.0, new Threshold(new Constant(0.4), 0.5, 0.0, 1.0).evaluate(c), 1e-12);
+        // affine(slope * x + intercept), input and output clamped like ResponseCurve.linear
+        assertEquals(0.8, new Affine(new Constant(0.5), 2.0, -0.2).evaluate(c), 1e-12);
+        assertEquals(1.0, new Affine(new Constant(0.5), 2.0, 0.5).evaluate(c), 1e-12);
+        assertEquals(0.0, new Affine(new Constant(0.5), -2.0, 0.5).evaluate(c), 1e-12);
+        assertEquals("affine(held_ratio, 2.0, -0.2)",
+                SExpressions.write(new Affine(new TerminalNode(Terminal.HELD_RATIO), 2.0, -0.2)));
+        assertThrows(IllegalArgumentException.class,
+                () -> SExpressions.read("affine(held_ratio, 2.0)"));
     }
 
     @Test

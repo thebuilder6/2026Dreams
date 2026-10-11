@@ -187,6 +187,10 @@ public final class SExpressions {
                     require(args, 1, name);
                     yield new ExpressionNode.Not(args.get(0));
                 }
+                case "affine" -> {
+                    require(args, 3, name);
+                    yield new ExpressionNode.Affine(args.get(0), num(args.get(1), name), num(args.get(2), name));
+                }
                 default -> throw new IllegalArgumentException("unknown operator '" + name + "'");
             };
         }

@@ -141,20 +141,6 @@ public final class StandaloneMatchRunner {
             BotTelemetry[] botTelemetry,
             double[][] markSeconds,
             long wallMs) {
-        public Result(
-                long ticks,
-                int blueScored,
-                int redScored,
-                String winner,
-                int pickedUp,
-                int fuelRemaining,
-                double[] pathLengthM,
-                int[] botScored,
-                long wallMs) {
-            this(ticks, blueScored, redScored, 0, 0, blueScored, redScored, blueScored, redScored,
-                    winner, pickedUp, fuelRemaining, 0, 0, 0,
-                    pathLengthM, botScored, new BotTelemetry[0], new double[0][0], wallMs);
-        }
     }
 
     /** 1-bot blue-cycler smoke: training spawn, 8 preload, 54 fuel. */
@@ -722,7 +708,7 @@ public final class StandaloneMatchRunner {
                 case "--variant" -> { if (i + 1 < args.length) variant = args[++i]; }
                 case "--replica" -> { if (i + 1 < args.length) replica = Integer.parseInt(args[++i]); }
                 case "--climb" -> climb = true;
-                default -> { /* ignore unrecognized option */ }
+                default -> System.err.println("[Standalone] ignoring unrecognized option: " + args[i]);
             }
         }
 

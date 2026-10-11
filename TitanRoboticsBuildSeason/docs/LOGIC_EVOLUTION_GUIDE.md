@@ -2,7 +2,7 @@
 title: Logic Evolution & Individual EPA
 audience: [human, ai]
 owner: programming-leads
-last_verified: 2026-10-08
+last_verified: 2026-10-11
 status: proposal
 ---
 
@@ -109,7 +109,13 @@ python tools/tune/test_sim_epa.py        # self-test, no JVM needed
 1. **Telemetry + evaluator** — done (this doc).
 2. **Validity gate** — before any search, Spearman-correlate the standalone
    component EPAs against a clean sequential full-sim sweep over a few policy
-   variants. Blocked by the fidelity gap in §1.
+   variants. Blocked by the fidelity gap in §1. Mechanized as
+   `tools/score/validity_gate.py` (winner-agreement-led per the Oct 11
+   decision: agreement ≥ 0.75 over ≥ 6 clean seeds passes; margin Spearman is
+   reported, not gated; sim-throw rows are censored via a sweep-log scan).
+   `tools/score/test_validity_gate.py` 15/15 green on real Python 3.12
+   (installed user-scope Oct 11); first real run on the Oct 09 A/B data FAILs
+   (4/8 seeds pairable, 0/4 agreement — see KNOWN_ISSUES §E).
 3. **Expression-tree engine** — **library landed 2026-10-08**:
    `Intelligence/utility/ast` has the sealed `ExpressionNode` (Constant,
    Terminal, Product/Sum/Min/Max, IfThenElse, Threshold/`threshold_ge`, Sigmoid,

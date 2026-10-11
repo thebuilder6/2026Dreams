@@ -254,7 +254,10 @@ public class GameSim implements Subsystem {
             boolean isDsTimeValid = dsTimeRemainingSec >= 0.0;
             SmartDashboard.putBoolean(SimDashboardKeys.TIME_REMAINING_VALID, isDsTimeValid);
 
-            if (isDsTimeValid) {
+            // Headless runs own the clock: ignore DS time entirely so a
+            // foreign/attached DS can never flip the scenario clock mid-sweep.
+            boolean useDsClock = isDsTimeValid && !HeadlessMatchDriver.isHeadless();
+            if (useDsClock) {
                 simTimeRemainingSec = dsTimeRemainingSec;
                 simRunning = DriverStation.isEnabled() && simTimeRemainingSec > 0.0;
                 // Keep the official hub schedule in step with the sim clock on

@@ -2,7 +2,7 @@
 title: Autonomous & Trajectory Pipeline Guide
 audience: [human, ai, programming-leads]
 owner: programming-leads
-last_verified: 2026-10-07
+last_verified: 2026-10-11
 status: authoritative
 ---
 
@@ -194,6 +194,7 @@ If you export a trajectory `.traj` to `deploy/choreo/` and do *not* write a cust
 | Shoot & Trench Disruption | `TrenchSweep` | Shoot preloads from Blue zone, then traverse South trench to midfield intaking without mid-auto odometry reset |
 | Trench Midfield Disruptor | `TrenchSweep` | Traverse South trench from legal Blue alliance line (X=3.40 m, Y=0.65 m) to midfield with intake down |
 | Centerline Sweep & Leave | `MoveForward` | Taxi with intake down |
+| Right Half Center Shoot | `RightHalfCenterPath` | Drive right-half center path while intaking, then shoot with kicker feed pulses |
 | DepotShootMission, ShooterMission, ExampleMission, Advanced Choreo Shot | — | Original missions (names unchanged) |
 
 All paths are Blue-origin and mirrored for Red by Choreo/`AllianceFlipUtil`. `TrenchSweep` begins legally in the Blue Alliance Zone (X=3.40 m, Y=0.65 m) and sweeps east through the South trench corridor to neutral midfield (X=7.60 m) safely before the FRC G201 centerline boundary, eliminating the illegal cross-field odometry reset previously inherited from `OpponentPath`.
@@ -216,7 +217,7 @@ On the Elastic Dashboard (and SmartDashboard):
 - **Simulation Validation**:
   - Run `.\gradlew simulateJava` from `TitanRoboticsBuildSeason/`.
   - In SimGUI, set Autonomous Mode and observe the virtual robot execute the selected Choreo trajectory on the AdvantageScope 2D/3D field.
-- **Verified against**: JUnit 5 full test suite clean (73 result files / 637 tests, 0 failures, 2026-10-08). Mission behaviour itself is only SimGUI-validated, not unit-tested.
+- **Verified against**: JUnit 5 full test suite clean (85 result files / 667 tests, 0 failures, 2026-10-11). Mission behaviour itself is only SimGUI-validated, not unit-tested.
 - **Next review due**: 2026-11-06.
 
 ---

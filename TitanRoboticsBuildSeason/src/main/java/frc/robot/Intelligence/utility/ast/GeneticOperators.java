@@ -72,6 +72,14 @@ public final class GeneticOperators {
     /**
      * Point + structural mutation: each node may have its constant jittered or
      * be replaced by a fresh small subtree, at probability {@code rate}.
+     *
+     * <p>shortcut: only {@code Constant} leaves are jittered — every other
+     * node's numeric params survive via {@code withChildren}, so Java-side
+     * mutation rewires structure but never tunes numbers, and
+     * {@code randomTree} init cannot sample the parity trees' ranges (e.g.
+     * climb's {@code Affine(-30, 4.0)}). Tune numbers through reparsed text or
+     * widen init when search unblocks; a per-type jitter chain here would break
+     * the no-change-needed-per-node-type promise above.
      */
     public static ExpressionNode mutate(ExpressionNode node, Random rng, double rate) {
         if (node instanceof Constant c && rng.nextDouble() < rate) {

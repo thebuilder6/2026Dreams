@@ -1473,5 +1473,35 @@ public class JevDecisionEngineTest {
                 "Custom capacity 10 robot holding 5 is not inventory full");
         assertEquals(0.5, partialCapacityWorld.inventoryRatio(), 1e-6);
     }
+
+    @Test
+    public void defendersZeroEveryScoringObjectiveEvenUnderFullScoringPressure() {
+        // The six post-score rewrite sites (autonomous override, three
+        // defender zero-lists, deadline force, G420) must all agree for every
+        // defensive archetype. A future 15th objective that forgets its
+        // zero-list fails here instead of shipping defenders that score.
+        // Maximum pressure: live hub, full hopper, fuel in every zone,
+        // tracked opponent — everything short of the role says "shoot".
+        WorldState liveHubFullHopper = shiftState(true, true, true, true, 30, 10.0);
+        MatchKnowledge fullField = fuel(30, 30, 30, true);
+        List<StrategicObjective> scoring = List.of(
+                StrategicObjective.CYCLE_SCORE_HUB,
+                StrategicObjective.STAGE_STANDOFF,
+                StrategicObjective.SWEEP_ALLIANCE_ZONE,
+                StrategicObjective.VACUUM_MIDFIELD,
+                StrategicObjective.STOCKPILE_DEPOT,
+                StrategicObjective.POACH_OPPONENT_ZONE,
+                StrategicObjective.SHUTTLE_PASS,
+                StrategicObjective.LONG_RANGE_SNIPE);
+        for (Archetype defender : List.of(Archetype.TACTICAL_DEFENDER,
+                Archetype.DEFENSE_BULLY, Archetype.LEAD_PURSUIT_INTERCEPTOR)) {
+            Map<StrategicObjective, Double> scores = engine.evaluateUtilityScores(
+                    liveHubFullHopper, Collections.emptySet(), fullField, defender);
+            for (StrategicObjective objective : scoring) {
+                assertEquals(0.0, scores.getOrDefault(objective, -1.0), 1e-12,
+                        defender + " must zero " + objective + " under full scoring pressure");
+            }
+        }
+    }
 }
 

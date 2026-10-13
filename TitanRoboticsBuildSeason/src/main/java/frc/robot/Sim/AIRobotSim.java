@@ -149,7 +149,7 @@ public class AIRobotSim implements Subsystem {
     // Multi-robot sparring pool
     private final List<AIRobotInstance> additionalBots = new ArrayList<>();
     private final List<AIRobotInstance> allyBots = new ArrayList<>();
-    private AIRobotInstance trainingBluePrimaryBot;
+    private volatile AIRobotInstance trainingBluePrimaryBot;
     private volatile TrainingMatchScenario trainingScenario;
     // Last-tick defensive mark per defender label ("Bot0..2", "Ally0..2").
     // Greedy exclusion: a defender prefers carriers no peer already holds, so
@@ -191,11 +191,14 @@ public class AIRobotSim implements Subsystem {
 
     /** Enables or clears scenario-controlled team rosters and resets bot state. */
     public synchronized void configureTrainingScenario(TrainingMatchScenario scenario) {
-        trainingScenario = scenario;
         if (scenario != null && trainingBluePrimaryBot == null) {
             trainingBluePrimaryBot = new AIRobotInstance(100, ROBOT_QUEUING_POSITIONS[0],
                     scenario.bluePlayerRobot().archetype(), true);
         }
+        // Publish the scenario only after its bots exist: update() reads both
+        // fields unlocked, and a tick landing between assignment and
+        // construction NPEs on the null primary (caught headless 2026r0).
+        trainingScenario = scenario;
         reset();
         if (scenario == null) return;
 
@@ -1021,7 +1024,12 @@ public class AIRobotSim implements Subsystem {
         int bot0Fuel = bot0Instance.getFuelCount();
         boolean bot0Stalled = bot0Instance.isStalled();
         TrainingMatchScenario activeScenario = trainingScenario;
-        boolean trainingMode = activeScenario != null;
+        // Local snapshot: training mode requires a constructed primary. The
+        // field publishes before construction finishes (see
+        // configureTrainingScenario), so a tick landing in between must degrade
+        // to the non-training path, not NPE (caught headless 2026r0).
+        AIRobotInstance primaryBlueBot = trainingBluePrimaryBot;
+        boolean trainingMode = activeScenario != null && primaryBlueBot != null;
         boolean active = trainingMode || Dashboard.isOpponentRobotEnabled();
 
         Logger.recordOutput("AI_Telemetry/ActualPose", pose);
@@ -1048,7 +1056,7 @@ public class AIRobotSim implements Subsystem {
         Logger.recordOutput("AI_Telemetry/ActualOmega", actualPhysicsSpeeds.omegaRadiansPerSecond);
 
         Pose2d playerPose = trainingMode
-                ? trainingBluePrimaryBot.getActualPose() : SwerveBase.getInstance().getPose();
+                ? primaryBlueBot.getActualPose() : SwerveBase.getInstance().getPose();
         double distToPlayer = pose.getTranslation().getDistance(playerPose.getTranslation());
         Logger.recordOutput("AI_Telemetry/DistanceToPlayer", distToPlayer);
 
@@ -1103,8 +1111,8 @@ public class AIRobotSim implements Subsystem {
         SmartDashboard.putNumber(SimDashboardKeys.TOTAL_OPPONENT_FUEL, totalFuel);
         SmartDashboard.putNumber(SimDashboardKeys.MULTI_BOT_ACTIVE_COUNT, opponentCount);
 
-        int totalAllyScore = trainingMode ? trainingBluePrimaryBot.getScoreCount() : 0;
-        int totalAllyFuel = trainingMode ? trainingBluePrimaryBot.getFuelCount() : 0;
+        int totalAllyScore = trainingMode ? primaryBlueBot.getScoreCount() : 0;
+        int totalAllyFuel = trainingMode ? primaryBlueBot.getFuelCount() : 0;
         int allyCount = trainingMode
                 ? activeScenario.blueAllyRobots().size() : Dashboard.getAllyCount();
         for (int i = 0; i < allyCount && i < allyBots.size(); i++) {

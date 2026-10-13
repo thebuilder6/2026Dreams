@@ -85,6 +85,29 @@ public class AIRobotSimTest {
     }
 
     @Test
+    public void testUpdateSurvivesNullTrainingPrimary() throws Exception {
+        // Publication race (caught headless 2026r0): a tick landing between
+        // scenario publication and primary construction must degrade to the
+        // non-training path, not NPE. Forced deterministically via reflection.
+        java.lang.reflect.Field scenarioF =
+                AIRobotSim.class.getDeclaredField("trainingScenario");
+        java.lang.reflect.Field primaryF =
+                AIRobotSim.class.getDeclaredField("trainingBluePrimaryBot");
+        scenarioF.setAccessible(true);
+        primaryF.setAccessible(true);
+        Object savedScenario = scenarioF.get(aiSim);
+        Object savedPrimary = primaryF.get(aiSim);
+        try {
+            scenarioF.set(aiSim, TrainingMatchScenario.default3v3(7));
+            primaryF.set(aiSim, null);
+            assertDoesNotThrow(aiSim::update);
+        } finally {
+            scenarioF.set(aiSim, savedScenario);
+            primaryF.set(aiSim, savedPrimary);
+        }
+    }
+
+    @Test
     public void testDynamicObstacleRegistrationWhenOnField() {
         // Position opponent robot on field in simulation
         aiSim.getDriveSimulation().setSimulationWorldPose(new Pose2d(5.0, 3.0, new Rotation2d()));

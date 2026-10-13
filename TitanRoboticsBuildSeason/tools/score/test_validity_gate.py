@@ -108,4 +108,21 @@ check("spearman n<3 none", spearman([1, 2], [1, 2]) is None)
 check("spearman constant none", spearman([5, 5, 5], [1, 2, 3]) is None)
 check("tie ranks averaged", ranks([10, 20, 20, 30]) == [1.0, 2.5, 2.5, 4.0])
 
+# 9. delta mode: matching +20 deltas pass; sign flip fails; zero fails safe.
+VAR = "vacuumHi"
+s_base = [row(sd, blue=200, red=150) for sd in SEEDS]
+s_var = [row(sd, blue=220, red=150, variant=VAR) for sd in SEEDS]
+f_base = [row(sd, blue=190, red=150) for sd in SEEDS]
+f_var = [row(sd, blue=210, red=150, variant=VAR) for sd in SEEDS]
+D = ("--delta", "baseline", VAR)
+check("delta agreement passes",
+      run_gate(s_base + s_var, f_base + f_var, extra=D) == 0)
+f_flip = [row(sd, blue=170, red=150, variant=VAR) for sd in SEEDS]
+check("delta sign flip fails",
+      run_gate(s_base + s_var, f_base + f_flip, extra=D) == 1)
+check("delta zero-delta exits 2",
+      run_gate(s_base + s_base, f_base + f_base, extra=D) == 2)
+check("delta missing variant exits 2",
+      run_gate(s_base, f_base + f_var, extra=D) == 2)
+
 print("all validity_gate self-tests passed")

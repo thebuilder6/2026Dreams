@@ -28,6 +28,10 @@ to measure.
 
 Exit codes: 0 PASS, 1 FAIL (reasons printed), 2 no pairable data. ``--no-gate``
 reports without failing (still 2 when there is nothing to pair).
+
+``--delta BASE VAR`` switches to rank-transfer mode: both files must carry
+both variants, and per-seed BASE->VAR blueTotal deltas must agree in sign.
+Zero deltas are excluded, so an ineffective tweak exits 2, never PASS.
 """
 
 import argparse
@@ -121,6 +125,27 @@ def spearman(xs, ys):
     return cov / math.sqrt(vx * vy)
 
 
+def clean_cells(rows, side, logs_dir, censored):
+    """Censor rows (classify_row + fullsim throw-scan), return ({(variant, seed):
+    [rows]}, scan_unknown_count). Standalone rows are never log-scanned."""
+    cells = defaultdict(list)
+    scan_unknown = 0
+    for r in rows:
+        status, reason = classify_row(r)
+        if status != CLEAN:
+            censored["%s %s: %s" % (side, status.lower(), reason)] += 1
+            continue
+        if side == "fullsim":
+            hit = log_hit(logs_dir, r)
+            if hit is True:
+                censored["fullsim threw mid-match (sweep log)"] += 1
+                continue
+            if hit is None and logs_dir:
+                scan_unknown += 1
+        cells[(r.get("variant", "baseline"), r.get("seed"))].append(r)
+    return cells, scan_unknown
+
+
 def aggregate(rows):
     """Mean totals + winner for one side of one (variant, seed) cell."""
     blue = statistics.mean(r.get("blueTotal", 0) or 0 for r in rows)
@@ -134,6 +159,66 @@ def aggregate(rows):
             "fuel_winner": winner_of(blue_fuel, red_fuel)}
 
 
+def delta_main(args, clean_s, clean_f, s_shas, f_shas):
+    """Rank-transfer mode: per-seed BASE->VAR deltas must agree in sign across
+    sims. A zero delta on either side is excluded (no effect, no sign) — so an
+    ineffective tweak pairs nothing and exits 2, never PASS."""
+    base, var = args.delta
+    deltas = []
+    for key in sorted(set(clean_s) & set(clean_f), key=str):
+        variant, seed = key
+        if variant != base:
+            continue
+        cells = (clean_s.get((base, seed)), clean_s.get((var, seed)),
+                 clean_f.get((base, seed)), clean_f.get((var, seed)))
+        if any(not c for c in cells):
+            continue
+        s_base, s_var, f_base, f_var = (aggregate(c) for c in cells)
+        deltas.append({"seed": seed,
+                       "d_s": s_var["blue"] - s_base["blue"],
+                       "d_f": f_var["blue"] - f_base["blue"]})
+    print("-- %s->%s deltas on %d seed(s) --" % (base, var, len(deltas)))
+    decided = [d for d in deltas if d["d_s"] != 0 and d["d_f"] != 0]
+    for d in deltas:
+        status = ("AGREE" if (d["d_s"] > 0) == (d["d_f"] > 0) else "differ") \
+            if d in decided else "ZERO"
+        print("  seed %-6s standalone %+.1f  fullsim %+.1f  %s"
+              % (d["seed"], d["d_s"], d["d_f"], status))
+    if not deltas:
+        print("VERDICT: nothing pairable (need both variants on both sides).")
+        return 2
+    if not decided:
+        print("VERDICT: nothing decidable (every delta is zero — the tweak has")
+        print("  no measurable effect on either side).")
+        return 2
+    agreed = sum(1 for d in decided if (d["d_s"] > 0) == (d["d_f"] > 0))
+    rho = spearman([d["d_s"] for d in decided], [d["d_f"] for d in decided])
+    print("delta sign agreement: %d/%d decided seeds%s" %
+          (agreed, len(decided),
+           " (+%d zero-delta excluded)" % (len(deltas) - len(decided))
+           if len(deltas) != len(decided) else ""))
+    print("delta Spearman rho=%s (n=%d%s)" %
+          ("%.2f" % rho if rho is not None else "n/a", len(decided),
+           ", n.s. below n=10" if len(decided) < 10 else ""))
+    reasons = []
+    if set(s_shas) != set(f_shas):
+        reasons.append("commit mismatch across files (different simulators)")
+    if len(decided) < args.min_pairs:
+        reasons.append("only %d decided seed(s), need %d"
+                       % (len(decided), args.min_pairs))
+    agreement = (agreed / len(decided)) if decided else 0.0
+    if agreement < args.min_agreement:
+        reasons.append("agreement %.2f < %.2f" % (agreement, args.min_agreement))
+    print("-" * 78)
+    if reasons:
+        print("VERDICT: FAIL")
+        for rsn in reasons:
+            print("  - %s" % rsn)
+        return 0 if args.no_gate else 1
+    print("VERDICT: PASS")
+    return 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -144,6 +229,9 @@ def main(argv=None):
     ap.add_argument("--min-pairs", type=int, default=MIN_PAIRS)
     ap.add_argument("--min-agreement", type=float, default=MIN_AGREEMENT)
     ap.add_argument("--no-gate", action="store_true", help="report only; never exit 1")
+    ap.add_argument("--delta", nargs=2, metavar=("BASE", "VAR"), default=None,
+                    help="rank-transfer mode: compare per-seed BASE->VAR deltas "
+                         "across sims instead of absolute winners")
     args = ap.parse_args(argv)
 
     s_rows, s_bad = load_rows(args.standalone)
@@ -161,30 +249,8 @@ def main(argv=None):
     print("standalone sha(s): %s   fullsim sha(s): %s" % (",".join(s_shas), ",".join(f_shas)))
 
     censored = defaultdict(int)
-    clean_s = defaultdict(list)
-    for r in s_rows:
-        status, reason = classify_row(r)
-        if status != CLEAN:
-            censored["standalone " + status.lower() + ": " + reason] += 1
-            continue
-        clean_s[(r.get("variant", "baseline"), r.get("seed"))].append(r)
-
-    clean_f = defaultdict(list)
-    threw = 0
-    scan_unknown = 0
-    for r in f_rows:
-        status, reason = classify_row(r)
-        if status != CLEAN:
-            censored["fullsim " + status.lower() + ": " + reason] += 1
-            continue
-        hit = log_hit(args.logs, r)
-        if hit is True:
-            censored["fullsim threw mid-match (sweep log)"] += 1
-            threw += 1
-            continue
-        if hit is None and args.logs:
-            scan_unknown += 1
-        clean_f[(r.get("variant", "baseline"), r.get("seed"))].append(r)
+    clean_s, _ = clean_cells(s_rows, "standalone", args.logs, censored)
+    clean_f, scan_unknown = clean_cells(f_rows, "fullsim", args.logs, censored)
 
     if censored:
         print("-- censored (counted, never paired) --")
@@ -194,6 +260,9 @@ def main(argv=None):
         print("-- threw-scan skipped (no --logs); NPE/CME rows read as CLEAN --")
     elif scan_unknown:
         print("-- threw-scan unknown for %d row(s) (log file absent) --" % scan_unknown)
+
+    if args.delta:
+        return delta_main(args, clean_s, clean_f, s_shas, f_shas)
 
     pairs = []
     for key in sorted(set(clean_s) & set(clean_f), key=str):
@@ -211,6 +280,12 @@ def main(argv=None):
 
     if not pairs:
         print("VERDICT: nothing pairable.")
+        print("  standalone cells: %s"
+              % sorted(set(clean_s), key=str)[:12])
+        print("  fullsim cells:    %s"
+              % sorted(set(clean_f), key=str)[:12])
+        print("  (a variant-name mismatch pairs nothing: standalone defaults to")
+        print("   --variant standalone; pass --variant baseline to match a sweep)")
         return 2
 
     decided = [p for p in pairs if not p["tie"]]

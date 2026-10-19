@@ -2,7 +2,7 @@
 title: Changelog
 audience: [human, ai]
 owner: any-agent
-last_verified: 2026-10-13
+last_verified: 2026-10-19
 status: living
 ---
 
@@ -14,7 +14,7 @@ Newest first. One bullet per behavior-affecting change. Format:
 
 ## Unreleased
 
-- 2026-10-13 — intelligence/scripted: **Scripted harvest-then-score `JevPolicy` impl (`ScriptedJevPolicy` 6/6 green).** Executable counterpart of the `JevIntelligence/jev-sim` Python baseline: scores the whole hopper when the own hub is live and fuel meets the gate (batch 8, 1 inside 4 m, batch 8 in auto), else harvests nearest visible fuel; standoff pose reused from the engine singleton, no telemetry (never fights `JevAI/*` keys). Pinned by `ScriptedJevPolicyTest` (gates B6/O8 in-range, A5/N3 auto-batch, dark-hub hold, seam install/reset). Evidence: `frc.robot.Intelligence.ScriptedJevPolicyTest` 6/6 green on WPILib 2026 JDK (`gradle-build` lock); engine untouched (additive only). [src/main/java/frc/robot/Intelligence/ScriptedJevPolicy.java, src/test/java/frc/robot/Intelligence/ScriptedJevPolicyTest.java, docs/CHANGELOG.md]
+- 2026-10-13 — intelligence/scripted: **Scripted harvest-then-score `JevPolicy` impl (`ScriptedJevPolicy` 6/6 green).** Executable counterpart of the `JevIntelligence/jev-sim` Python baseline: scores the whole hopper when the own hub is live and fuel meets the gate (batch 8, 1 inside 4 m, batch 8 in auto), else harvests nearest visible fuel; standoff pose reused from the engine singleton, no telemetry (never fights `JevAI/*` keys). Pinned by `ScriptedJevPolicyTest` (gates B6/O8 in-range, A5/N3 auto-batch, dark-hub hold, seam install/reset). Evidence: `frc.robot.Intelligence.ScriptedJevPolicyTest` 6/6 green (re-run 2026-10-19) on WPILib 2026 JDK (`gradle-build` lock); engine untouched (additive only). [src/main/java/frc/robot/Intelligence/ScriptedJevPolicy.java, src/test/java/frc/robot/Intelligence/ScriptedJevPolicyTest.java, docs/CHANGELOG.md]
 
 - 2026-10-11 — sim/npe: **Training-primary publication race fixed (`AIRobotSimTest` green).** `configureTrainingScenario` published the scenario field before constructing `trainingBluePrimaryBot` while `update()` reads both unlocked (`trainingScenario` is volatile, the primary was not) — any tick landing between assignment and construction NPE'd, and load widens the window, matching the parallel-only crash pattern. Fix: primary is `volatile` and built before publication; `update()` snapshots a local and degrades to the non-training path on null (covers all derefs in one place). Pinned by `testUpdateSurvivesNullTrainingPrimary` (reflection-forced null primary; verified it NPEs on the unguarded form first). Evidence: `AIRobotSimTest` + `HeadlessMatchDriverTest` green on WPILib 2026 JDK (`gradle-build` lock); full suite not run. [src/main/java/frc/robot/Sim/AIRobotSim.java, src/test/java/frc/robot/Sim/AIRobotSimTest.java, KNOWN_ISSUES.md, docs/CHANGELOG.md]
 

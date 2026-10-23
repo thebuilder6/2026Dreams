@@ -263,8 +263,9 @@ def main() -> None:
     if args.json:
         out = Path(args.json)
         out.parent.mkdir(parents=True, exist_ok=True)
+        data = json.dumps(ratings, indent=2)
         with open(out, "w", encoding="utf-8") as handle:
-            json.dump(ratings, handle, indent=2)
+            handle.write(data)
         print("\nwrote {}".format(out))
 
 

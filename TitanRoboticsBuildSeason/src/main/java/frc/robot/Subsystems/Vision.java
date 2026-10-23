@@ -76,10 +76,36 @@ public class Vision implements Subsystem {
         private final Alert disconnectAlert;
         private final BooleanEntry enableEntry;
 
+        // Precomputed strings for performance optimization
+        public final String logKey;
+        public final String pfxConnected;
+        public final String pfxIsAccepted;
+        public final String pfxRejectionReason;
+        public final String pfxTagCount;
+        public final String pfxAvgDistance;
+        public final String pfxFilteredAvgDistance;
+        public final String pfxStdDev;
+        public final String pfxLatencyMs;
+        public final String logKeyPose;
+
         public ManagedCamera(CameraConfig config, VisionIO io) {
             this.config = config;
             this.io = io;
-            this.disconnectAlert = new Alert("Vision", "Camera [" + config.getName() + "] is offline", AlertType.WARNING);
+
+            String name = config.getName();
+            this.logKey = "Vision/" + name;
+            String pfx = "Vision/" + name + "/";
+            this.pfxConnected = pfx + "Connected";
+            this.pfxIsAccepted = pfx + "IsAccepted";
+            this.pfxRejectionReason = pfx + "RejectionReason";
+            this.pfxTagCount = pfx + "TagCount";
+            this.pfxAvgDistance = pfx + "AvgDistance";
+            this.pfxFilteredAvgDistance = pfx + "FilteredAvgDistance";
+            this.pfxStdDev = pfx + "StdDev";
+            this.pfxLatencyMs = pfx + "LatencyMs";
+            this.logKeyPose = "Vision/" + name + "/Pose";
+
+            this.disconnectAlert = new Alert("Vision", "Camera [" + name + "] is offline", AlertType.WARNING);
             var nt = NetworkTableInstance.getDefault();
             this.enableEntry = nt.getTable("SmartDashboard")
                     .getSubTable("Vision")
@@ -242,7 +268,7 @@ public class Vision implements Subsystem {
 
             // Update IO and record to AdvantageKit
             camera.io.updateInputs(camera.inputs);
-            org.littletonrobotics.junction.Logger.processInputs("Vision/" + camera.getName(), camera.inputs);
+            org.littletonrobotics.junction.Logger.processInputs(camera.logKey, camera.inputs);
             camera.updateConnectionWatchdog(now);
 
             // Gating checks
@@ -632,18 +658,17 @@ public class Vision implements Subsystem {
     public void log() {
         // Individual camera status & diagnostics
         for (ManagedCamera c : managedCameras) {
-            String pfx = "Vision/" + c.getName() + "/";
-            SmartDashboard.putBoolean(pfx + "Connected", c.isConnected);
-            SmartDashboard.putBoolean(pfx + "IsAccepted", c.isAccepted);
-            SmartDashboard.putString(pfx + "RejectionReason", c.rejectionReason.name());
-            SmartDashboard.putNumber(pfx + "TagCount", c.inputs.tagCount);
-            SmartDashboard.putNumber(pfx + "AvgDistance", c.inputs.avgTagDist);
-            SmartDashboard.putNumber(pfx + "FilteredAvgDistance", c.filteredTagDist);
-            SmartDashboard.putNumber(pfx + "StdDev", c.stdDev);
-            SmartDashboard.putNumber(pfx + "LatencyMs", c.inputs.latencyMs);
+            SmartDashboard.putBoolean(c.pfxConnected, c.isConnected);
+            SmartDashboard.putBoolean(c.pfxIsAccepted, c.isAccepted);
+            SmartDashboard.putString(c.pfxRejectionReason, c.rejectionReason.name());
+            SmartDashboard.putNumber(c.pfxTagCount, c.inputs.tagCount);
+            SmartDashboard.putNumber(c.pfxAvgDistance, c.inputs.avgTagDist);
+            SmartDashboard.putNumber(c.pfxFilteredAvgDistance, c.filteredTagDist);
+            SmartDashboard.putNumber(c.pfxStdDev, c.stdDev);
+            SmartDashboard.putNumber(c.pfxLatencyMs, c.inputs.latencyMs);
 
             if (c.inputs.hasTarget) {
-                org.littletonrobotics.junction.Logger.recordOutput("Vision/" + c.getName() + "/Pose", c.inputs.estimatedPose);
+                org.littletonrobotics.junction.Logger.recordOutput(c.logKeyPose, c.inputs.estimatedPose);
             }
         }
 
